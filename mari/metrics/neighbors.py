@@ -1,25 +1,65 @@
 from __future__ import annotations
 
+import math
 import logging
+from dataclasses import dataclass
 from typing import Sequence
 
 import numpy as np
+from sklearn.metrics import balanced_accuracy_score
+from sklearn.neighbors import NearestNeighbors
 
 logger = logging.getLogger("mari")
 
-_NEIGHBOR_BUFFER = 64
+_MIN_NEIGHBOR_BUFFER = 64
+_TARGET_EFFECTIVE_K_COVERAGE = 0.90
+_GROWTH_FACTOR = 1.5
+_MIN_GROWTH_STEP = 32
 _REDUCED_EFFECTIVE_K_WARN_THRESHOLD = 0.10
 
 
-def _require_sklearn():
-    try:
-        from sklearn.metrics import balanced_accuracy_score
-        from sklearn.neighbors import NearestNeighbors
-    except Exception as exc:  # pragma: no cover - depends on optional dependency
-        raise RuntimeError(
-            "RI/MaRI requires scikit-learn. Install `scikit-learn` to run these metrics."
-        ) from exc
-    return balanced_accuracy_score, NearestNeighbors
+@dataclass(frozen=True)
+class _NeighborPreparationMeta:
+    final_n_neighbors: int
+    coverage: float
+    target_coverage: float
+    iterations: int
+    hit_neighbor_cap: bool
+
+
+def _max_tiles_per_slide(slide_ids: np.ndarray) -> int:
+    if int(slide_ids.size) <= 0:
+        return 0
+    _slides, counts = np.unique(slide_ids, return_counts=True)
+    if int(counts.size) <= 0:
+        return 0
+    return int(counts.max())
+
+
+def _initial_n_neighbors(kmax: int, slide_ids: np.ndarray, n_samples: int) -> int:
+    inferred_buffer = max(_MIN_NEIGHBOR_BUFFER, _max_tiles_per_slide(slide_ids))
+    return int(min(int(kmax) + int(inferred_buffer), int(n_samples) - 1))
+
+
+def _effective_k_coverage(valid_counts: np.ndarray, kmax: int) -> float:
+    n = int(valid_counts.size)
+    if n <= 0:
+        return 1.0
+    reached = int(np.count_nonzero(valid_counts >= int(kmax)))
+    return float(reached) / float(n)
+
+
+def _next_n_neighbors(current: int, n_samples: int, kmax: int) -> int:
+    if int(current) >= int(n_samples) - 1:
+        return int(n_samples) - 1
+
+    candidate_linear = int(current) + max(_MIN_GROWTH_STEP, int(kmax))
+    candidate_geometric = int(math.ceil(float(current) * _GROWTH_FACTOR))
+    grown = max(candidate_linear, candidate_geometric)
+    next_neighbors = min(int(n_samples) - 1, int(grown))
+    if next_neighbors <= int(current):
+        return min(int(n_samples) - 1, int(current) + 1)
+    return int(next_neighbors)
 
 
 def _filter_neighbors_excluding_same_slide(
@@ -81,12 +121,8 @@ def _warn_if_effective_k_reduced(
     frac = float(reduced) / float(n)
     if frac > float(threshold):
         logger.warning(
-            "[RI/MaRI] %s: effective k < %d for %d/%d samples (%.1f%%) after excluding same-slide neighbors.",
-            str(context),
-            k,
-            reduced,
-            n,
-            float(frac * 100.0),
+            f"[RI/MaRI] {context}: effective k < {k} for {reduced}/{n} samples "
+            f"({frac * 100.0:.1f}%) after excluding same-slide neighbors."
         )
 
 
@@ -120,23 +156,51 @@ def _prepare_neighbors(
     slide_ids: np.ndarray,
     kmax: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    _balanced_accuracy_score, NearestNeighbors = _require_sklearn()
+    neigh_idx, neigh_dist, valid_counts, _meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
+    return neigh_idx, neigh_dist, valid_counts
 
+
+def _prepare_neighbors_with_meta(
+    features: np.ndarray,
+    slide_ids: np.ndarray,
+    kmax: int,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, _NeighborPreparationMeta]:
     if int(kmax) <= 0:
         raise ValueError("kmax must be > 0")
-    if len(features) <= 1:
+    n_samples = int(len(features))
+    if n_samples <= 1:
         raise RuntimeError("Need at least two samples to compute neighbors")
+    if int(len(slide_ids)) != n_samples:
+        raise ValueError("slide_ids length must match features row count")
 
-    n_neighbors = min(int(kmax) + _NEIGHBOR_BUFFER, len(features) - 1)
-    nn = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine")
-    nn.fit(features)
-    distances, neigh = nn.kneighbors(features)
-    return _filter_neighbors_excluding_same_slide(
-        raw_neighbors=neigh,
-        raw_distances=distances,
-        slide_ids=slide_ids,
-        kmax=int(kmax),
-    )
+    target_k = int(kmax)
+    target_coverage = float(_TARGET_EFFECTIVE_K_COVERAGE)
+    n_neighbors = _initial_n_neighbors(target_k, slide_ids, n_samples)
+    iterations = 0
+
+    while True:
+        iterations += 1
+        nn = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine")
+        nn.fit(features)
+        distances, neigh = nn.kneighbors(features)
+        neigh_idx, neigh_dist, valid_counts = _filter_neighbors_excluding_same_slide(
+            raw_neighbors=neigh,
+            raw_distances=distances,
+            slide_ids=slide_ids,
+            kmax=target_k,
+        )
+        coverage = _effective_k_coverage(valid_counts, target_k)
+        hit_neighbor_cap = bool(n_neighbors >= n_samples - 1)
+        if coverage >= target_coverage or hit_neighbor_cap:
+            meta = _NeighborPreparationMeta(
+                final_n_neighbors=int(n_neighbors),
+                coverage=float(coverage),
+                target_coverage=target_coverage,
+                iterations=int(iterations),
+                hit_neighbor_cap=hit_neighbor_cap,
+            )
+            return neigh_idx, neigh_dist, valid_counts, meta
+        n_neighbors = _next_n_neighbors(n_neighbors, n_samples, target_k)
 
 
 def _optimal_k_by_knn_balanced_accuracy(
@@ -146,8 +210,6 @@ def _optimal_k_by_knn_balanced_accuracy(
     k_values: Sequence[int],
     warn_context: str,
 ) -> int:
-    balanced_accuracy_score, _NearestNeighbors = _require_sklearn()
-
     candidates = [int(k) for k in k_values]
     if not candidates:
         raise ValueError("k_values must contain at least one candidate")
@@ -155,8 +217,18 @@ def _optimal_k_by_knn_balanced_accuracy(
         raise ValueError("k_values must be strictly positive")
 
     kmax = int(max(candidates))
-    neigh, _dist, valid_counts = _prepare_neighbors(features, slide_ids, kmax)
-    _warn_if_effective_k_reduced(valid_counts=valid_counts, target_k=kmax, context=warn_context)
+    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
+    capped = ", capped" if prep_meta.hit_neighbor_cap and prep_meta.coverage < prep_meta.target_coverage else ""
+    warn_context_with_fetch = (
+        f"{warn_context} [fetch={prep_meta.final_n_neighbors}/{len(features) - 1}, "
+        f"coverage={prep_meta.coverage * 100.0:.1f}%, "
+        f"target={prep_meta.target_coverage * 100.0:.1f}%{capped}]"
+    )
+    _warn_if_effective_k_reduced(
+        valid_counts=valid_counts,
+        target_k=kmax,
+        context=warn_context_with_fetch,
+    )
 
     best_k = int(candidates[0])
     best_score = -1.0
@@ -179,4 +251,3 @@ def _optimal_k_by_knn_balanced_accuracy(
         raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
 
     return best_k
-
