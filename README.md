@@ -67,6 +67,31 @@ This writes one file per model:
 - `<manifest_stem>.embeddings.<model>.npy`
 - `<manifest_stem>.embeddings.<model>.npy.json`
 
+## Unified Benchmark Script
+
+Run extraction + metric computation + plot generation in one command:
+
+```bash
+python scripts/benchmark.py \
+  --manifest /path/to/manifest.csv \
+  --models Virchow2,UNI,Phikon-v2 \
+  --output-dir /path/to/benchmark
+```
+
+Defaults:
+- `--mode global`
+- `--k-candidates 5,11,21`
+- `--tau 0.2`
+- `--alpha 10.0`
+
+Outputs:
+- embeddings: `embeddings/<manifest_stem>.embeddings.<model>.npy` (+ `.json`)
+- metrics: `results/metrics.csv`, `results/metrics.json`
+- plots:
+  - `plots/ri_mari_rank.png`
+  - `plots/ri_vs_mari_scatter.png`
+  - `plots/tail_fragility.png`
+
 ## Publishing
 
 PyPI publishing is automated on GitHub Releases:
