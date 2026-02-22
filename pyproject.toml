@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mari"
+version = "0.1.0"
+description = "Margin-aware robustness metrics for pathology foundation models."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+  "numpy>=1.24",
+  "pandas>=2.0",
+  "scikit-learn>=1.3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+mari = "mari.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
