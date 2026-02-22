@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from PIL import Image
+from tqdm.auto import tqdm
 
 
 @dataclasses.dataclass
@@ -123,16 +124,18 @@ def _build_model_registry():
 
 
 def _extract_timm_features(out, extract: str):
+    import torch
+
     if extract == "cls":
         return out[:, 0] if out.ndim == 3 else out
     if extract == "cls_and_patch":
         if out.ndim != 3:
             raise RuntimeError("cls_and_patch extraction expects 3D token output.")
-        return __import__("torch").cat([out[:, 0], out[:, 1:].mean(1)], dim=-1)
+        return torch.cat([out[:, 0], out[:, 1:].mean(1)], dim=-1)
     if extract == "virchow":
         if out.ndim != 3:
             raise RuntimeError("virchow extraction expects 3D token output.")
-        return __import__("torch").cat([out[:, 0], out[:, 5:].mean(1)], dim=-1)
+        return torch.cat([out[:, 0], out[:, 5:].mean(1)], dim=-1)
     raise ValueError(f"Unknown extract mode: {extract}")
 
 
@@ -248,16 +251,18 @@ def embed_manifest(
 
     all_emb = []
     total = len(dataset)
-    done = 0
     with torch.inference_mode(), autocast:
-        for batch in loader:
-            batch = batch.to(device, non_blocking=True)
-            emb = embed_fn(batch).float()
-            all_emb.append(emb.cpu().numpy())
-            done += len(batch)
-            print(f"[embed] {done}/{total}", end="\r", flush=True)
-
-    print()
+        with tqdm(
+            total=total,
+            desc="[embed] tiles",
+            unit="img",
+            dynamic_ncols=True,
+        ) as pbar:
+            for batch in loader:
+                batch = batch.to(device, non_blocking=True)
+                emb = embed_fn(batch).float()
+                all_emb.append(emb.cpu().numpy())
+                pbar.update(len(batch))
     arr = np.concatenate(all_emb, axis=0)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     np.save(output_path, arr)
@@ -372,10 +377,8 @@ def main():
     print("\n[embed] === summary ===")
     print(f"[embed] ok={n_ok} skipped={n_skip} failed={n_fail}")
     for s in statuses:
-        line = f"[embed] {s['model']}: {s['status']} -> {s['output']}"
-        if s["status"] == "failed":
-            line += f" | error={s['error']}"
-        print(line)
+        error_suffix = f" | error={s['error']}" if s["status"] == "failed" else ""
+        print(f"[embed] {s['model']}: {s['status']} -> {s['output']}{error_suffix}")
 
     if n_fail > 0:
         raise SystemExit(1)

@@ -10,8 +10,6 @@ from mari import MaRI, RI
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
 @pytest.mark.parametrize("mode", ["paired", "global"])
 def test_compute_end_to_end(metric_cls, mode: str) -> None:
-    pytest.importorskip("sklearn")
-
     manifest = pd.DataFrame(
         {
             "sample_id": [f"s{i}" for i in range(8)],
