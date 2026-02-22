@@ -54,9 +54,10 @@ def main() -> int:
         raise ValueError(f"Unknown model(s): {unknown}. Available: {available}")
 
     output_dir = args.output_dir
-    embeddings_dir = output_dir / "embeddings"
-    results_dir = output_dir / "results"
-    plots_dir = output_dir / "plots"
+    dataset_dir = output_dir / args.manifest.stem
+    embeddings_dir = dataset_dir / "embeddings"
+    results_dir = dataset_dir / "results"
+    plots_dir = dataset_dir / "plots"
     embeddings_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
@@ -65,7 +66,7 @@ def main() -> int:
     metrics_json = results_dir / "metrics.json"
     cached_rows = {}
     if not args.recompute_metrics:
-        cached_rows = _load_cached_rows(
+        cached_rows = load_cached_rows(
             metrics_csv=metrics_csv,
             models=models,
             mode=args.mode,
@@ -81,6 +82,7 @@ def main() -> int:
     print(f"[benchmark] manifest={args.manifest}")
     print(f"[benchmark] models={', '.join(models)}")
     print(f"[benchmark] output_dir={output_dir}")
+    print(f"[benchmark] dataset_dir={dataset_dir}")
 
     for model in models:
         output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)

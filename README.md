@@ -70,9 +70,10 @@ Defaults:
 - `--alpha 10.0`
 
 Outputs:
-- embeddings: `embeddings/<manifest_stem>.embeddings.<model>.npy` (+ `.json`)
-- metrics: `results/metrics.csv`, `results/metrics.json`
+- all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`
+- embeddings: `<output-dir>/<manifest_stem>/embeddings/<manifest_stem>.embeddings.<model>.npy` (+ `.json`)
+- metrics: `<output-dir>/<manifest_stem>/results/metrics.csv`, `<output-dir>/<manifest_stem>/results/metrics.json`
 - plots:
-  - `plots/ri_mari_rank.png`
-  - `plots/ri_vs_mari_scatter.png`
-  - `plots/tail_fragility.png`
+  - `<output-dir>/<manifest_stem>/plots/ri_mari_rank.png`
+  - `<output-dir>/<manifest_stem>/plots/ri_vs_mari_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/tail_fragility.png`
