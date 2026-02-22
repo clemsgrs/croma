@@ -28,7 +28,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--models", required=True, help="Comma-separated model names.")
     parser.add_argument("--output-dir", required=True, type=Path, help="Benchmark output directory.")
     parser.add_argument("--mode", default="global", choices=["paired", "global"], help="RI/MaRI mode.")
-    parser.add_argument("--k-candidates", default="5,11,21", help="Comma-separated k candidates.")
+    parser.add_argument("--k-candidates", default="3,5,7,10,15,20,25", help="Comma-separated k candidates.")
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
     parser.add_argument("--alpha", type=float, default=10.0, help="Tail percentile alpha.")
     parser.add_argument("--batch-size", type=int, default=128)
