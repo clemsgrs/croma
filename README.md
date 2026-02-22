@@ -52,24 +52,9 @@ To keep this comparison meaningful and unbiased, the `"paired"` mode builds each
 
 This avoids one-vs-rest base-rate bias (where large complements dominate neighbors), keeping the metric interpretable.
 
-## Embedding Extraction Script
+## Unified Benchmark
 
-To generate embeddings from a manifest CSV:
-
-```bash
-python scripts/extract_embeddings.py \
-  --manifest /path/to/manifest.csv \
-  --models Virchow2,UNI,Phikon-v2 \
-  --output-dir /path/to/embeddings
-```
-
-This writes one file per model:
-- `<manifest_stem>.embeddings.<model>.npy`
-- `<manifest_stem>.embeddings.<model>.npy.json`
-
-## Unified Benchmark Script
-
-Run extraction + metric computation + plot generation in one command:
+Run feature extraction + metric computation + plot generation in one command:
 
 ```bash
 python scripts/benchmark.py \
@@ -91,10 +76,3 @@ Outputs:
   - `plots/ri_mari_rank.png`
   - `plots/ri_vs_mari_scatter.png`
   - `plots/tail_fragility.png`
-
-## Publishing
-
-PyPI publishing is automated on GitHub Releases:
-- workflow: `/Volumes/temporary/clement/code/MaRI/.github/workflows/release.yaml`
-- docs: `/Volumes/temporary/clement/code/MaRI/docs/releasing.md`
-- helper script: `/Volumes/temporary/clement/code/MaRI/release.py`
