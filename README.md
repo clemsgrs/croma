@@ -52,9 +52,28 @@ To keep this comparison meaningful and unbiased, the `"paired"` mode builds each
 
 This avoids one-vs-rest base-rate bias (where large complements dominate neighbors), keeping the metric interpretable.
 
-## Publishing
+## Unified Benchmark
 
-PyPI publishing is automated on GitHub Releases:
-- workflow: `/Volumes/temporary/clement/code/MaRI/.github/workflows/release.yaml`
-- docs: `/Volumes/temporary/clement/code/MaRI/docs/releasing.md`
-- helper script: `/Volumes/temporary/clement/code/MaRI/release.py`
+Run feature extraction + metric computation + plot generation in one command:
+
+```bash
+python scripts/benchmark.py \
+  --manifest /path/to/manifest.csv \
+  --models Virchow2,UNI,Phikon-v2 \
+  --output-dir /path/to/benchmark
+```
+
+Defaults:
+- `--mode global`
+- `--k-candidates 5,11,21`
+- `--tau 0.2`
+- `--alpha 10.0`
+
+Outputs:
+- all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`
+- embeddings: `<output-dir>/<manifest_stem>/embeddings/<manifest_stem>.embeddings.<model>.npy` (+ `.json`)
+- metrics: `<output-dir>/<manifest_stem>/results/metrics.csv`, `<output-dir>/<manifest_stem>/results/metrics.json`
+- plots:
+  - `<output-dir>/<manifest_stem>/plots/ri_mari_rank.png`
+  - `<output-dir>/<manifest_stem>/plots/ri_vs_mari_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/tail_fragility.png`
