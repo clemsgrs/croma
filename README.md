@@ -52,6 +52,21 @@ To keep this comparison meaningful and unbiased, the `"paired"` mode builds each
 
 This avoids one-vs-rest base-rate bias (where large complements dominate neighbors), keeping the metric interpretable.
 
+## Embedding Extraction Script
+
+To generate embeddings from a manifest CSV:
+
+```bash
+python scripts/extract_embeddings.py \
+  --manifest /path/to/manifest.csv \
+  --models Virchow2,UNI,Phikon-v2 \
+  --output-dir /path/to/embeddings
+```
+
+This writes one file per model:
+- `<manifest_stem>.embeddings.<model>.npy`
+- `<manifest_stem>.embeddings.<model>.npy.json`
+
 ## Publishing
 
 PyPI publishing is automated on GitHub Releases:
