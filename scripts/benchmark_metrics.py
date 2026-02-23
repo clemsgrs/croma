@@ -37,6 +37,10 @@ def _safe_model_name(model: str) -> str:
     return str(model).replace("/", "_").replace(":", "_")
 
 
+def _sample_distribution_dir(output_dir: Path) -> Path:
+    return output_dir / "sample_distributions"
+
+
 def _save_mari_sample_distribution(
     *,
     output_dir: Path,
@@ -51,12 +55,12 @@ def _save_mari_sample_distribution(
 ) -> Path:
     import json
 
-    dist_dir = output_dir / "mari_sample_distributions"
+    dist_dir = _sample_distribution_dir(output_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
-    out_path = dist_dir / f"mari_samples.{_safe_model_name(model)}.npy"
+    out_path = dist_dir / f"mari.{_safe_model_name(model)}.npy"
     arr = np.asarray(values, dtype=float)
     np.save(out_path, arr)
-    meta_path = dist_dir / f"mari_samples.{_safe_model_name(model)}.json"
+    meta_path = dist_dir / f"mari.{_safe_model_name(model)}.json"
     meta = {
         "dataset": str(dataset),
         "model": str(model),
@@ -85,12 +89,12 @@ def _save_ri_sample_distribution(
 ) -> Path:
     import json
 
-    dist_dir = output_dir / "ri_sample_distributions"
+    dist_dir = _sample_distribution_dir(output_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
-    out_path = dist_dir / f"ri_samples.{_safe_model_name(model)}.npy"
+    out_path = dist_dir / f"ri.{_safe_model_name(model)}.npy"
     arr = np.asarray(values, dtype=float)
     np.save(out_path, arr)
-    meta_path = dist_dir / f"ri_samples.{_safe_model_name(model)}.json"
+    meta_path = dist_dir / f"ri.{_safe_model_name(model)}.json"
     meta = {
         "dataset": str(dataset),
         "model": str(model),

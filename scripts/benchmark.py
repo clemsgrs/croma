@@ -44,12 +44,16 @@ def _safe_model_name(model: str) -> str:
     return str(model).replace("/", "_").replace(":", "_")
 
 
-def _mari_distribution_path(results_dir: Path, model: str) -> Path:
-    return results_dir / "mari_sample_distributions" / f"mari_samples.{_safe_model_name(model)}.npy"
+def _sample_distribution_dir(results_dir: Path) -> Path:
+    return results_dir / "sample_distributions"
 
 
-def _mari_distribution_meta_path(results_dir: Path, model: str) -> Path:
-    return results_dir / "mari_sample_distributions" / f"mari_samples.{_safe_model_name(model)}.json"
+def _distribution_path(results_dir: Path, metric_name: str, model: str) -> Path:
+    return _sample_distribution_dir(results_dir) / f"{metric_name}.{_safe_model_name(model)}.npy"
+
+
+def _distribution_meta_path(results_dir: Path, metric_name: str, model: str) -> Path:
+    return _sample_distribution_dir(results_dir) / f"{metric_name}.{_safe_model_name(model)}.json"
 
 
 def _save_mari_sample_distribution(
@@ -66,11 +70,11 @@ def _save_mari_sample_distribution(
 ) -> Path:
     import json
 
-    out_path = _mari_distribution_path(results_dir, model)
+    out_path = _distribution_path(results_dir, "mari", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.asarray(values, dtype=float)
     np.save(out_path, arr)
-    meta_path = _mari_distribution_meta_path(results_dir, model)
+    meta_path = _distribution_meta_path(results_dir, "mari", model)
     meta = {
         "dataset": str(dataset),
         "model": str(model),
@@ -86,14 +90,6 @@ def _save_mari_sample_distribution(
     return out_path
 
 
-def _ri_distribution_path(results_dir: Path, model: str) -> Path:
-    return results_dir / "ri_sample_distributions" / f"ri_samples.{_safe_model_name(model)}.npy"
-
-
-def _ri_distribution_meta_path(results_dir: Path, model: str) -> Path:
-    return results_dir / "ri_sample_distributions" / f"ri_samples.{_safe_model_name(model)}.json"
-
-
 def _save_ri_sample_distribution(
     *,
     results_dir: Path,
@@ -107,11 +103,11 @@ def _save_ri_sample_distribution(
 ) -> Path:
     import json
 
-    out_path = _ri_distribution_path(results_dir, model)
+    out_path = _distribution_path(results_dir, "ri", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.asarray(values, dtype=float)
     np.save(out_path, arr)
-    meta_path = _ri_distribution_meta_path(results_dir, model)
+    meta_path = _distribution_meta_path(results_dir, "ri", model)
     meta = {
         "dataset": str(dataset),
         "model": str(model),
@@ -310,8 +306,8 @@ def main() -> int:
                 continue
 
         try:
-            mari_dist_path = _mari_distribution_path(results_dir, model)
-            ri_dist_path = _ri_distribution_path(results_dir, model)
+            mari_dist_path = _distribution_path(results_dir, "mari", model)
+            ri_dist_path = _distribution_path(results_dir, "ri", model)
             if model in cached_rows:
                 if model in cached_k_sweep_rows and mari_dist_path.exists() and ri_dist_path.exists():
                     row = dict(cached_rows[model])
@@ -465,7 +461,7 @@ def main() -> int:
             metrics_status[model] = "ok"
             print(
                 f"[benchmark] ri={row['ri']:.4f} mari={row['mari']:.4f} "
-                f"undefined_frac(ri={row['ri_undefined_frac']:.4f}, mari={row['mari_undefined_frac']:.4f})"
+                f"undefined sampled: ri={100*row['ri_undefined_frac']:.1f}%, mari={100*row['mari_undefined_frac']:.1f}%"
             )
         except Exception as exc:  # noqa: BLE001
             metrics_status[model] = "failed"

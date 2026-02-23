@@ -84,14 +84,14 @@ Optional:
 
 Outputs:
 - all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`
-- embeddings: `<output-dir>/<manifest_stem>/embeddings/<manifest_stem>.embeddings.<model>.npy` (+ `.json`)
+- embeddings: `<output-dir>/<manifest_stem>/embeddings/<model>.npy` (+ `.json`)
 - metrics:
   - `<output-dir>/<manifest_stem>/results/metrics.csv`
   - `<output-dir>/<manifest_stem>/results/metrics.json`
   - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.csv`
   - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.json`
-  - `<output-dir>/<manifest_stem>/results/ri_sample_distributions/ri_samples.<model>.npy` (+ `.json`)
-  - `<output-dir>/<manifest_stem>/results/mari_sample_distributions/mari_samples.<model>.npy` (+ `.json`)
+  - `<output-dir>/<manifest_stem>/results/sample_distributions/ri.<model>.npy` (+ `.json`)
+  - `<output-dir>/<manifest_stem>/results/sample_distributions/mari.<model>.npy` (+ `.json`)
 - plots:
   - `<output-dir>/<manifest_stem>/plots/knn_bio_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/knn_center_k_sweep.png`
@@ -116,7 +116,7 @@ Outputs:
 - `selected_k_center`: center task selected `k`
 - `excluded_centers`: excluded center signature used for this run
 
-`ri_sample_distributions/` and `mari_sample_distributions/` store raw per-sample RI/MaRI values for each model (at selected `k`).
+`sample_distributions/` stores raw per-sample RI/MaRI values for each model (at selected `k`).
 
 `metrics.csv`/`.json` also include:
 - `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)

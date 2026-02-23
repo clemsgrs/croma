@@ -65,7 +65,7 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
         num_workers: int,
         device_arg: str,
     ) -> tuple[Path, tuple[int, int]]:
-        model_name = output_path.stem.split(".")[-1]
+        model_name = output_path.stem
         arr = _toy_features(model_name)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(output_path, arr)
@@ -110,8 +110,9 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     legacy_mari_dist_plot = dataset_dir / "plots" / "mari_sample_distributions.png"
     legacy_old_scatter = dataset_dir / "plots" / "biological_vs_center_knn_bacc.png"
     legacy_old_mari_ri = dataset_dir / "plots" / "ri_vs_mari_scatter.png"
-    mari_dist_dir = dataset_dir / "results" / "mari_sample_distributions"
-    ri_dist_dir = dataset_dir / "results" / "ri_sample_distributions"
+    sample_dist_dir = dataset_dir / "results" / "sample_distributions"
+    legacy_mari_dist_dir = dataset_dir / "results" / "mari_sample_distributions"
+    legacy_ri_dist_dir = dataset_dir / "results" / "ri_sample_distributions"
 
     assert k_sweep_csv.exists()
     assert k_sweep_json.exists()
@@ -122,8 +123,9 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert bio_center_plot_path.exists()
     assert mari_ri_plot_path.exists()
     assert summary_plot_path.exists()
-    assert mari_dist_dir.exists()
-    assert ri_dist_dir.exists()
+    assert sample_dist_dir.exists()
+    assert not legacy_mari_dist_dir.exists()
+    assert not legacy_ri_dist_dir.exists()
     assert not legacy_rank_plot.exists()
     assert not legacy_three_panel.exists()
     assert not legacy_mari_dist_plot.exists()
@@ -150,8 +152,10 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert ((metrics_df["mari_undefined_frac"] >= 0.0) & (metrics_df["mari_undefined_frac"] <= 1.0)).all()
 
     for model in models:
-        mari_dist_path = mari_dist_dir / f"mari_samples.{model}.npy"
-        ri_dist_path = ri_dist_dir / f"ri_samples.{model}.npy"
+        mari_dist_path = sample_dist_dir / f"mari.{model}.npy"
+        ri_dist_path = sample_dist_dir / f"ri.{model}.npy"
+        embedding_path = dataset_dir / "embeddings" / f"{model}.npy"
+        assert embedding_path.exists()
         assert mari_dist_path.exists()
         assert ri_dist_path.exists()
         arr = np.load(mari_dist_path)
@@ -179,7 +183,7 @@ def test_benchmark_uses_all_registry_models_when_models_arg_missing(monkeypatch,
         num_workers: int,
         device_arg: str,
     ) -> tuple[Path, tuple[int, int]]:
-        model_name = output_path.stem.split(".")[-1]
+        model_name = output_path.stem
         arr = _toy_features(model_name)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(output_path, arr)
@@ -232,7 +236,7 @@ def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Pat
         num_workers: int,
         device_arg: str,
     ) -> tuple[Path, tuple[int, int]]:
-        model_name = output_path.stem.split(".")[-1]
+        model_name = output_path.stem
         arr = _toy_features(model_name)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(output_path, arr)
@@ -422,8 +426,8 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
                 "mari_std": 0.0,
                 "ri_undefined_frac": 0.0,
                 "mari_undefined_frac": 0.0,
-                "ri_samples_path": str(results_dir / "ri_sample_distributions" / f"ri_samples.{model}.npy"),
-                "mari_samples_path": str(results_dir / "mari_sample_distributions" / f"mari_samples.{model}.npy"),
+                "ri_samples_path": str(results_dir / "sample_distributions" / f"ri.{model}.npy"),
+                "mari_samples_path": str(results_dir / "sample_distributions" / f"mari.{model}.npy"),
                 "embedding_path": "placeholder.npy",
             }
         ]
@@ -464,9 +468,9 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
     ).to_csv(results_dir / "k_sweep_metrics.csv", index=False)
 
     # Presence of distributions should not force cache reuse if schema is stale.
-    for subdir, prefix in [("ri_sample_distributions", "ri_samples"), ("mari_sample_distributions", "mari_samples")]:
-        dist_dir = results_dir / subdir
-        dist_dir.mkdir(parents=True, exist_ok=True)
+    dist_dir = results_dir / "sample_distributions"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+    for prefix in ("ri", "mari"):
         np.save(dist_dir / f"{prefix}.{model}.npy", np.asarray([0.3, 0.4], dtype=float))
 
     monkeypatch.setattr(
