@@ -5,8 +5,8 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 
-from mari.metrics.neighbors import _optimal_k_by_knn_balanced_accuracy, _prepare_neighbors
-from mari.metrics.pairs import ensure_required_columns, infer_2x2_pairs, subset_by_pair
+from mari.metrics.neighbors import _normalize_k_values, _optimal_k_by_knn_balanced_accuracy, _prepare_neighbors
+from mari.metrics.pairs import ensure_required_columns, infer_2x2_pairs, normalize_center_values, subset_by_pair
 from mari.types import RobustnessResult
 
 
@@ -14,6 +14,13 @@ def _ratio_or_default(so: float, os: float, default: float = 0.5) -> float:
     denom = float(so + os)
     if denom <= 0:
         return float(default)
+    return float(float(so) / denom)
+
+
+def _ratio_or_nan(so: float, os: float) -> float:
+    denom = float(so + os)
+    if denom <= 0:
+        return float("nan")
     return float(float(so) / denom)
 
 
@@ -39,6 +46,31 @@ class BaseRobustnessIndex(ABC):
         ensure_required_columns(manifest, "manifest")
 
     @classmethod
+    def _apply_center_exclusion(
+        cls,
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        dataset_name: str,
+        exclude_centers: object | None,
+    ) -> tuple[np.ndarray, pd.DataFrame]:
+        excluded = normalize_center_values(exclude_centers)
+        if not excluded:
+            return features, manifest
+
+        center_series = manifest["medical_center"].map(lambda v: str(v).strip())
+        keep_mask = ~center_series.isin(excluded)
+        if not bool(keep_mask.any()):
+            excluded_txt = ", ".join(excluded)
+            raise ValueError(
+                f"No samples remain after excluding centers [{excluded_txt}] from dataset '{dataset_name}'"
+            )
+
+        kept_features = features[keep_mask.to_numpy()]
+        kept_manifest = manifest.loc[keep_mask].reset_index(drop=True)
+        return kept_features, kept_manifest
+
+    @classmethod
     @abstractmethod
     def _weights(cls, distances: np.ndarray, **kwargs: float) -> np.ndarray:
         raise NotImplementedError
@@ -53,11 +85,12 @@ class BaseRobustnessIndex(ABC):
         valid_counts: np.ndarray,
         k: int,
         **kwargs: float,
-    ) -> tuple[float, np.ndarray]:
+    ) -> tuple[float, np.ndarray, np.ndarray]:
         target_k = int(k)
         so_total = 0.0
         os_total = 0.0
-        sample_scores = np.full((len(labels),), 0.5, dtype=float)
+        sample_scores = np.full((len(labels),), np.nan, dtype=float)
+        informative_mask = np.zeros((len(labels),), dtype=bool)
 
         for i in range(len(labels)):
             eff_k = min(target_k, int(valid_counts[i]))
@@ -87,12 +120,15 @@ class BaseRobustnessIndex(ABC):
 
             so_i = float(weights[so_mask].sum())
             os_i = float(weights[os_mask].sum())
-            sample_scores[i] = _ratio_or_default(so_i, os_i)
+            sample_score = _ratio_or_nan(so_i, os_i)
+            if np.isfinite(sample_score):
+                sample_scores[i] = float(sample_score)
+                informative_mask[i] = True
 
             so_total += so_i
             os_total += os_i
 
-        return _ratio_or_default(so_total, os_total), sample_scores
+        return _ratio_or_default(so_total, os_total), sample_scores, informative_mask
 
     @classmethod
     def _compute(
@@ -102,6 +138,7 @@ class BaseRobustnessIndex(ABC):
         *,
         mode: str,
         k_candidates: list[int] | tuple[int, ...],
+        exclude_centers: object | None = None,
         max_pairs: int | None = None,
         random_state: int = 0,
         **kwargs: float,
@@ -116,15 +153,105 @@ class BaseRobustnessIndex(ABC):
 
         df = manifest.reset_index(drop=True).copy()
         dataset_name = cls._infer_dataset_name(df)
+        features, df = cls._apply_center_exclusion(
+            features=features,
+            manifest=df,
+            dataset_name=dataset_name,
+            exclude_centers=exclude_centers,
+        )
+        candidates = _normalize_k_values(k_candidates)
 
         k = _optimal_k_by_knn_balanced_accuracy(
             features=features,
             labels=pd.factorize(df["label"])[0].astype(int),
             slide_ids=df["slide_id"].astype(str).to_numpy(),
-            k_values=k_candidates,
+            k_values=candidates,
             warn_context=f"{dataset_name} k-selection",
         )
 
+        subsets = cls._build_subsets(
+            df=df,
+            mode_value=mode_value,
+            dataset_name=dataset_name,
+            max_pairs=max_pairs,
+            random_state=random_state,
+        )
+        by_k = cls._score_subsets_by_k(
+            features=features,
+            subsets=subsets,
+            k_values=[int(k)],
+            mode_value=mode_value,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        pair_arr, sample_arr = by_k[int(k)]
+
+        return RobustnessResult(
+            dataset=dataset_name,
+            k=int(k),
+            value=float(pair_arr.mean()),
+            std=float(pair_arr.std(ddof=0)),
+            n_pairs=int(len(pair_arr)),
+            pair_values=pair_arr,
+            sample_values=sample_arr,
+        )
+
+    @classmethod
+    def _compute_curve(
+        cls,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        *,
+        mode: str,
+        k_values: list[int] | tuple[int, ...],
+        exclude_centers: object | None = None,
+        max_pairs: int | None = None,
+        random_state: int = 0,
+        **kwargs: float,
+    ) -> dict[int, float]:
+        mode_value = str(mode).strip().lower()
+        if mode_value not in cls._PAIR_MODES:
+            raise ValueError(
+                "mode must be one of {'paired', 'global'}"
+            )
+        cls._validate_inputs(features, manifest)
+
+        df = manifest.reset_index(drop=True).copy()
+        dataset_name = cls._infer_dataset_name(df)
+        features, df = cls._apply_center_exclusion(
+            features=features,
+            manifest=df,
+            dataset_name=dataset_name,
+            exclude_centers=exclude_centers,
+        )
+        candidates = _normalize_k_values(k_values)
+        subsets = cls._build_subsets(
+            df=df,
+            mode_value=mode_value,
+            dataset_name=dataset_name,
+            max_pairs=max_pairs,
+            random_state=random_state,
+        )
+        by_k = cls._score_subsets_by_k(
+            features=features,
+            subsets=subsets,
+            k_values=candidates,
+            mode_value=mode_value,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        return {int(k): float(by_k[int(k)][0].mean()) for k in candidates}
+
+    @classmethod
+    def _build_subsets(
+        cls,
+        *,
+        df: pd.DataFrame,
+        mode_value: str,
+        dataset_name: str,
+        max_pairs: int | None,
+        random_state: int,
+    ) -> list[pd.DataFrame]:
         if mode_value == "paired":
             pairs = infer_2x2_pairs(
                 df,
@@ -134,12 +261,30 @@ class BaseRobustnessIndex(ABC):
             )
             if not pairs:
                 raise RuntimeError(f"{dataset_name}: no valid 2x2 pairs for RI/MaRI")
-            subsets = [subset_by_pair(df, pair) for pair in pairs]
-        else:
-            subsets = [df]
+            return [subset_by_pair(df, pair) for pair in pairs]
+        return [df]
 
-        pair_values: list[float] = []
-        sample_values: list[np.ndarray] = []
+    @classmethod
+    def _score_subsets_by_k(
+        cls,
+        *,
+        features: np.ndarray,
+        subsets: list[pd.DataFrame],
+        k_values: list[int] | tuple[int, ...],
+        mode_value: str,
+        dataset_name: str,
+        **kwargs: float,
+    ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+        candidates = _normalize_k_values(k_values)
+        kmax = int(max(candidates))
+        per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
+        per_k_sample_sum: dict[int, np.ndarray] = {
+            int(k): np.zeros((len(features),), dtype=float) for k in candidates
+        }
+        per_k_sample_count: dict[int, np.ndarray] = {
+            int(k): np.zeros((len(features),), dtype=int) for k in candidates
+        }
+
         for sub in subsets:
             if len(sub) <= 1:
                 continue
@@ -153,36 +298,39 @@ class BaseRobustnessIndex(ABC):
             centers = pd.factorize(sub["medical_center"])[0].astype(int)
             slide_ids = sub["slide_id"].astype(str).to_numpy()
 
-            neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(pair_features, slide_ids, k)
-            pair_value, per_sample = cls._score_from_neighbors(
-                labels=labels,
-                centers=centers,
-                neigh_idx=neigh_idx,
-                neigh_dist=neigh_dist,
-                valid_counts=valid_counts,
-                k=k,
-                **kwargs,
-            )
-            pair_values.append(float(pair_value))
-            sample_values.append(per_sample)
+            neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(pair_features, slide_ids, kmax)
+            for k in candidates:
+                pair_value, per_sample, informative_mask = cls._score_from_neighbors(
+                    labels=labels,
+                    centers=centers,
+                    neigh_idx=neigh_idx,
+                    neigh_dist=neigh_dist,
+                    valid_counts=valid_counts,
+                    k=int(k),
+                    **kwargs,
+                )
+                per_k_pair_values[int(k)].append(float(pair_value))
+                if bool(np.any(informative_mask)):
+                    global_idx = idx[informative_mask]
+                    per_k_sample_sum[int(k)][global_idx] += per_sample[informative_mask]
+                    per_k_sample_count[int(k)][global_idx] += 1
 
-        if not pair_values:
+        if not any(per_k_pair_values[int(k)] for k in candidates):
             if mode_value == "paired":
                 raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all inferred 2x2 pairs")
             raise RuntimeError(f"{dataset_name}: RI/MaRI failed on full dataset")
 
-        pair_arr = np.asarray(pair_values, dtype=float)
-        if sample_values:
-            sample_arr = np.concatenate(sample_values).astype(float)
-        else:
-            sample_arr = np.empty((0,), dtype=float)
-
-        return RobustnessResult(
-            dataset=dataset_name,
-            k=int(k),
-            value=float(pair_arr.mean()),
-            std=float(pair_arr.std(ddof=0)),
-            n_pairs=int(len(pair_arr)),
-            pair_values=pair_arr,
-            sample_values=sample_arr,
-        )
+        out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        for k in candidates:
+            pair_values = per_k_pair_values[int(k)]
+            if not pair_values:
+                continue
+            pair_arr = np.asarray(pair_values, dtype=float)
+            counts = per_k_sample_count[int(k)]
+            informative = counts > 0
+            if bool(np.any(informative)):
+                sample_arr = (per_k_sample_sum[int(k)][informative] / counts[informative]).astype(float)
+            else:
+                sample_arr = np.empty((0,), dtype=float)
+            out[int(k)] = (pair_arr, sample_arr)
+        return out

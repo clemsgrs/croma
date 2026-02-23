@@ -6,8 +6,8 @@ from pathlib import Path
 
 import numpy as np
 
-from mari import MaRI, RI, lower_tail_mean, tail_percentile
-from mari.metrics.pairs import load_manifest
+from mari import MaRI, RI
+from mari.metrics.pairs import load_manifest, normalize_center_values
 
 
 def _parse_k_candidates(s: str) -> list[int]:
@@ -17,7 +17,7 @@ def _parse_k_candidates(s: str) -> list[int]:
     return values
 
 
-def _result_payload(result, alpha: float | None) -> dict:
+def _result_payload(result) -> dict:
     payload = {
         "dataset": result.dataset,
         "k": result.k,
@@ -25,9 +25,6 @@ def _result_payload(result, alpha: float | None) -> dict:
         "std": result.std,
         "n_pairs": result.n_pairs,
     }
-    if alpha is not None:
-        payload[f"q{alpha:g}"] = tail_percentile(result.sample_values, alpha)
-        payload[f"ltm{alpha:g}"] = lower_tail_mean(result.sample_values, alpha)
     return payload
 
 
@@ -46,7 +43,12 @@ def main() -> None:
         help="Evaluation mode: paired=PathoROB-style 2x2 aggregation, global=single full-dataset evaluation.",
     )
     shared.add_argument("--k-candidates", type=_parse_k_candidates, default=[5, 11, 21])
-    shared.add_argument("--alpha", type=float, default=None, help="Tail percentile alpha in [0,100].")
+    shared.add_argument(
+        "--exclude-center",
+        action="append",
+        default=[],
+        help="Medical center to exclude from computation. Repeat flag to exclude multiple centers.",
+    )
 
     ri_parser = sub.add_parser("ri", parents=[shared], help="Compute RI.")
     mari_parser = sub.add_parser("mari", parents=[shared], help="Compute MaRI.")
@@ -55,6 +57,7 @@ def main() -> None:
     args = parser.parse_args()
     manifest = load_manifest(str(args.manifest), dataset_name=str(args.dataset_name))
     features = np.load(Path(args.embeddings))
+    excluded_centers = normalize_center_values(args.exclude_center)
 
     if args.command == "ri":
         result = RI.compute(
@@ -62,6 +65,7 @@ def main() -> None:
             manifest=manifest,
             mode=str(args.mode),
             k_candidates=args.k_candidates,
+            exclude_centers=excluded_centers,
         )
     else:
         result = MaRI.compute(
@@ -70,9 +74,11 @@ def main() -> None:
             mode=str(args.mode),
             k_candidates=args.k_candidates,
             tau=float(args.tau),
+            exclude_centers=excluded_centers,
         )
-
-    print(json.dumps(_result_payload(result, args.alpha), indent=2, sort_keys=True))
+    payload = _result_payload(result)
+    payload["excluded_centers"] = list(excluded_centers)
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

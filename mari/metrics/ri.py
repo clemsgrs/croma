@@ -20,6 +20,7 @@ class RobustnessIndex(BaseRobustnessIndex):
         *,
         mode: str,
         k_candidates: list[int] | tuple[int, ...],
+        exclude_centers: object | None = None,
         max_pairs: int | None = None,
         random_state: int = 0,
     ) -> RobustnessResult:
@@ -28,6 +29,29 @@ class RobustnessIndex(BaseRobustnessIndex):
             manifest=manifest,
             mode=mode,
             k_candidates=k_candidates,
+            exclude_centers=exclude_centers,
+            max_pairs=max_pairs,
+            random_state=random_state,
+        )
+
+    @classmethod
+    def compute_curve(
+        cls,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        *,
+        mode: str,
+        k_values: list[int] | tuple[int, ...],
+        exclude_centers: object | None = None,
+        max_pairs: int | None = None,
+        random_state: int = 0,
+    ) -> dict[int, float]:
+        return cls._compute_curve(
+            features=features,
+            manifest=manifest,
+            mode=mode,
+            k_values=k_values,
+            exclude_centers=exclude_centers,
             max_pairs=max_pairs,
             random_state=random_state,
         )
