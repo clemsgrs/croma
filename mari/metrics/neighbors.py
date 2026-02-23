@@ -210,13 +210,42 @@ def _optimal_k_by_knn_balanced_accuracy(
     k_values: Sequence[int],
     warn_context: str,
 ) -> int:
-    candidates = [int(k) for k in k_values]
-    if not candidates:
-        raise ValueError("k_values must contain at least one candidate")
-    if min(candidates) <= 0:
-        raise ValueError("k_values must be strictly positive")
+    scores = _knn_balanced_accuracy_by_k(
+        features=features,
+        labels=labels,
+        slide_ids=slide_ids,
+        k_values=k_values,
+        warn_context=warn_context,
+    )
+    return _select_k_from_balanced_accuracy(k_values=k_values, scores=scores)
 
+
+def _normalize_k_values(k_values: Sequence[int]) -> list[int]:
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for raw_k in k_values:
+        k = int(raw_k)
+        if k <= 0:
+            raise ValueError("k_values must be strictly positive")
+        if k in seen:
+            continue
+        seen.add(k)
+        normalized.append(k)
+    if not normalized:
+        raise ValueError("k_values must contain at least one candidate")
+    return normalized
+
+
+def _knn_balanced_accuracy_by_k(
+    features: np.ndarray,
+    labels: np.ndarray,
+    slide_ids: np.ndarray,
+    k_values: Sequence[int],
+    warn_context: str,
+) -> dict[int, float]:
+    candidates = _normalize_k_values(k_values)
     kmax = int(max(candidates))
+
     neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
     capped = ", capped" if prep_meta.hit_neighbor_cap and prep_meta.coverage < prep_meta.target_coverage else ""
     warn_context_with_fetch = (
@@ -230,9 +259,7 @@ def _optimal_k_by_knn_balanced_accuracy(
         context=warn_context_with_fetch,
     )
 
-    best_k = int(candidates[0])
-    best_score = -1.0
-
+    out: dict[int, float] = {}
     for k in candidates:
         pred, used_mask = _predict_labels_from_neighbors(
             labels=labels,
@@ -242,12 +269,29 @@ def _optimal_k_by_knn_balanced_accuracy(
         )
         if not bool(np.any(used_mask)):
             continue
-        score = float(balanced_accuracy_score(labels[used_mask], pred[used_mask]))
+        out[int(k)] = float(balanced_accuracy_score(labels[used_mask], pred[used_mask]))
+
+    if not out:
+        raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
+    return out
+
+
+def _select_k_from_balanced_accuracy(
+    k_values: Sequence[int],
+    scores: dict[int, float],
+) -> int:
+    ordered = _normalize_k_values(k_values)
+    best_k = int(ordered[0])
+    best_score = float("-inf")
+
+    for k in ordered:
+        if int(k) not in scores:
+            continue
+        score = float(scores[int(k)])
         if score > best_score:
             best_score = score
             best_k = int(k)
 
-    if best_score < 0.0:
+    if best_score == float("-inf"):
         raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
-
-    return best_k
+    return int(best_k)

@@ -234,3 +234,53 @@ def test_no_growth_when_initial_budget_is_enough(monkeypatch: pytest.MonkeyPatch
     assert meta.final_n_neighbors == 85
     assert not meta.hit_neighbor_cap
     assert nb._effective_k_coverage(valid_counts, 21) == pytest.approx(0.95)
+
+
+def test_knn_balanced_accuracy_by_k_matches_optimal_selection() -> None:
+    features = np.array(
+        [
+            [1.00, 0.00],
+            [0.99, 0.01],
+            [0.98, 0.02],
+            [0.00, 1.00],
+            [0.01, 0.99],
+            [0.02, 0.98],
+        ],
+        dtype=float,
+    )
+    labels = np.array([0, 0, 0, 1, 1, 1], dtype=int)
+    slide_ids = np.array([f"slide-{i}" for i in range(6)], dtype=object)
+    k_values = [1, 2, 3]
+
+    scores = nb._knn_balanced_accuracy_by_k(
+        features=features,
+        labels=labels,
+        slide_ids=slide_ids,
+        k_values=k_values,
+        warn_context="toy",
+    )
+
+    assert set(scores) == set(k_values)
+    assert all(0.0 <= float(v) <= 1.0 for v in scores.values())
+
+    best_from_scores = nb._select_k_from_balanced_accuracy(k_values=k_values, scores=scores)
+    best_from_existing = nb._optimal_k_by_knn_balanced_accuracy(
+        features=features,
+        labels=labels,
+        slide_ids=slide_ids,
+        k_values=k_values,
+        warn_context="toy",
+    )
+    assert best_from_scores == best_from_existing
+
+
+def test_select_k_from_balanced_accuracy_breaks_ties_by_input_order() -> None:
+    scores = {3: 0.90, 1: 0.90, 5: 0.80}
+    ordered_candidates = [1, 3, 5]
+
+    selected = nb._select_k_from_balanced_accuracy(
+        k_values=ordered_candidates,
+        scores=scores,
+    )
+
+    assert selected == 1

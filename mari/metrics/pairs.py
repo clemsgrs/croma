@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -19,6 +20,22 @@ class PairSpec:
 
 def _normalize_str(v: object) -> str:
     return str(v).strip()
+
+
+def normalize_center_values(values: object | None) -> tuple[str, ...]:
+    if values is None:
+        return ()
+
+    raw_values: list[object]
+    if isinstance(values, str):
+        raw_values = [values]
+    elif isinstance(values, Iterable):
+        raw_values = list(values)
+    else:
+        raise TypeError("exclude_centers must be a string, iterable of strings, or None")
+
+    normalized = sorted({_normalize_str(v) for v in raw_values if _normalize_str(v)})
+    return tuple(normalized)
 
 
 def ensure_required_columns(df: pd.DataFrame, source: str) -> None:
@@ -91,4 +108,3 @@ def infer_2x2_pairs(
 
 def subset_by_pair(df: pd.DataFrame, pair: PairSpec) -> pd.DataFrame:
     return df[df["label"].isin(pair.classes) & df["medical_center"].isin(pair.centers)].copy()
-

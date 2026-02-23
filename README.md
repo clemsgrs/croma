@@ -3,7 +3,6 @@
 Lightweight Python package for:
 - RI (Robustness Index)
 - MaRI (Margin-aware Robustness Index)
-- Tail summaries (percentiles and lower-tail mean)
 
 ## Install
 
@@ -16,17 +15,27 @@ pip install mari
 ```python
 import numpy as np
 import pandas as pd
-from mari import RI, MaRI, tail_percentile, lower_tail_mean
+from mari import RI, MaRI
 
 manifest = pd.read_csv("data/prostate-shift-binary.csv")
 features = np.load("embeddings.npy")  # shape: (N, D)
 
 ri = RI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21])
 mari = MaRI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21], tau=0.2)
-
-q10 = tail_percentile(mari.sample_values, 10.0)
-ltm10 = lower_tail_mean(mari.sample_values, 10.0)
+# optional: exclude one or more centers before RI/MaRI computation
+mari_no_center_x = MaRI.compute(
+    features,
+    manifest,
+    mode="paired",
+    k_candidates=[5, 11, 21],
+    tau=0.2,
+    exclude_centers=["CENTER_X"],
+)
 ```
+
+`sample_values` contains informative per-sample scores only:
+- samples with undefined per-sample ratio (`SO_i + OS_i = 0`) are excluded
+- in `mode="paired"`, repeated appearances of the same sample across valid 2x2 pairs are averaged to one value per sample
 
 Required manifest columns:
 - `sample_id`
@@ -59,21 +68,55 @@ Run feature extraction + metric computation + plot generation in one command:
 ```bash
 python scripts/benchmark.py \
   --manifest /path/to/manifest.csv \
-  --models Virchow2,UNI,Phikon-v2 \
   --output-dir /path/to/benchmark
 ```
 
+By default, all registered models are evaluated. Use `--models` to restrict to a subset.
+
 Defaults:
 - `--mode global`
-- `--k-candidates 5,11,21`
+- `--k-candidates 3,5,7,10,15,20,25`
 - `--tau 0.2`
-- `--alpha 10.0`
+
+Optional:
+- `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
+- `--exclude-center CENTER_X` (repeatable) to exclude one or more centers from evaluation.
 
 Outputs:
 - all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`
 - embeddings: `<output-dir>/<manifest_stem>/embeddings/<manifest_stem>.embeddings.<model>.npy` (+ `.json`)
-- metrics: `<output-dir>/<manifest_stem>/results/metrics.csv`, `<output-dir>/<manifest_stem>/results/metrics.json`
+- metrics:
+  - `<output-dir>/<manifest_stem>/results/metrics.csv`
+  - `<output-dir>/<manifest_stem>/results/metrics.json`
+  - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.csv`
+  - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.json`
+  - `<output-dir>/<manifest_stem>/results/ri_sample_distributions/ri_samples.<model>.npy` (+ `.json`)
+  - `<output-dir>/<manifest_stem>/results/mari_sample_distributions/mari_samples.<model>.npy` (+ `.json`)
 - plots:
-  - `<output-dir>/<manifest_stem>/plots/ri_mari_rank.png`
-  - `<output-dir>/<manifest_stem>/plots/ri_vs_mari_scatter.png`
-  - `<output-dir>/<manifest_stem>/plots/tail_fragility.png`
+  - `<output-dir>/<manifest_stem>/plots/knn_bio_k_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/knn_center_k_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/ri_k_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/mari_k_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/bio_vs_center_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/mari_vs_ri_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/benchmark_6panel_summary.png`
+
+`k_sweep_metrics.*` stores one row per `(model, k)` with:
+- biological kNN balanced accuracy at `k` (`knn_bacc`)
+- center kNN balanced accuracy at `k` (`knn_center_bacc`)
+- RI at the same `k`
+- MaRI at the same `k`
+- selected biological `k` (`selected_k`, argmax biological `knn_bacc`; ties broken by candidate order)
+- selected center `k` (`selected_k_center`, argmax center `knn_center_bacc`; ties broken by candidate order)
+- excluded center signature (`excluded_centers`; comma-separated normalized names, empty when not used)
+
+`metrics.csv`/`.json` additionally include model-level kNN summaries:
+- `bio_knn_bacc`: biological balanced accuracy at `selected_k`
+- `center_knn_bacc`: center balanced accuracy at `selected_k_center`
+- `selected_k_center`: center task selected `k`
+- `excluded_centers`: excluded center signature used for this run
+
+`ri_sample_distributions/` and `mari_sample_distributions/` store raw per-sample RI/MaRI values for each model (at selected `k`).
+
+`metrics.csv`/`.json` also include:
+- `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
