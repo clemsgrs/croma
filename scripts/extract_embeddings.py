@@ -210,9 +210,8 @@ def _load_model_and_transform(spec: ModelSpec, device):
 
 
 def _output_path_in_dir(manifest: Path, output_dir: Path, model_name: str) -> Path:
-    stem = manifest.stem
     safe_model = model_name.replace("/", "_").replace(":", "_")
-    return output_dir / f"{stem}.embeddings.{safe_model}.npy"
+    return output_dir / f"{safe_model}.npy"
 
 
 def embed_manifest(
