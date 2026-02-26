@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import numpy as np
 import pandas as pd
@@ -9,7 +8,6 @@ import mari.metrics.ccrr as ccrr_mod
 from mari.metrics.ccrr import (
     CrossConfounderRetrievalRatio,
     _compute_sample_ccrr,
-    _find_typed_neighbor_distances,
 )
 
 
@@ -53,71 +51,6 @@ def _toy_features_so_closer() -> tuple[np.ndarray, pd.DataFrame]:
         dtype=float,
     )
     return features, manifest
-
-
-class TestFindTypedNeighborDistances:
-
-    def test_finds_correct_so_os_distances(self) -> None:
-        labels = np.array([0, 0, 0, 1, 1])
-        centers = np.array([0, 1, 0, 0, 1])
-        neigh_idx = np.array(
-            [
-                [1, 2, 3, 4],
-                [0, 2, 3, 4],
-                [0, 1, 3, 4],
-                [4, 0, 1, 2],
-                [3, 0, 1, 2],
-            ]
-        )
-        neigh_dist = np.array(
-            [
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-            ]
-        )
-        valid_counts = np.array([4, 4, 4, 4, 4])
-
-        so_dists, os_dists = _find_typed_neighbor_distances(
-            labels, centers, neigh_idx, neigh_dist, valid_counts, m=1
-        )
-
-        assert so_dists[0, 0] == pytest.approx(0.1)
-        assert os_dists[0, 0] == pytest.approx(0.3)
-
-    def test_m_greater_than_1(self) -> None:
-        labels = np.array([0, 0, 0, 1, 1])
-        centers = np.array([0, 1, 1, 0, 0])
-        neigh_idx = np.array(
-            [
-                [1, 2, 3, 4],
-                [0, 2, 3, 4],
-                [0, 1, 3, 4],
-                [4, 0, 1, 2],
-                [3, 0, 1, 2],
-            ]
-        )
-        neigh_dist = np.array(
-            [
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-                [0.1, 0.2, 0.3, 0.4],
-            ]
-        )
-        valid_counts = np.array([4, 4, 4, 4, 4])
-
-        so_dists, os_dists = _find_typed_neighbor_distances(
-            labels, centers, neigh_idx, neigh_dist, valid_counts, m=2
-        )
-
-        assert so_dists[0, 0] == pytest.approx(0.1)
-        assert so_dists[0, 1] == pytest.approx(0.2)
-        assert os_dists[0, 0] == pytest.approx(0.3)
-        assert os_dists[0, 1] == pytest.approx(0.4)
 
 
 class TestComputeSampleCCRR:

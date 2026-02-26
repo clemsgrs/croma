@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import logging
 import math
@@ -25,46 +24,10 @@ _PAIR_MODES = {"paired", "global"}
 
 @dataclass(frozen=True)
 class _CCRRSearchMeta:
-    undefined_frac: float
     acceptance_met: bool
     k_start: int
     k_final: int
     retries: int
-
-
-def _find_typed_neighbor_distances(
-    labels: np.ndarray,
-    centers: np.ndarray,
-    neigh_idx: np.ndarray,
-    neigh_dist: np.ndarray,
-    valid_counts: np.ndarray,
-    m: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    n_samples = len(labels)
-    so_dists = np.full((n_samples, m), np.inf, dtype=float)
-    os_dists = np.full((n_samples, m), np.inf, dtype=float)
-
-    for i in range(n_samples):
-        eff_k = int(valid_counts[i])
-        so_count = 0
-        os_count = 0
-        for pos in range(eff_k):
-            j = int(neigh_idx[i, pos])
-            if j < 0:
-                continue
-            d = float(neigh_dist[i, pos])
-            same_label = labels[j] == labels[i]
-            same_center = centers[j] == centers[i]
-            if same_label and not same_center and so_count < m:
-                so_dists[i, so_count] = d
-                so_count += 1
-            elif not same_label and same_center and os_count < m:
-                os_dists[i, os_count] = d
-                os_count += 1
-            if so_count >= m and os_count >= m:
-                break
-
-    return so_dists, os_dists
 
 
 def _compute_sample_ccrr(
@@ -146,7 +109,6 @@ def _iterative_typed_neighbor_search(
             so_dists,
             os_dists,
             _CCRRSearchMeta(
-                undefined_frac=0.0,
                 acceptance_met=True,
                 k_start=0,
                 k_final=0,
@@ -171,7 +133,6 @@ def _iterative_typed_neighbor_search(
                 so_dists,
                 os_dists,
                 _CCRRSearchMeta(
-                    undefined_frac=0.0,
                     acceptance_met=True,
                     k_start=k_start_used,
                     k_final=int(k_current),
@@ -211,7 +172,6 @@ def _iterative_typed_neighbor_search(
                 so_dists,
                 os_dists,
                 _CCRRSearchMeta(
-                    undefined_frac=float(undefined_frac),
                     acceptance_met=True,
                     k_start=k_start_used,
                     k_final=int(k_current),
@@ -224,7 +184,6 @@ def _iterative_typed_neighbor_search(
                 so_dists,
                 os_dists,
                 _CCRRSearchMeta(
-                    undefined_frac=float(undefined_frac),
                     acceptance_met=False,
                     k_start=k_start_used,
                     k_final=int(k_current),
