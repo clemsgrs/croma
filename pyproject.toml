@@ -14,13 +14,27 @@ dependencies = [
   "pandas>=2.0",
   "scikit-learn>=1.3",
   "tqdm>=4.66",
-  "Pillow>=10.0",
-  "matplotlib>=3.8",
 ]
 
 [project.optional-dependencies]
+# Visualization utilities used by scripts/plotting.py
+plot = [
+  "matplotlib>=3.8",
+  "scipy>=1.11",
+]
+# Full benchmarking pipeline (embedding extraction + plotting)
+bench = [
+  "matplotlib>=3.8",
+  "scipy>=1.11",
+  "torch",
+  "timm",
+  "transformers",
+  "Pillow>=10.0",
+]
 dev = [
   "pytest>=8.0",
+  "matplotlib>=3.8",
+  "scipy>=1.11",
 ]
 
 [project.scripts]

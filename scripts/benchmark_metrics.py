@@ -1,13 +1,11 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
+import json
 import argparse
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from mari import MaRI, RI
+from mari import CCRR, MaRI, RI
 from mari.metrics.neighbors import _knn_balanced_accuracy_by_k, _normalize_k_values, _select_k_from_balanced_accuracy
 from mari.metrics.pairs import load_manifest, normalize_center_values
 from metrics_io import excluded_centers_signature, k_candidates_signature
@@ -53,8 +51,6 @@ def _save_mari_sample_distribution(
     n_undefined_samples: int,
     values: np.ndarray,
 ) -> Path:
-    import json
-
     dist_dir = _sample_distribution_dir(output_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
     out_path = dist_dir / f"mari.{_safe_model_name(model)}.npy"
@@ -87,8 +83,6 @@ def _save_ri_sample_distribution(
     n_undefined_samples: int,
     values: np.ndarray,
 ) -> Path:
-    import json
-
     dist_dir = _sample_distribution_dir(output_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
     out_path = dist_dir / f"ri.{_safe_model_name(model)}.npy"
@@ -258,6 +252,16 @@ def main() -> None:
             n_undefined_samples=ri_undefined_n,
             values=ri.sample_values,
         )
+        ccrr_result = CCRR.compute(
+            features=features,
+            manifest=eval_manifest,
+            mode=args.mode,
+            m=1,
+        )
+        ccrr_dist_dir = _sample_distribution_dir(mari_dist_out_dir)
+        ccrr_dist_dir.mkdir(parents=True, exist_ok=True)
+        ccrr_dist_path = ccrr_dist_dir / f"ccrr.{_safe_model_name(model_name)}.npy"
+        np.save(ccrr_dist_path, np.asarray(ccrr_result.sample_values, dtype=float))
         rows.append(
             {
                 "model": model_name,
@@ -271,6 +275,14 @@ def main() -> None:
                 "center_knn_bacc": float(knn_center_bacc_by_k[int(selected_k_center)]),
                 "selected_k_center": int(selected_k_center),
                 "mari_undefined_frac": mari_undefined_frac,
+                "ccrr": float(ccrr_result.value),
+                "ccrr_std": float(ccrr_result.std),
+                "ccrr_m": int(ccrr_result.m),
+                "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
+                "ccrr_alpha": float(ccrr_result.alpha),
+                "ccrr_q_alpha": float(ccrr_result.q_alpha),
+                "ccrr_ltm_alpha": float(ccrr_result.ltm_alpha),
+                "ccrr_samples_path": str(ccrr_dist_path),
                 "k_candidates": k_candidates_sig,
                 "excluded_centers": excluded_centers_sig,
                 "ri_samples_path": str(ri_dist_path),

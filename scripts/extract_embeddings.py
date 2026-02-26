@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import argparse
 import contextlib
 import dataclasses
@@ -9,8 +6,17 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
+import timm
+
 from PIL import Image
 from tqdm.auto import tqdm
+from torch.utils.data import DataLoader
+
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+from timm.layers import SwiGLUPacked
+from transformers import AutoImageProcessor, AutoModel
 
 
 @dataclasses.dataclass
@@ -124,8 +130,6 @@ def _build_model_registry():
 
 
 def _extract_timm_features(out, extract: str):
-    import torch
-
     if extract == "cls":
         return out[:, 0] if out.ndim == 3 else out
     if extract == "cls_and_patch":
@@ -147,8 +151,6 @@ def _load_manifest(manifest_path: Path) -> pd.DataFrame:
 
 
 def _device_from_arg(device_arg: str):
-    import torch
-
     if device_arg == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device_arg)
@@ -168,14 +170,7 @@ class TileDataset:
 
 
 def _load_model_and_transform(spec: ModelSpec, device):
-    import torch
-
     if spec.backend == "timm":
-        import timm
-        from timm.data import resolve_data_config
-        from timm.data.transforms_factory import create_transform
-        from timm.layers import SwiGLUPacked
-
         timm_kwargs = dict(spec.timm_kwargs)
         if timm_kwargs.get("mlp_layer") == "SwiGLUPacked":
             timm_kwargs["mlp_layer"] = SwiGLUPacked
@@ -193,8 +188,6 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "hf_auto":
-        from transformers import AutoImageProcessor, AutoModel
-
         processor = AutoImageProcessor.from_pretrained(spec.model_id, trust_remote_code=True)
         model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
         model.eval().to(device)
@@ -222,8 +215,6 @@ def embed_manifest(
     num_workers: int,
     device_arg: str,
 ) -> tuple[Path, tuple[int, int]]:
-    import torch
-    from torch.utils.data import DataLoader
 
     manifest = _load_manifest(manifest_path)
     device = _device_from_arg(device_arg)

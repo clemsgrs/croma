@@ -1,8 +1,6 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import argparse
 import sys
+import json
 from pathlib import Path
 
 import numpy as np
@@ -14,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 import extract_embeddings as ee
 from common import parse_k_candidates
-from mari import MaRI, RI
+from mari import CCRR, MaRI, RI
 from mari.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
     _normalize_k_values,
@@ -32,6 +30,8 @@ from metrics_io import (
 from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
+    plot_ccrr_sample_distributions,
+    plot_ccrr_vs_mari_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
     plot_mari_k_sweep,
@@ -68,8 +68,6 @@ def _save_mari_sample_distribution(
     n_undefined_samples: int,
     values: np.ndarray,
 ) -> Path:
-    import json
-
     out_path = _distribution_path(results_dir, "mari", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.asarray(values, dtype=float)
@@ -101,8 +99,6 @@ def _save_ri_sample_distribution(
     n_undefined_samples: int,
     values: np.ndarray,
 ) -> Path:
-    import json
-
     out_path = _distribution_path(results_dir, "ri", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.asarray(values, dtype=float)
@@ -416,6 +412,15 @@ def main() -> int:
                 n_undefined_samples=ri_undefined_n,
                 values=ri.sample_values,
             )
+            ccrr_result = CCRR.compute(
+                features=eval_features,
+                manifest=eval_manifest,
+                mode=args.mode,
+                m=1,
+            )
+            ccrr_dist_path = _distribution_path(results_dir, "ccrr", model)
+            ccrr_dist_path.parent.mkdir(parents=True, exist_ok=True)
+            np.save(ccrr_dist_path, np.asarray(ccrr_result.sample_values, dtype=float))
             row = {
                 "dataset": str(args.dataset_name),
                 "model": model,
@@ -435,6 +440,14 @@ def main() -> int:
                 "mari_undefined_frac": mari_undefined_frac,
                 "ri_samples_path": str(saved_ri_dist_path),
                 "mari_samples_path": str(saved_dist_path),
+                "ccrr": float(ccrr_result.value),
+                "ccrr_std": float(ccrr_result.std),
+                "ccrr_m": int(ccrr_result.m),
+                "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
+                "ccrr_alpha": float(ccrr_result.alpha),
+                "ccrr_q_alpha": float(ccrr_result.q_alpha),
+                "ccrr_ltm_alpha": float(ccrr_result.ltm_alpha),
+                "ccrr_samples_path": str(ccrr_dist_path),
                 "embedding_path": str(output_path),
             }
             rows.append(row)
@@ -460,8 +473,8 @@ def main() -> int:
                 )
             metrics_status[model] = "ok"
             print(
-                f"[benchmark] ri={row['ri']:.4f} mari={row['mari']:.4f} "
-                f"undefined sampled: ri={100*row['ri_undefined_frac']:.1f}%, mari={100*row['mari_undefined_frac']:.1f}%"
+                f"[benchmark] ri={row['ri']:.4f} mari={row['mari']:.4f} ccrr={row['ccrr']:.4f} "
+                f"undefined sampled: ri={100*row['ri_undefined_frac']:.1f}%, mari={100*row['mari_undefined_frac']:.1f}%, ccrr={100*row['ccrr_undefined_frac']:.1f}%"
             )
         except Exception as exc:  # noqa: BLE001
             metrics_status[model] = "failed"
@@ -477,6 +490,8 @@ def main() -> int:
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
         plot_bio_vs_center_scatter(rows=rows, out_path=plots_dir / "bio_vs_center_scatter.png")
         plot_mari_vs_ri_scatter(rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png")
+        plot_ccrr_vs_mari_scatter(rows=rows, out_path=plots_dir / "ccrr_vs_mari_scatter.png")
+        plot_ccrr_sample_distributions(rows=rows, out_path=plots_dir / "ccrr_sample_distributions.png")
         plot_benchmark_6panel_summary(
             rows=rows,
             k_sweep_rows=k_sweep_rows,
