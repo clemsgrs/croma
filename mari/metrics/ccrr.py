@@ -17,7 +17,7 @@ from mari.metrics.pairs import (
 )
 from mari.types import CCRRResult
 
-_DEFAULT_KMAX = 200
+_DEFAULT_KMAX = 1000
 _PAIR_MODES = {"paired", "global"}
 
 

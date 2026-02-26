@@ -139,6 +139,7 @@ def _parse_args() -> argparse.Namespace:
         help="If > 0, sweep k continuously from 1..max instead of only --k-candidates.",
     )
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
+    parser.add_argument("--ccrr-kmax", type=int, default=1000, help="CCRR neighbor search horizon.")
     parser.add_argument(
         "--exclude-center",
         action="append",
@@ -417,6 +418,7 @@ def main() -> int:
                 manifest=eval_manifest,
                 mode=args.mode,
                 m=1,
+                kmax=int(args.ccrr_kmax),
             )
             ccrr_dist_path = _distribution_path(results_dir, "ccrr", model)
             ccrr_dist_path.parent.mkdir(parents=True, exist_ok=True)
