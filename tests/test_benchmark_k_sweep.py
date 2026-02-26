@@ -102,9 +102,12 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     center_k_plot_path = dataset_dir / "plots" / "knn_center_k_sweep.png"
     ri_k_plot_path = dataset_dir / "plots" / "ri_k_sweep.png"
     mari_plot_path = dataset_dir / "plots" / "mari_k_sweep.png"
+    ccrr_m_plot_path = dataset_dir / "plots" / "ccrr_m_sweep.png"
     bio_center_plot_path = dataset_dir / "plots" / "bio_vs_center_scatter.png"
     mari_ri_plot_path = dataset_dir / "plots" / "mari_vs_ri_scatter.png"
     summary_plot_path = dataset_dir / "plots" / "benchmark_6panel_summary.png"
+    ccrr_m_sweep_csv = dataset_dir / "results" / "ccrr_m_sweep_metrics.csv"
+    ccrr_m_sweep_json = dataset_dir / "results" / "ccrr_m_sweep_metrics.json"
     legacy_rank_plot = dataset_dir / "plots" / "ri_mari_rank.png"
     legacy_three_panel = dataset_dir / "plots" / "knn_bacc_ri_k_sweep.png"
     legacy_mari_dist_plot = dataset_dir / "plots" / "mari_sample_distributions.png"
@@ -120,9 +123,12 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert center_k_plot_path.exists()
     assert ri_k_plot_path.exists()
     assert mari_plot_path.exists()
+    assert ccrr_m_plot_path.exists()
     assert bio_center_plot_path.exists()
     assert mari_ri_plot_path.exists()
     assert summary_plot_path.exists()
+    assert ccrr_m_sweep_csv.exists()
+    assert ccrr_m_sweep_json.exists()
     assert sample_dist_dir.exists()
     assert not legacy_mari_dist_dir.exists()
     assert not legacy_ri_dist_dir.exists()
@@ -140,6 +146,19 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "knn_center_bacc" in df.columns
     assert "selected_k_center" in df.columns
 
+    ccrr_m_df = pd.read_csv(ccrr_m_sweep_csv)
+    assert len(ccrr_m_df) >= len(models)
+    assert set(ccrr_m_df["model"]) == set(models)
+    assert "m" in ccrr_m_df.columns
+    assert "ccrr" in ccrr_m_df.columns
+    assert "ccrr_search" in ccrr_m_df.columns
+    assert "ccrr_acceptance_threshold" in ccrr_m_df.columns
+    assert "ccrr_acceptance_met" in ccrr_m_df.columns
+    assert "ccrr_k_start" in ccrr_m_df.columns
+    assert "ccrr_k_final" in ccrr_m_df.columns
+    assert "ccrr_retries" in ccrr_m_df.columns
+    assert set(ccrr_m_df["m"]) >= {1}
+
     metrics_df = pd.read_csv(dataset_dir / "results" / "metrics.csv")
     assert "ri_undefined_frac" in metrics_df.columns
     assert "mari_undefined_frac" in metrics_df.columns
@@ -148,8 +167,19 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "bio_knn_bacc" in metrics_df.columns
     assert "center_knn_bacc" in metrics_df.columns
     assert "selected_k_center" in metrics_df.columns
+    assert "ccrr_search" in metrics_df.columns
+    assert "ccrr_undefined_frac_all" in metrics_df.columns
+    assert "ccrr_undefined_frac_feasible" in metrics_df.columns
+    assert "ccrr_acceptance_threshold" in metrics_df.columns
+    assert "ccrr_acceptance_met" in metrics_df.columns
+    assert "ccrr_k_start" in metrics_df.columns
+    assert "ccrr_k_final" in metrics_df.columns
+    assert "ccrr_retries" in metrics_df.columns
     assert ((metrics_df["ri_undefined_frac"] >= 0.0) & (metrics_df["ri_undefined_frac"] <= 1.0)).all()
     assert ((metrics_df["mari_undefined_frac"] >= 0.0) & (metrics_df["mari_undefined_frac"] <= 1.0)).all()
+    assert ((metrics_df["ccrr_undefined_frac"] >= 0.0) & (metrics_df["ccrr_undefined_frac"] <= 1.0)).all()
+    assert ((metrics_df["ccrr_undefined_frac_feasible"] >= 0.0) & (metrics_df["ccrr_undefined_frac_feasible"] <= 1.0)).all()
+    assert ((metrics_df["ccrr_undefined_frac_all"] >= 0.0) & (metrics_df["ccrr_undefined_frac_all"] <= 1.0)).all()
 
     for model in models:
         mari_dist_path = sample_dist_dir / f"mari.{model}.npy"
@@ -560,3 +590,82 @@ def test_benchmark_records_excluded_centers_signature(monkeypatch, tmp_path: Pat
     assert "excluded_centers" in k_sweep_df.columns
     assert set(metrics_df["excluded_centers"]) == {"C999"}
     assert set(k_sweep_df["excluded_centers"]) == {"C999"}
+
+
+def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_path: Path) -> None:
+    manifest = _toy_manifest()
+    manifest_path = tmp_path / "toy.csv"
+    manifest.to_csv(manifest_path, index=False)
+
+    output_dir = tmp_path / "out"
+    model = "M1"
+
+    def fake_registry() -> dict:
+        return {model: object()}
+
+    def fake_embed_manifest(
+        manifest_path: Path,
+        output_path: Path,
+        spec: object,
+        batch_size: int,
+        num_workers: int,
+        device_arg: str,
+    ) -> tuple[Path, tuple[int, int]]:
+        arr = _toy_features(model)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(output_path, arr)
+        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+
+    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            model,
+            "--output-dir",
+            str(output_dir),
+            "--mode",
+            "global",
+            "--k-candidates",
+            "1,3",
+        ],
+    )
+    code = bm.main()
+    assert code == 0
+
+    ri_calls = {"n": 0}
+    original_ri_compute = bm.RI.compute
+
+    def wrapped_ri_compute(*args, **kwargs):
+        ri_calls["n"] += 1
+        return original_ri_compute(*args, **kwargs)
+
+    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            model,
+            "--output-dir",
+            str(output_dir),
+            "--mode",
+            "global",
+            "--k-candidates",
+            "1,3",
+            "--ccrr-acceptance-threshold",
+            "0.25",
+        ],
+    )
+    code = bm.main()
+    assert code == 0
+    assert ri_calls["n"] > 0

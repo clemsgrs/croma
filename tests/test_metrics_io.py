@@ -21,6 +21,15 @@ def test_excluded_centers_signature_is_sorted_and_unique() -> None:
     assert mio.excluded_centers_signature([" C2 ", "C1", "C2"]) == "C1,C2"
 
 
+def test_ccrr_search_signature_is_stable() -> None:
+    sig = mio.ccrr_search_signature(
+        acceptance_threshold=0.0,
+        start_k=200,
+        k_growth_factor=1.5,
+    )
+    assert sig == "thr=0;start=200;growth=1.5"
+
+
 def test_load_cached_rows_requires_matching_k_candidates_signature(tmp_path: Path) -> None:
     metrics_csv = tmp_path / "metrics.csv"
     pd.DataFrame(
@@ -86,6 +95,45 @@ def test_load_cached_rows_requires_matching_excluded_centers_signature(tmp_path:
         tau=0.2,
         k_candidates_sig="3,5,7",
         excluded_centers_sig="",
+    )
+    assert miss == {}
+
+
+def test_load_cached_rows_requires_matching_ccrr_search_signature(tmp_path: Path) -> None:
+    metrics_csv = tmp_path / "metrics.csv"
+    pd.DataFrame(
+        [
+            {
+                "model": "A",
+                "mode": "global",
+                "tau": 0.2,
+                "k_candidates": "3,5,7",
+                "excluded_centers": "none",
+                "ccrr_search": "thr=0;start=200;growth=1.5",
+                "ri": 0.5,
+            }
+        ]
+    ).to_csv(metrics_csv, index=False)
+
+    hit = mio.load_cached_rows(
+        metrics_csv=metrics_csv,
+        models=["A"],
+        mode="global",
+        tau=0.2,
+        k_candidates_sig="3,5,7",
+        excluded_centers_sig="none",
+        ccrr_search_sig="thr=0;start=200;growth=1.5",
+    )
+    assert "A" in hit
+
+    miss = mio.load_cached_rows(
+        metrics_csv=metrics_csv,
+        models=["A"],
+        mode="global",
+        tau=0.2,
+        k_candidates_sig="3,5,7",
+        excluded_centers_sig="none",
+        ccrr_search_sig="thr=0.25;start=200;growth=1.5",
     )
     assert miss == {}
 

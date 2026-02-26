@@ -20,18 +20,33 @@ def excluded_centers_signature(excluded_centers: list[str] | tuple[str, ...] | N
     return ",".join(uniq)
 
 
+def ccrr_search_signature(
+    *,
+    acceptance_threshold: float,
+    start_k: int,
+    k_growth_factor: float,
+) -> str:
+    return (
+        f"thr={float(acceptance_threshold):.8g};"
+        f"start={int(start_k)};"
+        f"growth={float(k_growth_factor):.8g}"
+    )
+
+
 def _cached_row_is_compatible(
     row: pd.Series,
     mode: str,
     tau: float,
     k_candidates_sig: str,
     excluded_centers_sig: str = "",
+    ccrr_search_sig: str = "",
 ) -> bool:
     return (
         str(row.get("mode", "")) == str(mode)
         and float(row.get("tau", -1.0)) == float(tau)
         and str(row.get("k_candidates", "")) == str(k_candidates_sig)
         and str(row.get("excluded_centers", "")) == str(excluded_centers_sig)
+        and str(row.get("ccrr_search", "")) == str(ccrr_search_sig)
     )
 
 
@@ -42,6 +57,7 @@ def load_cached_rows(
     tau: float,
     k_candidates_sig: str,
     excluded_centers_sig: str = "",
+    ccrr_search_sig: str = "",
 ) -> dict[str, dict]:
     if not metrics_csv.exists():
         return {}
@@ -61,6 +77,7 @@ def load_cached_rows(
                 tau=tau,
                 k_candidates_sig=k_candidates_sig,
                 excluded_centers_sig=excluded_centers_sig,
+                ccrr_search_sig=ccrr_search_sig,
             ),
             axis=1,
         )
@@ -85,6 +102,7 @@ def load_cached_k_sweep_rows(
     tau: float,
     k_candidates_sig: str,
     excluded_centers_sig: str = "",
+    ccrr_search_sig: str = "",
     expected_k_values: list[int] | tuple[int, ...] | None = None,
 ) -> dict[str, list[dict]]:
     if not metrics_csv.exists():
@@ -106,6 +124,7 @@ def load_cached_k_sweep_rows(
                 tau=tau,
                 k_candidates_sig=k_candidates_sig,
                 excluded_centers_sig=excluded_centers_sig,
+                ccrr_search_sig=ccrr_search_sig,
             ),
             axis=1,
         )

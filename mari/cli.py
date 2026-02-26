@@ -73,6 +73,24 @@ def main() -> None:
     ccrr_parser = sub.add_parser("ccrr", parents=[ccrr_shared], help="Compute CCRR.")
     ccrr_parser.add_argument("--m", type=int, default=1, help="Number of SO/OS neighbors to average (>=1).")
     ccrr_parser.add_argument("--alpha", type=float, default=0.10, help="Tail percentile for Q_alpha and LTM_alpha (default 0.10).")
+    ccrr_parser.add_argument(
+        "--acceptance-threshold",
+        type=float,
+        default=0.0,
+        help="Stop CCRR search once feasible undefined fraction is <= threshold (default 0.0).",
+    )
+    ccrr_parser.add_argument(
+        "--start-k",
+        type=int,
+        default=200,
+        help="Initial k for iterative CCRR neighbor search (default 200).",
+    )
+    ccrr_parser.add_argument(
+        "--k-growth-factor",
+        type=float,
+        default=1.5,
+        help="Geometric growth factor for CCRR iterative k search (>1, default 1.5).",
+    )
 
     args = parser.parse_args()
     manifest = load_manifest(str(args.manifest), dataset_name=str(args.dataset_name))
@@ -87,12 +105,23 @@ def main() -> None:
             m=int(args.m),
             alpha=float(args.alpha),
             exclude_centers=excluded_centers,
+            acceptance_threshold=float(args.acceptance_threshold),
+            start_k=int(args.start_k),
+            k_growth_factor=float(args.k_growth_factor),
         )
         payload = {
             "dataset": result.dataset,
             "m": result.m,
             "value": result.value,
             "undefined_frac": result.undefined_frac,
+            "undefined_frac_all": result.undefined_frac_all,
+            "undefined_frac_feasible": result.undefined_frac_feasible,
+            "n_feasible": result.n_feasible,
+            "acceptance_threshold": result.acceptance_threshold,
+            "acceptance_met": result.acceptance_met,
+            "k_start": result.k_start,
+            "k_final": result.k_final,
+            "retries": result.retries,
             "alpha": result.alpha,
             "q_alpha": result.q_alpha,
             "ltm_alpha": result.ltm_alpha,

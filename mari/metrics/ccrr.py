@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import math
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn.neighbors import NearestNeighbors
 
-from mari.metrics.neighbors import _prepare_neighbors
+from mari.metrics.neighbors import _filter_query_neighbors_excluding_same_slide, _initial_n_neighbors
 
 logger = logging.getLogger("mari")
 from mari.metrics.tail import compute_tail_metrics
@@ -17,8 +20,17 @@ from mari.metrics.pairs import (
 )
 from mari.types import CCRRResult
 
-_DEFAULT_KMAX = 1000
 _PAIR_MODES = {"paired", "global"}
+
+
+@dataclass(frozen=True)
+class _CCRRSearchMeta:
+    n_feasible: int
+    undefined_frac_feasible: float
+    acceptance_met: bool
+    k_start: int
+    k_final: int
+    retries: int
 
 
 def _find_typed_neighbor_distances(
@@ -75,6 +87,192 @@ def _compute_sample_ccrr(
     return ccrr
 
 
+def _compute_feasible_mask(labels: np.ndarray, centers: np.ndarray, m: int) -> np.ndarray:
+    frame = pd.DataFrame({"label": labels, "medical_center": centers})
+    label_counts = frame["label"].value_counts(dropna=False)
+    center_counts = frame["medical_center"].value_counts(dropna=False)
+    cell_counts = frame.groupby(["label", "medical_center"], dropna=False, sort=False).size()
+    row_keys = pd.MultiIndex.from_frame(frame[["label", "medical_center"]])
+    within_cell = cell_counts.reindex(row_keys).to_numpy(dtype=int)
+    same_label_total = frame["label"].map(label_counts).to_numpy(dtype=int)
+    same_center_total = frame["medical_center"].map(center_counts).to_numpy(dtype=int)
+
+    so_pool = same_label_total - within_cell
+    os_pool = same_center_total - within_cell
+    return (so_pool >= int(m)) & (os_pool >= int(m))
+
+
+def _scan_typed_neighbors_for_query_rows(
+    *,
+    labels: np.ndarray,
+    centers: np.ndarray,
+    query_indices: np.ndarray,
+    neigh_idx: np.ndarray,
+    neigh_dist: np.ndarray,
+    valid_counts: np.ndarray,
+    m: int,
+    so_dists: np.ndarray,
+    os_dists: np.ndarray,
+) -> np.ndarray:
+    defined = np.zeros((len(query_indices),), dtype=bool)
+    for row, sample_idx in enumerate(query_indices.tolist()):
+        so_count = 0
+        os_count = 0
+        so_dists[sample_idx, :] = np.inf
+        os_dists[sample_idx, :] = np.inf
+
+        eff_k = int(valid_counts[row])
+        for pos in range(eff_k):
+            j = int(neigh_idx[row, pos])
+            if j < 0:
+                continue
+            d = float(neigh_dist[row, pos])
+            same_label = labels[j] == labels[sample_idx]
+            same_center = centers[j] == centers[sample_idx]
+            if same_label and not same_center and so_count < m:
+                so_dists[sample_idx, so_count] = d
+                so_count += 1
+            elif not same_label and same_center and os_count < m:
+                os_dists[sample_idx, os_count] = d
+                os_count += 1
+            if so_count >= m and os_count >= m:
+                defined[row] = True
+                break
+
+    return defined
+
+
+def _iterative_typed_neighbor_search(
+    *,
+    features: np.ndarray,
+    labels: np.ndarray,
+    centers: np.ndarray,
+    slide_ids: np.ndarray,
+    m: int,
+    acceptance_threshold: float,
+    start_k: int,
+    k_growth_factor: float,
+) -> tuple[np.ndarray, np.ndarray, _CCRRSearchMeta]:
+    n_samples = int(len(labels))
+    so_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
+    os_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
+
+    if n_samples <= 1:
+        return (
+            so_dists,
+            os_dists,
+            _CCRRSearchMeta(
+                n_feasible=0,
+                undefined_frac_feasible=0.0,
+                acceptance_met=True,
+                k_start=0,
+                k_final=0,
+                retries=0,
+            ),
+        )
+
+    feasible_mask = _compute_feasible_mask(labels=labels, centers=centers, m=int(m))
+    n_feasible = int(np.count_nonzero(feasible_mask))
+    if n_feasible <= 0:
+        return (
+            so_dists,
+            os_dists,
+            _CCRRSearchMeta(
+                n_feasible=0,
+                undefined_frac_feasible=0.0,
+                acceptance_met=True,
+                k_start=0,
+                k_final=0,
+                retries=0,
+            ),
+        )
+
+    model = NearestNeighbors(metric="cosine")
+    model.fit(features)
+
+    k_current = int(max(1, min(int(start_k), n_samples - 1)))
+    k_start_used = int(k_current)
+    retries = 0
+
+    defined_mask = np.zeros((n_samples,), dtype=bool)
+    unresolved_mask = feasible_mask.copy()
+
+    while True:
+        query_indices = np.flatnonzero(unresolved_mask)
+        if int(query_indices.size) <= 0:
+            return (
+                so_dists,
+                os_dists,
+                _CCRRSearchMeta(
+                    n_feasible=n_feasible,
+                    undefined_frac_feasible=0.0,
+                    acceptance_met=True,
+                    k_start=k_start_used,
+                    k_final=int(k_current),
+                    retries=int(retries),
+                ),
+            )
+
+        fetch_neighbors = _initial_n_neighbors(kmax=int(k_current), slide_ids=slide_ids, n_samples=n_samples)
+        distances, raw_neighbors = model.kneighbors(features[query_indices], n_neighbors=fetch_neighbors)
+
+        neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_slide(
+            raw_neighbors=raw_neighbors,
+            raw_distances=distances,
+            query_indices=query_indices,
+            slide_ids=slide_ids,
+            kmax=int(k_current),
+        )
+
+        newly_defined = _scan_typed_neighbors_for_query_rows(
+            labels=labels,
+            centers=centers,
+            query_indices=query_indices,
+            neigh_idx=neigh_idx,
+            neigh_dist=neigh_dist,
+            valid_counts=valid_counts,
+            m=int(m),
+            so_dists=so_dists,
+            os_dists=os_dists,
+        )
+        if bool(np.any(newly_defined)):
+            defined_mask[query_indices[newly_defined]] = True
+        unresolved_mask = feasible_mask & ~defined_mask
+
+        undefined_frac_feasible = float(np.count_nonzero(unresolved_mask)) / float(n_feasible)
+        if undefined_frac_feasible <= float(acceptance_threshold):
+            return (
+                so_dists,
+                os_dists,
+                _CCRRSearchMeta(
+                    n_feasible=n_feasible,
+                    undefined_frac_feasible=float(undefined_frac_feasible),
+                    acceptance_met=True,
+                    k_start=k_start_used,
+                    k_final=int(k_current),
+                    retries=int(retries),
+                ),
+            )
+
+        if int(k_current) >= n_samples - 1:
+            return (
+                so_dists,
+                os_dists,
+                _CCRRSearchMeta(
+                    n_feasible=n_feasible,
+                    undefined_frac_feasible=float(undefined_frac_feasible),
+                    acceptance_met=False,
+                    k_start=k_start_used,
+                    k_final=int(k_current),
+                    retries=int(retries),
+                ),
+            )
+
+        retries += 1
+        grown_k = int(math.ceil(float(k_current) * float(k_growth_factor)))
+        k_current = int(min(n_samples - 1, max(int(k_current) + 1, grown_k)))
+
+
 class CrossConfounderRetrievalRatio:
 
     @classmethod
@@ -89,13 +287,21 @@ class CrossConfounderRetrievalRatio:
         exclude_centers: object | None = None,
         max_pairs: int | None = None,
         random_state: int = 0,
-        kmax: int | None = None,
+        acceptance_threshold: float = 0.0,
+        start_k: int = 200,
+        k_growth_factor: float = 1.5,
     ) -> CCRRResult:
         mode_value = str(mode).strip().lower()
         if mode_value not in _PAIR_MODES:
             raise ValueError("mode must be one of {'paired', 'global'}")
         if m < 1:
             raise ValueError("m must be >= 1")
+        if float(acceptance_threshold) < 0.0 or float(acceptance_threshold) > 1.0:
+            raise ValueError("acceptance_threshold must be in [0, 1]")
+        if int(start_k) < 1:
+            raise ValueError("start_k must be >= 1")
+        if float(k_growth_factor) <= 1.0:
+            raise ValueError("k_growth_factor must be > 1")
 
         if not isinstance(manifest, pd.DataFrame):
             raise TypeError("manifest must be a pandas.DataFrame")
@@ -135,14 +341,18 @@ class CrossConfounderRetrievalRatio:
         else:
             subsets = [df]
 
-        effective_kmax = kmax if kmax is not None else min(len(df) - 1, _DEFAULT_KMAX)
-        effective_kmax = max(1, min(effective_kmax, len(df) - 1))
-
         pair_medians: list[float] = []
         sample_sum = np.zeros(len(features), dtype=float)
         sample_count = np.zeros(len(features), dtype=int)
         total_samples = 0
         total_undefined = 0
+        total_feasible = 0
+        total_feasible_undefined = 0
+
+        k_start_values: list[int] = []
+        k_final_values: list[int] = []
+        retries_values: list[int] = []
+        acceptance_met_values: list[bool] = []
 
         for sub in subsets:
             if len(sub) <= 1:
@@ -157,21 +367,36 @@ class CrossConfounderRetrievalRatio:
             centers = pd.factorize(sub["medical_center"])[0].astype(int)
             slide_ids = sub["slide_id"].astype(str).to_numpy()
 
-            sub_kmax = max(1, min(effective_kmax, len(sub) - 1))
-            neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
-                pair_features, slide_ids, sub_kmax
+            so_dists, os_dists, search_meta = _iterative_typed_neighbor_search(
+                features=pair_features,
+                labels=labels,
+                centers=centers,
+                slide_ids=slide_ids,
+                m=int(m),
+                acceptance_threshold=float(acceptance_threshold),
+                start_k=int(start_k),
+                k_growth_factor=float(k_growth_factor),
             )
 
-            so_dists, os_dists = _find_typed_neighbor_distances(
-                labels, centers, neigh_idx, neigh_dist, valid_counts, m
-            )
             sample_ccrr = _compute_sample_ccrr(so_dists, os_dists)
-
             informative = np.isfinite(sample_ccrr)
+
+            n_feasible_sub = int(search_meta.n_feasible)
+            feasible_undefined_sub = int(
+                round(float(search_meta.undefined_frac_feasible) * float(search_meta.n_feasible))
+            )
+
             n_informative = int(informative.sum())
             n_sub = len(sub)
             total_samples += n_sub
             total_undefined += n_sub - n_informative
+            total_feasible += n_feasible_sub
+            total_feasible_undefined += feasible_undefined_sub
+
+            k_start_values.append(int(search_meta.k_start))
+            k_final_values.append(int(search_meta.k_final))
+            retries_values.append(int(search_meta.retries))
+            acceptance_met_values.append(bool(search_meta.acceptance_met))
 
             if n_informative > 0:
                 pair_medians.append(float(np.median(sample_ccrr[informative])))
@@ -196,14 +421,26 @@ class CrossConfounderRetrievalRatio:
         else:
             sample_values = np.empty((0,), dtype=float)
 
-        undefined_frac = float(total_undefined / total_samples) if total_samples > 0 else 0.0
+        undefined_frac_all = float(total_undefined / total_samples) if total_samples > 0 else 0.0
+        undefined_frac_feasible = float(total_feasible_undefined / total_feasible) if total_feasible > 0 else 0.0
+
+        acceptance_met = bool(all(acceptance_met_values)) if acceptance_met_values else True
+        k_start_value = int(min(k_start_values)) if k_start_values else 0
+        k_final_value = int(max(k_final_values)) if k_final_values else 0
+        retries_value = int(max(retries_values)) if retries_values else 0
+
+        if total_feasible > 0 and not acceptance_met:
+            logger.warning(
+                f"[CCRR] feasible undefined threshold unmet: {total_feasible_undefined}/{total_feasible} "
+                f"({undefined_frac_feasible * 100.0:.1f}%) > target {float(acceptance_threshold) * 100.0:.1f}% "
+                f"after reaching k={k_final_value}. Returning best-effort result."
+            )
 
         if total_undefined > 0:
             logger.warning(
                 f"[CCRR] {total_undefined}/{total_samples} samples "
-                f"({undefined_frac * 100.0:.1f}%) could not find {m} SO and {m} OS "
-                f"neighbor(s) within kmax={effective_kmax}. "
-                f"Consider increasing kmax to reduce undefined samples."
+                f"({undefined_frac_all * 100.0:.1f}%) could not find {m} SO and {m} OS neighbor(s) "
+                f"(feasible undefined {total_feasible_undefined}/{total_feasible})."
             )
 
         tail = compute_tail_metrics(sample_values, alpha=alpha)
@@ -216,7 +453,15 @@ class CrossConfounderRetrievalRatio:
             n_pairs=len(pair_medians),
             pair_values=finite_pair,
             sample_values=sample_values,
-            undefined_frac=undefined_frac,
+            undefined_frac=undefined_frac_feasible,
+            undefined_frac_all=undefined_frac_all,
+            undefined_frac_feasible=undefined_frac_feasible,
+            n_feasible=int(total_feasible),
+            acceptance_threshold=float(acceptance_threshold),
+            acceptance_met=bool(acceptance_met),
+            k_start=int(k_start_value),
+            k_final=int(k_final_value),
+            retries=int(retries_value),
             alpha=tail.alpha,
             q_alpha=tail.q_alpha,
             ltm_alpha=tail.ltm_alpha,

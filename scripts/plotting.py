@@ -319,6 +319,81 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
+def plot_ccrr_m_sweep(rows: list[dict], out_path: Path) -> None:
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+    ccrr_rows = [
+        r for r in rows
+        if "m" in r and "ccrr" in r and np.isfinite(float(r["m"])) and np.isfinite(float(r["ccrr"]))
+    ]
+    if not ccrr_rows:
+        ax.set_visible(False)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    by_model: dict[str, list[dict]] = {}
+    for row in ccrr_rows:
+        model = str(row["model"])
+        by_model.setdefault(model, []).append(row)
+    for model in by_model:
+        by_model[model] = sorted(by_model[model], key=lambda r: int(r["m"]))
+
+    m_ticks = sorted({int(row["m"]) for row in ccrr_rows})
+    all_values = np.asarray([float(row["ccrr"]) for row in ccrr_rows], dtype=float)
+
+    ax.set_facecolor("#fbfcfd")
+    ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
+    ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.8)
+    ax.set_xlabel("m", fontsize=11)
+    ax.set_ylabel("CCRR", fontsize=11)
+    ax.set_title("CCRR over m", fontsize=14, weight="bold")
+
+    if len(m_ticks) <= 12:
+        ax.set_xticks(m_ticks)
+    else:
+        tick_positions = np.linspace(float(min(m_ticks)), float(max(m_ticks)), num=8)
+        tick_positions = np.unique(np.round(tick_positions).astype(int))
+        ax.set_xticks(tick_positions.tolist())
+
+    if len(m_ticks) > 1:
+        span = float(max(m_ticks) - min(m_ticks))
+        pad = max(0.5, 0.03 * span)
+        ax.set_xlim(float(min(m_ticks)) - pad, float(max(m_ticks)) + pad)
+    else:
+        ax.set_xlim(float(m_ticks[0]) - 0.5, float(m_ticks[0]) + 0.5)
+
+    vmin = float(np.nanmin(all_values))
+    vmax = float(np.nanmax(all_values))
+    if vmax - vmin <= 1e-9:
+        pad = max(0.1, abs(vmin) * 0.10)
+    else:
+        pad = max(0.1, (vmax - vmin) * 0.10)
+    ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
+
+    for model in sorted(by_model):
+        model_rows = by_model[model]
+        ms = np.asarray([int(r["m"]) for r in model_rows], dtype=int)
+        vals = np.asarray([float(r["ccrr"]) for r in model_rows], dtype=float)
+        ax.plot(
+            ms,
+            vals,
+            color=_color_for_model(model),
+            linewidth=1.8,
+            alpha=0.95,
+            marker="o",
+            markersize=4,
+            label=model,
+        )
+
+    ax.legend(frameon=False, loc="best")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_bio_vs_center_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
     _draw_bio_vs_center_scatter(ax, rows, show_legend=True, legend_outside=False)
