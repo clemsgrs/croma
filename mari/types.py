@@ -26,9 +26,6 @@ class CCRRResult:
     pair_values: np.ndarray
     sample_values: np.ndarray
     undefined_frac: float
-    undefined_frac_all: float = 0.0
-    undefined_frac_feasible: float = 0.0
-    n_feasible: int = 0
     acceptance_threshold: float = 0.0
     acceptance_met: bool = True
     k_start: int = 0

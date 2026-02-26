@@ -150,7 +150,7 @@ def _parse_args() -> argparse.Namespace:
         "--ccrr-acceptance-threshold",
         type=float,
         default=0.0,
-        help="Stop CCRR search once feasible undefined fraction is <= threshold (default 0.0).",
+        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
     )
     parser.add_argument(
         "--ccrr-start-k",
@@ -212,8 +212,7 @@ _REQUIRED_SUMMARY_CACHE_KEYS = (
     "selected_k_center",
     "ri_undefined_frac",
     "mari_undefined_frac",
-    "ccrr_undefined_frac_all",
-    "ccrr_undefined_frac_feasible",
+    "ccrr_undefined_frac",
     "ccrr_acceptance_met",
     "ccrr_k_final",
 )
@@ -282,9 +281,6 @@ def _compute_ccrr_m_sweep_rows(
                 "ccrr": float(result.value),
                 "ccrr_std": float(result.std),
                 "ccrr_undefined_frac": float(result.undefined_frac),
-                "ccrr_undefined_frac_all": float(result.undefined_frac_all),
-                "ccrr_undefined_frac_feasible": float(result.undefined_frac_feasible),
-                "ccrr_n_feasible": int(result.n_feasible),
                 "ccrr_acceptance_threshold": float(result.acceptance_threshold),
                 "ccrr_acceptance_met": bool(result.acceptance_met),
                 "ccrr_k_start": int(result.k_start),
@@ -587,9 +583,6 @@ def main() -> int:
                 "ccrr_std": float(ccrr_result.std),
                 "ccrr_m": int(ccrr_result.m),
                 "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
-                "ccrr_undefined_frac_all": float(ccrr_result.undefined_frac_all),
-                "ccrr_undefined_frac_feasible": float(ccrr_result.undefined_frac_feasible),
-                "ccrr_n_feasible": int(ccrr_result.n_feasible),
                 "ccrr_acceptance_threshold": float(ccrr_result.acceptance_threshold),
                 "ccrr_acceptance_met": bool(ccrr_result.acceptance_met),
                 "ccrr_k_start": int(ccrr_result.k_start),
@@ -625,9 +618,9 @@ def main() -> int:
                 )
             metrics_status[model] = "ok"
             print(
-                f"[benchmark] ri={row['ri']:.4f} mari={row['mari']:.4f} ccrr={row['ccrr']:.4f} "
-                f"undefined sampled: ri={100*row['ri_undefined_frac']:.1f}%, mari={100*row['mari_undefined_frac']:.1f}%, "
-                f"ccrr_feasible={100*row['ccrr_undefined_frac']:.1f}% (all={100*row['ccrr_undefined_frac_all']:.1f}%)"
+                f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f} "
+                f"undefined samples: RI={100*row['ri_undefined_frac']:.1f}%, MaRI={100*row['mari_undefined_frac']:.1f}%, "
+                f"CCRR={100*row['ccrr_undefined_frac']:.1f}%"
             )
         except Exception as exc:  # noqa: BLE001
             metrics_status[model] = "failed"

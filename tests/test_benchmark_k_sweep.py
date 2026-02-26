@@ -168,8 +168,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "center_knn_bacc" in metrics_df.columns
     assert "selected_k_center" in metrics_df.columns
     assert "ccrr_search" in metrics_df.columns
-    assert "ccrr_undefined_frac_all" in metrics_df.columns
-    assert "ccrr_undefined_frac_feasible" in metrics_df.columns
     assert "ccrr_acceptance_threshold" in metrics_df.columns
     assert "ccrr_acceptance_met" in metrics_df.columns
     assert "ccrr_k_start" in metrics_df.columns
@@ -178,8 +176,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert ((metrics_df["ri_undefined_frac"] >= 0.0) & (metrics_df["ri_undefined_frac"] <= 1.0)).all()
     assert ((metrics_df["mari_undefined_frac"] >= 0.0) & (metrics_df["mari_undefined_frac"] <= 1.0)).all()
     assert ((metrics_df["ccrr_undefined_frac"] >= 0.0) & (metrics_df["ccrr_undefined_frac"] <= 1.0)).all()
-    assert ((metrics_df["ccrr_undefined_frac_feasible"] >= 0.0) & (metrics_df["ccrr_undefined_frac_feasible"] <= 1.0)).all()
-    assert ((metrics_df["ccrr_undefined_frac_all"] >= 0.0) & (metrics_df["ccrr_undefined_frac_all"] <= 1.0)).all()
 
     for model in models:
         mari_dist_path = sample_dist_dir / f"mari.{model}.npy"

@@ -160,7 +160,6 @@ class TestCCRRCompute:
         assert result.sample_values.shape[0] <= 8
         assert result.acceptance_met
         assert result.undefined_frac == pytest.approx(0.0)
-        assert result.undefined_frac_feasible == pytest.approx(0.0)
 
     def test_so_closer_yields_ccrr_above_one(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -189,7 +188,7 @@ class TestCCRRCompute:
         result = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
         assert result.value < 1.0
 
-    def test_all_same_label_and_center_counts_as_infeasible(self) -> None:
+    def test_all_same_label_and_center_are_undefined(self) -> None:
         manifest = _make_manifest(
             n=4,
             labels=["A", "A", "A", "A"],
@@ -199,10 +198,7 @@ class TestCCRRCompute:
 
         result = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
 
-        assert result.n_feasible == 0
-        assert result.undefined_frac == pytest.approx(0.0)
-        assert result.undefined_frac_feasible == pytest.approx(0.0)
-        assert result.undefined_frac_all == pytest.approx(1.0)
+        assert result.undefined_frac == pytest.approx(1.0)
         assert result.sample_values.shape[0] == 0
 
     def test_relaxed_acceptance_threshold_stops_earlier(self) -> None:
@@ -259,8 +255,8 @@ class TestCCRRCompute:
 
         assert not result.acceptance_met
         assert result.k_final == 3
-        assert result.undefined_frac_feasible > 0.0
-        assert any("feasible undefined threshold unmet" in rec.message for rec in caplog.records)
+        assert result.undefined_frac > 0.0
+        assert any("undefined threshold unmet" in rec.message for rec in caplog.records)
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()

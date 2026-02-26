@@ -136,7 +136,7 @@ def main() -> None:
         "--ccrr-acceptance-threshold",
         type=float,
         default=0.0,
-        help="Stop CCRR search once feasible undefined fraction is <= threshold (default 0.0).",
+        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
     )
     parser.add_argument(
         "--ccrr-start-k",
@@ -320,9 +320,6 @@ def main() -> None:
                 "ccrr_std": float(ccrr_result.std),
                 "ccrr_m": int(ccrr_result.m),
                 "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
-                "ccrr_undefined_frac_all": float(ccrr_result.undefined_frac_all),
-                "ccrr_undefined_frac_feasible": float(ccrr_result.undefined_frac_feasible),
-                "ccrr_n_feasible": int(ccrr_result.n_feasible),
                 "ccrr_acceptance_threshold": float(ccrr_result.acceptance_threshold),
                 "ccrr_acceptance_met": bool(ccrr_result.acceptance_met),
                 "ccrr_k_start": int(ccrr_result.k_start),
