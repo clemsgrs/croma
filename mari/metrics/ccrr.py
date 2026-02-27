@@ -205,7 +205,7 @@ class CrossConfounderRetrievalRatio:
         manifest: pd.DataFrame,
         *,
         mode: str,
-        m: int = 1,
+        m: int | list[int] | tuple[int, ...] = 1,
         alpha: float = 0.10,
         exclude_centers: object | None = None,
         max_pairs: int | None = None,
@@ -213,11 +213,20 @@ class CrossConfounderRetrievalRatio:
         acceptance_threshold: float = 0.0,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
-    ) -> CCRRResult:
+    ) -> CCRRResult | dict[int, CCRRResult]:
         mode_value = str(mode).strip().lower()
         if mode_value not in _PAIR_MODES:
             raise ValueError("mode must be one of {'paired', 'global'}")
-        if m < 1:
+        if isinstance(m, (list, tuple)):
+            if len(m) <= 0:
+                raise ValueError("m must include at least one integer")
+            ordered_m_values = [int(v) for v in m]
+            return_single = False
+        else:
+            ordered_m_values = [int(m)]
+            return_single = True
+        unique_m_values = sorted(set(ordered_m_values))
+        if min(unique_m_values) < 1:
             raise ValueError("m must be >= 1")
         if float(acceptance_threshold) < 0.0 or float(acceptance_threshold) > 1.0:
             raise ValueError("acceptance_threshold must be in [0, 1]")
@@ -264,16 +273,21 @@ class CrossConfounderRetrievalRatio:
         else:
             subsets = [df]
 
-        pair_medians: list[float] = []
-        sample_sum = np.zeros(len(features), dtype=float)
-        sample_count = np.zeros(len(features), dtype=int)
+        pair_medians: dict[int, list[float]] = {int(m): [] for m in unique_m_values}
+        sample_sum: dict[int, np.ndarray] = {
+            int(m): np.zeros(len(features), dtype=float) for m in unique_m_values
+        }
+        sample_count: dict[int, np.ndarray] = {
+            int(m): np.zeros(len(features), dtype=int) for m in unique_m_values
+        }
         total_samples = 0
-        total_undefined = 0
+        total_undefined: dict[int, int] = {int(m): 0 for m in unique_m_values}
 
         k_start_values: list[int] = []
         k_final_values: list[int] = []
         retries_values: list[int] = []
-        acceptance_met_values: list[bool] = []
+        acceptance_met_values: dict[int, list[bool]] = {int(m): [] for m in unique_m_values}
+        m_max = int(max(unique_m_values))
 
         for sub in subsets:
             if len(sub) <= 1:
@@ -293,88 +307,100 @@ class CrossConfounderRetrievalRatio:
                 labels=labels,
                 centers=centers,
                 slide_ids=slide_ids,
-                m=int(m),
+                m=int(m_max),
                 acceptance_threshold=float(acceptance_threshold),
                 start_k=int(start_k),
                 k_growth_factor=float(k_growth_factor),
             )
 
-            sample_ccrr = _compute_sample_ccrr(so_dists, os_dists)
-            informative = np.isfinite(sample_ccrr)
-
-            n_informative = int(informative.sum())
             n_sub = len(sub)
             total_samples += n_sub
-            total_undefined += n_sub - n_informative
 
             k_start_values.append(int(search_meta.k_start))
             k_final_values.append(int(search_meta.k_final))
             retries_values.append(int(search_meta.retries))
-            acceptance_met_values.append(bool(search_meta.acceptance_met))
+            for m in unique_m_values:
+                sample_ccrr = _compute_sample_ccrr(so_dists[:, : int(m)], os_dists[:, : int(m)])
+                informative = np.isfinite(sample_ccrr)
+                n_informative = int(informative.sum())
+                n_undefined = int(n_sub - n_informative)
+                total_undefined[int(m)] += n_undefined
+                if int(m) == int(m_max):
+                    acceptance_met_values[int(m)].append(bool(search_meta.acceptance_met))
+                else:
+                    acceptance_met_values[int(m)].append(
+                        bool((float(n_undefined) / float(n_sub)) <= float(acceptance_threshold))
+                    )
 
-            if n_informative > 0:
-                pair_medians.append(float(np.median(sample_ccrr[informative])))
-                global_idx = idx[informative]
-                sample_sum[global_idx] += sample_ccrr[informative]
-                sample_count[global_idx] += 1
-            else:
-                pair_medians.append(float("nan"))
+                if n_informative > 0:
+                    pair_medians[int(m)].append(float(np.median(sample_ccrr[informative])))
+                    global_idx = idx[informative]
+                    sample_sum[int(m)][global_idx] += sample_ccrr[informative]
+                    sample_count[int(m)][global_idx] += 1
+                else:
+                    pair_medians[int(m)].append(float("nan"))
 
-        finite_pair = np.asarray(pair_medians, dtype=float)
-        finite_mask = np.isfinite(finite_pair)
-        if finite_mask.any():
-            value = float(np.median(finite_pair[finite_mask]))
-            std = float(finite_pair[finite_mask].std(ddof=0)) if finite_mask.sum() > 1 else 0.0
-        else:
-            value = float("nan")
-            std = 0.0
-
-        has_sample = sample_count > 0
-        if has_sample.any():
-            sample_values = (sample_sum[has_sample] / sample_count[has_sample]).astype(float)
-        else:
-            sample_values = np.empty((0,), dtype=float)
-
-        undefined_frac = float(total_undefined / total_samples) if total_samples > 0 else 0.0
-
-        acceptance_met = bool(all(acceptance_met_values)) if acceptance_met_values else True
         k_start_value = int(min(k_start_values)) if k_start_values else 0
         k_final_value = int(max(k_final_values)) if k_final_values else 0
         retries_value = int(max(retries_values)) if retries_values else 0
 
-        if total_samples > 0 and not acceptance_met:
-            logger.warning(
-                f"[CCRR] undefined threshold unmet: {total_undefined}/{total_samples} "
-                f"({undefined_frac * 100.0:.1f}%) > target {float(acceptance_threshold) * 100.0:.1f}% "
-                f"after reaching k={k_final_value}. Returning best-effort result."
+        by_m: dict[int, CCRRResult] = {}
+        for m in unique_m_values:
+            finite_pair = np.asarray(pair_medians[int(m)], dtype=float)
+            finite_mask = np.isfinite(finite_pair)
+            if finite_mask.any():
+                value = float(np.median(finite_pair[finite_mask]))
+                std = float(finite_pair[finite_mask].std(ddof=0)) if finite_mask.sum() > 1 else 0.0
+            else:
+                value = float("nan")
+                std = 0.0
+
+            has_sample = sample_count[int(m)] > 0
+            if has_sample.any():
+                sample_values = (sample_sum[int(m)][has_sample] / sample_count[int(m)][has_sample]).astype(float)
+            else:
+                sample_values = np.empty((0,), dtype=float)
+
+            undefined_frac = float(total_undefined[int(m)] / total_samples) if total_samples > 0 else 0.0
+            acceptance_met = bool(all(acceptance_met_values[int(m)])) if acceptance_met_values[int(m)] else True
+
+            if total_samples > 0 and not acceptance_met:
+                logger.warning(
+                    f"[CCRR] undefined threshold unmet: {total_undefined[int(m)]}/{total_samples} "
+                    f"({undefined_frac * 100.0:.1f}%) > target {float(acceptance_threshold) * 100.0:.1f}% "
+                    f"after reaching k={k_final_value}. Returning best-effort result."
+                )
+
+            if total_undefined[int(m)] > 0:
+                logger.warning(
+                    f"[CCRR] {total_undefined[int(m)]}/{total_samples} samples "
+                    f"({undefined_frac * 100.0:.1f}%) could not find {m} SO and {m} OS neighbor(s)."
+                )
+
+            tail = compute_tail_metrics(sample_values, alpha=alpha)
+            by_m[int(m)] = CCRRResult(
+                dataset=dataset_name,
+                m=int(m),
+                value=value,
+                std=std,
+                n_pairs=len(pair_medians[int(m)]),
+                pair_values=finite_pair,
+                sample_values=sample_values,
+                undefined_frac=undefined_frac,
+                acceptance_threshold=float(acceptance_threshold),
+                acceptance_met=bool(acceptance_met),
+                k_start=int(k_start_value),
+                k_final=int(k_final_value),
+                retries=int(retries_value),
+                alpha=tail.alpha,
+                q_alpha=tail.q_alpha,
+                ltm_alpha=tail.ltm_alpha,
             )
 
-        if total_undefined > 0:
-            logger.warning(
-                f"[CCRR] {total_undefined}/{total_samples} samples "
-                f"({undefined_frac * 100.0:.1f}%) could not find {m} SO and {m} OS neighbor(s)."
-            )
-
-        tail = compute_tail_metrics(sample_values, alpha=alpha)
-
-        return CCRRResult(
-            dataset=dataset_name,
-            m=m,
-            value=value,
-            std=std,
-            n_pairs=len(pair_medians),
-            pair_values=finite_pair,
-            sample_values=sample_values,
-            undefined_frac=undefined_frac,
-            acceptance_threshold=float(acceptance_threshold),
-            acceptance_met=bool(acceptance_met),
-            k_start=int(k_start_value),
-            k_final=int(k_final_value),
-            retries=int(retries_value),
-            alpha=tail.alpha,
-            q_alpha=tail.q_alpha,
-            ltm_alpha=tail.ltm_alpha,
-        )
+        ordered = {int(v): by_m[int(v)] for v in ordered_m_values}
+        if return_single:
+            return ordered[int(ordered_m_values[0])]
+        return ordered
 
     @classmethod
     def _infer_dataset_name(cls, df: pd.DataFrame) -> str:

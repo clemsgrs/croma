@@ -2,6 +2,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -20,6 +21,7 @@ from mari.metrics.neighbors import (
     _select_k_from_balanced_accuracy,
 )
 from mari.metrics.pairs import load_manifest, normalize_center_values
+from mari.types import CCRRResult
 from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
     ccrr_search_signature,
@@ -250,7 +252,7 @@ def _summary_from_payload(payload: dict) -> dict | None:
         return None
 
 
-def _ccrr_result_to_payload(result: object, m: int) -> dict:
+def _ccrr_result_to_payload(result: CCRRResult, m: int) -> dict:
     return {
         "m": int(m),
         "ccrr": float(result.value),
@@ -267,7 +269,7 @@ def _ccrr_result_to_payload(result: object, m: int) -> dict:
     }
 
 
-def _ccrr_payload_from_results(results: dict[int, object]) -> dict:
+def _ccrr_payload_from_results(results: dict[int, CCRRResult]) -> dict:
     return {
         "by_m": {
             str(int(m)): _ccrr_result_to_payload(result=res, m=int(m))
@@ -301,20 +303,20 @@ def _compute_ccrr_by_m(
     ccrr_start_k: int,
     ccrr_k_growth_factor: float,
     ccrr_alpha: float,
-) -> dict[int, object]:
-    out: dict[int, object] = {}
-    for m in m_values:
-        out[int(m)] = CCRR.compute(
+) -> dict[int, CCRRResult]:
+    return cast(
+        dict[int, CCRRResult],
+        CCRR.compute(
             features=features,
             manifest=manifest,
             mode=mode,
-            m=int(m),
+            m=[int(m) for m in m_values],
             alpha=float(ccrr_alpha),
             acceptance_threshold=float(ccrr_acceptance_threshold),
             start_k=int(ccrr_start_k),
             k_growth_factor=float(ccrr_k_growth_factor),
-        )
-    return out
+        ),
+    )
 
 
 def main() -> int:

@@ -82,6 +82,52 @@ class TestCCRRCompute:
         sig = inspect.signature(CrossConfounderRetrievalRatio.compute)
         assert sig.parameters["k_growth_factor"].default == 2.0
 
+    def test_compute_list_m_matches_individual_compute(self) -> None:
+        features, manifest = _toy_features_so_closer()
+        by_m = CCRR.compute(
+            features=features,
+            manifest=manifest,
+            mode="global",
+            m=[1, 2],
+        )
+        assert isinstance(by_m, dict)
+
+        single_m1 = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
+        single_m2 = CCRR.compute(features=features, manifest=manifest, mode="global", m=2)
+
+        assert by_m[1].value == pytest.approx(single_m1.value)
+        assert by_m[1].std == pytest.approx(single_m1.std)
+        assert by_m[1].undefined_frac == pytest.approx(single_m1.undefined_frac)
+        assert by_m[1].q_alpha == pytest.approx(single_m1.q_alpha)
+        assert by_m[1].ltm_alpha == pytest.approx(single_m1.ltm_alpha)
+
+        assert by_m[2].value == pytest.approx(single_m2.value)
+        assert by_m[2].std == pytest.approx(single_m2.std)
+        assert by_m[2].undefined_frac == pytest.approx(single_m2.undefined_frac)
+        assert by_m[2].q_alpha == pytest.approx(single_m2.q_alpha)
+        assert by_m[2].ltm_alpha == pytest.approx(single_m2.ltm_alpha)
+
+    def test_compute_list_m_uses_single_neighbor_search_for_multiple_m(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        features, manifest = _toy_features_so_closer()
+        calls = {"n": 0}
+        original = ccrr_mod._iterative_typed_neighbor_search
+
+        def wrapped(**kwargs):
+            calls["n"] += 1
+            return original(**kwargs)
+
+        monkeypatch.setattr(ccrr_mod, "_iterative_typed_neighbor_search", wrapped)
+        by_m = CCRR.compute(
+            features=features,
+            manifest=manifest,
+            mode="global",
+            m=[1, 2],
+        )
+        assert isinstance(by_m, dict)
+
+        assert set(by_m) == {1, 2}
+        assert calls["n"] == 1
+
     @pytest.mark.parametrize("mode", ["paired", "global"])
     def test_compute_returns_valid_result(self, mode: str) -> None:
         features, manifest = _toy_features_so_closer()
