@@ -9,6 +9,7 @@ from mari import CCRR, MaRI, RI
 from mari.metrics.neighbors import _knn_balanced_accuracy_by_k, _normalize_k_values, _select_k_from_balanced_accuracy
 from mari.metrics.pairs import load_manifest, normalize_center_values
 from metrics_io import ccrr_search_signature, excluded_centers_signature, k_candidates_signature
+from progress_utils import progress_bar, progress_write, resolve_progress_mode
 
 
 def _parse_k_candidates(raw: str) -> list[int]:
@@ -168,7 +169,14 @@ def main() -> None:
         required=True,
         help="Path for long-format per-k rows (knn_bacc and RI).",
     )
+    parser.add_argument(
+        "--progress",
+        choices=["auto", "on", "off"],
+        default="auto",
+        help="Progress display mode: auto=TTY only, on=always, off=never.",
+    )
     args = parser.parse_args()
+    progress_enabled = resolve_progress_mode(str(args.progress))
 
     manifest = load_manifest(args.manifest, dataset_name=args.dataset_name)
     parsed_k_candidates = _parse_k_candidates(args.k_candidates)
@@ -214,58 +222,67 @@ def main() -> None:
     center_labels = pd.factorize(eval_manifest["medical_center"])[0].astype(int)
     slide_ids = eval_manifest["slide_id"].astype(str).to_numpy()
 
-    for model_name, embedding_path in specs:
-        features = np.load(embedding_path)[keep_indices]
-        knn_bacc_by_k = _knn_balanced_accuracy_by_k(
-            features=features,
-            labels=labels,
-            slide_ids=slide_ids,
-            k_values=k_candidates,
-            warn_context=f"{args.dataset_name} k-curve",
-        )
-        selected_k = _select_k_from_balanced_accuracy(
-            k_values=k_candidates,
-            scores=knn_bacc_by_k,
-        )
-        knn_center_bacc_by_k = _knn_balanced_accuracy_by_k(
-            features=features,
-            labels=center_labels,
-            slide_ids=slide_ids,
-            k_values=k_candidates,
-            warn_context=f"{args.dataset_name} center-k-curve",
-        )
-        selected_k_center = _select_k_from_balanced_accuracy(
-            k_values=k_candidates,
-            scores=knn_center_bacc_by_k,
-        )
+    with progress_bar(
+        total=len(specs),
+        desc="[benchmark_metrics] models",
+        unit="model",
+        enabled=progress_enabled,
+    ) as model_bar:
+        for model_name, embedding_path in specs:
+            model_bar.set_postfix_str(f"{model_name}:load")
+            features = np.load(embedding_path)[keep_indices]
+            model_bar.set_postfix_str(f"{model_name}:knn")
+            knn_bacc_by_k = _knn_balanced_accuracy_by_k(
+                features=features,
+                labels=labels,
+                slide_ids=slide_ids,
+                k_values=k_candidates,
+                warn_context=f"{args.dataset_name} k-curve",
+            )
+            selected_k = _select_k_from_balanced_accuracy(
+                k_values=k_candidates,
+                scores=knn_bacc_by_k,
+            )
+            knn_center_bacc_by_k = _knn_balanced_accuracy_by_k(
+                features=features,
+                labels=center_labels,
+                slide_ids=slide_ids,
+                k_values=k_candidates,
+                warn_context=f"{args.dataset_name} center-k-curve",
+            )
+            selected_k_center = _select_k_from_balanced_accuracy(
+                k_values=k_candidates,
+                scores=knn_center_bacc_by_k,
+            )
 
-        ri_curve = RI.compute_curve(
-            features=features,
-            manifest=eval_manifest,
-            mode=args.mode,
-            k_values=k_candidates,
-        )
-        mari_curve = MaRI.compute_curve(
-            features=features,
-            manifest=eval_manifest,
-            mode=args.mode,
-            k_values=k_candidates,
-            tau=args.tau,
-        )
+            model_bar.set_postfix_str(f"{model_name}:RI/MaRI")
+            ri_curve = RI.compute_curve(
+                features=features,
+                manifest=eval_manifest,
+                mode=args.mode,
+                k_values=k_candidates,
+            )
+            mari_curve = MaRI.compute_curve(
+                features=features,
+                manifest=eval_manifest,
+                mode=args.mode,
+                k_values=k_candidates,
+                tau=args.tau,
+            )
 
-        ri = RI.compute(
-            features,
-            eval_manifest,
-            mode=args.mode,
-            k_candidates=k_candidates,
-        )
-        mari = MaRI.compute(
-            features,
-            eval_manifest,
-            mode=args.mode,
-            k_candidates=k_candidates,
-            tau=args.tau,
-        )
+            ri = RI.compute(
+                features,
+                eval_manifest,
+                mode=args.mode,
+                k_candidates=k_candidates,
+            )
+            mari = MaRI.compute(
+                features,
+                eval_manifest,
+                mode=args.mode,
+                k_candidates=k_candidates,
+                tau=args.tau,
+            )
 
         total_n = int(len(eval_manifest))
         ri_informative_n = int(len(ri.sample_values))
@@ -297,6 +314,7 @@ def main() -> None:
             values=ri.sample_values,
         )
 
+        model_bar.set_postfix_str(f"{model_name}:CCRR")
         ccrr_result = CCRR.compute(
             features=features,
             manifest=eval_manifest,
@@ -347,6 +365,7 @@ def main() -> None:
             }
         )
 
+        model_bar.set_postfix_str(f"{model_name}:write rows")
         for k in k_candidates:
             k_sweep_rows.append(
                 {
@@ -368,16 +387,17 @@ def main() -> None:
                     "embedding_path": str(embedding_path),
                 }
             )
+        model_bar.update(1)
 
     out_path = metrics_out_path
     out_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(rows).to_csv(out_path, index=False)
-    print(f"Wrote {len(rows)} rows -> {out_path}")
+    progress_write(f"Wrote {len(rows)} rows -> {out_path}", enabled=progress_enabled)
 
     out_k_sweep_path = Path(args.output_k_sweep_csv)
     out_k_sweep_path.parent.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(k_sweep_rows).to_csv(out_k_sweep_path, index=False)
-    print(f"Wrote {len(k_sweep_rows)} rows -> {out_k_sweep_path}")
+    progress_write(f"Wrote {len(k_sweep_rows)} rows -> {out_k_sweep_path}", enabled=progress_enabled)
 
 
 if __name__ == "__main__":

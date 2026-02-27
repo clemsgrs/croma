@@ -96,6 +96,7 @@ Defaults:
 - `--tau 0.2`
 - `--ccrr-m-candidates 1,5,10,15,20`
 - `--ccrr-alpha 0.10`
+- `--progress auto` (show tqdm bars on TTY; plain logs otherwise)
 
 Optional:
 - `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
@@ -103,6 +104,7 @@ Optional:
 - `--ccrr-m-candidates ...` to override CCRR sweep values (must include `1`).
 - `--ccrr-alpha ...` to choose the CCRR tail percentile used for `Q_alpha` and `LTM_alpha`.
 - `--recompute-metrics` to bypass metric cache reads and force full metric recomputation.
+- `--progress off` to force log-only output (recommended for CI/log redirects).
 
 Outputs:
 - all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`

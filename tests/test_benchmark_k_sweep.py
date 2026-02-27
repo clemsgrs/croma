@@ -64,6 +64,7 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         model_name = output_path.stem
         arr = _toy_features(model_name)
@@ -210,6 +211,7 @@ def test_benchmark_uses_all_registry_models_when_models_arg_missing(monkeypatch,
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         model_name = output_path.stem
         arr = _toy_features(model_name)
@@ -263,6 +265,7 @@ def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Pat
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         model_name = output_path.stem
         arr = _toy_features(model_name)
@@ -321,6 +324,7 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         arr = _toy_features("M1")
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -424,6 +428,7 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         arr = _toy_features(model)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -549,6 +554,7 @@ def test_benchmark_records_excluded_centers_signature(monkeypatch, tmp_path: Pat
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         arr = _toy_features(model)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -608,6 +614,7 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         arr = _toy_features(model)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -695,3 +702,56 @@ def test_benchmark_rejects_invalid_ccrr_alpha(monkeypatch, tmp_path: Path) -> No
     )
     with pytest.raises(ValueError, match=r"--ccrr-alpha must be in \(0, 1\]"):
         bm.main()
+
+
+def test_benchmark_runs_with_progress_off(monkeypatch, tmp_path: Path) -> None:
+    manifest = _toy_manifest()
+    manifest_path = tmp_path / "toy.csv"
+    manifest.to_csv(manifest_path, index=False)
+
+    output_dir = tmp_path / "out"
+    model = "M1"
+
+    def fake_registry() -> dict:
+        return {model: object()}
+
+    def fake_embed_manifest(
+        manifest_path: Path,
+        output_path: Path,
+        spec: object,
+        batch_size: int,
+        num_workers: int,
+        device_arg: str,
+        **kwargs: object,
+    ) -> tuple[Path, tuple[int, int]]:
+        arr = _toy_features(model)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(output_path, arr)
+        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+
+    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            model,
+            "--output-dir",
+            str(output_dir),
+            "--mode",
+            "global",
+            "--k-candidates",
+            "1,3",
+            "--progress",
+            "off",
+        ],
+    )
+
+    code = bm.main()
+    assert code == 0
+    dataset_dir = output_dir / manifest_path.stem
+    assert (dataset_dir / "results" / "metrics.csv").exists()

@@ -53,6 +53,7 @@ def _install_fake_registry_and_embed(monkeypatch, model: str = "M1") -> None:
         batch_size: int,
         num_workers: int,
         device_arg: str,
+        **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
         arr = _toy_features()
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +83,8 @@ def _run_benchmark(monkeypatch, *, manifest_path: Path, output_dir: Path, model:
         "global",
         "--k-candidates",
         "1,3",
+        "--progress",
+        "off",
     ]
     if extra_args:
         args.extend(extra_args)
