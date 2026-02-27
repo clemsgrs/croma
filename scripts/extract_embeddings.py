@@ -167,7 +167,7 @@ def _build_model_registry():
             model_id="hf-hub:prov-gigapath/prov-gigapath",
             extract="cls",
         ),
-        "Midnight-12k (kaiko)": ModelSpec(
+        "Midnight-12k": ModelSpec(
             backend="midnight",
             model_id="kaiko-ai/midnight",
             extract="cls_and_patch",

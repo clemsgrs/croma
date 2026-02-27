@@ -22,7 +22,7 @@ def test_registry_includes_conch_and_midnight_models() -> None:
     assert registry["CONCHv1.5"].extract == "raw"
     assert registry["CONCHv1.5"].mixed_precision is True
 
-    assert "Midnight-12k (kaiko)" in registry
-    assert registry["Midnight-12k (kaiko)"].backend == "midnight"
-    assert registry["Midnight-12k (kaiko)"].model_id == "kaiko-ai/midnight"
-    assert registry["Midnight-12k (kaiko)"].extract == "cls_and_patch"
+    assert "Midnight-12k" in registry
+    assert registry["Midnight-12k"].backend == "midnight"
+    assert registry["Midnight-12k"].model_id == "kaiko-ai/midnight"
+    assert registry["Midnight-12k"].extract == "cls_and_patch"
