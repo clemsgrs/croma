@@ -1,6 +1,6 @@
 import argparse
-import sys
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
 
 import extract_embeddings as ee
 from common import parse_k_candidates
+from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from mari import CCRR, MaRI, RI
 from mari.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
@@ -19,12 +20,11 @@ from mari.metrics.neighbors import (
     _select_k_from_balanced_accuracy,
 )
 from mari.metrics.pairs import load_manifest, normalize_center_values
+from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
     ccrr_search_signature,
     excluded_centers_signature,
     k_candidates_signature,
-    load_cached_k_sweep_rows,
-    load_cached_rows,
     save_k_sweep_metrics,
     save_metrics,
 )
@@ -206,59 +206,97 @@ def _resolve_ccrr_m_values(raw_m_candidates: str) -> list[int]:
     return m_values
 
 
-_REQUIRED_SUMMARY_CACHE_KEYS = (
-    "bio_knn_bacc",
-    "center_knn_bacc",
-    "selected_k_center",
-    "ri_undefined_frac",
-    "mari_undefined_frac",
-    "ccrr_undefined_frac",
-    "ccrr_acceptance_met",
-    "ccrr_k_final",
-)
-_REQUIRED_K_SWEEP_CACHE_KEYS = (
-    "knn_center_bacc",
-    "selected_k_center",
-)
+def _curve_payload(values: dict[int, float]) -> dict:
+    return {"values": {str(int(k)): float(v) for k, v in sorted(values.items(), key=lambda kv: int(kv[0]))}}
 
 
-def _has_required_cache_keys(row: dict, keys: tuple[str, ...]) -> bool:
-    for key in keys:
-        if key not in row:
-            return False
-        value = row[key]
-        if pd.isna(value):
-            return False
-    return True
+def _curve_from_payload(payload: dict, *, expected_k_values: list[int]) -> dict[int, float] | None:
+    if not isinstance(payload, dict):
+        return None
+    values = payload.get("values")
+    if not isinstance(values, dict):
+        return None
+    try:
+        parsed = {int(k): float(v) for k, v in values.items()}
+    except Exception:  # noqa: BLE001
+        return None
+    if set(parsed) != {int(k) for k in expected_k_values}:
+        return None
+    return parsed
 
 
-def _k_sweep_rows_have_required_cache_keys(rows: list[dict], keys: tuple[str, ...]) -> bool:
-    if not rows:
-        return False
-    return all(_has_required_cache_keys(row=r, keys=keys) for r in rows)
+def _summary_from_payload(payload: dict) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    required = ("k", "value", "std", "undefined_frac")
+    for key in required:
+        if key not in payload:
+            return None
+    try:
+        return {
+            "k": int(payload["k"]),
+            "value": float(payload["value"]),
+            "std": float(payload["std"]),
+            "undefined_frac": float(payload["undefined_frac"]),
+        }
+    except Exception:  # noqa: BLE001
+        return None
 
 
-def _compute_ccrr_m_sweep_rows(
+def _ccrr_result_to_payload(result: object, m: int) -> dict:
+    return {
+        "m": int(m),
+        "ccrr": float(result.value),
+        "ccrr_std": float(result.std),
+        "ccrr_undefined_frac": float(result.undefined_frac),
+        "ccrr_acceptance_threshold": float(result.acceptance_threshold),
+        "ccrr_acceptance_met": bool(result.acceptance_met),
+        "ccrr_k_start": int(result.k_start),
+        "ccrr_k_final": int(result.k_final),
+        "ccrr_retries": int(result.retries),
+        "ccrr_alpha": float(result.alpha),
+        "ccrr_q_alpha": float(result.q_alpha),
+        "ccrr_ltm_alpha": float(result.ltm_alpha),
+    }
+
+
+def _ccrr_payload_from_results(results: dict[int, object]) -> dict:
+    return {
+        "by_m": {
+            str(int(m)): _ccrr_result_to_payload(result=res, m=int(m))
+            for m, res in sorted(results.items(), key=lambda kv: int(kv[0]))
+        }
+    }
+
+
+def _ccrr_payload_to_by_m(payload: dict, *, expected_m_values: list[int]) -> dict[int, dict] | None:
+    if not isinstance(payload, dict):
+        return None
+    raw_by_m = payload.get("by_m")
+    if not isinstance(raw_by_m, dict):
+        return None
+    try:
+        by_m = {int(k): dict(v) for k, v in raw_by_m.items()}
+    except Exception:  # noqa: BLE001
+        return None
+    if set(by_m) != {int(m) for m in expected_m_values}:
+        return None
+    return by_m
+
+
+def _compute_ccrr_by_m(
     *,
     features: np.ndarray,
     manifest: pd.DataFrame,
     mode: str,
     m_values: list[int],
-    dataset_name: str,
-    model: str,
-    tau: float,
-    k_candidates_sig: str,
-    excluded_centers_sig: str,
-    ccrr_search_sig: str,
-    embedding_path: Path,
     ccrr_acceptance_threshold: float,
     ccrr_start_k: int,
     ccrr_k_growth_factor: float,
-) -> tuple[dict[int, object], list[dict]]:
-    ccrr_by_m: dict[int, object] = {}
-    rows: list[dict] = []
+) -> dict[int, object]:
+    out: dict[int, object] = {}
     for m in m_values:
-        result = CCRR.compute(
+        out[int(m)] = CCRR.compute(
             features=features,
             manifest=manifest,
             mode=mode,
@@ -267,32 +305,7 @@ def _compute_ccrr_m_sweep_rows(
             start_k=int(ccrr_start_k),
             k_growth_factor=float(ccrr_k_growth_factor),
         )
-        ccrr_by_m[int(m)] = result
-        rows.append(
-            {
-                "dataset": str(dataset_name),
-                "model": str(model),
-                "mode": str(mode),
-                "tau": float(tau),
-                "k_candidates": str(k_candidates_sig),
-                "excluded_centers": str(excluded_centers_sig),
-                "ccrr_search": str(ccrr_search_sig),
-                "m": int(m),
-                "ccrr": float(result.value),
-                "ccrr_std": float(result.std),
-                "ccrr_undefined_frac": float(result.undefined_frac),
-                "ccrr_acceptance_threshold": float(result.acceptance_threshold),
-                "ccrr_acceptance_met": bool(result.acceptance_met),
-                "ccrr_k_start": int(result.k_start),
-                "ccrr_k_final": int(result.k_final),
-                "ccrr_retries": int(result.retries),
-                "ccrr_alpha": float(result.alpha),
-                "ccrr_q_alpha": float(result.q_alpha),
-                "ccrr_ltm_alpha": float(result.ltm_alpha),
-                "embedding_path": str(embedding_path),
-            }
-        )
-    return ccrr_by_m, rows
+    return out
 
 
 def main() -> int:
@@ -322,6 +335,9 @@ def main() -> int:
     k_sweep_json = results_dir / "k_sweep_metrics.json"
     ccrr_m_sweep_csv = results_dir / "ccrr_m_sweep_metrics.csv"
     ccrr_m_sweep_json = results_dir / "ccrr_m_sweep_metrics.json"
+
+    cache = MetricsArtifactCache(results_dir=results_dir)
+
     k_candidates = parse_k_candidates(args.k_candidates)
     k_values = _resolve_sweep_k_values(
         k_candidates=k_candidates,
@@ -337,29 +353,6 @@ def main() -> int:
         k_growth_factor=float(args.ccrr_k_growth_factor),
     )
 
-    cached_rows = {}
-    cached_k_sweep_rows = {}
-    if not args.recompute_metrics:
-        cached_rows = load_cached_rows(
-            metrics_csv=metrics_csv,
-            models=models,
-            mode=args.mode,
-            tau=float(args.tau),
-            k_candidates_sig=k_candidates_sig,
-            excluded_centers_sig=excluded_centers_sig,
-            ccrr_search_sig=ccrr_search_sig,
-        )
-        cached_k_sweep_rows = load_cached_k_sweep_rows(
-            metrics_csv=k_sweep_csv,
-            models=models,
-            mode=args.mode,
-            tau=float(args.tau),
-            k_candidates_sig=k_candidates_sig,
-            excluded_centers_sig=excluded_centers_sig,
-            ccrr_search_sig=ccrr_search_sig,
-            expected_k_values=k_values,
-        )
-
     extraction_status: dict[str, str] = {}
     metrics_status: dict[str, str] = {}
     failures: list[str] = []
@@ -372,6 +365,8 @@ def main() -> int:
     print(f"[benchmark] output_dir={output_dir}")
     print(f"[benchmark] dataset_dir={dataset_dir}")
     manifest_df = load_manifest(str(args.manifest), dataset_name=str(args.dataset_name))
+    base_manifest_fingerprint = manifest_fingerprint(manifest_df)
+
     center_series = manifest_df["medical_center"].map(str).str.strip()
     keep_mask = ~center_series.isin(excluded_centers)
     if not bool(keep_mask.any()):
@@ -412,111 +407,322 @@ def main() -> int:
                 continue
 
         try:
-            mari_dist_path = _distribution_path(results_dir, "mari", model)
-            ri_dist_path = _distribution_path(results_dir, "ri", model)
-            features = np.load(output_path)
-            eval_features = features[keep_indices]
-            if model in cached_rows:
-                if model in cached_k_sweep_rows and mari_dist_path.exists() and ri_dist_path.exists():
-                    row = dict(cached_rows[model])
-                    cached_k_rows = [dict(r) for r in cached_k_sweep_rows[model]]
-                    summary_ok = _has_required_cache_keys(
-                        row=row,
-                        keys=_REQUIRED_SUMMARY_CACHE_KEYS,
-                    )
-                    k_rows_ok = _k_sweep_rows_have_required_cache_keys(
-                        rows=cached_k_rows,
-                        keys=_REQUIRED_K_SWEEP_CACHE_KEYS,
-                    )
-                    if summary_ok and k_rows_ok:
-                        rows.append(row)
-                        k_sweep_rows.extend(cached_k_rows)
-                        _, model_ccrr_m_rows = _compute_ccrr_m_sweep_rows(
-                            features=eval_features,
-                            manifest=eval_manifest,
-                            mode=str(args.mode),
-                            m_values=ccrr_m_values,
-                            dataset_name=str(args.dataset_name),
-                            model=model,
-                            tau=float(args.tau),
-                            k_candidates_sig=k_candidates_sig,
-                            excluded_centers_sig=excluded_centers_sig,
-                            ccrr_search_sig=ccrr_search_sig,
-                            embedding_path=output_path,
-                            ccrr_acceptance_threshold=float(args.ccrr_acceptance_threshold),
-                            ccrr_start_k=int(args.ccrr_start_k),
-                            ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
-                        )
-                        ccrr_m_sweep_rows.extend(model_ccrr_m_rows)
-                        metrics_status[model] = "cached"
-                        print("[benchmark] metrics cache hit")
-                        continue
-                    print("[benchmark] cache miss (schema upgrade): recomputing metrics")
+            embedding_fp = embedding_fingerprint(output_path)
+            input_fp = {
+                "manifest_fingerprint": base_manifest_fingerprint,
+                "embedding_fingerprint": embedding_fp,
+                "excluded_centers_signature": excluded_centers_sig,
+            }
 
-            knn_bacc_by_k = _knn_balanced_accuracy_by_k(
-                features=eval_features,
-                labels=labels,
-                slide_ids=slide_ids,
-                k_values=k_values,
-                warn_context=f"{args.dataset_name} k-curve",
-            )
+            k_values_param = [int(k) for k in k_values]
+            m_values_param = [int(m) for m in ccrr_m_values]
+            mode_value = str(args.mode)
+            tau_value = float(args.tau)
+
+            keys = {
+                "knn_bio_curve": build_cache_key(
+                    artifact_name="knn_bio_curve",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"k_values": k_values_param},
+                ),
+                "knn_center_curve": build_cache_key(
+                    artifact_name="knn_center_curve",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"k_values": k_values_param},
+                ),
+                "ri_curve": build_cache_key(
+                    artifact_name="ri_curve",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"mode": mode_value, "k_values": k_values_param},
+                ),
+                "mari_curve": build_cache_key(
+                    artifact_name="mari_curve",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"mode": mode_value, "k_values": k_values_param, "tau": tau_value},
+                ),
+                "ri_summary": build_cache_key(
+                    artifact_name="ri_summary",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"mode": mode_value, "k_values": k_values_param},
+                ),
+                "ri_samples": build_cache_key(
+                    artifact_name="ri_samples",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"mode": mode_value, "k_values": k_values_param},
+                ),
+                "mari_summary": build_cache_key(
+                    artifact_name="mari_summary",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"mode": mode_value, "k_values": k_values_param, "tau": tau_value},
+                ),
+                "mari_samples": build_cache_key(
+                    artifact_name="mari_samples",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={"mode": mode_value, "k_values": k_values_param, "tau": tau_value},
+                ),
+                "ccrr_m_sweep": build_cache_key(
+                    artifact_name="ccrr_m_sweep",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={
+                        "mode": mode_value,
+                        "m_values": m_values_param,
+                        "acceptance_threshold": float(args.ccrr_acceptance_threshold),
+                        "start_k": int(args.ccrr_start_k),
+                        "k_growth_factor": float(args.ccrr_k_growth_factor),
+                        "alpha": 0.10,
+                    },
+                ),
+                "ccrr_m1_samples": build_cache_key(
+                    artifact_name="ccrr_m1_samples",
+                    model=model,
+                    input_fingerprint=input_fp,
+                    params={
+                        "mode": mode_value,
+                        "m_values": m_values_param,
+                        "acceptance_threshold": float(args.ccrr_acceptance_threshold),
+                        "start_k": int(args.ccrr_start_k),
+                        "k_growth_factor": float(args.ccrr_k_growth_factor),
+                        "alpha": 0.10,
+                    },
+                ),
+            }
+
+            knn_bacc_by_k: dict[int, float] | None = None
+            knn_center_bacc_by_k: dict[int, float] | None = None
+            ri_curve: dict[int, float] | None = None
+            mari_curve: dict[int, float] | None = None
+            ri_summary: dict | None = None
+            ri_samples: np.ndarray | None = None
+            mari_summary: dict | None = None
+            mari_samples: np.ndarray | None = None
+            ccrr_by_m: dict[int, dict] | None = None
+            ccrr_samples: np.ndarray | None = None
+
+            all_cache_hit = not bool(args.recompute_metrics)
+
+            if not args.recompute_metrics:
+                knn_bacc_by_k = _curve_from_payload(
+                    cache.get_json(key=keys["knn_bio_curve"]),
+                    expected_k_values=k_values,
+                )
+                if knn_bacc_by_k is None:
+                    all_cache_hit = False
+
+                knn_center_bacc_by_k = _curve_from_payload(
+                    cache.get_json(key=keys["knn_center_curve"]),
+                    expected_k_values=k_values,
+                )
+                if knn_center_bacc_by_k is None:
+                    all_cache_hit = False
+
+                ri_curve = _curve_from_payload(
+                    cache.get_json(key=keys["ri_curve"]),
+                    expected_k_values=k_values,
+                )
+                if ri_curve is None:
+                    all_cache_hit = False
+
+                mari_curve = _curve_from_payload(
+                    cache.get_json(key=keys["mari_curve"]),
+                    expected_k_values=k_values,
+                )
+                if mari_curve is None:
+                    all_cache_hit = False
+
+                ri_summary = _summary_from_payload(cache.get_json(key=keys["ri_summary"]))
+                ri_samples = cache.get_npy(key=keys["ri_samples"])
+                if ri_summary is None or ri_samples is None:
+                    all_cache_hit = False
+
+                mari_summary = _summary_from_payload(cache.get_json(key=keys["mari_summary"]))
+                mari_samples = cache.get_npy(key=keys["mari_samples"])
+                if mari_summary is None or mari_samples is None:
+                    all_cache_hit = False
+
+                ccrr_by_m = _ccrr_payload_to_by_m(
+                    cache.get_json(key=keys["ccrr_m_sweep"]),
+                    expected_m_values=ccrr_m_values,
+                )
+                ccrr_samples = cache.get_npy(key=keys["ccrr_m1_samples"])
+                if ccrr_by_m is None or ccrr_samples is None:
+                    all_cache_hit = False
+            else:
+                all_cache_hit = False
+
+            features_full: np.ndarray | None = None
+            eval_features: np.ndarray | None = None
+
+            def _ensure_eval_features() -> np.ndarray:
+                nonlocal features_full, eval_features
+                if eval_features is None:
+                    if features_full is None:
+                        features_full = np.load(output_path)
+                    eval_features = features_full[keep_indices]
+                return eval_features
+
+            if knn_bacc_by_k is None:
+                knn_bacc_by_k = _knn_balanced_accuracy_by_k(
+                    features=_ensure_eval_features(),
+                    labels=labels,
+                    slide_ids=slide_ids,
+                    k_values=k_values,
+                    warn_context=f"{args.dataset_name} k-curve",
+                )
+                cache.put_json(key=keys["knn_bio_curve"], payload=_curve_payload(knn_bacc_by_k))
+
+            if knn_center_bacc_by_k is None:
+                knn_center_bacc_by_k = _knn_balanced_accuracy_by_k(
+                    features=_ensure_eval_features(),
+                    labels=center_labels,
+                    slide_ids=slide_ids,
+                    k_values=k_values,
+                    warn_context=f"{args.dataset_name} center-k-curve",
+                )
+                cache.put_json(key=keys["knn_center_curve"], payload=_curve_payload(knn_center_bacc_by_k))
+
             selected_k = _select_k_from_balanced_accuracy(
                 k_values=k_values,
                 scores=knn_bacc_by_k,
-            )
-            knn_center_bacc_by_k = _knn_balanced_accuracy_by_k(
-                features=eval_features,
-                labels=center_labels,
-                slide_ids=slide_ids,
-                k_values=k_values,
-                warn_context=f"{args.dataset_name} center-k-curve",
             )
             selected_k_center = _select_k_from_balanced_accuracy(
                 k_values=k_values,
                 scores=knn_center_bacc_by_k,
             )
-            ri_curve = RI.compute_curve(
-                features=eval_features,
-                manifest=eval_manifest,
-                mode=args.mode,
-                k_values=k_values,
-            )
-            mari_curve = MaRI.compute_curve(
-                features=eval_features,
-                manifest=eval_manifest,
-                mode=args.mode,
-                k_values=k_values,
-                tau=float(args.tau),
-            )
 
-            ri = RI.compute(
-                features=eval_features,
-                manifest=eval_manifest,
-                mode=args.mode,
-                k_candidates=k_values,
-            )
-            mari = MaRI.compute(
-                features=eval_features,
-                manifest=eval_manifest,
-                mode=args.mode,
-                k_candidates=k_values,
-                tau=float(args.tau),
-            )
-            if int(ri.k) != int(selected_k):
-                raise RuntimeError(
-                    f"Inconsistent selected k: RI returned {ri.k} but kNN balanced accuracy selected {selected_k}"
+            if ri_curve is None:
+                ri_curve = RI.compute_curve(
+                    features=_ensure_eval_features(),
+                    manifest=eval_manifest,
+                    mode=args.mode,
+                    k_values=k_values,
                 )
-            if int(mari.k) != int(selected_k):
-                raise RuntimeError(
-                    f"Inconsistent selected k: MaRI returned {mari.k} but kNN balanced accuracy selected {selected_k}"
+                cache.put_json(key=keys["ri_curve"], payload=_curve_payload(ri_curve))
+
+            if mari_curve is None:
+                mari_curve = MaRI.compute_curve(
+                    features=_ensure_eval_features(),
+                    manifest=eval_manifest,
+                    mode=args.mode,
+                    k_values=k_values,
+                    tau=float(args.tau),
                 )
+                cache.put_json(key=keys["mari_curve"], payload=_curve_payload(mari_curve))
+
+            if ri_summary is None or ri_samples is None:
+                ri = RI.compute(
+                    features=_ensure_eval_features(),
+                    manifest=eval_manifest,
+                    mode=args.mode,
+                    k_candidates=k_values,
+                )
+                if int(ri.k) != int(selected_k):
+                    raise RuntimeError(
+                        f"Inconsistent selected k: RI returned {ri.k} but kNN balanced accuracy selected {selected_k}"
+                    )
+                total_n = int(len(eval_manifest))
+                ri_informative_n = int(len(ri.sample_values))
+                ri_undefined_n = max(0, total_n - ri_informative_n)
+                ri_summary = {
+                    "k": int(ri.k),
+                    "value": float(ri.value),
+                    "std": float(ri.std),
+                    "undefined_frac": float(ri_undefined_n / total_n) if total_n > 0 else 0.0,
+                }
+                ri_samples = np.asarray(ri.sample_values, dtype=float)
+                cache.put_json(key=keys["ri_summary"], payload=ri_summary)
+                cache.put_npy(key=keys["ri_samples"], values=ri_samples)
+            else:
+                ri_samples = np.asarray(ri_samples, dtype=float)
+
+            if mari_summary is None or mari_samples is None:
+                mari = MaRI.compute(
+                    features=_ensure_eval_features(),
+                    manifest=eval_manifest,
+                    mode=args.mode,
+                    k_candidates=k_values,
+                    tau=float(args.tau),
+                )
+                if int(mari.k) != int(selected_k):
+                    raise RuntimeError(
+                        f"Inconsistent selected k: MaRI returned {mari.k} but kNN balanced accuracy selected {selected_k}"
+                    )
+                total_n = int(len(eval_manifest))
+                mari_informative_n = int(len(mari.sample_values))
+                mari_undefined_n = max(0, total_n - mari_informative_n)
+                mari_summary = {
+                    "k": int(mari.k),
+                    "value": float(mari.value),
+                    "std": float(mari.std),
+                    "undefined_frac": float(mari_undefined_n / total_n) if total_n > 0 else 0.0,
+                }
+                mari_samples = np.asarray(mari.sample_values, dtype=float)
+                cache.put_json(key=keys["mari_summary"], payload=mari_summary)
+                cache.put_npy(key=keys["mari_samples"], values=mari_samples)
+            else:
+                mari_samples = np.asarray(mari_samples, dtype=float)
+
+            if ccrr_by_m is None or ccrr_samples is None:
+                ccrr_results = _compute_ccrr_by_m(
+                    features=_ensure_eval_features(),
+                    manifest=eval_manifest,
+                    mode=str(args.mode),
+                    m_values=ccrr_m_values,
+                    ccrr_acceptance_threshold=float(args.ccrr_acceptance_threshold),
+                    ccrr_start_k=int(args.ccrr_start_k),
+                    ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
+                )
+                ccrr_by_m = _ccrr_payload_to_by_m(
+                    _ccrr_payload_from_results(ccrr_results),
+                    expected_m_values=ccrr_m_values,
+                )
+                if ccrr_by_m is None:
+                    raise RuntimeError("Failed to serialize ccrr m-sweep cache payload")
+                ccrr_samples = np.asarray(ccrr_results[1].sample_values, dtype=float)
+                cache.put_json(key=keys["ccrr_m_sweep"], payload={"by_m": {str(k): v for k, v in ccrr_by_m.items()}})
+                cache.put_npy(key=keys["ccrr_m1_samples"], values=ccrr_samples)
+            else:
+                ccrr_samples = np.asarray(ccrr_samples, dtype=float)
+
+            ccrr_m_rows_for_model: list[dict] = []
+            for m in ccrr_m_values:
+                payload = ccrr_by_m[int(m)]
+                ccrr_m_rows_for_model.append(
+                    {
+                        "dataset": str(args.dataset_name),
+                        "model": str(model),
+                        "mode": str(args.mode),
+                        "tau": float(args.tau),
+                        "k_candidates": str(k_candidates_sig),
+                        "excluded_centers": str(excluded_centers_sig),
+                        "ccrr_search": str(ccrr_search_sig),
+                        "m": int(payload["m"]),
+                        "ccrr": float(payload["ccrr"]),
+                        "ccrr_std": float(payload["ccrr_std"]),
+                        "ccrr_undefined_frac": float(payload["ccrr_undefined_frac"]),
+                        "ccrr_acceptance_threshold": float(payload["ccrr_acceptance_threshold"]),
+                        "ccrr_acceptance_met": bool(payload["ccrr_acceptance_met"]),
+                        "ccrr_k_start": int(payload["ccrr_k_start"]),
+                        "ccrr_k_final": int(payload["ccrr_k_final"]),
+                        "ccrr_retries": int(payload["ccrr_retries"]),
+                        "ccrr_alpha": float(payload["ccrr_alpha"]),
+                        "ccrr_q_alpha": float(payload["ccrr_q_alpha"]),
+                        "ccrr_ltm_alpha": float(payload["ccrr_ltm_alpha"]),
+                        "embedding_path": str(output_path),
+                    }
+                )
+
             total_n = int(len(eval_manifest))
-            ri_informative_n = int(len(ri.sample_values))
-            mari_informative_n = int(len(mari.sample_values))
-            ri_undefined_n = max(0, total_n - ri_informative_n)
-            mari_undefined_n = max(0, total_n - mari_informative_n)
-            ri_undefined_frac = float(ri_undefined_n / total_n) if total_n > 0 else 0.0
-            mari_undefined_frac = float(mari_undefined_n / total_n) if total_n > 0 else 0.0
+            ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
+            mari_undefined_n = int(round(float(mari_summary["undefined_frac"]) * total_n))
             saved_dist_path = _save_mari_sample_distribution(
                 results_dir=results_dir,
                 model=model,
@@ -526,7 +732,7 @@ def main() -> int:
                 selected_k=int(selected_k),
                 n_total_samples=total_n,
                 n_undefined_samples=mari_undefined_n,
-                values=mari.sample_values,
+                values=mari_samples,
             )
             saved_ri_dist_path = _save_ri_sample_distribution(
                 results_dir=results_dir,
@@ -536,33 +742,18 @@ def main() -> int:
                 selected_k=int(selected_k),
                 n_total_samples=total_n,
                 n_undefined_samples=ri_undefined_n,
-                values=ri.sample_values,
+                values=ri_samples,
             )
-            ccrr_by_m, model_ccrr_m_rows = _compute_ccrr_m_sweep_rows(
-                features=eval_features,
-                manifest=eval_manifest,
-                mode=str(args.mode),
-                m_values=ccrr_m_values,
-                dataset_name=str(args.dataset_name),
-                model=model,
-                tau=float(args.tau),
-                k_candidates_sig=k_candidates_sig,
-                excluded_centers_sig=excluded_centers_sig,
-                ccrr_search_sig=ccrr_search_sig,
-                embedding_path=output_path,
-                ccrr_acceptance_threshold=float(args.ccrr_acceptance_threshold),
-                ccrr_start_k=int(args.ccrr_start_k),
-                ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
-            )
-            ccrr_m_sweep_rows.extend(model_ccrr_m_rows)
+
             ccrr_result = ccrr_by_m[1]
             ccrr_dist_path = _distribution_path(results_dir, "ccrr", model)
             ccrr_dist_path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(ccrr_dist_path, np.asarray(ccrr_result.sample_values, dtype=float))
+            np.save(ccrr_dist_path, ccrr_samples)
+
             row = {
                 "dataset": str(args.dataset_name),
                 "model": model,
-                "k": int(ri.k),
+                "k": int(ri_summary["k"]),
                 "mode": str(args.mode),
                 "tau": float(args.tau),
                 "k_candidates": k_candidates_sig,
@@ -571,26 +762,26 @@ def main() -> int:
                 "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
                 "center_knn_bacc": float(knn_center_bacc_by_k[int(selected_k_center)]),
                 "selected_k_center": int(selected_k_center),
-                "ri": float(ri.value),
-                "ri_std": float(ri.std),
-                "mari": float(mari.value),
-                "mari_std": float(mari.std),
-                "ri_undefined_frac": ri_undefined_frac,
-                "mari_undefined_frac": mari_undefined_frac,
+                "ri": float(ri_summary["value"]),
+                "ri_std": float(ri_summary["std"]),
+                "mari": float(mari_summary["value"]),
+                "mari_std": float(mari_summary["std"]),
+                "ri_undefined_frac": float(ri_summary["undefined_frac"]),
+                "mari_undefined_frac": float(mari_summary["undefined_frac"]),
                 "ri_samples_path": str(saved_ri_dist_path),
                 "mari_samples_path": str(saved_dist_path),
-                "ccrr": float(ccrr_result.value),
-                "ccrr_std": float(ccrr_result.std),
-                "ccrr_m": int(ccrr_result.m),
-                "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
-                "ccrr_acceptance_threshold": float(ccrr_result.acceptance_threshold),
-                "ccrr_acceptance_met": bool(ccrr_result.acceptance_met),
-                "ccrr_k_start": int(ccrr_result.k_start),
-                "ccrr_k_final": int(ccrr_result.k_final),
-                "ccrr_retries": int(ccrr_result.retries),
-                "ccrr_alpha": float(ccrr_result.alpha),
-                "ccrr_q_alpha": float(ccrr_result.q_alpha),
-                "ccrr_ltm_alpha": float(ccrr_result.ltm_alpha),
+                "ccrr": float(ccrr_result["ccrr"]),
+                "ccrr_std": float(ccrr_result["ccrr_std"]),
+                "ccrr_m": int(ccrr_result["m"]),
+                "ccrr_undefined_frac": float(ccrr_result["ccrr_undefined_frac"]),
+                "ccrr_acceptance_threshold": float(ccrr_result["ccrr_acceptance_threshold"]),
+                "ccrr_acceptance_met": bool(ccrr_result["ccrr_acceptance_met"]),
+                "ccrr_k_start": int(ccrr_result["ccrr_k_start"]),
+                "ccrr_k_final": int(ccrr_result["ccrr_k_final"]),
+                "ccrr_retries": int(ccrr_result["ccrr_retries"]),
+                "ccrr_alpha": float(ccrr_result["ccrr_alpha"]),
+                "ccrr_q_alpha": float(ccrr_result["ccrr_q_alpha"]),
+                "ccrr_ltm_alpha": float(ccrr_result["ccrr_ltm_alpha"]),
                 "ccrr_samples_path": str(ccrr_dist_path),
                 "embedding_path": str(output_path),
             }
@@ -616,7 +807,13 @@ def main() -> int:
                         "embedding_path": str(output_path),
                     }
                 )
-            metrics_status[model] = "ok"
+            ccrr_m_sweep_rows.extend(ccrr_m_rows_for_model)
+
+            metrics_status[model] = "cached" if all_cache_hit else "ok"
+            if all_cache_hit:
+                print("[benchmark] metrics cache hit")
+            else:
+                print("[benchmark] metrics cache miss: partial/full recompute")
             print(
                 f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f} "
                 f"undefined samples: RI={100*row['ri_undefined_frac']:.1f}%, MaRI={100*row['mari_undefined_frac']:.1f}%, "
