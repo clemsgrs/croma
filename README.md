@@ -3,6 +3,7 @@
 Lightweight Python package for:
 - RI (Robustness Index)
 - MaRI (Margin-aware Robustness Index)
+- CCRR (Cross-Confounder Retrieval Ratio)
 
 ## Install
 
@@ -15,13 +16,19 @@ pip install mari
 ```python
 import numpy as np
 import pandas as pd
-from mari import RI, MaRI
+from mari import CCRR, RI, MaRI
 
 manifest = pd.read_csv("data/prostate-shift-binary.csv")
 features = np.load("embeddings.npy")  # shape: (N, D)
 
 ri = RI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21])
 mari = MaRI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21], tau=0.2)
+ccrr = CCRR.compute(
+    features,
+    manifest,
+    mode="paired",
+    m=1,
+)
 # optional: exclude one or more centers before RI/MaRI computation
 mari_no_center_x = MaRI.compute(
     features,
@@ -37,6 +44,10 @@ mari_no_center_x = MaRI.compute(
 - samples with undefined per-sample ratio (`SO_i + OS_i = 0`) are excluded
 - in `mode="paired"`, repeated appearances of the same sample across valid 2x2 pairs are averaged to one value per sample
 
+CCRR neighbor search is fully automatic:
+- expands neighborhood size and retries unresolved samples automatically
+- targets fully defined samples by default and returns `undefined_frac`
+
 Required manifest columns:
 - `sample_id`
 - `image_path`
@@ -50,7 +61,7 @@ Required manifest columns:
 
 ## Why use 2x2 pairs
 
-RI/MaRI compare two competing neighbor signals:
+RI/MaRI/CCRR compare two competing neighbor signals:
 - `SO`: same class, opposite center (desired)
 - `OS`: opposite class, same center (undesired)
 
@@ -77,10 +88,13 @@ Defaults:
 - `--mode global`
 - `--k-candidates 3,5,7,10,15,20,25`
 - `--tau 0.2`
+- `--ccrr-m-candidates 1,5,10,15,20`
 
 Optional:
 - `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
 - `--exclude-center CENTER_X` (repeatable) to exclude one or more centers from evaluation.
+- `--ccrr-m-candidates ...` to override CCRR sweep values (must include `1`).
+- `--recompute-metrics` to bypass metric cache reads and force full metric recomputation.
 
 Outputs:
 - all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`
@@ -90,15 +104,23 @@ Outputs:
   - `<output-dir>/<manifest_stem>/results/metrics.json`
   - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.csv`
   - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.json`
+  - `<output-dir>/<manifest_stem>/results/ccrr_m_sweep_metrics.csv`
+  - `<output-dir>/<manifest_stem>/results/ccrr_m_sweep_metrics.json`
   - `<output-dir>/<manifest_stem>/results/sample_distributions/ri.<model>.npy` (+ `.json`)
   - `<output-dir>/<manifest_stem>/results/sample_distributions/mari.<model>.npy` (+ `.json`)
+  - `<output-dir>/<manifest_stem>/results/sample_distributions/ccrr.<model>.npy`
+  - `<output-dir>/<manifest_stem>/results/cache/index.jsonl`
+  - `<output-dir>/<manifest_stem>/results/cache/artifacts/<artifact>/<model>/<key_hash>.json|.npy`
 - plots:
   - `<output-dir>/<manifest_stem>/plots/knn_bio_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/knn_center_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/ri_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/mari_k_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/ccrr_m_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/bio_vs_center_scatter.png`
   - `<output-dir>/<manifest_stem>/plots/mari_vs_ri_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/ccrr_vs_mari_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/ccrr_sample_distributions.png`
   - `<output-dir>/<manifest_stem>/plots/benchmark_6panel_summary.png`
 
 `k_sweep_metrics.*` stores one row per `(model, k)` with:
@@ -115,8 +137,29 @@ Outputs:
 - `center_knn_bacc`: center balanced accuracy at `selected_k_center`
 - `selected_k_center`: center task selected `k`
 - `excluded_centers`: excluded center signature used for this run
+- `ccrr`, `ccrr_std`, `ccrr_m`: CCRR summary (for `m=1`)
+- `ccrr_undefined_frac`: undefined sample fraction for CCRR
+- `ccrr_alpha`, `ccrr_q_alpha`, `ccrr_ltm_alpha`: CCRR tail statistics
 
-`sample_distributions/` stores raw per-sample RI/MaRI values for each model (at selected `k`).
+`ccrr_m_sweep_metrics.*` stores one row per `(model, m)` with:
+- `ccrr`, `ccrr_std`
+- `ccrr_undefined_frac`
+
+`sample_distributions/` stores raw per-sample RI/MaRI/CCRR values for each model.
 
 `metrics.csv`/`.json` also include:
 - `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
+
+### Metric Cache Behavior
+
+- Cache keys include:
+  - input fingerprints (`manifest_fingerprint`, `embedding_fingerprint`, `excluded_centers`)
+  - artifact-specific parameters
+  - cache schema/code fingerprint
+- Cache invalidation is dependency-specific:
+  - changing `tau` recomputes only MaRI artifacts
+  - changing CCRR search parameters recomputes only CCRR artifacts
+  - changing `k` candidates recomputes kNN/RI/MaRI artifacts only
+  - changing `mode` recomputes RI/MaRI/CCRR artifacts (kNN artifacts are reused)
+- Report files (`metrics.csv`, `k_sweep_metrics.csv`, `ccrr_m_sweep_metrics.csv`) are rewritten every run from current artifacts.
+- `--recompute-metrics` bypasses cache reads but still refreshes cache artifacts.

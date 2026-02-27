@@ -635,13 +635,20 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
     assert code == 0
 
     ri_calls = {"n": 0}
+    ccrr_calls = {"n": 0}
     original_ri_compute = bm.RI.compute
+    original_ccrr_compute = bm.CCRR.compute
 
     def wrapped_ri_compute(*args, **kwargs):
         ri_calls["n"] += 1
         return original_ri_compute(*args, **kwargs)
 
+    def wrapped_ccrr_compute(*args, **kwargs):
+        ccrr_calls["n"] += 1
+        return original_ccrr_compute(*args, **kwargs)
+
     monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
+    monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -663,4 +670,5 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
     )
     code = bm.main()
     assert code == 0
-    assert ri_calls["n"] > 0
+    assert ri_calls["n"] == 0
+    assert ccrr_calls["n"] > 0
