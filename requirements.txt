@@ -1,6 +1,5 @@
-numpy>=1.24
-pandas>=2.0
-scikit-learn>=1.3
-tqdm>=4.66
-Pillow>=10.0
-matplotlib>=3.8
+# Full development + benchmarking environment.
+# For library users: pip install mari
+# For benchmarking: pip install "mari[bench]"
+# For development:  pip install "mari[bench,dev]"
+-e ".[bench,dev]"

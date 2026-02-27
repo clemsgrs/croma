@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import logging
 
@@ -35,6 +34,41 @@ def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
     for sample_idx, row in enumerate(neigh):
         for pos in range(int(valid_counts[sample_idx])):
             assert slide_ids[int(row[pos])] != slide_ids[sample_idx]
+
+
+def test_filter_query_neighbors_excluding_same_slide_does_not_backfill() -> None:
+    raw_neighbors = np.array(
+        [
+            [0, 1, 2, 3],
+            [0, 1, 2, 3],
+        ],
+        dtype=int,
+    )
+    raw_distances = np.array(
+        [
+            [0.0, 0.1, 0.2, 0.3],
+            [0.0, 0.1, 0.2, 0.3],
+        ],
+        dtype=float,
+    )
+    query_indices = np.array([0, 1], dtype=int)
+    slide_ids = np.array(["slide-a", "slide-a", "slide-b", "slide-c"], dtype=object)
+
+    neigh, dist, valid_counts = nb._filter_query_neighbors_excluding_same_slide(
+        raw_neighbors=raw_neighbors,
+        raw_distances=raw_distances,
+        query_indices=query_indices,
+        slide_ids=slide_ids,
+        kmax=3,
+    )
+
+    assert valid_counts.tolist() == [2, 2]
+    assert neigh.shape == (2, 3)
+    assert dist.shape == (2, 3)
+    assert neigh[0].tolist() == [2, 3, -1]
+    assert neigh[1].tolist() == [2, 3, -1]
+    assert np.isfinite(dist[0, :2]).all()
+    assert np.isfinite(dist[1, :2]).all()
 
 
 def test_predict_labels_uses_per_sample_effective_k() -> None:

@@ -1,16 +1,14 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from mari import MaRI, RI
+from mari import CCRR, MaRI, RI
 from mari.metrics.neighbors import _knn_balanced_accuracy_by_k, _normalize_k_values, _select_k_from_balanced_accuracy
 from mari.metrics.pairs import load_manifest, normalize_center_values
-from metrics_io import excluded_centers_signature, k_candidates_signature
+from metrics_io import ccrr_search_signature, excluded_centers_signature, k_candidates_signature
 
 
 def _parse_k_candidates(raw: str) -> list[int]:
@@ -53,8 +51,6 @@ def _save_mari_sample_distribution(
     n_undefined_samples: int,
     values: np.ndarray,
 ) -> Path:
-    import json
-
     dist_dir = _sample_distribution_dir(output_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
     out_path = dist_dir / f"mari.{_safe_model_name(model)}.npy"
@@ -87,8 +83,6 @@ def _save_ri_sample_distribution(
     n_undefined_samples: int,
     values: np.ndarray,
 ) -> Path:
-    import json
-
     dist_dir = _sample_distribution_dir(output_dir)
     dist_dir.mkdir(parents=True, exist_ok=True)
     out_path = dist_dir / f"ri.{_safe_model_name(model)}.npy"
@@ -139,6 +133,24 @@ def main() -> None:
     )
     parser.add_argument("--tau", type=float, default=0.2)
     parser.add_argument(
+        "--ccrr-acceptance-threshold",
+        type=float,
+        default=0.0,
+        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
+    )
+    parser.add_argument(
+        "--ccrr-start-k",
+        type=int,
+        default=200,
+        help="Initial k for CCRR iterative neighbor search (default 200).",
+    )
+    parser.add_argument(
+        "--ccrr-k-growth-factor",
+        type=float,
+        default=1.5,
+        help="Geometric growth factor for CCRR iterative k search (>1, default 1.5).",
+    )
+    parser.add_argument(
         "--exclude-center",
         action="append",
         default=[],
@@ -154,6 +166,13 @@ def main() -> None:
 
     manifest = load_manifest(args.manifest, dataset_name=args.dataset_name)
     parsed_k_candidates = _parse_k_candidates(args.k_candidates)
+    if float(args.ccrr_acceptance_threshold) < 0.0 or float(args.ccrr_acceptance_threshold) > 1.0:
+        raise ValueError("--ccrr-acceptance-threshold must be in [0, 1]")
+    if int(args.ccrr_start_k) < 1:
+        raise ValueError("--ccrr-start-k must be >= 1")
+    if float(args.ccrr_k_growth_factor) <= 1.0:
+        raise ValueError("--ccrr-k-growth-factor must be > 1")
+
     if int(args.continuous_k_sweep_max) > 0:
         k_candidates = list(range(1, int(args.continuous_k_sweep_max) + 1))
     else:
@@ -161,12 +180,18 @@ def main() -> None:
     k_candidates_sig = k_candidates_signature(k_candidates)
     excluded_centers = normalize_center_values(args.exclude_center)
     excluded_centers_sig = excluded_centers_signature(excluded_centers)
+    ccrr_search_sig = ccrr_search_signature(
+        acceptance_threshold=float(args.ccrr_acceptance_threshold),
+        start_k=int(args.ccrr_start_k),
+        k_growth_factor=float(args.ccrr_k_growth_factor),
+    )
     specs = _parse_embedding_specs(args.embedding)
 
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
     metrics_out_path = Path(args.output_csv)
     mari_dist_out_dir = metrics_out_path.parent
+
     center_series = manifest["medical_center"].map(str).str.strip()
     keep_mask = ~center_series.isin(excluded_centers)
     if not bool(keep_mask.any()):
@@ -179,6 +204,7 @@ def main() -> None:
     labels = pd.factorize(eval_manifest["label"])[0].astype(int)
     center_labels = pd.factorize(eval_manifest["medical_center"])[0].astype(int)
     slide_ids = eval_manifest["slide_id"].astype(str).to_numpy()
+
     for model_name, embedding_path in specs:
         features = np.load(embedding_path)[keep_indices]
         knn_bacc_by_k = _knn_balanced_accuracy_by_k(
@@ -203,6 +229,7 @@ def main() -> None:
             k_values=k_candidates,
             scores=knn_center_bacc_by_k,
         )
+
         ri_curve = RI.compute_curve(
             features=features,
             manifest=eval_manifest,
@@ -230,6 +257,7 @@ def main() -> None:
             k_candidates=k_candidates,
             tau=args.tau,
         )
+
         total_n = int(len(eval_manifest))
         ri_informative_n = int(len(ri.sample_values))
         mari_informative_n = int(len(mari.sample_values))
@@ -237,6 +265,7 @@ def main() -> None:
         mari_undefined_n = max(0, total_n - mari_informative_n)
         ri_undefined_frac = float(ri_undefined_n / total_n) if total_n > 0 else 0.0
         mari_undefined_frac = float(mari_undefined_n / total_n) if total_n > 0 else 0.0
+
         dist_path = _save_mari_sample_distribution(
             output_dir=mari_dist_out_dir,
             model=model_name,
@@ -258,6 +287,22 @@ def main() -> None:
             n_undefined_samples=ri_undefined_n,
             values=ri.sample_values,
         )
+
+        ccrr_result = CCRR.compute(
+            features=features,
+            manifest=eval_manifest,
+            mode=args.mode,
+            m=1,
+            acceptance_threshold=float(args.ccrr_acceptance_threshold),
+            start_k=int(args.ccrr_start_k),
+            k_growth_factor=float(args.ccrr_k_growth_factor),
+        )
+
+        ccrr_dist_dir = _sample_distribution_dir(mari_dist_out_dir)
+        ccrr_dist_dir.mkdir(parents=True, exist_ok=True)
+        ccrr_dist_path = ccrr_dist_dir / f"ccrr.{_safe_model_name(model_name)}.npy"
+        np.save(ccrr_dist_path, np.asarray(ccrr_result.sample_values, dtype=float))
+
         rows.append(
             {
                 "model": model_name,
@@ -271,12 +316,27 @@ def main() -> None:
                 "center_knn_bacc": float(knn_center_bacc_by_k[int(selected_k_center)]),
                 "selected_k_center": int(selected_k_center),
                 "mari_undefined_frac": mari_undefined_frac,
+                "ccrr": float(ccrr_result.value),
+                "ccrr_std": float(ccrr_result.std),
+                "ccrr_m": int(ccrr_result.m),
+                "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
+                "ccrr_acceptance_threshold": float(ccrr_result.acceptance_threshold),
+                "ccrr_acceptance_met": bool(ccrr_result.acceptance_met),
+                "ccrr_k_start": int(ccrr_result.k_start),
+                "ccrr_k_final": int(ccrr_result.k_final),
+                "ccrr_retries": int(ccrr_result.retries),
+                "ccrr_alpha": float(ccrr_result.alpha),
+                "ccrr_q_alpha": float(ccrr_result.q_alpha),
+                "ccrr_ltm_alpha": float(ccrr_result.ltm_alpha),
+                "ccrr_samples_path": str(ccrr_dist_path),
                 "k_candidates": k_candidates_sig,
                 "excluded_centers": excluded_centers_sig,
+                "ccrr_search": ccrr_search_sig,
                 "ri_samples_path": str(ri_dist_path),
                 "mari_samples_path": str(dist_path),
             }
         )
+
         for k in k_candidates:
             k_sweep_rows.append(
                 {
@@ -286,6 +346,7 @@ def main() -> None:
                     "tau": float(args.tau),
                     "k_candidates": k_candidates_sig,
                     "excluded_centers": excluded_centers_sig,
+                    "ccrr_search": ccrr_search_sig,
                     "k": int(k),
                     "knn_bacc": float(knn_bacc_by_k[int(k)]),
                     "knn_center_bacc": float(knn_center_bacc_by_k[int(k)]),

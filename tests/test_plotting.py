@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import sys
 from pathlib import Path
@@ -15,6 +14,7 @@ from plotting import (
     _color_for_model,
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
+    plot_ccrr_m_sweep,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
     plot_mari_k_sweep,
@@ -84,6 +84,17 @@ def _sample_summary_rows() -> list[dict]:
             "ri": 0.35,
             "mari": 0.33,
         },
+    ]
+
+
+def _sample_ccrr_m_rows() -> list[dict]:
+    return [
+        {"model": "Virchow2", "m": 1, "ccrr": 1.40},
+        {"model": "Virchow2", "m": 2, "ccrr": 1.22},
+        {"model": "Virchow2", "m": 3, "ccrr": 1.10},
+        {"model": "UNI", "m": 1, "ccrr": 0.92},
+        {"model": "UNI", "m": 2, "ccrr": 0.97},
+        {"model": "UNI", "m": 3, "ccrr": 1.03},
     ]
 
 
@@ -158,6 +169,13 @@ def test_plot_mari_vs_ri_scatter_creates_png(tmp_path: Path) -> None:
 def test_plot_benchmark_6panel_summary_creates_png(tmp_path: Path) -> None:
     out_path = tmp_path / "benchmark_6panel_summary.png"
     plot_benchmark_6panel_summary(rows=_sample_summary_rows(), k_sweep_rows=_sample_k_rows(), out_path=out_path)
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_plot_ccrr_m_sweep_creates_png(tmp_path: Path) -> None:
+    out_path = tmp_path / "ccrr_m_sweep.png"
+    plot_ccrr_m_sweep(rows=_sample_ccrr_m_rows(), out_path=out_path)
     assert out_path.exists()
     assert out_path.stat().st_size > 0
 

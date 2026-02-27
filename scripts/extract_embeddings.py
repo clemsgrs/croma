@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-from __future__ import annotations
-
 import argparse
 import contextlib
 import dataclasses
@@ -9,8 +6,56 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from PIL import Image
+
 from tqdm.auto import tqdm
+
+try:
+    import torch
+    from torch.utils.data import DataLoader
+except ModuleNotFoundError:
+    torch = None
+    DataLoader = None
+
+try:
+    import timm
+    from timm.data import resolve_data_config
+    from timm.data.transforms_factory import create_transform
+    from timm.layers import SwiGLUPacked
+except ModuleNotFoundError:
+    timm = None
+    resolve_data_config = None
+    create_transform = None
+    SwiGLUPacked = None
+
+try:
+    from transformers import AutoImageProcessor, AutoModel
+except ModuleNotFoundError:
+    AutoImageProcessor = None
+    AutoModel = None
+
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    Image = None
+
+
+def _require_optional_bench_deps(*deps: str) -> None:
+    missing: list[str] = []
+    for dep in deps:
+        if dep == "torch" and torch is None:
+            missing.append("torch")
+        elif dep == "timm" and timm is None:
+            missing.append("timm")
+        elif dep == "transformers" and (AutoImageProcessor is None or AutoModel is None):
+            missing.append("transformers")
+        elif dep == "pillow" and Image is None:
+            missing.append("Pillow")
+    if missing:
+        dep_txt = ", ".join(sorted(set(missing)))
+        raise ModuleNotFoundError(
+            f"Missing optional benchmarking dependencies: {dep_txt}. "
+            "Install with `pip install \"mari[bench]\"`."
+        )
 
 
 @dataclasses.dataclass
@@ -124,8 +169,7 @@ def _build_model_registry():
 
 
 def _extract_timm_features(out, extract: str):
-    import torch
-
+    _require_optional_bench_deps("torch")
     if extract == "cls":
         return out[:, 0] if out.ndim == 3 else out
     if extract == "cls_and_patch":
@@ -147,8 +191,7 @@ def _load_manifest(manifest_path: Path) -> pd.DataFrame:
 
 
 def _device_from_arg(device_arg: str):
-    import torch
-
+    _require_optional_bench_deps("torch")
     if device_arg == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device_arg)
@@ -163,19 +206,14 @@ class TileDataset:
         return len(self.image_paths)
 
     def __getitem__(self, idx):
+        _require_optional_bench_deps("pillow")
         img = Image.open(self.image_paths[idx]).convert("RGB")
         return self.transform(img)
 
 
 def _load_model_and_transform(spec: ModelSpec, device):
-    import torch
-
     if spec.backend == "timm":
-        import timm
-        from timm.data import resolve_data_config
-        from timm.data.transforms_factory import create_transform
-        from timm.layers import SwiGLUPacked
-
+        _require_optional_bench_deps("torch", "timm")
         timm_kwargs = dict(spec.timm_kwargs)
         if timm_kwargs.get("mlp_layer") == "SwiGLUPacked":
             timm_kwargs["mlp_layer"] = SwiGLUPacked
@@ -193,8 +231,7 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "hf_auto":
-        from transformers import AutoImageProcessor, AutoModel
-
+        _require_optional_bench_deps("torch", "transformers")
         processor = AutoImageProcessor.from_pretrained(spec.model_id, trust_remote_code=True)
         model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
         model.eval().to(device)
@@ -222,8 +259,7 @@ def embed_manifest(
     num_workers: int,
     device_arg: str,
 ) -> tuple[Path, tuple[int, int]]:
-    import torch
-    from torch.utils.data import DataLoader
+    _require_optional_bench_deps("torch", "pillow")
 
     manifest = _load_manifest(manifest_path)
     device = _device_from_arg(device_arg)
