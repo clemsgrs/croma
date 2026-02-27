@@ -84,6 +84,12 @@ python scripts/benchmark.py \
 
 By default, all registered models are evaluated. Use `--models` to restrict to a subset.
 
+Model-specific dependency note:
+- `CONCH` requires: `pip install "git+https://github.com/Mahmoodlab/CONCH.git"`
+- `CONCHv1.5` requires: `pip install "git+https://github.com/mahmoodlab/TRIDENT.git"`
+
+These dependencies are validated in the embedding loader when the corresponding model is used.
+
 Defaults:
 - `--mode global`
 - `--k-candidates 3,5,7,10,15,20,25`
