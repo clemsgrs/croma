@@ -162,6 +162,34 @@ Outputs:
 `metrics.csv`/`.json` also include:
 - `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
 
+### Analyze Saved Metrics
+
+You can compute correlations, rank tables, and rank-shift summaries from a `metrics.csv` file:
+
+```bash
+python scripts/analyze_results.py \
+  --metrics-csv /path/to/results/metrics.csv \
+  --rank-reference RI
+```
+
+Outputs are written to `/path/to/results/analysis/` by default:
+- `correlation_pearson.csv`, `correlation_spearman.csv`
+- `model_ranks.csv`
+- `rank_deltas.csv`, `rank_agreement.csv`
+- `top_models_by_metric.csv`
+- `model_action_flags.csv` (threshold-based per-model action flags)
+- `k_sweep_sensitivity.csv` (when `k_sweep_metrics.csv` is available)
+- `ccrr_m_sweep_sensitivity.csv` (when `ccrr_m_sweep_metrics.csv` is available)
+- `analysis_report.md`
+
+`scripts/analyze_results.py` auto-detects sibling sweep files next to `metrics.csv` by default:
+- `k_sweep_metrics.csv`
+- `ccrr_m_sweep_metrics.csv`
+
+You can also override with:
+- `--k-sweep-csv /path/to/k_sweep_metrics.csv`
+- `--ccrr-m-sweep-csv /path/to/ccrr_m_sweep_metrics.csv`
+
 ### Metric Cache Behavior
 
 - Cache keys include:
