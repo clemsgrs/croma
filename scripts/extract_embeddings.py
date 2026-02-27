@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from tqdm.auto import tqdm
+from progress_utils import progress_bar, progress_write, resolve_progress_mode
 
 try:
     import torch
@@ -344,16 +344,19 @@ def embed_manifest(
     batch_size: int,
     num_workers: int,
     device_arg: str,
+    progress_enabled: bool | None = None,
+    tile_progress_leave: bool = True,
 ) -> tuple[Path, tuple[int, int]]:
     _require_optional_bench_deps("torch", "pillow")
 
     manifest = _load_manifest(manifest_path)
     device = _device_from_arg(device_arg)
+    progress_on = bool(progress_enabled) if progress_enabled is not None else True
 
-    print(f"[embed] manifest: {manifest_path}")
-    print(f"[embed] samples: {len(manifest)}")
-    print(f"[embed] backend/model: {spec.backend} / {spec.model_id}")
-    print(f"[embed] device: {device}")
+    progress_write(f"[embed] manifest: {manifest_path}", enabled=progress_on)
+    progress_write(f"[embed] samples: {len(manifest)}", enabled=progress_on)
+    progress_write(f"[embed] backend/model: {spec.backend} / {spec.model_id}", enabled=progress_on)
+    progress_write(f"[embed] device: {device}", enabled=progress_on)
 
     _model, transform, embed_fn = _load_model_and_transform(spec, device)
     dataset = TileDataset(manifest["image_path"].tolist(), transform)
@@ -373,11 +376,12 @@ def embed_manifest(
     all_emb = []
     total = len(dataset)
     with torch.inference_mode(), autocast:
-        with tqdm(
+        with progress_bar(
             total=total,
             desc="[embed] tiles",
             unit="img",
-            dynamic_ncols=True,
+            enabled=progress_on,
+            leave=tile_progress_leave,
         ) as pbar:
             for batch in loader:
                 batch = batch.to(device, non_blocking=True)
@@ -405,8 +409,8 @@ def embed_manifest(
         + "\n",
         encoding="utf-8",
     )
-    print(f"[embed] saved embeddings: {output_path} shape={arr.shape}")
-    print(f"[embed] saved metadata  : {sidecar}")
+    progress_write(f"[embed] saved embeddings: {output_path} shape={arr.shape}", enabled=progress_on)
+    progress_write(f"[embed] saved metadata  : {sidecar}", enabled=progress_on)
     return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
 
@@ -430,6 +434,12 @@ def parse_args():
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="auto", help="auto|cpu|cuda|cuda:0")
     parser.add_argument("--force", action="store_true", help="Overwrite existing output file.")
+    parser.add_argument(
+        "--progress",
+        choices=["auto", "on", "off"],
+        default="auto",
+        help="Progress display mode: auto=TTY only, on=always, off=never.",
+    )
     return parser.parse_args()
 
 
@@ -453,53 +463,67 @@ def _resolve_specs(model_names: list[str]) -> list[tuple[str, ModelSpec]]:
 
 def main():
     args = parse_args()
+    progress_enabled = resolve_progress_mode(str(args.progress))
     model_names = _parse_models(args.models)
     model_specs = _resolve_specs(model_names)
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"[embed] models: {', '.join(model_names)}")
-    print(f"[embed] output_dir: {output_dir}")
+    progress_write(f"[embed] models: {', '.join(model_names)}", enabled=progress_enabled)
+    progress_write(f"[embed] output_dir: {output_dir}", enabled=progress_enabled)
 
     statuses: list[dict] = []
-    for model_name, spec in model_specs:
-        print(f"\n[embed] === model: {model_name} ===")
-        output = _output_path_in_dir(args.manifest, output_dir, model_name)
-        if output.exists() and not args.force:
-            print(f"[embed] output exists, skipping: {output}")
-            statuses.append({"model": model_name, "status": "skipped", "output": str(output)})
-            continue
+    with progress_bar(
+        total=len(model_specs),
+        desc="[embed] models",
+        unit="model",
+        enabled=progress_enabled,
+    ) as model_bar:
+        for model_name, spec in model_specs:
+            model_bar.set_postfix_str(f"{model_name}:prepare")
+            progress_write(f"\n[embed] === model: {model_name} ===", enabled=progress_enabled)
+            output = _output_path_in_dir(args.manifest, output_dir, model_name)
+            if output.exists() and not args.force:
+                progress_write(f"[embed] output exists, skipping: {output}", enabled=progress_enabled)
+                statuses.append({"model": model_name, "status": "skipped", "output": str(output)})
+                model_bar.update(1)
+                continue
 
-        try:
-            embed_manifest(
-                manifest_path=args.manifest,
-                output_path=output,
-                spec=spec,
-                batch_size=int(args.batch_size),
-                num_workers=int(args.num_workers),
-                device_arg=str(args.device),
-            )
-            statuses.append({"model": model_name, "status": "ok", "output": str(output)})
-        except Exception as exc:  # noqa: BLE001
-            print(f"[embed] failed for model '{model_name}': {exc}")
-            statuses.append(
-                {
-                    "model": model_name,
-                    "status": "failed",
-                    "output": str(output),
-                    "error": str(exc),
-                }
-            )
+            try:
+                model_bar.set_postfix_str(f"{model_name}:extract")
+                embed_manifest(
+                    manifest_path=args.manifest,
+                    output_path=output,
+                    spec=spec,
+                    batch_size=int(args.batch_size),
+                    num_workers=int(args.num_workers),
+                    device_arg=str(args.device),
+                    progress_enabled=progress_enabled,
+                    tile_progress_leave=False,
+                )
+                statuses.append({"model": model_name, "status": "ok", "output": str(output)})
+            except Exception as exc:  # noqa: BLE001
+                progress_write(f"[embed] failed for model '{model_name}': {exc}", enabled=progress_enabled)
+                statuses.append(
+                    {
+                        "model": model_name,
+                        "status": "failed",
+                        "output": str(output),
+                        "error": str(exc),
+                    }
+                )
+            finally:
+                model_bar.update(1)
 
     n_ok = sum(1 for s in statuses if s["status"] == "ok")
     n_skip = sum(1 for s in statuses if s["status"] == "skipped")
     n_fail = sum(1 for s in statuses if s["status"] == "failed")
-    print("\n[embed] === summary ===")
-    print(f"[embed] ok={n_ok} skipped={n_skip} failed={n_fail}")
+    progress_write("\n[embed] === summary ===", enabled=progress_enabled)
+    progress_write(f"[embed] ok={n_ok} skipped={n_skip} failed={n_fail}", enabled=progress_enabled)
     for s in statuses:
         error_suffix = f" | error={s['error']}" if s["status"] == "failed" else ""
-        print(f"[embed] {s['model']}: {s['status']} -> {s['output']}{error_suffix}")
+        progress_write(f"[embed] {s['model']}: {s['status']} -> {s['output']}{error_suffix}", enabled=progress_enabled)
 
     if n_fail > 0:
         raise SystemExit(1)

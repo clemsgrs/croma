@@ -95,12 +95,16 @@ Defaults:
 - `--k-candidates 3,5,7,10,15,20,25`
 - `--tau 0.2`
 - `--ccrr-m-candidates 1,5,10,15,20`
+- `--ccrr-alpha 0.10`
+- `--progress auto` (show tqdm bars on TTY; plain logs otherwise)
 
 Optional:
 - `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
 - `--exclude-center CENTER_X` (repeatable) to exclude one or more centers from evaluation.
 - `--ccrr-m-candidates ...` to override CCRR sweep values (must include `1`).
+- `--ccrr-alpha ...` to choose the CCRR tail percentile used for `Q_alpha` and `LTM_alpha`.
 - `--recompute-metrics` to bypass metric cache reads and force full metric recomputation.
+- `--progress off` to force log-only output (recommended for CI/log redirects).
 
 Outputs:
 - all artifacts are stored under a dataset folder: `<output-dir>/<manifest_stem>/`
@@ -123,6 +127,7 @@ Outputs:
   - `<output-dir>/<manifest_stem>/plots/ri_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/mari_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/ccrr_m_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/ccrr_ltm_comparison.png`
   - `<output-dir>/<manifest_stem>/plots/bio_vs_center_scatter.png`
   - `<output-dir>/<manifest_stem>/plots/mari_vs_ri_scatter.png`
   - `<output-dir>/<manifest_stem>/plots/ccrr_vs_mari_scatter.png`
@@ -146,6 +151,7 @@ Outputs:
 - `ccrr`, `ccrr_std`, `ccrr_m`: CCRR summary (for `m=1`)
 - `ccrr_undefined_frac`: undefined sample fraction for CCRR
 - `ccrr_alpha`, `ccrr_q_alpha`, `ccrr_ltm_alpha`: CCRR tail statistics
+- `ccrr_search`: includes CCRR search settings and alpha (`thr=...;start=...;growth=...;alpha=...`)
 
 `ccrr_m_sweep_metrics.*` stores one row per `(model, m)` with:
 - `ccrr`, `ccrr_std`
@@ -155,6 +161,34 @@ Outputs:
 
 `metrics.csv`/`.json` also include:
 - `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
+
+### Analyze Saved Metrics
+
+You can compute correlations, rank tables, and rank-shift summaries from a `metrics.csv` file:
+
+```bash
+python scripts/analyze_results.py \
+  --metrics-csv /path/to/results/metrics.csv \
+  --rank-reference RI
+```
+
+Outputs are written to `/path/to/results/analysis/` by default:
+- `correlation_pearson.csv`, `correlation_spearman.csv`
+- `model_ranks.csv`
+- `rank_deltas.csv`, `rank_agreement.csv`
+- `top_models_by_metric.csv`
+- `model_action_flags.csv` (threshold-based per-model action flags)
+- `k_sweep_sensitivity.csv` (when `k_sweep_metrics.csv` is available)
+- `ccrr_m_sweep_sensitivity.csv` (when `ccrr_m_sweep_metrics.csv` is available)
+- `analysis_report.md`
+
+`scripts/analyze_results.py` auto-detects sibling sweep files next to `metrics.csv` by default:
+- `k_sweep_metrics.csv`
+- `ccrr_m_sweep_metrics.csv`
+
+You can also override with:
+- `--k-sweep-csv /path/to/k_sweep_metrics.csv`
+- `--ccrr-m-sweep-csv /path/to/ccrr_m_sweep_metrics.csv`
 
 ### Metric Cache Behavior
 

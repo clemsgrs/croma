@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -26,3 +27,44 @@ def test_registry_includes_conch_and_midnight_models() -> None:
     assert registry["Midnight-12k"].backend == "midnight"
     assert registry["Midnight-12k"].model_id == "kaiko-ai/midnight"
     assert registry["Midnight-12k"].extract == "cls_and_patch"
+
+
+def test_parse_args_accepts_progress_modes(monkeypatch: pytest.MonkeyPatch) -> None:
+    for mode in ("auto", "on", "off"):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            [
+                "extract_embeddings.py",
+                "--manifest",
+                "/tmp/manifest.csv",
+                "--output-dir",
+                "/tmp/out",
+                "--models",
+                "UNI",
+                "--progress",
+                mode,
+            ],
+        )
+        args = ee.parse_args()
+        assert args.progress == mode
+
+
+def test_parse_args_rejects_invalid_progress_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "extract_embeddings.py",
+            "--manifest",
+            "/tmp/manifest.csv",
+            "--output-dir",
+            "/tmp/out",
+            "--models",
+            "UNI",
+            "--progress",
+            "invalid",
+        ],
+    )
+    with pytest.raises(SystemExit):
+        ee.parse_args()
