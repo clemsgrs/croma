@@ -143,7 +143,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
     parser.add_argument(
         "--ccrr-m-candidates",
-        default="1,2,3",
+        default="1,5,10,15,20",
         help="Comma-separated CCRR m candidates for m-sweep plotting (must include 1).",
     )
     parser.add_argument(
