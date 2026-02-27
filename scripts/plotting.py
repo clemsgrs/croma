@@ -22,7 +22,7 @@ MODEL_COLOR_MAP: dict[str, str] = {
     "H-optimus-0": "#c49c94",
     "H0-mini": "#d7b5b0",
     "Prov-GigaPath": "#1f77b4",
-    "Midnight-12k (kaiko)": "#17becf",
+    "Midnight-12k": "#17becf",
     "Hibou-L": "#e377c2",
     "Hibou-B": "#f7b6d2",
     "Prost40M": "#636363",
