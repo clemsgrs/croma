@@ -212,7 +212,7 @@ class CrossConfounderRetrievalRatio:
         random_state: int = 0,
         acceptance_threshold: float = 0.0,
         start_k: int = 200,
-        k_growth_factor: float = 1.5,
+        k_growth_factor: float = 2.0,
     ) -> CCRRResult:
         mode_value = str(mode).strip().lower()
         if mode_value not in _PAIR_MODES:

@@ -147,8 +147,8 @@ def main() -> None:
     parser.add_argument(
         "--ccrr-k-growth-factor",
         type=float,
-        default=1.5,
-        help="Geometric growth factor for CCRR iterative k search (>1, default 1.5).",
+        default=2.0,
+        help="Geometric growth factor for CCRR iterative k search (>1, default 2.0).",
     )
     parser.add_argument(
         "--ccrr-alpha",

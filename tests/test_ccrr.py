@@ -1,4 +1,6 @@
 
+import inspect
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -75,6 +77,10 @@ class TestComputeSampleCCRR:
 
 
 class TestCCRRCompute:
+
+    def test_default_k_growth_factor_is_two(self) -> None:
+        sig = inspect.signature(CrossConfounderRetrievalRatio.compute)
+        assert sig.parameters["k_growth_factor"].default == 2.0
 
     @pytest.mark.parametrize("mode", ["paired", "global"])
     def test_compute_returns_valid_result(self, mode: str) -> None:
