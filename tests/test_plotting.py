@@ -112,7 +112,7 @@ def test_color_map_integrity_matches_expected_values() -> None:
         "H-optimus-0": "#c49c94",
         "H0-mini": "#d7b5b0",
         "Prov-GigaPath": "#1f77b4",
-        "Midnight": "#17becf",
+        "Midnight-12k": "#17becf",
         "Hibou-L": "#e377c2",
         "Hibou-B": "#f7b6d2",
         "Prost40M": "#636363",

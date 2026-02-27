@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import dataclasses
+import importlib.util
 import json
 from pathlib import Path
 
@@ -39,28 +40,44 @@ except ModuleNotFoundError:
     Image = None
 
 
+_OPTIONAL_BENCH_DEPENDENCIES: dict[str, tuple[str, str]] = {
+    "torch": ("torch", 'pip install "mari[bench]"'),
+    "timm": ("timm", 'pip install "mari[bench]"'),
+    "transformers": ("transformers", 'pip install "mari[bench]"'),
+    "pillow": ("Pillow", 'pip install "mari[bench]"'),
+    "torchvision": ("torchvision", "pip install torchvision"),
+    "conch": ("CONCH", 'pip install "git+https://github.com/Mahmoodlab/CONCH.git"'),
+    "trident": ("TRIDENT", 'pip install "git+https://github.com/mahmoodlab/TRIDENT.git"'),
+}
+
+
 def _require_optional_bench_deps(*deps: str) -> None:
     missing: list[str] = []
     for dep in deps:
+        if dep not in _OPTIONAL_BENCH_DEPENDENCIES:
+            raise ValueError(f"Unknown optional benchmarking dependency key: {dep}")
         if dep == "torch" and torch is None:
-            missing.append("torch")
+            missing.append(dep)
         elif dep == "timm" and timm is None:
-            missing.append("timm")
+            missing.append(dep)
         elif dep == "transformers" and (AutoImageProcessor is None or AutoModel is None):
-            missing.append("transformers")
+            missing.append(dep)
         elif dep == "pillow" and Image is None:
-            missing.append("Pillow")
+            missing.append(dep)
+        elif dep in {"torchvision", "conch", "trident"} and importlib.util.find_spec(dep) is None:
+            missing.append(dep)
     if missing:
-        dep_txt = ", ".join(sorted(set(missing)))
-        raise ModuleNotFoundError(
-            f"Missing optional benchmarking dependencies: {dep_txt}. "
-            "Install with `pip install \"mari[bench]\"`."
-        )
+        unique = sorted(set(missing))
+        lines = ["Missing optional benchmarking dependencies:"]
+        for dep in unique:
+            package_name, install_cmd = _OPTIONAL_BENCH_DEPENDENCIES[dep]
+            lines.append(f"- {package_name}: install with `{install_cmd}`")
+        raise ModuleNotFoundError("\n".join(lines))
 
 
 @dataclasses.dataclass
 class ModelSpec:
-    backend: str  # "timm" or "hf_auto"
+    backend: str  # "timm", "hf_auto", "conch_v1", "conch_v1_5", or "midnight"
     model_id: str
     extract: str = "cls"
     timm_kwargs: dict = dataclasses.field(default_factory=dict)
@@ -113,6 +130,17 @@ def _build_model_registry():
             extract="cls",
             timm_kwargs={"init_values": 1e-5, "dynamic_img_size": True},
         ),
+        "CONCHv1.5": ModelSpec(
+            backend="conch_v1_5",
+            model_id="MahmoodLab/conch-v1.5",
+            extract="raw",
+            mixed_precision=True,
+        ),
+        "CONCH": ModelSpec(
+            backend="conch_v1",
+            model_id="MahmoodLab/conch",
+            extract="raw",
+        ),
         "H-optimus-1": ModelSpec(
             backend="timm",
             model_id="hf-hub:bioptimus/H-optimus-1",
@@ -138,6 +166,11 @@ def _build_model_registry():
             backend="timm",
             model_id="hf-hub:prov-gigapath/prov-gigapath",
             extract="cls",
+        ),
+        "Midnight-12k": ModelSpec(
+            backend="midnight",
+            model_id="kaiko-ai/midnight",
+            extract="cls_and_patch",
         ),
         "Prost40M": ModelSpec(
             backend="timm",
@@ -239,9 +272,62 @@ def _load_model_and_transform(spec: ModelSpec, device):
 
         def embed_fn(batch):
             out = model(pixel_values=batch).last_hidden_state
-            return out[:, 0, :]
+            if spec.extract == "cls":
+                return out[:, 0, :]
+            if spec.extract == "cls_and_patch":
+                return torch.cat([out[:, 0], out[:, 1:].mean(1)], dim=-1)
+            raise ValueError(f"Unsupported extract mode for hf_auto backend: {spec.extract}")
 
         return model, transform, embed_fn
+
+    if spec.backend == "midnight":
+        _require_optional_bench_deps("torch", "transformers", "torchvision")
+        from torchvision.transforms import v2
+
+        model = AutoModel.from_pretrained(spec.model_id)
+        model.eval().to(device)
+        transform = v2.Compose(
+            [
+                v2.Resize(224),
+                v2.CenterCrop(224),
+                v2.ToTensor(),
+                v2.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            ]
+        )
+
+        def embed_fn(batch):
+            out = model(pixel_values=batch).last_hidden_state
+            if spec.extract == "cls_and_patch":
+                return torch.cat([out[:, 0], out[:, 1:].mean(1)], dim=-1)
+            if spec.extract == "cls":
+                return out[:, 0, :]
+            raise ValueError(f"Unsupported extract mode for midnight backend: {spec.extract}")
+
+        return model, transform, embed_fn
+
+    if spec.backend == "conch_v1":
+        _require_optional_bench_deps("torch", "conch")
+        from conch.open_clip_custom import create_model_from_pretrained
+
+        model, transform = create_model_from_pretrained("conch_ViT-B-16", "hf_hub:MahmoodLab/conch")
+        model.eval().to(device)
+
+        def embed_fn(batch):
+            return model.encode_image(batch, proj_contrast=False, normalize=False)
+
+        return model, transform, embed_fn
+
+    if spec.backend == "conch_v1_5":
+        _require_optional_bench_deps("torch", "trident")
+        from trident.patch_encoder_models import encoder_factory
+
+        encoder = encoder_factory(model_name="conch_v15")
+        encoder.eval().to(device)
+
+        def embed_fn(batch):
+            return encoder(batch)
+
+        return encoder, encoder.eval_transforms, embed_fn
 
     raise ValueError(f"Unknown backend: {spec.backend}")
 
