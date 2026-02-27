@@ -14,6 +14,7 @@ from plotting import (
     _color_for_model,
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
+    plot_ccrr_ltm_comparison,
     plot_ccrr_m_sweep,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
@@ -98,6 +99,14 @@ def _sample_ccrr_m_rows() -> list[dict]:
     ]
 
 
+def _sample_ccrr_ltm_rows() -> list[dict]:
+    return [
+        {"model": "Virchow2", "ccrr": 1.30, "ccrr_ltm_alpha": 1.10, "ccrr_alpha": 0.10},
+        {"model": "UNI", "ccrr": 1.05, "ccrr_ltm_alpha": 0.82, "ccrr_alpha": 0.10},
+        {"model": "CONCH", "ccrr": 0.96, "ccrr_ltm_alpha": 0.61, "ccrr_alpha": 0.10},
+    ]
+
+
 def test_color_map_integrity_matches_expected_values() -> None:
     expected = {
         "Virchow2": "#ff7f0e",
@@ -176,6 +185,84 @@ def test_plot_benchmark_6panel_summary_creates_png(tmp_path: Path) -> None:
 def test_plot_ccrr_m_sweep_creates_png(tmp_path: Path) -> None:
     out_path = tmp_path / "ccrr_m_sweep.png"
     plot_ccrr_m_sweep(rows=_sample_ccrr_m_rows(), out_path=out_path)
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_plot_ccrr_ltm_comparison_creates_png(tmp_path: Path) -> None:
+    out_path = tmp_path / "ccrr_ltm_comparison.png"
+    plot_ccrr_ltm_comparison(rows=_sample_ccrr_ltm_rows(), out_path=out_path)
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_plot_ccrr_ltm_scatter_uses_ccrr_and_ltm_coordinates(monkeypatch, tmp_path: Path) -> None:
+    import matplotlib.axes
+
+    calls: list[tuple[float, float]] = []
+    original_scatter = matplotlib.axes.Axes.scatter
+
+    def spy_scatter(self, x, y, *args, **kwargs):
+        xx = np.asarray(x, dtype=float)
+        yy = np.asarray(y, dtype=float)
+        if xx.size == 1 and yy.size == 1:
+            calls.append((float(xx[0]), float(yy[0])))
+        return original_scatter(self, x, y, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    plot_ccrr_ltm_comparison(rows=_sample_ccrr_ltm_rows(), out_path=tmp_path / "scatter_points.png")
+
+    observed = set(calls)
+    expected = {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)}
+    assert expected.issubset(observed)
+
+
+def test_plot_ccrr_ltm_bar_sorts_by_ltm_descending(monkeypatch, tmp_path: Path) -> None:
+    import matplotlib.axes
+
+    ltm_heights: list[float] = []
+    original_bar = matplotlib.axes.Axes.bar
+
+    def spy_bar(self, x, height, *args, **kwargs):
+        label = str(kwargs.get("label", ""))
+        if "LTM@" in label:
+            arr = np.asarray(height, dtype=float)
+            ltm_heights.extend([float(v) for v in arr.tolist()])
+        return original_bar(self, x, height, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "bar", spy_bar)
+    plot_ccrr_ltm_comparison(rows=_sample_ccrr_ltm_rows(), out_path=tmp_path / "ltm_sort.png")
+
+    assert ltm_heights == sorted(ltm_heights, reverse=True)
+
+
+def test_plot_ccrr_ltm_comparison_ignores_invalid_rows(monkeypatch, tmp_path: Path) -> None:
+    import matplotlib.axes
+
+    calls: list[tuple[float, float]] = []
+    original_scatter = matplotlib.axes.Axes.scatter
+
+    def spy_scatter(self, x, y, *args, **kwargs):
+        xx = np.asarray(x, dtype=float)
+        yy = np.asarray(y, dtype=float)
+        if xx.size == 1 and yy.size == 1:
+            calls.append((float(xx[0]), float(yy[0])))
+        return original_scatter(self, x, y, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    rows = _sample_ccrr_ltm_rows() + [{"model": "Bad", "ccrr": float("nan"), "ccrr_ltm_alpha": 0.5, "ccrr_alpha": 0.1}]
+    out_path = tmp_path / "partial_valid.png"
+    plot_ccrr_ltm_comparison(rows=rows, out_path=out_path)
+
+    assert out_path.exists()
+    assert (1.30, 1.10) in set(calls)
+
+
+def test_plot_ccrr_ltm_comparison_handles_no_valid_rows(tmp_path: Path) -> None:
+    rows = [{"model": "Bad", "ccrr": float("nan"), "ccrr_ltm_alpha": float("nan"), "ccrr_alpha": 0.10}]
+    out_path = tmp_path / "no_valid.png"
+    plot_ccrr_ltm_comparison(rows=rows, out_path=out_path)
+
     assert out_path.exists()
     assert out_path.stat().st_size > 0
 

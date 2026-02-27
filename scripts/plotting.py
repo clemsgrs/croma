@@ -394,6 +394,151 @@ def plot_ccrr_m_sweep(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
+def _valid_ccrr_ltm_rows(rows: list[dict]) -> list[dict]:
+    valid: list[dict] = []
+    for row in rows:
+        if "ccrr" not in row or "ccrr_ltm_alpha" not in row:
+            continue
+        try:
+            ccrr_value = float(row["ccrr"])
+            ltm_value = float(row["ccrr_ltm_alpha"])
+        except Exception:  # noqa: BLE001
+            continue
+        if not np.isfinite(ccrr_value) or not np.isfinite(ltm_value):
+            continue
+
+        try:
+            alpha_value = float(row.get("ccrr_alpha", float("nan")))
+        except Exception:  # noqa: BLE001
+            alpha_value = float("nan")
+
+        valid.append(
+            {
+                "model": str(row.get("model", "")),
+                "ccrr": ccrr_value,
+                "ltm": ltm_value,
+                "alpha": alpha_value if np.isfinite(alpha_value) else float("nan"),
+            }
+        )
+    return valid
+
+
+def _ltm_label(valid_rows: list[dict]) -> str:
+    alpha_values = sorted({float(r["alpha"]) for r in valid_rows if np.isfinite(float(r["alpha"]))})
+    if len(alpha_values) == 1:
+        alpha_pct = int(round(alpha_values[0] * 100))
+        return f"LTM@{alpha_pct}%"
+    return "LTM(CCRR)"
+
+
+def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if arr.size == 0:
+        return 0.0, 1.0
+    vmin = float(np.nanmin(arr))
+    vmax = float(np.nanmax(arr))
+    span = float(vmax - vmin)
+    if span <= 1e-9:
+        pad = max(0.1, abs(vmin) * 0.10, 0.05)
+    else:
+        pad = max(0.1, span * 0.10)
+    lo = max(0.0, vmin - pad)
+    hi = vmax + pad
+    if hi <= lo:
+        hi = lo + 1.0
+    return float(lo), float(hi)
+
+
+def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.8))
+    scatter_ax, bar_ax = axes
+    valid_rows = _valid_ccrr_ltm_rows(rows)
+
+    if not valid_rows:
+        scatter_ax.set_visible(False)
+        bar_ax.set_visible(False)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    label_ltm = _ltm_label(valid_rows)
+
+    # Left: CCRR vs LTM scatter.
+    xs = np.asarray([float(r["ccrr"]) for r in valid_rows], dtype=float)
+    ys = np.asarray([float(r["ltm"]) for r in valid_rows], dtype=float)
+    lim_lo, lim_hi = _padded_positive_limits(np.concatenate([xs, ys]))
+
+    scatter_ax.set_facecolor("#fbfcfd")
+    scatter_ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
+    scatter_ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi], linestyle="--", linewidth=1.1, color="#6b7280", zorder=1)
+    for row in sorted(valid_rows, key=lambda r: str(r["model"])):
+        model = str(row["model"])
+        scatter_ax.scatter(
+            [float(row["ccrr"])],
+            [float(row["ltm"])],
+            s=90,
+            color=_color_for_model(model),
+            edgecolors="white",
+            linewidths=1.0,
+            zorder=3,
+        )
+    scatter_ax.set_xlim(lim_lo, lim_hi)
+    scatter_ax.set_ylim(lim_lo, lim_hi)
+    scatter_ax.set_xlabel("CCRR", fontsize=11)
+    scatter_ax.set_ylabel(label_ltm, fontsize=11)
+    scatter_ax.set_title(f"CCRR vs {label_ltm}", fontsize=13, weight="bold")
+
+    # Right: sorted CCRR/LTM bars to compare rank and tail-gap by model.
+    ranked_rows = sorted(valid_rows, key=lambda r: (float(r["ltm"]), str(r["model"])), reverse=True)
+    model_names = [str(r["model"]) for r in ranked_rows]
+    ccrr_vals = np.asarray([float(r["ccrr"]) for r in ranked_rows], dtype=float)
+    ltm_vals = np.asarray([float(r["ltm"]) for r in ranked_rows], dtype=float)
+    colors = [_color_for_model(model) for model in model_names]
+    x = np.arange(len(ranked_rows), dtype=float)
+    width = 0.38
+
+    bar_ax.set_facecolor("#fbfcfd")
+    bar_ax.grid(axis="y", color="#d9dee5", linewidth=0.8, alpha=0.9, zorder=0)
+    bar_ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.75)
+    bar_ax.bar(
+        x - width / 2.0,
+        ccrr_vals,
+        width=width,
+        color=colors,
+        alpha=0.85,
+        edgecolor="white",
+        linewidth=0.6,
+        label="CCRR",
+        zorder=3,
+    )
+    bar_ax.bar(
+        x + width / 2.0,
+        ltm_vals,
+        width=width,
+        color=colors,
+        alpha=0.45,
+        edgecolor="white",
+        linewidth=0.6,
+        label=label_ltm,
+        zorder=3,
+    )
+    bar_ax.set_xticks(x)
+    bar_ax.set_xticklabels(model_names, rotation=35, ha="right")
+    bar_ax.set_ylabel("score", fontsize=11)
+    bar_ax.set_title(f"Sorted by {label_ltm}", fontsize=13, weight="bold")
+    bar_ax.legend(frameon=False, loc="best")
+    y_lo, y_hi = _padded_positive_limits(np.concatenate([ccrr_vals, ltm_vals]))
+    bar_ax.set_ylim(y_lo, y_hi)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_bio_vs_center_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
     _draw_bio_vs_center_scatter(ax, rows, show_legend=True, legend_outside=False)

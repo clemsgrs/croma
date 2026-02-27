@@ -31,6 +31,7 @@ from metrics_io import (
 from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
+    plot_ccrr_ltm_comparison,
     plot_ccrr_m_sweep,
     plot_ccrr_sample_distributions,
     plot_ccrr_vs_mari_scatter,
@@ -165,6 +166,12 @@ def _parse_args() -> argparse.Namespace:
         help="Geometric growth factor for CCRR iterative k search (>1, default 1.5).",
     )
     parser.add_argument(
+        "--ccrr-alpha",
+        type=float,
+        default=0.10,
+        help="Tail percentile alpha used for CCRR Q_alpha/LTM_alpha reporting (default 0.10).",
+    )
+    parser.add_argument(
         "--exclude-center",
         action="append",
         default=[],
@@ -293,6 +300,7 @@ def _compute_ccrr_by_m(
     ccrr_acceptance_threshold: float,
     ccrr_start_k: int,
     ccrr_k_growth_factor: float,
+    ccrr_alpha: float,
 ) -> dict[int, object]:
     out: dict[int, object] = {}
     for m in m_values:
@@ -301,6 +309,7 @@ def _compute_ccrr_by_m(
             manifest=manifest,
             mode=mode,
             m=int(m),
+            alpha=float(ccrr_alpha),
             acceptance_threshold=float(ccrr_acceptance_threshold),
             start_k=int(ccrr_start_k),
             k_growth_factor=float(ccrr_k_growth_factor),
@@ -316,6 +325,8 @@ def main() -> int:
         raise ValueError("--ccrr-start-k must be >= 1")
     if float(args.ccrr_k_growth_factor) <= 1.0:
         raise ValueError("--ccrr-k-growth-factor must be > 1")
+    if float(args.ccrr_alpha) <= 0.0 or float(args.ccrr_alpha) > 1.0:
+        raise ValueError("--ccrr-alpha must be in (0, 1]")
 
     registry = ee._build_model_registry()
     models = _resolve_models(args.models, registry)
@@ -351,6 +362,7 @@ def main() -> int:
         acceptance_threshold=float(args.ccrr_acceptance_threshold),
         start_k=int(args.ccrr_start_k),
         k_growth_factor=float(args.ccrr_k_growth_factor),
+        alpha=float(args.ccrr_alpha),
     )
 
     extraction_status: dict[str, str] = {}
@@ -478,7 +490,7 @@ def main() -> int:
                         "acceptance_threshold": float(args.ccrr_acceptance_threshold),
                         "start_k": int(args.ccrr_start_k),
                         "k_growth_factor": float(args.ccrr_k_growth_factor),
-                        "alpha": 0.10,
+                        "alpha": float(args.ccrr_alpha),
                     },
                 ),
                 "ccrr_m1_samples": build_cache_key(
@@ -491,7 +503,7 @@ def main() -> int:
                         "acceptance_threshold": float(args.ccrr_acceptance_threshold),
                         "start_k": int(args.ccrr_start_k),
                         "k_growth_factor": float(args.ccrr_k_growth_factor),
-                        "alpha": 0.10,
+                        "alpha": float(args.ccrr_alpha),
                     },
                 ),
             }
@@ -679,6 +691,7 @@ def main() -> int:
                     ccrr_acceptance_threshold=float(args.ccrr_acceptance_threshold),
                     ccrr_start_k=int(args.ccrr_start_k),
                     ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
+                    ccrr_alpha=float(args.ccrr_alpha),
                 )
                 ccrr_by_m = _ccrr_payload_to_by_m(
                     _ccrr_payload_from_results(ccrr_results),
@@ -833,6 +846,7 @@ def main() -> int:
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
         plot_ccrr_m_sweep(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_m_sweep.png")
+        plot_ccrr_ltm_comparison(rows=rows, out_path=plots_dir / "ccrr_ltm_comparison.png")
         plot_bio_vs_center_scatter(rows=rows, out_path=plots_dir / "bio_vs_center_scatter.png")
         plot_mari_vs_ri_scatter(rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png")
         plot_ccrr_vs_mari_scatter(rows=rows, out_path=plots_dir / "ccrr_vs_mari_scatter.png")

@@ -95,11 +95,13 @@ Defaults:
 - `--k-candidates 3,5,7,10,15,20,25`
 - `--tau 0.2`
 - `--ccrr-m-candidates 1,5,10,15,20`
+- `--ccrr-alpha 0.10`
 
 Optional:
 - `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
 - `--exclude-center CENTER_X` (repeatable) to exclude one or more centers from evaluation.
 - `--ccrr-m-candidates ...` to override CCRR sweep values (must include `1`).
+- `--ccrr-alpha ...` to choose the CCRR tail percentile used for `Q_alpha` and `LTM_alpha`.
 - `--recompute-metrics` to bypass metric cache reads and force full metric recomputation.
 
 Outputs:
@@ -123,6 +125,7 @@ Outputs:
   - `<output-dir>/<manifest_stem>/plots/ri_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/mari_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/ccrr_m_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/ccrr_ltm_comparison.png`
   - `<output-dir>/<manifest_stem>/plots/bio_vs_center_scatter.png`
   - `<output-dir>/<manifest_stem>/plots/mari_vs_ri_scatter.png`
   - `<output-dir>/<manifest_stem>/plots/ccrr_vs_mari_scatter.png`
@@ -146,6 +149,7 @@ Outputs:
 - `ccrr`, `ccrr_std`, `ccrr_m`: CCRR summary (for `m=1`)
 - `ccrr_undefined_frac`: undefined sample fraction for CCRR
 - `ccrr_alpha`, `ccrr_q_alpha`, `ccrr_ltm_alpha`: CCRR tail statistics
+- `ccrr_search`: includes CCRR search settings and alpha (`thr=...;start=...;growth=...;alpha=...`)
 
 `ccrr_m_sweep_metrics.*` stores one row per `(model, m)` with:
 - `ccrr`, `ccrr_std`

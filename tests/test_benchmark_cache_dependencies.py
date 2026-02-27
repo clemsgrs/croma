@@ -187,6 +187,55 @@ def test_ccrr_search_change_recomputes_only_ccrr(monkeypatch, tmp_path: Path) ->
     assert calls["knn"] == 0
 
 
+def test_ccrr_alpha_change_recomputes_only_ccrr(monkeypatch, tmp_path: Path) -> None:
+    manifest = _toy_manifest()
+    manifest_path = tmp_path / "toy.csv"
+    manifest.to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+    _install_fake_registry_and_embed(monkeypatch, model="M1")
+
+    assert _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir) == 0
+
+    calls = {"ri": 0, "mari": 0, "ccrr": 0, "knn": 0}
+    original_ri_compute = bm.RI.compute
+    original_mari_compute = bm.MaRI.compute
+    original_ccrr_compute = bm.CCRR.compute
+    original_knn = bm._knn_balanced_accuracy_by_k
+
+    def wrapped_ri_compute(*args, **kwargs):
+        calls["ri"] += 1
+        return original_ri_compute(*args, **kwargs)
+
+    def wrapped_mari_compute(*args, **kwargs):
+        calls["mari"] += 1
+        return original_mari_compute(*args, **kwargs)
+
+    def wrapped_ccrr_compute(*args, **kwargs):
+        calls["ccrr"] += 1
+        return original_ccrr_compute(*args, **kwargs)
+
+    def wrapped_knn(*args, **kwargs):
+        calls["knn"] += 1
+        return original_knn(*args, **kwargs)
+
+    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
+    monkeypatch.setattr(bm.MaRI, "compute", wrapped_mari_compute)
+    monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
+    monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
+
+    assert _run_benchmark(
+        monkeypatch,
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+        extra_args=["--ccrr-alpha", "0.2"],
+    ) == 0
+
+    assert calls["ccrr"] > 0
+    assert calls["ri"] == 0
+    assert calls["mari"] == 0
+    assert calls["knn"] == 0
+
+
 def test_k_values_change_recomputes_knn_ri_mari_not_ccrr(monkeypatch, tmp_path: Path) -> None:
     manifest = _toy_manifest()
     manifest_path = tmp_path / "toy.csv"

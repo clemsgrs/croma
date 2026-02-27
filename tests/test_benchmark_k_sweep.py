@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -102,6 +103,7 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     ri_k_plot_path = dataset_dir / "plots" / "ri_k_sweep.png"
     mari_plot_path = dataset_dir / "plots" / "mari_k_sweep.png"
     ccrr_m_plot_path = dataset_dir / "plots" / "ccrr_m_sweep.png"
+    ccrr_ltm_plot_path = dataset_dir / "plots" / "ccrr_ltm_comparison.png"
     bio_center_plot_path = dataset_dir / "plots" / "bio_vs_center_scatter.png"
     mari_ri_plot_path = dataset_dir / "plots" / "mari_vs_ri_scatter.png"
     summary_plot_path = dataset_dir / "plots" / "benchmark_6panel_summary.png"
@@ -123,6 +125,7 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert ri_k_plot_path.exists()
     assert mari_plot_path.exists()
     assert ccrr_m_plot_path.exists()
+    assert ccrr_ltm_plot_path.exists()
     assert bio_center_plot_path.exists()
     assert mari_ri_plot_path.exists()
     assert summary_plot_path.exists()
@@ -672,3 +675,23 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
     assert code == 0
     assert ri_calls["n"] == 0
     assert ccrr_calls["n"] > 0
+
+
+def test_benchmark_rejects_invalid_ccrr_alpha(monkeypatch, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "missing.csv"
+    output_dir = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--output-dir",
+            str(output_dir),
+            "--ccrr-alpha",
+            "0",
+        ],
+    )
+    with pytest.raises(ValueError, match=r"--ccrr-alpha must be in \(0, 1\]"):
+        bm.main()

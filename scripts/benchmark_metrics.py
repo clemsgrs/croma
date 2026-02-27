@@ -151,6 +151,12 @@ def main() -> None:
         help="Geometric growth factor for CCRR iterative k search (>1, default 1.5).",
     )
     parser.add_argument(
+        "--ccrr-alpha",
+        type=float,
+        default=0.10,
+        help="Tail percentile alpha used for CCRR Q_alpha/LTM_alpha reporting (default 0.10).",
+    )
+    parser.add_argument(
         "--exclude-center",
         action="append",
         default=[],
@@ -172,6 +178,8 @@ def main() -> None:
         raise ValueError("--ccrr-start-k must be >= 1")
     if float(args.ccrr_k_growth_factor) <= 1.0:
         raise ValueError("--ccrr-k-growth-factor must be > 1")
+    if float(args.ccrr_alpha) <= 0.0 or float(args.ccrr_alpha) > 1.0:
+        raise ValueError("--ccrr-alpha must be in (0, 1]")
 
     if int(args.continuous_k_sweep_max) > 0:
         k_candidates = list(range(1, int(args.continuous_k_sweep_max) + 1))
@@ -184,6 +192,7 @@ def main() -> None:
         acceptance_threshold=float(args.ccrr_acceptance_threshold),
         start_k=int(args.ccrr_start_k),
         k_growth_factor=float(args.ccrr_k_growth_factor),
+        alpha=float(args.ccrr_alpha),
     )
     specs = _parse_embedding_specs(args.embedding)
 
@@ -293,6 +302,7 @@ def main() -> None:
             manifest=eval_manifest,
             mode=args.mode,
             m=1,
+            alpha=float(args.ccrr_alpha),
             acceptance_threshold=float(args.ccrr_acceptance_threshold),
             start_k=int(args.ccrr_start_k),
             k_growth_factor=float(args.ccrr_k_growth_factor),
