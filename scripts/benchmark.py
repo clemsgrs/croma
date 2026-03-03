@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import extract_embeddings as ee
+from model_registry import ModelSpec, _build_model_registry, _parse_models
 from common import parse_k_candidates
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from mari import CCRR, MaRI, RI
@@ -200,9 +200,9 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_models(raw_models: str, registry: dict[str, ee.ModelSpec]) -> list[str]:
+def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str]:
     if str(raw_models).strip():
-        models = ee._parse_models(raw_models)
+        models = _parse_models(raw_models)
         unknown = [m for m in models if m not in registry]
         if unknown:
             available = ", ".join(sorted(registry))
@@ -323,6 +323,8 @@ def _compute_ccrr_by_m(
 
 
 def main() -> int:
+    import extract_embeddings as ee
+
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
     if float(args.ccrr_acceptance_threshold) < 0.0 or float(args.ccrr_acceptance_threshold) > 1.0:
@@ -336,7 +338,7 @@ def main() -> int:
     if int(args.ccrr_m_max) < 1:
         raise ValueError("--ccrr-m-max must be >= 1")
 
-    registry = ee._build_model_registry()
+    registry = _build_model_registry()
     models = _resolve_models(args.models, registry)
 
     output_dir = args.output_dir

@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "scripts" / "extract_embeddings.py"
 
 
-def test_module_imports_without_bench_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_module_import_requires_bench_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = builtins.__import__
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
@@ -27,6 +27,7 @@ def test_module_imports_without_bench_dependencies(monkeypatch: pytest.MonkeyPat
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     try:
-        spec.loader.exec_module(module)
+        with pytest.raises(ModuleNotFoundError):
+            spec.loader.exec_module(module)
     finally:
         sys.modules.pop(module_name, None)

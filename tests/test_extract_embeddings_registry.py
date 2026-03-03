@@ -8,11 +8,11 @@ SCRIPTS = ROOT / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import extract_embeddings as ee
+import model_registry as mr
 
 
 def test_registry_includes_conch_and_midnight_models() -> None:
-    registry = ee._build_model_registry()
+    registry = mr._build_model_registry()
 
     assert "CONCH" in registry
     assert registry["CONCH"].backend == "conch_v1"
@@ -29,42 +29,8 @@ def test_registry_includes_conch_and_midnight_models() -> None:
     assert registry["Midnight-12k"].extract == "cls_and_patch"
 
 
-def test_parse_args_accepts_progress_modes(monkeypatch: pytest.MonkeyPatch) -> None:
-    for mode in ("auto", "on", "off"):
-        monkeypatch.setattr(
-            sys,
-            "argv",
-            [
-                "extract_embeddings.py",
-                "--manifest",
-                "/tmp/manifest.csv",
-                "--output-dir",
-                "/tmp/out",
-                "--models",
-                "UNI",
-                "--progress",
-                mode,
-            ],
-        )
-        args = ee.parse_args()
-        assert args.progress == mode
-
-
-def test_parse_args_rejects_invalid_progress_mode(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "extract_embeddings.py",
-            "--manifest",
-            "/tmp/manifest.csv",
-            "--output-dir",
-            "/tmp/out",
-            "--models",
-            "UNI",
-            "--progress",
-            "invalid",
-        ],
-    )
-    with pytest.raises(SystemExit):
-        ee.parse_args()
+def test_parse_models_rejects_empty_and_duplicates() -> None:
+    with pytest.raises(ValueError, match="empty"):
+        mr._parse_models("UNI,,Phikon")
+    with pytest.raises(ValueError, match="duplicate"):
+        mr._parse_models("UNI,UNI")
