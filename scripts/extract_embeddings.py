@@ -6,14 +6,35 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import timm
-import torch
-from PIL import Image
-from timm.data import resolve_data_config
-from timm.data.transforms_factory import create_transform
-from timm.layers import SwiGLUPacked
-from torch.utils.data import DataLoader
-from transformers import AutoImageProcessor, AutoModel
+
+try:
+    import torch
+    from torch.utils.data import DataLoader
+except ModuleNotFoundError:
+    torch = None
+    DataLoader = None
+
+try:
+    import timm
+    from timm.data import resolve_data_config
+    from timm.data.transforms_factory import create_transform
+    from timm.layers import SwiGLUPacked
+except ModuleNotFoundError:
+    timm = None
+    resolve_data_config = None
+    create_transform = None
+    SwiGLUPacked = None
+
+try:
+    from transformers import AutoImageProcessor, AutoModel
+except ModuleNotFoundError:
+    AutoImageProcessor = None
+    AutoModel = None
+
+try:
+    from PIL import Image
+except ModuleNotFoundError:
+    Image = None
 
 from progress_utils import progress_bar, progress_write, resolve_progress_mode
 
