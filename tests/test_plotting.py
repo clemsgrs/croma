@@ -15,7 +15,8 @@ from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
     plot_ccrr_ltm_comparison,
-    plot_ccrr_m_sweep,
+    plot_ccrr_m_sweep_with_ltm,
+    plot_ccrr_trend_quadrants,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
     plot_mari_k_sweep,
@@ -90,12 +91,12 @@ def _sample_summary_rows() -> list[dict]:
 
 def _sample_ccrr_m_rows() -> list[dict]:
     return [
-        {"model": "Virchow2", "m": 1, "ccrr": 1.40},
-        {"model": "Virchow2", "m": 2, "ccrr": 1.22},
-        {"model": "Virchow2", "m": 3, "ccrr": 1.10},
-        {"model": "UNI", "m": 1, "ccrr": 0.92},
-        {"model": "UNI", "m": 2, "ccrr": 0.97},
-        {"model": "UNI", "m": 3, "ccrr": 1.03},
+        {"model": "Virchow2", "m": 1, "ccrr": 1.40, "ccrr_ltm_alpha": 1.05},
+        {"model": "Virchow2", "m": 2, "ccrr": 1.22, "ccrr_ltm_alpha": 0.95},
+        {"model": "Virchow2", "m": 3, "ccrr": 1.10, "ccrr_ltm_alpha": 0.88},
+        {"model": "UNI", "m": 1, "ccrr": 0.92, "ccrr_ltm_alpha": 0.70},
+        {"model": "UNI", "m": 2, "ccrr": 0.97, "ccrr_ltm_alpha": 0.75},
+        {"model": "UNI", "m": 3, "ccrr": 1.03, "ccrr_ltm_alpha": 0.80},
     ]
 
 
@@ -182,9 +183,16 @@ def test_plot_benchmark_6panel_summary_creates_png(tmp_path: Path) -> None:
     assert out_path.stat().st_size > 0
 
 
-def test_plot_ccrr_m_sweep_creates_png(tmp_path: Path) -> None:
+def test_plot_ccrr_m_sweep_with_ltm_creates_png(tmp_path: Path) -> None:
     out_path = tmp_path / "ccrr_m_sweep.png"
-    plot_ccrr_m_sweep(rows=_sample_ccrr_m_rows(), out_path=out_path)
+    plot_ccrr_m_sweep_with_ltm(rows=_sample_ccrr_m_rows(), out_path=out_path)
+    assert out_path.exists()
+    assert out_path.stat().st_size > 0
+
+
+def test_plot_ccrr_trend_quadrants_creates_png(tmp_path: Path) -> None:
+    out_path = tmp_path / "ccrr_trend_quadrants.png"
+    plot_ccrr_trend_quadrants(rows=_sample_ccrr_m_rows(), out_path=out_path)
     assert out_path.exists()
     assert out_path.stat().st_size > 0
 

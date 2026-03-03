@@ -319,7 +319,7 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccrr_m_sweep(rows: list[dict], out_path: Path) -> None:
+def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(9.0, 5.8))
     ccrr_rows = [
         r for r in rows
@@ -341,14 +341,19 @@ def plot_ccrr_m_sweep(rows: list[dict], out_path: Path) -> None:
         by_model[model] = sorted(by_model[model], key=lambda r: int(r["m"]))
 
     m_ticks = sorted({int(row["m"]) for row in ccrr_rows})
-    all_values = np.asarray([float(row["ccrr"]) for row in ccrr_rows], dtype=float)
+    ccrr_values = np.asarray([float(row["ccrr"]) for row in ccrr_rows], dtype=float)
+    ltm_values = np.asarray(
+        [float(row["ccrr_ltm_alpha"]) for row in ccrr_rows if "ccrr_ltm_alpha" in row],
+        dtype=float,
+    )
+    all_values = np.concatenate([ccrr_values, ltm_values]) if ltm_values.size > 0 else ccrr_values
 
     ax.set_facecolor("#fbfcfd")
     ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
     ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.8)
     ax.set_xlabel("m", fontsize=11)
-    ax.set_ylabel("CCRR", fontsize=11)
-    ax.set_title("CCRR over m", fontsize=14, weight="bold")
+    ax.set_ylabel("CCRR / LTM", fontsize=11)
+    ax.set_title("CCRR and LTM over m", fontsize=14, weight="bold")
 
     if len(m_ticks) <= 12:
         ax.set_xticks(m_ticks)
@@ -364,8 +369,9 @@ def plot_ccrr_m_sweep(rows: list[dict], out_path: Path) -> None:
     else:
         ax.set_xlim(float(m_ticks[0]) - 0.5, float(m_ticks[0]) + 0.5)
 
-    vmin = float(np.nanmin(all_values))
-    vmax = float(np.nanmax(all_values))
+    finite_all = all_values[np.isfinite(all_values)]
+    vmin = float(np.nanmin(finite_all)) if finite_all.size > 0 else 0.0
+    vmax = float(np.nanmax(finite_all)) if finite_all.size > 0 else 1.0
     if vmax - vmin <= 1e-9:
         pad = max(0.1, abs(vmin) * 0.10)
     else:
@@ -374,20 +380,94 @@ def plot_ccrr_m_sweep(rows: list[dict], out_path: Path) -> None:
 
     for model in sorted(by_model):
         model_rows = by_model[model]
+        color = _color_for_model(model)
         ms = np.asarray([int(r["m"]) for r in model_rows], dtype=int)
         vals = np.asarray([float(r["ccrr"]) for r in model_rows], dtype=float)
-        ax.plot(
-            ms,
-            vals,
-            color=_color_for_model(model),
-            linewidth=1.8,
-            alpha=0.95,
-            marker="o",
-            markersize=4,
-            label=model,
-        )
+        ax.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, marker="o", markersize=4, label=model)
+        ltms = np.asarray([float(r["ccrr_ltm_alpha"]) for r in model_rows], dtype=float)
+        ax.plot(ms, ltms, color=color, linewidth=1.4, alpha=0.7, linestyle="--")
 
-    ax.legend(frameon=False, loc="best")
+    proxy = [
+        Line2D([0], [0], color="gray", lw=1.8, label="CCRR"),
+        Line2D([0], [0], color="gray", lw=1.4, linestyle="--", alpha=0.7, label="LTM"),
+    ]
+    ax.legend(handles=proxy, frameon=False, loc="best")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_ccrr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
+    by_model: dict[str, list[dict]] = {}
+    for row in rows:
+        model = str(row["model"])
+        by_model.setdefault(model, []).append(row)
+
+    model_slopes: list[dict] = []
+    for model, model_rows in by_model.items():
+        valid = []
+        for r in model_rows:
+            try:
+                m_val = int(r["m"])
+                ccrr_val = float(r["ccrr"])
+                ltm_val = float(r["ccrr_ltm_alpha"])
+                if np.isfinite(ccrr_val) and np.isfinite(ltm_val):
+                    valid.append((m_val, ccrr_val, ltm_val))
+            except Exception:  # noqa: BLE001
+                continue
+        if len(valid) < 2:
+            continue
+        valid.sort(key=lambda x: x[0])
+        ms = np.asarray([v[0] for v in valid], dtype=float)
+        ccrr_vals = np.asarray([v[1] for v in valid], dtype=float)
+        ltm_vals = np.asarray([v[2] for v in valid], dtype=float)
+        ccrr_slope = float(np.polyfit(ms, ccrr_vals, 1)[0])
+        ltm_slope = float(np.polyfit(ms, ltm_vals, 1)[0])
+        model_slopes.append({"model": model, "ccrr_slope": ccrr_slope, "ltm_slope": ltm_slope})
+
+    fig, ax = plt.subplots(figsize=(8.0, 7.0))
+
+    if not model_slopes:
+        ax.set_visible(False)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    ax.set_facecolor("#fbfcfd")
+    ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
+    ax.axvline(0, linestyle="--", linewidth=1.0, color="#9ca3af", zorder=1)
+    ax.axhline(0, linestyle="--", linewidth=1.0, color="#9ca3af", zorder=1)
+
+    xs = np.asarray([d["ccrr_slope"] for d in model_slopes], dtype=float)
+    ys = np.asarray([d["ltm_slope"] for d in model_slopes], dtype=float)
+
+    for d in model_slopes:
+        x = float(d["ccrr_slope"])
+        y = float(d["ltm_slope"])
+        color = _color_for_model(d["model"])
+        ax.scatter([x], [y], s=100, color=color, edgecolors="white", linewidths=1.0, zorder=3)
+        ax.annotate(d["model"], xy=(x, y), xytext=(4, 4), textcoords="offset points", fontsize=7, zorder=4)
+
+    max_abs = max(float(np.max(np.abs(xs))) if xs.size > 0 else 0.0,
+                  float(np.max(np.abs(ys))) if ys.size > 0 else 0.0,
+                  1e-9)
+    lim = max_abs * 1.3
+    ax.set_xlim(-lim, lim)
+    ax.set_ylim(-lim, lim)
+
+    _q_props = {"fontsize": 7, "style": "italic", "color": "#6b7280", "ha": "center", "va": "center"}
+    ax.text( lim * 0.65,  lim * 0.75, "Rising / Rising\ntail rescued at scale", **_q_props)
+    ax.text(-lim * 0.65,  lim * 0.75, "Falling / Rising\ntail idiosyncratic", **_q_props)
+    ax.text( lim * 0.65, -lim * 0.75, "Rising / Falling\nmedian improves, tail stuck", **_q_props)
+    ax.text(-lim * 0.65, -lim * 0.75, "Falling / Falling\neroding at scale", **_q_props)
+
+    ax.set_xlabel("CCRR(m) slope", fontsize=11)
+    ax.set_ylabel("LTM(m) slope", fontsize=11)
+    ax.set_title("CCRR vs LTM trend quadrants", fontsize=14, weight="bold")
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")

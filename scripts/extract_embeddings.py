@@ -1,78 +1,21 @@
 import argparse
 import contextlib
 import dataclasses
-import importlib.util
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import timm
+import torch
+from PIL import Image
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+from timm.layers import SwiGLUPacked
+from torch.utils.data import DataLoader
+from transformers import AutoImageProcessor, AutoModel
 
 from progress_utils import progress_bar, progress_write, resolve_progress_mode
-
-try:
-    import torch
-    from torch.utils.data import DataLoader
-except ModuleNotFoundError:
-    torch = None
-    DataLoader = None
-
-try:
-    import timm
-    from timm.data import resolve_data_config
-    from timm.data.transforms_factory import create_transform
-    from timm.layers import SwiGLUPacked
-except ModuleNotFoundError:
-    timm = None
-    resolve_data_config = None
-    create_transform = None
-    SwiGLUPacked = None
-
-try:
-    from transformers import AutoImageProcessor, AutoModel
-except ModuleNotFoundError:
-    AutoImageProcessor = None
-    AutoModel = None
-
-try:
-    from PIL import Image
-except ModuleNotFoundError:
-    Image = None
-
-
-_OPTIONAL_BENCH_DEPENDENCIES: dict[str, tuple[str, str]] = {
-    "torch": ("torch", 'pip install "mari[bench]"'),
-    "timm": ("timm", 'pip install "mari[bench]"'),
-    "transformers": ("transformers", 'pip install "mari[bench]"'),
-    "pillow": ("Pillow", 'pip install "mari[bench]"'),
-    "torchvision": ("torchvision", "pip install torchvision"),
-    "conch": ("CONCH", 'pip install "git+https://github.com/Mahmoodlab/CONCH.git"'),
-    "trident": ("TRIDENT", 'pip install "git+https://github.com/mahmoodlab/TRIDENT.git"'),
-}
-
-
-def _require_optional_bench_deps(*deps: str) -> None:
-    missing: list[str] = []
-    for dep in deps:
-        if dep not in _OPTIONAL_BENCH_DEPENDENCIES:
-            raise ValueError(f"Unknown optional benchmarking dependency key: {dep}")
-        if dep == "torch" and torch is None:
-            missing.append(dep)
-        elif dep == "timm" and timm is None:
-            missing.append(dep)
-        elif dep == "transformers" and (AutoImageProcessor is None or AutoModel is None):
-            missing.append(dep)
-        elif dep == "pillow" and Image is None:
-            missing.append(dep)
-        elif dep in {"torchvision", "conch", "trident"} and importlib.util.find_spec(dep) is None:
-            missing.append(dep)
-    if missing:
-        unique = sorted(set(missing))
-        lines = ["Missing optional benchmarking dependencies:"]
-        for dep in unique:
-            package_name, install_cmd = _OPTIONAL_BENCH_DEPENDENCIES[dep]
-            lines.append(f"- {package_name}: install with `{install_cmd}`")
-        raise ModuleNotFoundError("\n".join(lines))
 
 
 @dataclasses.dataclass
@@ -202,7 +145,6 @@ def _build_model_registry():
 
 
 def _extract_timm_features(out, extract: str):
-    _require_optional_bench_deps("torch")
     if extract == "cls":
         return out[:, 0] if out.ndim == 3 else out
     if extract == "cls_and_patch":
@@ -224,7 +166,6 @@ def _load_manifest(manifest_path: Path) -> pd.DataFrame:
 
 
 def _device_from_arg(device_arg: str):
-    _require_optional_bench_deps("torch")
     if device_arg == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device_arg)
@@ -239,14 +180,12 @@ class TileDataset:
         return len(self.image_paths)
 
     def __getitem__(self, idx):
-        _require_optional_bench_deps("pillow")
         img = Image.open(self.image_paths[idx]).convert("RGB")
         return self.transform(img)
 
 
 def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "timm":
-        _require_optional_bench_deps("torch", "timm")
         timm_kwargs = dict(spec.timm_kwargs)
         if timm_kwargs.get("mlp_layer") == "SwiGLUPacked":
             timm_kwargs["mlp_layer"] = SwiGLUPacked
@@ -264,7 +203,6 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "hf_auto":
-        _require_optional_bench_deps("torch", "transformers")
         processor = AutoImageProcessor.from_pretrained(spec.model_id, trust_remote_code=True)
         model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
         model.eval().to(device)
@@ -281,7 +219,6 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "midnight":
-        _require_optional_bench_deps("torch", "transformers", "torchvision")
         from torchvision.transforms import v2
 
         model = AutoModel.from_pretrained(spec.model_id)
@@ -306,7 +243,6 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "conch_v1":
-        _require_optional_bench_deps("torch", "conch")
         from conch.open_clip_custom import create_model_from_pretrained
 
         model, transform = create_model_from_pretrained("conch_ViT-B-16", "hf_hub:MahmoodLab/conch")
@@ -318,7 +254,6 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "conch_v1_5":
-        _require_optional_bench_deps("torch", "trident")
         from trident.patch_encoder_models import encoder_factory
 
         encoder = encoder_factory(model_name="conch_v15")
@@ -347,8 +282,6 @@ def embed_manifest(
     progress_enabled: bool | None = None,
     tile_progress_leave: bool = True,
 ) -> tuple[Path, tuple[int, int]]:
-    _require_optional_bench_deps("torch", "pillow")
-
     manifest = _load_manifest(manifest_path)
     device = _device_from_arg(device_arg)
     progress_on = bool(progress_enabled) if progress_enabled is not None else True

@@ -35,8 +35,9 @@ from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
     plot_ccrr_ltm_comparison,
-    plot_ccrr_m_sweep,
+    plot_ccrr_m_sweep_with_ltm,
     plot_ccrr_sample_distributions,
+    plot_ccrr_trend_quadrants,
     plot_ccrr_vs_mari_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
@@ -146,9 +147,10 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
     parser.add_argument(
-        "--ccrr-m-candidates",
-        default="1,5,10,15,20",
-        help="Comma-separated CCRR m candidates for m-sweep plotting (must include 1).",
+        "--ccrr-m-max",
+        type=int,
+        default=20,
+        help="Maximum m for CCRR sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
     )
     parser.add_argument(
         "--ccrr-acceptance-threshold",
@@ -214,12 +216,6 @@ def _resolve_sweep_k_values(k_candidates: list[int], continuous_k_sweep_max: int
         return list(range(1, int(continuous_k_sweep_max) + 1))
     return _normalize_k_values(k_candidates)
 
-
-def _resolve_ccrr_m_values(raw_m_candidates: str) -> list[int]:
-    m_values = _normalize_k_values(parse_k_candidates(raw_m_candidates))
-    if 1 not in m_values:
-        raise ValueError("--ccrr-m-candidates must include m=1")
-    return m_values
 
 
 def _curve_payload(values: dict[int, float]) -> dict:
@@ -337,6 +333,8 @@ def main() -> int:
         raise ValueError("--ccrr-k-growth-factor must be > 1")
     if float(args.ccrr_alpha) <= 0.0 or float(args.ccrr_alpha) > 1.0:
         raise ValueError("--ccrr-alpha must be in (0, 1]")
+    if int(args.ccrr_m_max) < 1:
+        raise ValueError("--ccrr-m-max must be >= 1")
 
     registry = ee._build_model_registry()
     models = _resolve_models(args.models, registry)
@@ -364,7 +362,7 @@ def main() -> int:
         k_candidates=k_candidates,
         continuous_k_sweep_max=int(args.continuous_k_sweep_max),
     )
-    ccrr_m_values = _resolve_ccrr_m_values(args.ccrr_m_candidates)
+    ccrr_m_values = list(range(1, int(args.ccrr_m_max) + 1))
     k_candidates_sig = k_candidates_signature(k_values)
     excluded_centers = normalize_center_values(args.exclude_center)
     excluded_centers_sig = excluded_centers_signature(excluded_centers)
@@ -448,7 +446,6 @@ def main() -> int:
                 }
     
                 k_values_param = [int(k) for k in k_values]
-                m_values_param = [int(m) for m in ccrr_m_values]
                 mode_value = str(args.mode)
                 tau_value = float(args.tau)
     
@@ -507,7 +504,7 @@ def main() -> int:
                         input_fingerprint=input_fp,
                         params={
                             "mode": mode_value,
-                            "m_values": m_values_param,
+                            "m_max": int(args.ccrr_m_max),
                             "acceptance_threshold": float(args.ccrr_acceptance_threshold),
                             "start_k": int(args.ccrr_start_k),
                             "k_growth_factor": float(args.ccrr_k_growth_factor),
@@ -520,7 +517,7 @@ def main() -> int:
                         input_fingerprint=input_fp,
                         params={
                             "mode": mode_value,
-                            "m_values": m_values_param,
+                            "m_max": int(args.ccrr_m_max),
                             "acceptance_threshold": float(args.ccrr_acceptance_threshold),
                             "start_k": int(args.ccrr_start_k),
                             "k_growth_factor": float(args.ccrr_k_growth_factor),
@@ -761,6 +758,16 @@ def main() -> int:
                         }
                     )
     
+                m_sorted = sorted(ccrr_m_values)
+                ccrr_curve = [float(ccrr_by_m[m]["ccrr"]) for m in m_sorted]
+                finite_curve = [c for c in ccrr_curve if np.isfinite(c)]
+                if len(m_sorted) > 1:
+                    ccrr_auc = float(np.trapz(ccrr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
+                else:
+                    ccrr_auc = ccrr_curve[0] if ccrr_curve else float("nan")
+                ccrr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
+                ccrr_delta = float(ccrr_curve[-1] - ccrr_curve[0]) if len(ccrr_curve) > 1 else 0.0
+
                 model_bar.set_postfix_str(f"{model}:save")
                 total_n = int(len(eval_manifest))
                 ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
@@ -824,6 +831,9 @@ def main() -> int:
                     "ccrr_alpha": float(ccrr_result["ccrr_alpha"]),
                     "ccrr_q_alpha": float(ccrr_result["ccrr_q_alpha"]),
                     "ccrr_ltm_alpha": float(ccrr_result["ccrr_ltm_alpha"]),
+                    "ccrr_auc": ccrr_auc,
+                    "ccrr_min": ccrr_min_val,
+                    "ccrr_delta": ccrr_delta,
                     "ccrr_samples_path": str(ccrr_dist_path),
                     "embedding_path": str(output_path),
                 }
@@ -877,7 +887,8 @@ def main() -> int:
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
-        plot_ccrr_m_sweep(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_m_sweep.png")
+        plot_ccrr_m_sweep_with_ltm(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_m_sweep.png")
+        plot_ccrr_trend_quadrants(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_trend_quadrants.png")
         plot_ccrr_ltm_comparison(rows=rows, out_path=plots_dir / "ccrr_ltm_comparison.png")
         plot_bio_vs_center_scatter(rows=rows, out_path=plots_dir / "bio_vs_center_scatter.png")
         plot_mari_vs_ri_scatter(rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png")

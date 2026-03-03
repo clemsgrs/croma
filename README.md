@@ -82,13 +82,41 @@ python scripts/benchmark.py \
   --output-dir /path/to/benchmark
 ```
 
+## Prepare PathoROB Data
+
+To prepare TCGA and Tolkach ESCA from Hugging Face into local PNG tiles plus MaRI manifests:
+
+```bash
+pip install "mari[bench]"
+python scripts/prepare_pathorob.py \
+  --output-dir /data/pathology/projects/clement/discern/data/eval/pathorob \
+  --datasets tcga,tolkach_esca \
+  --revision main
+```
+
+To include Camelyon in a full refresh:
+
+```bash
+python scripts/prepare_pathorob.py \
+  --output-dir /data/pathology/projects/clement/discern/data/eval/pathorob \
+  --datasets camelyon,tcga,tolkach_esca \
+  --revision main
+```
+
+Behavior:
+- uses `--output-dir` as the shared PathoROB root
+- writes images next to Camelyon under sibling dataset folders (for example `.../pathorob/tcga/images/`)
+- merges multi-shard parquet datasets (for example TCGA) into one dataset output
+- writes one manifest per dataset to `data/` (`pathorob-tcga.csv`, `pathorob-tolkach_esca.csv`, `pathorob-camelyon.csv`)
+- always removes downloaded parquet payloads after conversion and validation
+- writes per-dataset provenance metadata to `prepared_meta.json`
+
 By default, all registered models are evaluated. Use `--models` to restrict to a subset.
 
 Model-specific dependency note:
 - `CONCH` requires: `pip install "git+https://github.com/Mahmoodlab/CONCH.git"`
 - `CONCHv1.5` requires: `pip install "git+https://github.com/mahmoodlab/TRIDENT.git"`
-
-These dependencies are validated in the embedding loader when the corresponding model is used.
+With direct imports, missing benchmark dependencies fail at import/runtime immediately.
 
 Defaults:
 - `--mode global`

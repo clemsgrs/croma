@@ -17,13 +17,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Visualization utilities used by scripts/plotting.py
-plot = [
-  "matplotlib>=3.8",
-  "scipy>=1.11",
-]
-# Full benchmarking pipeline (embedding extraction + plotting)
+# Full benchmarking + data preparation + plotting pipeline.
 bench = [
+  "huggingface_hub>=0.24",
+  "pyarrow>=14.0",
   "matplotlib>=3.8",
   "scipy>=1.11",
   "torch",

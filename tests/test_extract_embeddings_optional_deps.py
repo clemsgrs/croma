@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = ROOT / "scripts" / "extract_embeddings.py"
 
 
-def test_module_imports_without_bench_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_module_import_requires_bench_dependencies(monkeypatch: pytest.MonkeyPatch) -> None:
     real_import = builtins.__import__
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
@@ -27,19 +27,7 @@ def test_module_imports_without_bench_dependencies(monkeypatch: pytest.MonkeyPat
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
     try:
-        spec.loader.exec_module(module)
-        with pytest.raises(ModuleNotFoundError, match=r"mari\[bench\]"):
-            module._require_optional_bench_deps("torch", "timm", "transformers", "pillow")
-        monkeypatch.setattr(
-            module.importlib.util,
-            "find_spec",
-            lambda name: None if name in {"conch", "trident", "torchvision"} else object(),
-        )
-        with pytest.raises(ModuleNotFoundError) as exc_info:
-            module._require_optional_bench_deps("conch", "trident", "torchvision")
-        message = str(exc_info.value)
-        assert "github.com/Mahmoodlab/CONCH.git" in message
-        assert "github.com/mahmoodlab/TRIDENT.git" in message
-        assert "pip install torchvision" in message
+        with pytest.raises(ModuleNotFoundError):
+            spec.loader.exec_module(module)
     finally:
         sys.modules.pop(module_name, None)
