@@ -762,7 +762,8 @@ def main() -> int:
                 ccrr_curve = [float(ccrr_by_m[m]["ccrr"]) for m in m_sorted]
                 finite_curve = [c for c in ccrr_curve if np.isfinite(c)]
                 if len(m_sorted) > 1:
-                    ccrr_auc = float(np.trapz(ccrr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
+                    _trapz = getattr(np, "trapezoid", np.trapz)
+                    ccrr_auc = float(_trapz(ccrr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
                 else:
                     ccrr_auc = ccrr_curve[0] if ccrr_curve else float("nan")
                 ccrr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
