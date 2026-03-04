@@ -181,7 +181,7 @@ def test_ccrr_search_change_recomputes_only_ccrr(monkeypatch, tmp_path: Path) ->
         monkeypatch,
         manifest_path=manifest_path,
         output_dir=output_dir,
-        extra_args=["--ccrr-acceptance-threshold", "0.25"],
+        extra_args=["--ccrr-start-k", "300"],
     ) == 0
 
     assert calls["ccrr"] > 0

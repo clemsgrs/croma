@@ -22,13 +22,11 @@ def excluded_centers_signature(excluded_centers: list[str] | tuple[str, ...] | N
 
 def ccrr_search_signature(
     *,
-    acceptance_threshold: float,
     start_k: int,
     k_growth_factor: float,
     alpha: float,
 ) -> str:
     return (
-        f"thr={float(acceptance_threshold):.8g};"
         f"start={int(start_k)};"
         f"growth={float(k_growth_factor):.8g};"
         f"alpha={float(alpha):.8g}"

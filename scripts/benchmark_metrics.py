@@ -134,12 +134,6 @@ def main() -> None:
     )
     parser.add_argument("--tau", type=float, default=0.2)
     parser.add_argument(
-        "--ccrr-acceptance-threshold",
-        type=float,
-        default=0.0,
-        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
-    )
-    parser.add_argument(
         "--ccrr-start-k",
         type=int,
         default=200,
@@ -180,8 +174,6 @@ def main() -> None:
 
     manifest = load_manifest(args.manifest, dataset_name=args.dataset_name)
     parsed_k_candidates = _parse_k_candidates(args.k_candidates)
-    if float(args.ccrr_acceptance_threshold) < 0.0 or float(args.ccrr_acceptance_threshold) > 1.0:
-        raise ValueError("--ccrr-acceptance-threshold must be in [0, 1]")
     if int(args.ccrr_start_k) < 1:
         raise ValueError("--ccrr-start-k must be >= 1")
     if float(args.ccrr_k_growth_factor) <= 1.0:
@@ -197,7 +189,6 @@ def main() -> None:
     excluded_centers = normalize_center_values(args.exclude_center)
     excluded_centers_sig = excluded_centers_signature(excluded_centers)
     ccrr_search_sig = ccrr_search_signature(
-        acceptance_threshold=float(args.ccrr_acceptance_threshold),
         start_k=int(args.ccrr_start_k),
         k_growth_factor=float(args.ccrr_k_growth_factor),
         alpha=float(args.ccrr_alpha),
@@ -321,7 +312,6 @@ def main() -> None:
             mode=args.mode,
             m=1,
             alpha=float(args.ccrr_alpha),
-            acceptance_threshold=float(args.ccrr_acceptance_threshold),
             start_k=int(args.ccrr_start_k),
             k_growth_factor=float(args.ccrr_k_growth_factor),
         )
@@ -348,8 +338,6 @@ def main() -> None:
                 "ccrr_std": float(ccrr_result.std),
                 "ccrr_m": int(ccrr_result.m),
                 "ccrr_undefined_frac": float(ccrr_result.undefined_frac),
-                "ccrr_acceptance_threshold": float(ccrr_result.acceptance_threshold),
-                "ccrr_acceptance_met": bool(ccrr_result.acceptance_met),
                 "ccrr_k_start": int(ccrr_result.k_start),
                 "ccrr_k_final": int(ccrr_result.k_final),
                 "ccrr_retries": int(ccrr_result.retries),

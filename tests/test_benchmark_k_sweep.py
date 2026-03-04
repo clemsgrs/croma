@@ -155,8 +155,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "m" in ccrr_m_df.columns
     assert "ccrr" in ccrr_m_df.columns
     assert "ccrr_search" in ccrr_m_df.columns
-    assert "ccrr_acceptance_threshold" in ccrr_m_df.columns
-    assert "ccrr_acceptance_met" in ccrr_m_df.columns
     assert "ccrr_k_start" in ccrr_m_df.columns
     assert "ccrr_k_final" in ccrr_m_df.columns
     assert "ccrr_retries" in ccrr_m_df.columns
@@ -171,8 +169,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "center_knn_bacc" in metrics_df.columns
     assert "selected_k_center" in metrics_df.columns
     assert "ccrr_search" in metrics_df.columns
-    assert "ccrr_acceptance_threshold" in metrics_df.columns
-    assert "ccrr_acceptance_met" in metrics_df.columns
     assert "ccrr_k_start" in metrics_df.columns
     assert "ccrr_k_final" in metrics_df.columns
     assert "ccrr_retries" in metrics_df.columns
@@ -674,8 +670,8 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
             "global",
             "--k-candidates",
             "1,3",
-            "--ccrr-acceptance-threshold",
-            "0.25",
+            "--ccrr-start-k",
+            "300",
         ],
     )
     code = bm.main()

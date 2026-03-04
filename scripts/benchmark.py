@@ -154,12 +154,6 @@ def _parse_args() -> argparse.Namespace:
         help="Maximum m for CCRR sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
     )
     parser.add_argument(
-        "--ccrr-acceptance-threshold",
-        type=float,
-        default=0.0,
-        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
-    )
-    parser.add_argument(
         "--ccrr-start-k",
         type=int,
         default=200,
@@ -262,8 +256,6 @@ def _ccrr_result_to_payload(result: CCRRResult, m: int) -> dict:
         "ccrr": float(result.value),
         "ccrr_std": float(result.std),
         "ccrr_undefined_frac": float(result.undefined_frac),
-        "ccrr_acceptance_threshold": float(result.acceptance_threshold),
-        "ccrr_acceptance_met": bool(result.acceptance_met),
         "ccrr_k_start": int(result.k_start),
         "ccrr_k_final": int(result.k_final),
         "ccrr_retries": int(result.retries),
@@ -303,7 +295,6 @@ def _compute_ccrr_by_m(
     manifest: pd.DataFrame,
     mode: str,
     m_values: list[int],
-    ccrr_acceptance_threshold: float,
     ccrr_start_k: int,
     ccrr_k_growth_factor: float,
     ccrr_alpha: float,
@@ -316,7 +307,6 @@ def _compute_ccrr_by_m(
             mode=mode,
             m=[int(m) for m in m_values],
             alpha=float(ccrr_alpha),
-            acceptance_threshold=float(ccrr_acceptance_threshold),
             start_k=int(ccrr_start_k),
             k_growth_factor=float(ccrr_k_growth_factor),
         ),
@@ -326,8 +316,6 @@ def _compute_ccrr_by_m(
 def main() -> int:
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
-    if float(args.ccrr_acceptance_threshold) < 0.0 or float(args.ccrr_acceptance_threshold) > 1.0:
-        raise ValueError("--ccrr-acceptance-threshold must be in [0, 1]")
     if int(args.ccrr_start_k) < 1:
         raise ValueError("--ccrr-start-k must be >= 1")
     if float(args.ccrr_k_growth_factor) <= 1.0:
@@ -368,7 +356,6 @@ def main() -> int:
     excluded_centers = normalize_center_values(args.exclude_center)
     excluded_centers_sig = excluded_centers_signature(excluded_centers)
     ccrr_search_sig = ccrr_search_signature(
-        acceptance_threshold=float(args.ccrr_acceptance_threshold),
         start_k=int(args.ccrr_start_k),
         k_growth_factor=float(args.ccrr_k_growth_factor),
         alpha=float(args.ccrr_alpha),
@@ -506,7 +493,6 @@ def main() -> int:
                         params={
                             "mode": mode_value,
                             "m_max": int(args.ccrr_m_max),
-                            "acceptance_threshold": float(args.ccrr_acceptance_threshold),
                             "start_k": int(args.ccrr_start_k),
                             "k_growth_factor": float(args.ccrr_k_growth_factor),
                             "alpha": float(args.ccrr_alpha),
@@ -519,7 +505,6 @@ def main() -> int:
                         params={
                             "mode": mode_value,
                             "m_max": int(args.ccrr_m_max),
-                            "acceptance_threshold": float(args.ccrr_acceptance_threshold),
                             "start_k": int(args.ccrr_start_k),
                             "k_growth_factor": float(args.ccrr_k_growth_factor),
                             "alpha": float(args.ccrr_alpha),
@@ -714,7 +699,6 @@ def main() -> int:
                         manifest=eval_manifest,
                         mode=str(args.mode),
                         m_values=ccrr_m_values,
-                        ccrr_acceptance_threshold=float(args.ccrr_acceptance_threshold),
                         ccrr_start_k=int(args.ccrr_start_k),
                         ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
                         ccrr_alpha=float(args.ccrr_alpha),
@@ -747,8 +731,6 @@ def main() -> int:
                             "ccrr": float(payload["ccrr"]),
                             "ccrr_std": float(payload["ccrr_std"]),
                             "ccrr_undefined_frac": float(payload["ccrr_undefined_frac"]),
-                            "ccrr_acceptance_threshold": float(payload["ccrr_acceptance_threshold"]),
-                            "ccrr_acceptance_met": bool(payload["ccrr_acceptance_met"]),
                             "ccrr_k_start": int(payload["ccrr_k_start"]),
                             "ccrr_k_final": int(payload["ccrr_k_final"]),
                             "ccrr_retries": int(payload["ccrr_retries"]),
@@ -825,8 +807,6 @@ def main() -> int:
                     "ccrr_std": float(ccrr_result["ccrr_std"]),
                     "ccrr_m": int(ccrr_result["m"]),
                     "ccrr_undefined_frac": float(ccrr_result["ccrr_undefined_frac"]),
-                    "ccrr_acceptance_threshold": float(ccrr_result["ccrr_acceptance_threshold"]),
-                    "ccrr_acceptance_met": bool(ccrr_result["ccrr_acceptance_met"]),
                     "ccrr_k_start": int(ccrr_result["ccrr_k_start"]),
                     "ccrr_k_final": int(ccrr_result["ccrr_k_final"]),
                     "ccrr_retries": int(ccrr_result["ccrr_retries"]),
