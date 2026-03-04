@@ -66,7 +66,7 @@ def _install_fake_registry_and_embed(monkeypatch, model: str = "M1") -> None:
         )
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
 

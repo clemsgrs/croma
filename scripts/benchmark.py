@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+import extract_embeddings as ee
 from model_registry import ModelSpec, _build_model_registry, _parse_models
 from common import parse_k_candidates
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
@@ -323,8 +324,6 @@ def _compute_ccrr_by_m(
 
 
 def main() -> int:
-    import extract_embeddings as ee
-
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
     if float(args.ccrr_acceptance_threshold) < 0.0 or float(args.ccrr_acceptance_threshold) > 1.0:
