@@ -28,18 +28,5 @@ def test_module_imports_without_bench_dependencies(monkeypatch: pytest.MonkeyPat
     sys.modules[module_name] = module
     try:
         spec.loader.exec_module(module)
-        with pytest.raises(ModuleNotFoundError, match=r"mari\[bench\]"):
-            module._require_optional_bench_deps("torch", "timm", "transformers", "pillow")
-        monkeypatch.setattr(
-            module.importlib.util,
-            "find_spec",
-            lambda name: None if name in {"conch", "trident", "torchvision"} else object(),
-        )
-        with pytest.raises(ModuleNotFoundError) as exc_info:
-            module._require_optional_bench_deps("conch", "trident", "torchvision")
-        message = str(exc_info.value)
-        assert "github.com/Mahmoodlab/CONCH.git" in message
-        assert "github.com/mahmoodlab/TRIDENT.git" in message
-        assert "pip install torchvision" in message
     finally:
         sys.modules.pop(module_name, None)

@@ -66,7 +66,7 @@ def _install_fake_registry_and_embed(monkeypatch, model: str = "M1") -> None:
         )
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
 
@@ -181,7 +181,7 @@ def test_ccrr_search_change_recomputes_only_ccrr(monkeypatch, tmp_path: Path) ->
         monkeypatch,
         manifest_path=manifest_path,
         output_dir=output_dir,
-        extra_args=["--ccrr-acceptance-threshold", "0.25"],
+        extra_args=["--ccrr-start-k", "300"],
     ) == 0
 
     assert calls["ccrr"] > 0

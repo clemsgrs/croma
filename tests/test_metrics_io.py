@@ -23,22 +23,20 @@ def test_excluded_centers_signature_is_sorted_and_unique() -> None:
 
 def test_ccrr_search_signature_is_stable() -> None:
     sig = mio.ccrr_search_signature(
-        acceptance_threshold=0.0,
         start_k=200,
         k_growth_factor=1.5,
         alpha=0.10,
     )
-    assert sig == "thr=0;start=200;growth=1.5;alpha=0.1"
+    assert sig == "start=200;growth=1.5;alpha=0.1"
 
 
 def test_ccrr_search_signature_alpha_format_is_deterministic() -> None:
     sig = mio.ccrr_search_signature(
-        acceptance_threshold=0.25,
         start_k=320,
         k_growth_factor=1.75,
         alpha=0.125,
     )
-    assert sig == "thr=0.25;start=320;growth=1.75;alpha=0.125"
+    assert sig == "start=320;growth=1.75;alpha=0.125"
 
 
 def test_save_metrics_writes_csv_and_json(tmp_path: Path) -> None:

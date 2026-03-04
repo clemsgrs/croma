@@ -72,7 +72,7 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
     monkeypatch.setattr(
@@ -155,8 +155,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "m" in ccrr_m_df.columns
     assert "ccrr" in ccrr_m_df.columns
     assert "ccrr_search" in ccrr_m_df.columns
-    assert "ccrr_acceptance_threshold" in ccrr_m_df.columns
-    assert "ccrr_acceptance_met" in ccrr_m_df.columns
     assert "ccrr_k_start" in ccrr_m_df.columns
     assert "ccrr_k_final" in ccrr_m_df.columns
     assert "ccrr_retries" in ccrr_m_df.columns
@@ -171,8 +169,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert "center_knn_bacc" in metrics_df.columns
     assert "selected_k_center" in metrics_df.columns
     assert "ccrr_search" in metrics_df.columns
-    assert "ccrr_acceptance_threshold" in metrics_df.columns
-    assert "ccrr_acceptance_met" in metrics_df.columns
     assert "ccrr_k_start" in metrics_df.columns
     assert "ccrr_k_final" in metrics_df.columns
     assert "ccrr_retries" in metrics_df.columns
@@ -219,7 +215,7 @@ def test_benchmark_uses_all_registry_models_when_models_arg_missing(monkeypatch,
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
     monkeypatch.setattr(
@@ -273,7 +269,7 @@ def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Pat
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
     monkeypatch.setattr(
@@ -371,7 +367,7 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
     ) -> _CurveResult:
         return _CurveResult(k=int(k_candidates[0]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k)
     monkeypatch.setattr(bm.RI, "compute_curve", fake_compute_curve)
@@ -435,7 +431,7 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
     dataset_dir = output_dir / manifest_path.stem
@@ -561,7 +557,7 @@ def test_benchmark_records_excluded_centers_signature(monkeypatch, tmp_path: Pat
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
     monkeypatch.setattr(
@@ -621,7 +617,7 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
     monkeypatch.setattr(
@@ -674,8 +670,8 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
             "global",
             "--k-candidates",
             "1,3",
-            "--ccrr-acceptance-threshold",
-            "0.25",
+            "--ccrr-start-k",
+            "300",
         ],
     )
     code = bm.main()
@@ -729,7 +725,7 @@ def test_benchmark_runs_with_progress_off(monkeypatch, tmp_path: Path) -> None:
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
-    monkeypatch.setattr(bm.ee, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
     monkeypatch.setattr(
         sys,

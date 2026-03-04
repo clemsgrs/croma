@@ -1,8 +1,9 @@
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import extract_embeddings as ee
+from model_registry import ModelSpec, _build_model_registry, _parse_models
 from common import parse_k_candidates
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from mari import CCRR, MaRI, RI
@@ -35,8 +37,9 @@ from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
     plot_ccrr_ltm_comparison,
-    plot_ccrr_m_sweep,
+    plot_ccrr_m_sweep_with_ltm,
     plot_ccrr_sample_distributions,
+    plot_ccrr_trend_quadrants,
     plot_ccrr_vs_mari_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
@@ -146,15 +149,10 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
     parser.add_argument(
-        "--ccrr-m-candidates",
-        default="1,5,10,15,20",
-        help="Comma-separated CCRR m candidates for m-sweep plotting (must include 1).",
-    )
-    parser.add_argument(
-        "--ccrr-acceptance-threshold",
-        type=float,
-        default=0.0,
-        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
+        "--ccrr-m-max",
+        type=int,
+        default=20,
+        help="Maximum m for CCRR sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
     )
     parser.add_argument(
         "--ccrr-start-k",
@@ -198,9 +196,9 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _resolve_models(raw_models: str, registry: dict[str, ee.ModelSpec]) -> list[str]:
+def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str]:
     if str(raw_models).strip():
-        models = ee._parse_models(raw_models)
+        models = _parse_models(raw_models)
         unknown = [m for m in models if m not in registry]
         if unknown:
             available = ", ".join(sorted(registry))
@@ -214,12 +212,6 @@ def _resolve_sweep_k_values(k_candidates: list[int], continuous_k_sweep_max: int
         return list(range(1, int(continuous_k_sweep_max) + 1))
     return _normalize_k_values(k_candidates)
 
-
-def _resolve_ccrr_m_values(raw_m_candidates: str) -> list[int]:
-    m_values = _normalize_k_values(parse_k_candidates(raw_m_candidates))
-    if 1 not in m_values:
-        raise ValueError("--ccrr-m-candidates must include m=1")
-    return m_values
 
 
 def _curve_payload(values: dict[int, float]) -> dict:
@@ -265,8 +257,6 @@ def _ccrr_result_to_payload(result: CCRRResult, m: int) -> dict:
         "ccrr": float(result.value),
         "ccrr_std": float(result.std),
         "ccrr_undefined_frac": float(result.undefined_frac),
-        "ccrr_acceptance_threshold": float(result.acceptance_threshold),
-        "ccrr_acceptance_met": bool(result.acceptance_met),
         "ccrr_k_start": int(result.k_start),
         "ccrr_k_final": int(result.k_final),
         "ccrr_retries": int(result.retries),
@@ -306,7 +296,6 @@ def _compute_ccrr_by_m(
     manifest: pd.DataFrame,
     mode: str,
     m_values: list[int],
-    ccrr_acceptance_threshold: float,
     ccrr_start_k: int,
     ccrr_k_growth_factor: float,
     ccrr_alpha: float,
@@ -319,26 +308,53 @@ def _compute_ccrr_by_m(
             mode=mode,
             m=[int(m) for m in m_values],
             alpha=float(ccrr_alpha),
-            acceptance_threshold=float(ccrr_acceptance_threshold),
             start_k=int(ccrr_start_k),
             k_growth_factor=float(ccrr_k_growth_factor),
         ),
     )
 
 
+class _ModelTicker:
+    _ABBREV = {
+        "embed": "emb", "knn": "knn", "RI": "RI", "MaRI": "MaRI",
+        "CCRR:search": "CCRR-s", "CCRR:scalars": "CCRR-Δ", "save": "save",
+    }
+
+    def __init__(self, bar: Any, model: str, progress_enabled: bool) -> None:
+        self._bar = bar
+        self._enabled = progress_enabled
+        self._t0: float = 0.0
+        bar.set_description(f"[benchmark] {model}")
+        bar.set_postfix_str("")
+
+    def start(self, step: str) -> None:
+        self._t0 = time.perf_counter()
+        self._bar.set_postfix_str(f"⏳ {self._ABBREV[step]}")
+
+    def done(self, step: str, *, cached: bool = False) -> None:
+        elapsed = time.perf_counter() - self._t0
+        abbrev = self._ABBREV[step]
+        if cached:
+            line = f"  ⚡ {abbrev:<8} (cached)"
+        else:
+            line = f"  ✅ {abbrev:<8} {elapsed:.1f}s"
+        progress_write(line, enabled=self._enabled)
+        self._bar.set_postfix_str("")
+
+
 def main() -> int:
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
-    if float(args.ccrr_acceptance_threshold) < 0.0 or float(args.ccrr_acceptance_threshold) > 1.0:
-        raise ValueError("--ccrr-acceptance-threshold must be in [0, 1]")
     if int(args.ccrr_start_k) < 1:
         raise ValueError("--ccrr-start-k must be >= 1")
     if float(args.ccrr_k_growth_factor) <= 1.0:
         raise ValueError("--ccrr-k-growth-factor must be > 1")
     if float(args.ccrr_alpha) <= 0.0 or float(args.ccrr_alpha) > 1.0:
         raise ValueError("--ccrr-alpha must be in (0, 1]")
+    if int(args.ccrr_m_max) < 1:
+        raise ValueError("--ccrr-m-max must be >= 1")
 
-    registry = ee._build_model_registry()
+    registry = _build_model_registry()
     models = _resolve_models(args.models, registry)
 
     output_dir = args.output_dir
@@ -364,12 +380,11 @@ def main() -> int:
         k_candidates=k_candidates,
         continuous_k_sweep_max=int(args.continuous_k_sweep_max),
     )
-    ccrr_m_values = _resolve_ccrr_m_values(args.ccrr_m_candidates)
+    ccrr_m_values = list(range(1, int(args.ccrr_m_max) + 1))
     k_candidates_sig = k_candidates_signature(k_values)
     excluded_centers = normalize_center_values(args.exclude_center)
     excluded_centers_sig = excluded_centers_signature(excluded_centers)
     ccrr_search_sig = ccrr_search_signature(
-        acceptance_threshold=float(args.ccrr_acceptance_threshold),
         start_k=int(args.ccrr_start_k),
         k_growth_factor=float(args.ccrr_k_growth_factor),
         alpha=float(args.ccrr_alpha),
@@ -411,12 +426,13 @@ def main() -> int:
         for model in models:
             output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
             spec = registry[model]
-            model_bar.set_postfix_str(f"{model}:embed")
-
+            ticker = _ModelTicker(model_bar, model, progress_enabled)
             progress_write(f"\n[benchmark] === {model} ===", enabled=progress_enabled)
+            ticker.start("embed")
             if output_path.exists() and not args.force_embed:
                 progress_write(f"[benchmark] embedding cache hit -> {output_path}", enabled=progress_enabled)
                 extraction_status[model] = "skipped"
+                ticker.done("embed", cached=True)
             else:
                 try:
                     ee.embed_manifest(
@@ -430,6 +446,7 @@ def main() -> int:
                         tile_progress_leave=False,
                     )
                     extraction_status[model] = "ok"
+                    ticker.done("embed")
                 except Exception as exc:  # noqa: BLE001
                     extraction_status[model] = "failed"
                     metrics_status[model] = "failed"
@@ -439,7 +456,6 @@ def main() -> int:
                     continue
 
             try:
-                model_bar.set_postfix_str(f"{model}:cache")
                 embedding_fp = embedding_fingerprint(output_path)
                 input_fp = {
                     "manifest_fingerprint": base_manifest_fingerprint,
@@ -448,7 +464,6 @@ def main() -> int:
                 }
     
                 k_values_param = [int(k) for k in k_values]
-                m_values_param = [int(m) for m in ccrr_m_values]
                 mode_value = str(args.mode)
                 tau_value = float(args.tau)
     
@@ -507,8 +522,7 @@ def main() -> int:
                         input_fingerprint=input_fp,
                         params={
                             "mode": mode_value,
-                            "m_values": m_values_param,
-                            "acceptance_threshold": float(args.ccrr_acceptance_threshold),
+                            "m_max": int(args.ccrr_m_max),
                             "start_k": int(args.ccrr_start_k),
                             "k_growth_factor": float(args.ccrr_k_growth_factor),
                             "alpha": float(args.ccrr_alpha),
@@ -520,8 +534,7 @@ def main() -> int:
                         input_fingerprint=input_fp,
                         params={
                             "mode": mode_value,
-                            "m_values": m_values_param,
-                            "acceptance_threshold": float(args.ccrr_acceptance_threshold),
+                            "m_max": int(args.ccrr_m_max),
                             "start_k": int(args.ccrr_start_k),
                             "k_growth_factor": float(args.ccrr_k_growth_factor),
                             "alpha": float(args.ccrr_alpha),
@@ -602,8 +615,9 @@ def main() -> int:
                         eval_features = features_full[keep_indices]
                     return eval_features
     
+                knn_was_cached = knn_bacc_by_k is not None and knn_center_bacc_by_k is not None
+                ticker.start("knn")
                 if knn_bacc_by_k is None:
-                    model_bar.set_postfix_str(f"{model}:compute knn")
                     knn_bacc_by_k = _knn_balanced_accuracy_by_k(
                         features=_ensure_eval_features(),
                         labels=labels,
@@ -614,7 +628,6 @@ def main() -> int:
                     cache.put_json(key=keys["knn_bio_curve"], payload=_curve_payload(knn_bacc_by_k))
     
                 if knn_center_bacc_by_k is None:
-                    model_bar.set_postfix_str(f"{model}:compute knn")
                     knn_center_bacc_by_k = _knn_balanced_accuracy_by_k(
                         features=_ensure_eval_features(),
                         labels=center_labels,
@@ -632,9 +645,11 @@ def main() -> int:
                     k_values=k_values,
                     scores=knn_center_bacc_by_k,
                 )
-    
+                ticker.done("knn", cached=knn_was_cached)
+
+                ri_was_cached = ri_curve is not None and ri_summary is not None and ri_samples is not None
+                ticker.start("RI")
                 if ri_curve is None:
-                    model_bar.set_postfix_str(f"{model}:compute RI/MaRI")
                     ri_curve = RI.compute_curve(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
@@ -643,19 +658,7 @@ def main() -> int:
                     )
                     cache.put_json(key=keys["ri_curve"], payload=_curve_payload(ri_curve))
     
-                if mari_curve is None:
-                    model_bar.set_postfix_str(f"{model}:compute RI/MaRI")
-                    mari_curve = MaRI.compute_curve(
-                        features=_ensure_eval_features(),
-                        manifest=eval_manifest,
-                        mode=args.mode,
-                        k_values=k_values,
-                        tau=float(args.tau),
-                    )
-                    cache.put_json(key=keys["mari_curve"], payload=_curve_payload(mari_curve))
-    
                 if ri_summary is None or ri_samples is None:
-                    model_bar.set_postfix_str(f"{model}:compute RI/MaRI")
                     ri = RI.compute(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
@@ -680,9 +683,21 @@ def main() -> int:
                     cache.put_npy(key=keys["ri_samples"], values=ri_samples)
                 else:
                     ri_samples = np.asarray(ri_samples, dtype=float)
-    
+                ticker.done("RI", cached=ri_was_cached)
+
+                mari_was_cached = mari_curve is not None and mari_summary is not None and mari_samples is not None
+                ticker.start("MaRI")
+                if mari_curve is None:
+                    mari_curve = MaRI.compute_curve(
+                        features=_ensure_eval_features(),
+                        manifest=eval_manifest,
+                        mode=args.mode,
+                        k_values=k_values,
+                        tau=float(args.tau),
+                    )
+                    cache.put_json(key=keys["mari_curve"], payload=_curve_payload(mari_curve))
+
                 if mari_summary is None or mari_samples is None:
-                    model_bar.set_postfix_str(f"{model}:compute RI/MaRI")
                     mari = MaRI.compute(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
@@ -708,15 +723,16 @@ def main() -> int:
                     cache.put_npy(key=keys["mari_samples"], values=mari_samples)
                 else:
                     mari_samples = np.asarray(mari_samples, dtype=float)
+                ticker.done("MaRI", cached=mari_was_cached)
     
+                ccrr_was_cached = ccrr_by_m is not None and ccrr_samples is not None
+                ticker.start("CCRR:search")
                 if ccrr_by_m is None or ccrr_samples is None:
-                    model_bar.set_postfix_str(f"{model}:compute CCRR")
                     ccrr_results = _compute_ccrr_by_m(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
                         mode=str(args.mode),
                         m_values=ccrr_m_values,
-                        ccrr_acceptance_threshold=float(args.ccrr_acceptance_threshold),
                         ccrr_start_k=int(args.ccrr_start_k),
                         ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
                         ccrr_alpha=float(args.ccrr_alpha),
@@ -732,7 +748,9 @@ def main() -> int:
                     cache.put_npy(key=keys["ccrr_m1_samples"], values=ccrr_samples)
                 else:
                     ccrr_samples = np.asarray(ccrr_samples, dtype=float)
-    
+                ticker.done("CCRR:search", cached=ccrr_was_cached)
+
+                ticker.start("CCRR:scalars")
                 ccrr_m_rows_for_model: list[dict] = []
                 for m in ccrr_m_values:
                     payload = ccrr_by_m[int(m)]
@@ -749,8 +767,6 @@ def main() -> int:
                             "ccrr": float(payload["ccrr"]),
                             "ccrr_std": float(payload["ccrr_std"]),
                             "ccrr_undefined_frac": float(payload["ccrr_undefined_frac"]),
-                            "ccrr_acceptance_threshold": float(payload["ccrr_acceptance_threshold"]),
-                            "ccrr_acceptance_met": bool(payload["ccrr_acceptance_met"]),
                             "ccrr_k_start": int(payload["ccrr_k_start"]),
                             "ccrr_k_final": int(payload["ccrr_k_final"]),
                             "ccrr_retries": int(payload["ccrr_retries"]),
@@ -761,7 +777,19 @@ def main() -> int:
                         }
                     )
     
-                model_bar.set_postfix_str(f"{model}:save")
+                m_sorted = sorted(ccrr_m_values)
+                ccrr_curve = [float(ccrr_by_m[m]["ccrr"]) for m in m_sorted]
+                finite_curve = [c for c in ccrr_curve if np.isfinite(c)]
+                if len(m_sorted) > 1:
+                    _trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+                    ccrr_auc = float(_trapz(ccrr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
+                else:
+                    ccrr_auc = ccrr_curve[0] if ccrr_curve else float("nan")
+                ccrr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
+                ccrr_delta = float(ccrr_curve[-1] - ccrr_curve[0]) if len(ccrr_curve) > 1 else 0.0
+                ticker.done("CCRR:scalars")
+
+                ticker.start("save")
                 total_n = int(len(eval_manifest))
                 ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
                 mari_undefined_n = int(round(float(mari_summary["undefined_frac"]) * total_n))
@@ -816,14 +844,15 @@ def main() -> int:
                     "ccrr_std": float(ccrr_result["ccrr_std"]),
                     "ccrr_m": int(ccrr_result["m"]),
                     "ccrr_undefined_frac": float(ccrr_result["ccrr_undefined_frac"]),
-                    "ccrr_acceptance_threshold": float(ccrr_result["ccrr_acceptance_threshold"]),
-                    "ccrr_acceptance_met": bool(ccrr_result["ccrr_acceptance_met"]),
                     "ccrr_k_start": int(ccrr_result["ccrr_k_start"]),
                     "ccrr_k_final": int(ccrr_result["ccrr_k_final"]),
                     "ccrr_retries": int(ccrr_result["ccrr_retries"]),
                     "ccrr_alpha": float(ccrr_result["ccrr_alpha"]),
                     "ccrr_q_alpha": float(ccrr_result["ccrr_q_alpha"]),
                     "ccrr_ltm_alpha": float(ccrr_result["ccrr_ltm_alpha"]),
+                    "ccrr_auc": ccrr_auc,
+                    "ccrr_min": ccrr_min_val,
+                    "ccrr_delta": ccrr_delta,
                     "ccrr_samples_path": str(ccrr_dist_path),
                     "embedding_path": str(output_path),
                 }
@@ -850,18 +879,29 @@ def main() -> int:
                         }
                     )
                 ccrr_m_sweep_rows.extend(ccrr_m_rows_for_model)
-    
+                ticker.done("save")
+
                 metrics_status[model] = "cached" if all_cache_hit else "ok"
                 if all_cache_hit:
                     progress_write("[benchmark] metrics cache hit", enabled=progress_enabled)
                 else:
                     progress_write("[benchmark] metrics cache miss: partial/full recompute", enabled=progress_enabled)
                 progress_write(
-                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f} "
-                    f"undefined samples: RI={100*row['ri_undefined_frac']:.1f}%, MaRI={100*row['mari_undefined_frac']:.1f}%, "
-                    f"CCRR={100*row['ccrr_undefined_frac']:.1f}%",
+                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f}",
                     enabled=progress_enabled,
                 )
+                undef_parts = []
+                if row["ri_undefined_frac"] > 0.0:
+                    undef_parts.append(f"RI={100*row['ri_undefined_frac']:.1f}%")
+                if row["mari_undefined_frac"] > 0.0:
+                    undef_parts.append(f"MaRI={100*row['mari_undefined_frac']:.1f}%")
+                if row["ccrr_undefined_frac"] > 0.0:
+                    undef_parts.append(f"CCRR={100*row['ccrr_undefined_frac']:.1f}%")
+                if undef_parts:
+                    progress_write(
+                        f"[benchmark] undefined samples: {', '.join(undef_parts)}",
+                        enabled=progress_enabled,
+                    )
             except Exception as exc:  # noqa: BLE001
                 metrics_status[model] = "failed"
                 failures.append(f"{model}: metrics failed ({exc})")
@@ -877,7 +917,8 @@ def main() -> int:
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
-        plot_ccrr_m_sweep(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_m_sweep.png")
+        plot_ccrr_m_sweep_with_ltm(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_m_sweep.png")
+        plot_ccrr_trend_quadrants(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_trend_quadrants.png")
         plot_ccrr_ltm_comparison(rows=rows, out_path=plots_dir / "ccrr_ltm_comparison.png")
         plot_bio_vs_center_scatter(rows=rows, out_path=plots_dir / "bio_vs_center_scatter.png")
         plot_mari_vs_ri_scatter(rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png")
