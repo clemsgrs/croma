@@ -320,13 +320,14 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
 
 
 def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
-    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+    fig, (ax_ccrr, ax_ltm) = plt.subplots(2, 1, figsize=(9.0, 8.0), sharex=True)
     ccrr_rows = [
         r for r in rows
         if "m" in r and "ccrr" in r and np.isfinite(float(r["m"])) and np.isfinite(float(r["ccrr"]))
     ]
     if not ccrr_rows:
-        ax.set_visible(False)
+        for ax in (ax_ccrr, ax_ltm):
+            ax.set_visible(False)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
         fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -340,58 +341,56 @@ def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     for model in by_model:
         by_model[model] = sorted(by_model[model], key=lambda r: int(r["m"]))
 
-    m_ticks = sorted({int(row["m"]) for row in ccrr_rows})
-    ccrr_values = np.asarray([float(row["ccrr"]) for row in ccrr_rows], dtype=float)
+    m_all = sorted({int(row["m"]) for row in ccrr_rows})
+    m_min, m_max = m_all[0], m_all[-1]
+
+    def _configure_ax(ax: plt.Axes, ylabel: str, title: str, values: np.ndarray) -> None:
+        ax.set_facecolor("#fbfcfd")
+        ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
+        ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.8)
+        ax.set_ylabel(ylabel, fontsize=11)
+        ax.set_title(title, fontsize=12, weight="bold")
+        finite = values[np.isfinite(values)]
+        vmin = float(np.nanmin(finite)) if finite.size > 0 else 0.0
+        vmax = float(np.nanmax(finite)) if finite.size > 0 else 1.0
+        span = vmax - vmin
+        pad = max(0.05, span * 0.10) if span > 1e-9 else max(0.1, abs(vmin) * 0.10)
+        ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
+
+    ccrr_values = np.asarray([float(r["ccrr"]) for r in ccrr_rows], dtype=float)
     ltm_values = np.asarray(
-        [float(row["ccrr_ltm_alpha"]) for row in ccrr_rows if "ccrr_ltm_alpha" in row],
+        [float(r["ccrr_ltm_alpha"]) for r in ccrr_rows if "ccrr_ltm_alpha" in r],
         dtype=float,
     )
-    all_values = np.concatenate([ccrr_values, ltm_values]) if ltm_values.size > 0 else ccrr_values
-
-    ax.set_facecolor("#fbfcfd")
-    ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
-    ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.8)
-    ax.set_xlabel("m", fontsize=11)
-    ax.set_ylabel("CCRR / LTM", fontsize=11)
-    ax.set_title("CCRR and LTM over m", fontsize=14, weight="bold")
-
-    if len(m_ticks) <= 12:
-        ax.set_xticks(m_ticks)
-    else:
-        tick_positions = np.linspace(float(min(m_ticks)), float(max(m_ticks)), num=8)
-        tick_positions = np.unique(np.round(tick_positions).astype(int))
-        ax.set_xticks(tick_positions.tolist())
-
-    if len(m_ticks) > 1:
-        span = float(max(m_ticks) - min(m_ticks))
-        pad = max(0.5, 0.03 * span)
-        ax.set_xlim(float(min(m_ticks)) - pad, float(max(m_ticks)) + pad)
-    else:
-        ax.set_xlim(float(m_ticks[0]) - 0.5, float(m_ticks[0]) + 0.5)
-
-    finite_all = all_values[np.isfinite(all_values)]
-    vmin = float(np.nanmin(finite_all)) if finite_all.size > 0 else 0.0
-    vmax = float(np.nanmax(finite_all)) if finite_all.size > 0 else 1.0
-    if vmax - vmin <= 1e-9:
-        pad = max(0.1, abs(vmin) * 0.10)
-    else:
-        pad = max(0.1, (vmax - vmin) * 0.10)
-    ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
+    _configure_ax(ax_ccrr, "CCRR", "CCRR over m", ccrr_values)
+    if ltm_values.size > 0:
+        _configure_ax(ax_ltm, "LTM", "LTM over m", ltm_values)
 
     for model in sorted(by_model):
         model_rows = by_model[model]
         color = _color_for_model(model)
         ms = np.asarray([int(r["m"]) for r in model_rows], dtype=int)
         vals = np.asarray([float(r["ccrr"]) for r in model_rows], dtype=float)
-        ax.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, marker="o", markersize=4, label=model)
-        ltms = np.asarray([float(r["ccrr_ltm_alpha"]) for r in model_rows], dtype=float)
-        ax.plot(ms, ltms, color=color, linewidth=1.4, alpha=0.7, linestyle="--")
+        ax_ccrr.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, label=model)
+        if "ccrr_ltm_alpha" in model_rows[0]:
+            ltms = np.asarray([float(r["ccrr_ltm_alpha"]) for r in model_rows], dtype=float)
+            ax_ltm.plot(ms, ltms, color=color, linewidth=1.8, alpha=0.95, label=model)
 
-    proxy = [
-        Line2D([0], [0], color="gray", lw=1.8, label="CCRR"),
-        Line2D([0], [0], color="gray", lw=1.4, linestyle="--", alpha=0.7, label="LTM"),
-    ]
-    ax.legend(handles=proxy, frameon=False, loc="best")
+    # x-axis: integer ticks spanning the full sweep range
+    if m_max - m_min <= 20:
+        tick_positions = list(range(m_min, m_max + 1))
+    else:
+        step = max(1, (m_max - m_min) // 10)
+        tick_positions = list(range(m_min, m_max + 1, step))
+        if m_max not in tick_positions:
+            tick_positions.append(m_max)
+    ax_ltm.set_xticks(tick_positions)
+    ax_ltm.set_xlim(m_min - 0.5, m_max + 0.5)
+    ax_ltm.set_xlabel("m", fontsize=11)
+
+    ax_ccrr.legend(frameon=False, loc="best", fontsize=9)
+    ax_ltm.legend(frameon=False, loc="best", fontsize=9)
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
