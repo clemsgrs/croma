@@ -99,6 +99,7 @@ class TestCCRRTailIntegration:
         assert np.isfinite(result.q_alpha)
         assert np.isfinite(result.ltm_alpha)
         assert result.ltm_alpha <= result.q_alpha
+        assert result.sample_values_aligned.shape == (len(manifest),)
 
     def test_custom_alpha(self) -> None:
         manifest = pd.DataFrame(
@@ -134,3 +135,4 @@ class TestCCRRTailIntegration:
         )
 
         assert result.alpha == 0.25
+        assert result.sample_values_aligned.shape == (len(manifest),)

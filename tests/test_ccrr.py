@@ -143,6 +143,7 @@ class TestCCRRCompute:
         assert np.isfinite(result.value)
         assert result.n_pairs >= 1
         assert result.sample_values.shape[0] <= 8
+        assert result.sample_values_aligned.shape == (len(manifest),)
         assert result.acceptance_met
         assert result.undefined_frac == pytest.approx(0.0)
 
@@ -185,6 +186,8 @@ class TestCCRRCompute:
 
         assert result.undefined_frac == pytest.approx(1.0)
         assert result.sample_values.shape[0] == 0
+        assert result.sample_values_aligned.shape == (len(manifest),)
+        assert np.isnan(result.sample_values_aligned).all()
 
     def test_relaxed_acceptance_threshold_stops_earlier(self) -> None:
         features, manifest = _toy_features_so_closer()

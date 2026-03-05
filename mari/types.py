@@ -13,9 +13,11 @@ class RobustnessResult:
     n_pairs: int
     pair_values: np.ndarray
     sample_values: np.ndarray
+    sample_values_aligned: np.ndarray
+    sample_undefined_types: np.ndarray
     undefined_frac: float = 0.0
-    ss_dominated_frac: float = 0.0
-    oo_dominated_frac: float = 0.0
+    ss_dominated_undefined_frac: float = 0.0
+    oo_dominated_undefined_frac: float = 0.0
     mixed_undefined_frac: float = 0.0
 
 
@@ -28,6 +30,7 @@ class CCRRResult:
     n_pairs: int
     pair_values: np.ndarray
     sample_values: np.ndarray
+    sample_values_aligned: np.ndarray
     undefined_frac: float
     acceptance_threshold: float = 0.0
     acceptance_met: bool = True

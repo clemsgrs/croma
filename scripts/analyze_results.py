@@ -351,8 +351,8 @@ def _model_action_flags(
     # Undefined breakdown flags (SS/OO).
     for metric in ("ri", "mari"):
         undef_col = f"{metric}_undefined_frac"
-        ss_col = f"{metric}_ss_dominated_frac"
-        oo_col = f"{metric}_oo_dominated_frac"
+        ss_col = f"{metric}_ss_dominated_undefined_frac"
+        oo_col = f"{metric}_oo_dominated_undefined_frac"
 
         if undef_col in df_model.columns and float(df_model[undef_col].max()) > 0:
             # high_undefined: > 30% undefined

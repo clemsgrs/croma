@@ -1,4 +1,5 @@
 
+import warnings
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -90,18 +91,20 @@ class BaseRobustnessIndex(ABC):
         os_total = 0.0
         sample_scores = np.full((len(labels),), np.nan, dtype=float)
         informative_mask = np.zeros((len(labels),), dtype=bool)
-        # 0=defined, 1=SS-dominated, 2=OO-dominated, 3=mixed
+        # 0=defined, 1=SS-dominated, 2=OO-dominated, 3=mixed / unclassified
         undefined_type = np.zeros((len(labels),), dtype=int)
 
         for i in range(len(labels)):
             eff_k = min(target_k, int(valid_counts[i]))
             if eff_k <= 0:
+                undefined_type[i] = 3
                 continue
 
             row_idx = neigh_idx[i, :eff_k]
             row_dist = neigh_dist[i, :eff_k]
             keep = row_idx >= 0
             if not bool(np.any(keep)):
+                undefined_type[i] = 3
                 continue
 
             row_idx = row_idx[keep]
@@ -194,18 +197,29 @@ class BaseRobustnessIndex(ABC):
             dataset_name=dataset_name,
             **kwargs,
         )
-        pair_arr, sample_arr, undef_type_arr = by_k[int(k)]
+        pair_arr, sample_arr, sample_aligned, undef_type_arr = by_k[int(k)]
 
         total_n = len(features)
         informative_n = len(sample_arr)
         undefined_n = max(0, total_n - informative_n)
         undefined_frac = float(undefined_n / total_n) if total_n > 0 else 0.0
-        ss_count = int((undef_type_arr == 1).sum())
-        oo_count = int((undef_type_arr == 2).sum())
-        mixed_count = int((undef_type_arr == 3).sum())
-        ss_dominated_frac = float(ss_count / total_n) if total_n > 0 else 0.0
-        oo_dominated_frac = float(oo_count / total_n) if total_n > 0 else 0.0
-        mixed_undefined_frac = float(mixed_count / total_n) if total_n > 0 else 0.0
+        if mode_value == "paired":
+            warnings.warn(
+                "RI/MaRI undefined subtype breakdown is only well-defined in global mode; "
+                "paired-mode subtype fractions are reported as NaN until paired aggregation semantics are specified.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            ss_dominated_undefined_frac = float("nan")
+            oo_dominated_undefined_frac = float("nan")
+            mixed_undefined_frac = float("nan")
+        else:
+            ss_count = int((undef_type_arr == 1).sum())
+            oo_count = int((undef_type_arr == 2).sum())
+            mixed_count = int((undef_type_arr == 3).sum())
+            ss_dominated_undefined_frac = float(ss_count / total_n) if total_n > 0 else 0.0
+            oo_dominated_undefined_frac = float(oo_count / total_n) if total_n > 0 else 0.0
+            mixed_undefined_frac = float(mixed_count / total_n) if total_n > 0 else 0.0
 
         return RobustnessResult(
             dataset=dataset_name,
@@ -215,9 +229,11 @@ class BaseRobustnessIndex(ABC):
             n_pairs=int(len(pair_arr)),
             pair_values=pair_arr,
             sample_values=sample_arr,
+            sample_values_aligned=sample_aligned,
+            sample_undefined_types=undef_type_arr,
             undefined_frac=undefined_frac,
-            ss_dominated_frac=ss_dominated_frac,
-            oo_dominated_frac=oo_dominated_frac,
+            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
             mixed_undefined_frac=mixed_undefined_frac,
         )
 
@@ -299,7 +315,7 @@ class BaseRobustnessIndex(ABC):
         mode_value: str,
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
@@ -354,7 +370,7 @@ class BaseRobustnessIndex(ABC):
                 raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all inferred 2x2 pairs")
             raise RuntimeError(f"{dataset_name}: RI/MaRI failed on full dataset")
 
-        out: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        out: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
         for k in candidates:
             pair_values = per_k_pair_values[int(k)]
             if not pair_values:
@@ -362,10 +378,14 @@ class BaseRobustnessIndex(ABC):
             pair_arr = np.asarray(pair_values, dtype=float)
             counts = per_k_sample_count[int(k)]
             informative = counts > 0
+            sample_aligned = np.full((len(features),), np.nan, dtype=float)
             if bool(np.any(informative)):
-                sample_arr = (per_k_sample_sum[int(k)][informative] / counts[informative]).astype(float)
+                sample_aligned[informative] = (
+                    per_k_sample_sum[int(k)][informative] / counts[informative]
+                ).astype(float)
+                sample_arr = sample_aligned[informative].astype(float)
             else:
                 sample_arr = np.empty((0,), dtype=float)
             undef_type_arr = per_k_undefined_type[int(k)]
-            out[int(k)] = (pair_arr, sample_arr, undef_type_arr)
+            out[int(k)] = (pair_arr, sample_arr, sample_aligned, undef_type_arr)
         return out
