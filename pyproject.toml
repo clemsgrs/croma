@@ -19,6 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 # Full benchmarking + data preparation + plotting pipeline.
 bench = [
+  "rich>=13.0",
   "huggingface_hub>=0.24",
   "pyarrow>=14.0",
   "matplotlib>=3.8",
