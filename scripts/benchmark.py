@@ -239,12 +239,16 @@ def _summary_from_payload(payload: dict) -> dict | None:
         if key not in payload:
             return None
     try:
-        return {
+        result = {
             "k": int(payload["k"]),
             "value": float(payload["value"]),
             "std": float(payload["std"]),
             "undefined_frac": float(payload["undefined_frac"]),
+            "ss_dominated_frac": float(payload.get("ss_dominated_frac", 0.0)),
+            "oo_dominated_frac": float(payload.get("oo_dominated_frac", 0.0)),
+            "mixed_undefined_frac": float(payload.get("mixed_undefined_frac", 0.0)),
         }
+        return result
     except Exception:  # noqa: BLE001
         return None
 
@@ -632,14 +636,14 @@ def main() -> int:
                         raise RuntimeError(
                             f"Inconsistent selected k: RI returned {ri.k} but kNN balanced accuracy selected {selected_k}"
                         )
-                    total_n = int(len(eval_manifest))
-                    ri_informative_n = int(len(ri.sample_values))
-                    ri_undefined_n = max(0, total_n - ri_informative_n)
                     ri_summary = {
                         "k": int(ri.k),
                         "value": float(ri.value),
                         "std": float(ri.std),
-                        "undefined_frac": float(ri_undefined_n / total_n) if total_n > 0 else 0.0,
+                        "undefined_frac": float(ri.undefined_frac),
+                        "ss_dominated_frac": float(ri.ss_dominated_frac),
+                        "oo_dominated_frac": float(ri.oo_dominated_frac),
+                        "mixed_undefined_frac": float(ri.mixed_undefined_frac),
                     }
                     ri_samples = np.asarray(ri.sample_values, dtype=float)
                     cache.put_json(key=keys["ri_summary"], payload=ri_summary)
@@ -672,14 +676,14 @@ def main() -> int:
                         raise RuntimeError(
                             f"Inconsistent selected k: MaRI returned {mari.k} but kNN balanced accuracy selected {selected_k}"
                         )
-                    total_n = int(len(eval_manifest))
-                    mari_informative_n = int(len(mari.sample_values))
-                    mari_undefined_n = max(0, total_n - mari_informative_n)
                     mari_summary = {
                         "k": int(mari.k),
                         "value": float(mari.value),
                         "std": float(mari.std),
-                        "undefined_frac": float(mari_undefined_n / total_n) if total_n > 0 else 0.0,
+                        "undefined_frac": float(mari.undefined_frac),
+                        "ss_dominated_frac": float(mari.ss_dominated_frac),
+                        "oo_dominated_frac": float(mari.oo_dominated_frac),
+                        "mixed_undefined_frac": float(mari.mixed_undefined_frac),
                     }
                     mari_samples = np.asarray(mari.sample_values, dtype=float)
                     cache.put_json(key=keys["mari_summary"], payload=mari_summary)
@@ -753,6 +757,12 @@ def main() -> int:
                 total_n = int(len(eval_manifest))
                 ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
                 mari_undefined_n = int(round(float(mari_summary["undefined_frac"]) * total_n))
+                ri_ss_frac = float(ri_summary.get("ss_dominated_frac", 0.0))
+                ri_oo_frac = float(ri_summary.get("oo_dominated_frac", 0.0))
+                ri_mixed_frac = float(ri_summary.get("mixed_undefined_frac", 0.0))
+                mari_ss_frac = float(mari_summary.get("ss_dominated_frac", 0.0))
+                mari_oo_frac = float(mari_summary.get("oo_dominated_frac", 0.0))
+                mari_mixed_frac = float(mari_summary.get("mixed_undefined_frac", 0.0))
                 saved_dist_path = _save_mari_sample_distribution(
                     results_dir=results_dir,
                     model=model,
@@ -797,7 +807,13 @@ def main() -> int:
                     "mari": float(mari_summary["value"]),
                     "mari_std": float(mari_summary["std"]),
                     "ri_undefined_frac": float(ri_summary["undefined_frac"]),
+                    "ri_ss_dominated_frac": ri_ss_frac,
+                    "ri_oo_dominated_frac": ri_oo_frac,
+                    "ri_mixed_undefined_frac": ri_mixed_frac,
                     "mari_undefined_frac": float(mari_summary["undefined_frac"]),
+                    "mari_ss_dominated_frac": mari_ss_frac,
+                    "mari_oo_dominated_frac": mari_oo_frac,
+                    "mari_mixed_undefined_frac": mari_mixed_frac,
                     "ri_samples_path": str(saved_ri_dist_path),
                     "mari_samples_path": str(saved_dist_path),
                     "ccrr": float(ccrr_result["ccrr"]),

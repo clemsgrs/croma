@@ -84,12 +84,14 @@ class BaseRobustnessIndex(ABC):
         valid_counts: np.ndarray,
         k: int,
         **kwargs: float,
-    ) -> tuple[float, np.ndarray, np.ndarray]:
+    ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
         target_k = int(k)
         so_total = 0.0
         os_total = 0.0
         sample_scores = np.full((len(labels),), np.nan, dtype=float)
         informative_mask = np.zeros((len(labels),), dtype=bool)
+        # 0=defined, 1=SS-dominated, 2=OO-dominated, 3=mixed
+        undefined_type = np.zeros((len(labels),), dtype=int)
 
         for i in range(len(labels)):
             eff_k = min(target_k, int(valid_counts[i]))
@@ -123,11 +125,20 @@ class BaseRobustnessIndex(ABC):
             if np.isfinite(sample_score):
                 sample_scores[i] = float(sample_score)
                 informative_mask[i] = True
+            else:
+                ss_count = int(np.logical_and(neigh_labels == sample_label, neigh_centers == sample_center).sum())
+                oo_count = int(np.logical_and(neigh_labels != sample_label, neigh_centers != sample_center).sum())
+                if ss_count > oo_count:
+                    undefined_type[i] = 1  # SS-dominated
+                elif oo_count > ss_count:
+                    undefined_type[i] = 2  # OO-dominated
+                else:
+                    undefined_type[i] = 3  # mixed
 
             so_total += so_i
             os_total += os_i
 
-        return _ratio_or_default(so_total, os_total), sample_scores, informative_mask
+        return _ratio_or_default(so_total, os_total), sample_scores, informative_mask, undefined_type
 
     @classmethod
     def _compute(
@@ -183,7 +194,18 @@ class BaseRobustnessIndex(ABC):
             dataset_name=dataset_name,
             **kwargs,
         )
-        pair_arr, sample_arr = by_k[int(k)]
+        pair_arr, sample_arr, undef_type_arr = by_k[int(k)]
+
+        total_n = len(features)
+        informative_n = len(sample_arr)
+        undefined_n = max(0, total_n - informative_n)
+        undefined_frac = float(undefined_n / total_n) if total_n > 0 else 0.0
+        ss_count = int((undef_type_arr == 1).sum())
+        oo_count = int((undef_type_arr == 2).sum())
+        mixed_count = int((undef_type_arr == 3).sum())
+        ss_dominated_frac = float(ss_count / total_n) if total_n > 0 else 0.0
+        oo_dominated_frac = float(oo_count / total_n) if total_n > 0 else 0.0
+        mixed_undefined_frac = float(mixed_count / total_n) if total_n > 0 else 0.0
 
         return RobustnessResult(
             dataset=dataset_name,
@@ -193,6 +215,10 @@ class BaseRobustnessIndex(ABC):
             n_pairs=int(len(pair_arr)),
             pair_values=pair_arr,
             sample_values=sample_arr,
+            undefined_frac=undefined_frac,
+            ss_dominated_frac=ss_dominated_frac,
+            oo_dominated_frac=oo_dominated_frac,
+            mixed_undefined_frac=mixed_undefined_frac,
         )
 
     @classmethod
@@ -239,7 +265,7 @@ class BaseRobustnessIndex(ABC):
             dataset_name=dataset_name,
             **kwargs,
         )
-        return {int(k): float(by_k[int(k)][0].mean()) for k in candidates}
+        return {int(k): float(by_k[int(k)][0].mean()) for k in candidates if int(k) in by_k}
 
     @classmethod
     def _build_subsets(
@@ -273,7 +299,7 @@ class BaseRobustnessIndex(ABC):
         mode_value: str,
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[int, tuple[np.ndarray, np.ndarray]]:
+    ) -> dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]]:
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
@@ -281,6 +307,10 @@ class BaseRobustnessIndex(ABC):
             int(k): np.zeros((len(features),), dtype=float) for k in candidates
         }
         per_k_sample_count: dict[int, np.ndarray] = {
+            int(k): np.zeros((len(features),), dtype=int) for k in candidates
+        }
+        # Track undefined type per sample (last-seen wins for multi-subset)
+        per_k_undefined_type: dict[int, np.ndarray] = {
             int(k): np.zeros((len(features),), dtype=int) for k in candidates
         }
 
@@ -299,7 +329,7 @@ class BaseRobustnessIndex(ABC):
 
             neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(pair_features, slide_ids, kmax)
             for k in candidates:
-                pair_value, per_sample, informative_mask = cls._score_from_neighbors(
+                pair_value, per_sample, informative_mask, undefined_type = cls._score_from_neighbors(
                     labels=labels,
                     centers=centers,
                     neigh_idx=neigh_idx,
@@ -313,13 +343,18 @@ class BaseRobustnessIndex(ABC):
                     global_idx = idx[informative_mask]
                     per_k_sample_sum[int(k)][global_idx] += per_sample[informative_mask]
                     per_k_sample_count[int(k)][global_idx] += 1
+                # For undefined samples, store their type (using global indices)
+                undefined_mask = ~informative_mask & (undefined_type > 0)
+                if bool(np.any(undefined_mask)):
+                    global_undef_idx = idx[undefined_mask]
+                    per_k_undefined_type[int(k)][global_undef_idx] = undefined_type[undefined_mask]
 
         if not any(per_k_pair_values[int(k)] for k in candidates):
             if mode_value == "paired":
                 raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all inferred 2x2 pairs")
             raise RuntimeError(f"{dataset_name}: RI/MaRI failed on full dataset")
 
-        out: dict[int, tuple[np.ndarray, np.ndarray]] = {}
+        out: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
         for k in candidates:
             pair_values = per_k_pair_values[int(k)]
             if not pair_values:
@@ -331,5 +366,6 @@ class BaseRobustnessIndex(ABC):
                 sample_arr = (per_k_sample_sum[int(k)][informative] / counts[informative]).astype(float)
             else:
                 sample_arr = np.empty((0,), dtype=float)
-            out[int(k)] = (pair_arr, sample_arr)
+            undef_type_arr = per_k_undefined_type[int(k)]
+            out[int(k)] = (pair_arr, sample_arr, undef_type_arr)
         return out

@@ -346,6 +346,10 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
             self.value = 0.5
             self.std = 0.0
             self.sample_values = np.asarray([0.2, 0.6, 0.8], dtype=float)
+            self.undefined_frac = 0.0
+            self.ss_dominated_frac = 0.0
+            self.oo_dominated_frac = 0.0
+            self.mixed_undefined_frac = 0.0
 
     def fake_compute_curve(
         *,
