@@ -316,8 +316,7 @@ def _compute_ccrr_by_m(
 
 class _ModelTicker:
     _ABBREV = {
-        "embed": "emb", "knn": "knn", "RI": "RI", "MaRI": "MaRI",
-        "CCRR:search": "CCRR-s", "CCRR:scalars": "CCRR-Δ", "save": "save",
+        "embed": "emb", "knn": "knn", "RI": "RI", "MaRI": "MaRI", "CCRR": "CCRR",
     }
 
     def __init__(self, bar: Any, model: str, progress_enabled: bool) -> None:
@@ -726,7 +725,7 @@ def main() -> int:
                 ticker.done("MaRI", cached=mari_was_cached)
     
                 ccrr_was_cached = ccrr_by_m is not None and ccrr_samples is not None
-                ticker.start("CCRR:search")
+                ticker.start("CCRR")
                 if ccrr_by_m is None or ccrr_samples is None:
                     ccrr_results = _compute_ccrr_by_m(
                         features=_ensure_eval_features(),
@@ -748,9 +747,8 @@ def main() -> int:
                     cache.put_npy(key=keys["ccrr_m1_samples"], values=ccrr_samples)
                 else:
                     ccrr_samples = np.asarray(ccrr_samples, dtype=float)
-                ticker.done("CCRR:search", cached=ccrr_was_cached)
+                ticker.done("CCRR", cached=ccrr_was_cached)
 
-                ticker.start("CCRR:scalars")
                 ccrr_m_rows_for_model: list[dict] = []
                 for m in ccrr_m_values:
                     payload = ccrr_by_m[int(m)]
@@ -787,9 +785,7 @@ def main() -> int:
                     ccrr_auc = ccrr_curve[0] if ccrr_curve else float("nan")
                 ccrr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
                 ccrr_delta = float(ccrr_curve[-1] - ccrr_curve[0]) if len(ccrr_curve) > 1 else 0.0
-                ticker.done("CCRR:scalars")
 
-                ticker.start("save")
                 total_n = int(len(eval_manifest))
                 ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
                 mari_undefined_n = int(round(float(mari_summary["undefined_frac"]) * total_n))
@@ -879,7 +875,6 @@ def main() -> int:
                         }
                     )
                 ccrr_m_sweep_rows.extend(ccrr_m_rows_for_model)
-                ticker.done("save")
 
                 metrics_status[model] = "cached" if all_cache_hit else "ok"
                 if all_cache_hit:
