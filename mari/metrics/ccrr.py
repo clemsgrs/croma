@@ -356,8 +356,12 @@ class CrossConfounderRetrievalRatio:
                 std = 0.0
 
             has_sample = sample_count[int(m)] > 0
+            sample_values_aligned = np.full((len(features),), np.nan, dtype=float)
             if has_sample.any():
-                sample_values = (sample_sum[int(m)][has_sample] / sample_count[int(m)][has_sample]).astype(float)
+                sample_values_aligned[has_sample] = (
+                    sample_sum[int(m)][has_sample] / sample_count[int(m)][has_sample]
+                ).astype(float)
+                sample_values = sample_values_aligned[has_sample].astype(float)
             else:
                 sample_values = np.empty((0,), dtype=float)
 
@@ -386,6 +390,7 @@ class CrossConfounderRetrievalRatio:
                 n_pairs=len(pair_medians[int(m)]),
                 pair_values=finite_pair,
                 sample_values=sample_values,
+                sample_values_aligned=sample_values_aligned,
                 undefined_frac=undefined_frac,
                 acceptance_threshold=float(acceptance_threshold),
                 acceptance_met=bool(acceptance_met),

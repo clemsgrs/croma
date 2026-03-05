@@ -63,6 +63,29 @@ def _distribution_meta_path(results_dir: Path, metric_name: str, model: str) -> 
     return _sample_distribution_dir(results_dir) / f"{metric_name}.{_safe_model_name(model)}.json"
 
 
+def _per_sample_metrics_path(results_dir: Path) -> Path:
+    return results_dir / "per_sample_metrics.csv"
+
+
+def _per_sample_metrics_json_path(results_dir: Path) -> Path:
+    return results_dir / "per_sample_metrics.json"
+
+
+def _per_sample_metrics_by_model_dir(results_dir: Path) -> Path:
+    return results_dir / "per_sample_metrics_by_model"
+
+
+def _per_sample_metrics_by_model_paths(results_dir: Path, model: str) -> tuple[Path, Path]:
+    base = _per_sample_metrics_by_model_dir(results_dir) / _safe_model_name(model)
+    return base.with_suffix(".csv"), base.with_suffix(".json")
+
+
+def _npy_matches_shape(values: np.ndarray | None, expected_shape: tuple[int, ...]) -> bool:
+    if values is None:
+        return False
+    return tuple(int(v) for v in values.shape) == tuple(int(v) for v in expected_shape)
+
+
 def _save_mari_sample_distribution(
     *,
     results_dir: Path,
@@ -244,8 +267,8 @@ def _summary_from_payload(payload: dict) -> dict | None:
             "value": float(payload["value"]),
             "std": float(payload["std"]),
             "undefined_frac": float(payload["undefined_frac"]),
-            "ss_dominated_frac": float(payload.get("ss_dominated_frac", 0.0)),
-            "oo_dominated_frac": float(payload.get("oo_dominated_frac", 0.0)),
+            "ss_dominated_undefined_frac": float(payload.get("ss_dominated_undefined_frac", 0.0)),
+            "oo_dominated_undefined_frac": float(payload.get("oo_dominated_undefined_frac", 0.0)),
             "mixed_undefined_frac": float(payload.get("mixed_undefined_frac", 0.0)),
         }
         return result
@@ -347,6 +370,8 @@ def main() -> int:
     k_sweep_json = results_dir / "k_sweep_metrics.json"
     ccrr_m_sweep_csv = results_dir / "ccrr_m_sweep_metrics.csv"
     ccrr_m_sweep_json = results_dir / "ccrr_m_sweep_metrics.json"
+    per_sample_csv = _per_sample_metrics_path(results_dir)
+    per_sample_json = _per_sample_metrics_json_path(results_dir)
 
     cache = MetricsArtifactCache(results_dir=results_dir)
 
@@ -371,6 +396,9 @@ def main() -> int:
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
     ccrr_m_sweep_rows: list[dict] = []
+    per_sample_rows: list[dict] = []
+    per_sample_rows_by_model: dict[str, list[dict]] = {}
+    write_per_sample_artifacts = str(args.mode) == "global"
 
     progress_write(f"[benchmark] manifest={args.manifest}", enabled=progress_enabled)
     progress_write(f"[benchmark] models={', '.join(models)}", enabled=progress_enabled)
@@ -471,6 +499,18 @@ def main() -> int:
                         input_fingerprint=input_fp,
                         params={"mode": mode_value, "k_values": k_values_param},
                     ),
+                    "ri_samples_aligned": build_cache_key(
+                        artifact_name="ri_samples_aligned",
+                        model=model,
+                        input_fingerprint=input_fp,
+                        params={"mode": mode_value, "k_values": k_values_param},
+                    ),
+                    "ri_undefined_types": build_cache_key(
+                        artifact_name="ri_undefined_types",
+                        model=model,
+                        input_fingerprint=input_fp,
+                        params={"mode": mode_value, "k_values": k_values_param},
+                    ),
                     "mari_summary": build_cache_key(
                         artifact_name="mari_summary",
                         model=model,
@@ -479,6 +519,18 @@ def main() -> int:
                     ),
                     "mari_samples": build_cache_key(
                         artifact_name="mari_samples",
+                        model=model,
+                        input_fingerprint=input_fp,
+                        params={"mode": mode_value, "k_values": k_values_param, "tau": tau_value},
+                    ),
+                    "mari_samples_aligned": build_cache_key(
+                        artifact_name="mari_samples_aligned",
+                        model=model,
+                        input_fingerprint=input_fp,
+                        params={"mode": mode_value, "k_values": k_values_param, "tau": tau_value},
+                    ),
+                    "mari_undefined_types": build_cache_key(
+                        artifact_name="mari_undefined_types",
                         model=model,
                         input_fingerprint=input_fp,
                         params={"mode": mode_value, "k_values": k_values_param, "tau": tau_value},
@@ -507,6 +559,18 @@ def main() -> int:
                             "alpha": float(args.ccrr_alpha),
                         },
                     ),
+                    "ccrr_samples_aligned_by_m": build_cache_key(
+                        artifact_name="ccrr_samples_aligned_by_m",
+                        model=model,
+                        input_fingerprint=input_fp,
+                        params={
+                            "mode": mode_value,
+                            "m_max": int(args.ccrr_m_max),
+                            "start_k": int(args.ccrr_start_k),
+                            "k_growth_factor": float(args.ccrr_k_growth_factor),
+                            "alpha": float(args.ccrr_alpha),
+                        },
+                    ),
                 }
     
                 knn_bacc_by_k: dict[int, float] | None = None
@@ -515,10 +579,15 @@ def main() -> int:
                 mari_curve: dict[int, float] | None = None
                 ri_summary: dict | None = None
                 ri_samples: np.ndarray | None = None
+                ri_samples_aligned: np.ndarray | None = None
+                ri_undefined_types: np.ndarray | None = None
                 mari_summary: dict | None = None
                 mari_samples: np.ndarray | None = None
+                mari_samples_aligned: np.ndarray | None = None
+                mari_undefined_types: np.ndarray | None = None
                 ccrr_by_m: dict[int, dict] | None = None
                 ccrr_samples: np.ndarray | None = None
+                ccrr_samples_aligned_by_m: np.ndarray | None = None
     
                 all_cache_hit = not bool(args.recompute_metrics)
     
@@ -553,12 +622,38 @@ def main() -> int:
     
                     ri_summary = _summary_from_payload(cache.get_json(key=keys["ri_summary"]))
                     ri_samples = cache.get_npy(key=keys["ri_samples"])
-                    if ri_summary is None or ri_samples is None:
+                    if write_per_sample_artifacts:
+                        ri_samples_aligned = cache.get_npy(key=keys["ri_samples_aligned"])
+                        ri_undefined_types = cache.get_npy(key=keys["ri_undefined_types"])
+                    if (
+                        ri_summary is None
+                        or ri_samples is None
+                        or (
+                            write_per_sample_artifacts
+                            and (
+                                not _npy_matches_shape(ri_samples_aligned, (len(eval_manifest),))
+                                or not _npy_matches_shape(ri_undefined_types, (len(eval_manifest),))
+                            )
+                        )
+                    ):
                         all_cache_hit = False
     
                     mari_summary = _summary_from_payload(cache.get_json(key=keys["mari_summary"]))
                     mari_samples = cache.get_npy(key=keys["mari_samples"])
-                    if mari_summary is None or mari_samples is None:
+                    if write_per_sample_artifacts:
+                        mari_samples_aligned = cache.get_npy(key=keys["mari_samples_aligned"])
+                        mari_undefined_types = cache.get_npy(key=keys["mari_undefined_types"])
+                    if (
+                        mari_summary is None
+                        or mari_samples is None
+                        or (
+                            write_per_sample_artifacts
+                            and (
+                                not _npy_matches_shape(mari_samples_aligned, (len(eval_manifest),))
+                                or not _npy_matches_shape(mari_undefined_types, (len(eval_manifest),))
+                            )
+                        )
+                    ):
                         all_cache_hit = False
     
                     ccrr_by_m = _ccrr_payload_to_by_m(
@@ -566,7 +661,19 @@ def main() -> int:
                         expected_m_values=ccrr_m_values,
                     )
                     ccrr_samples = cache.get_npy(key=keys["ccrr_m1_samples"])
-                    if ccrr_by_m is None or ccrr_samples is None:
+                    if write_per_sample_artifacts:
+                        ccrr_samples_aligned_by_m = cache.get_npy(key=keys["ccrr_samples_aligned_by_m"])
+                    if (
+                        ccrr_by_m is None
+                        or ccrr_samples is None
+                        or (
+                            write_per_sample_artifacts
+                            and not _npy_matches_shape(
+                                ccrr_samples_aligned_by_m,
+                                (len(eval_manifest), len(ccrr_m_values)),
+                            )
+                        )
+                    ):
                         all_cache_hit = False
                 else:
                     all_cache_hit = False
@@ -641,15 +748,23 @@ def main() -> int:
                         "value": float(ri.value),
                         "std": float(ri.std),
                         "undefined_frac": float(ri.undefined_frac),
-                        "ss_dominated_frac": float(ri.ss_dominated_frac),
-                        "oo_dominated_frac": float(ri.oo_dominated_frac),
+                        "ss_dominated_undefined_frac": float(ri.ss_dominated_undefined_frac),
+                        "oo_dominated_undefined_frac": float(ri.oo_dominated_undefined_frac),
                         "mixed_undefined_frac": float(ri.mixed_undefined_frac),
                     }
                     ri_samples = np.asarray(ri.sample_values, dtype=float)
+                    ri_samples_aligned = np.asarray(ri.sample_values_aligned, dtype=float)
+                    ri_undefined_types = np.asarray(ri.sample_undefined_types, dtype=int)
                     cache.put_json(key=keys["ri_summary"], payload=ri_summary)
                     cache.put_npy(key=keys["ri_samples"], values=ri_samples)
+                    cache.put_npy(key=keys["ri_samples_aligned"], values=ri_samples_aligned)
+                    cache.put_npy(key=keys["ri_undefined_types"], values=ri_undefined_types)
                 else:
                     ri_samples = np.asarray(ri_samples, dtype=float)
+                    if ri_samples_aligned is not None:
+                        ri_samples_aligned = np.asarray(ri_samples_aligned, dtype=float)
+                    if ri_undefined_types is not None:
+                        ri_undefined_types = np.asarray(ri_undefined_types, dtype=int)
                 ticker.done("RI", cached=ri_was_cached)
 
                 mari_was_cached = mari_curve is not None and mari_summary is not None and mari_samples is not None
@@ -681,15 +796,23 @@ def main() -> int:
                         "value": float(mari.value),
                         "std": float(mari.std),
                         "undefined_frac": float(mari.undefined_frac),
-                        "ss_dominated_frac": float(mari.ss_dominated_frac),
-                        "oo_dominated_frac": float(mari.oo_dominated_frac),
+                        "ss_dominated_undefined_frac": float(mari.ss_dominated_undefined_frac),
+                        "oo_dominated_undefined_frac": float(mari.oo_dominated_undefined_frac),
                         "mixed_undefined_frac": float(mari.mixed_undefined_frac),
                     }
                     mari_samples = np.asarray(mari.sample_values, dtype=float)
+                    mari_samples_aligned = np.asarray(mari.sample_values_aligned, dtype=float)
+                    mari_undefined_types = np.asarray(mari.sample_undefined_types, dtype=int)
                     cache.put_json(key=keys["mari_summary"], payload=mari_summary)
                     cache.put_npy(key=keys["mari_samples"], values=mari_samples)
+                    cache.put_npy(key=keys["mari_samples_aligned"], values=mari_samples_aligned)
+                    cache.put_npy(key=keys["mari_undefined_types"], values=mari_undefined_types)
                 else:
                     mari_samples = np.asarray(mari_samples, dtype=float)
+                    if mari_samples_aligned is not None:
+                        mari_samples_aligned = np.asarray(mari_samples_aligned, dtype=float)
+                    if mari_undefined_types is not None:
+                        mari_undefined_types = np.asarray(mari_undefined_types, dtype=int)
                 ticker.done("MaRI", cached=mari_was_cached)
     
                 ccrr_was_cached = ccrr_by_m is not None and ccrr_samples is not None
@@ -711,10 +834,19 @@ def main() -> int:
                     if ccrr_by_m is None:
                         raise RuntimeError("Failed to serialize ccrr m-sweep cache payload")
                     ccrr_samples = np.asarray(ccrr_results[1].sample_values, dtype=float)
+                    ccrr_samples_aligned_by_m = np.column_stack(
+                        [
+                            np.asarray(ccrr_results[int(m)].sample_values_aligned, dtype=float)
+                            for m in ccrr_m_values
+                        ]
+                    )
                     cache.put_json(key=keys["ccrr_m_sweep"], payload={"by_m": {str(k): v for k, v in ccrr_by_m.items()}})
                     cache.put_npy(key=keys["ccrr_m1_samples"], values=ccrr_samples)
+                    cache.put_npy(key=keys["ccrr_samples_aligned_by_m"], values=ccrr_samples_aligned_by_m)
                 else:
                     ccrr_samples = np.asarray(ccrr_samples, dtype=float)
+                    if ccrr_samples_aligned_by_m is not None:
+                        ccrr_samples_aligned_by_m = np.asarray(ccrr_samples_aligned_by_m, dtype=float)
                 ticker.done("CCRR", cached=ccrr_was_cached)
 
                 ccrr_m_rows_for_model: list[dict] = []
@@ -757,11 +889,11 @@ def main() -> int:
                 total_n = int(len(eval_manifest))
                 ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
                 mari_undefined_n = int(round(float(mari_summary["undefined_frac"]) * total_n))
-                ri_ss_frac = float(ri_summary.get("ss_dominated_frac", 0.0))
-                ri_oo_frac = float(ri_summary.get("oo_dominated_frac", 0.0))
+                ri_ss_frac = float(ri_summary.get("ss_dominated_undefined_frac", 0.0))
+                ri_oo_frac = float(ri_summary.get("oo_dominated_undefined_frac", 0.0))
                 ri_mixed_frac = float(ri_summary.get("mixed_undefined_frac", 0.0))
-                mari_ss_frac = float(mari_summary.get("ss_dominated_frac", 0.0))
-                mari_oo_frac = float(mari_summary.get("oo_dominated_frac", 0.0))
+                mari_ss_frac = float(mari_summary.get("ss_dominated_undefined_frac", 0.0))
+                mari_oo_frac = float(mari_summary.get("oo_dominated_undefined_frac", 0.0))
                 mari_mixed_frac = float(mari_summary.get("mixed_undefined_frac", 0.0))
                 saved_dist_path = _save_mari_sample_distribution(
                     results_dir=results_dir,
@@ -807,12 +939,12 @@ def main() -> int:
                     "mari": float(mari_summary["value"]),
                     "mari_std": float(mari_summary["std"]),
                     "ri_undefined_frac": float(ri_summary["undefined_frac"]),
-                    "ri_ss_dominated_frac": ri_ss_frac,
-                    "ri_oo_dominated_frac": ri_oo_frac,
+                    "ri_ss_dominated_undefined_frac": ri_ss_frac,
+                    "ri_oo_dominated_undefined_frac": ri_oo_frac,
                     "ri_mixed_undefined_frac": ri_mixed_frac,
                     "mari_undefined_frac": float(mari_summary["undefined_frac"]),
-                    "mari_ss_dominated_frac": mari_ss_frac,
-                    "mari_oo_dominated_frac": mari_oo_frac,
+                    "mari_ss_dominated_undefined_frac": mari_ss_frac,
+                    "mari_oo_dominated_undefined_frac": mari_oo_frac,
                     "mari_mixed_undefined_frac": mari_mixed_frac,
                     "ri_samples_path": str(saved_ri_dist_path),
                     "mari_samples_path": str(saved_dist_path),
@@ -833,6 +965,45 @@ def main() -> int:
                     "embedding_path": str(output_path),
                 }
                 rows.append(row)
+                if write_per_sample_artifacts:
+                    if (
+                        ri_samples_aligned is None
+                        or ri_undefined_types is None
+                        or mari_samples_aligned is None
+                        or mari_undefined_types is None
+                        or ccrr_samples_aligned_by_m is None
+                    ):
+                        raise RuntimeError("Missing aligned per-sample arrays required for global-mode per-sample artifact")
+                    model_per_sample_rows: list[dict] = []
+                    for sample_index, sample_row in eval_manifest.reset_index(drop=True).iterrows():
+                        record = {
+                            "dataset": str(args.dataset_name),
+                            "model": str(model),
+                            "mode": str(args.mode),
+                            "sample_index": int(sample_index),
+                            "sample_id": str(sample_row["sample_id"]),
+                            "slide_id": str(sample_row["slide_id"]),
+                            "label": str(sample_row["label"]),
+                            "medical_center": str(sample_row["medical_center"]),
+                            "k": int(ri_summary["k"]),
+                            "tau": float(args.tau),
+                            "ccrr_alpha": float(args.ccrr_alpha),
+                            "ccrr_search": str(ccrr_search_sig),
+                            "excluded_centers": str(excluded_centers_sig),
+                            "ri": float(ri_samples_aligned[sample_index]),
+                            "mari": float(mari_samples_aligned[sample_index]),
+                            "ri_defined": bool(np.isfinite(ri_samples_aligned[sample_index])),
+                            "mari_defined": bool(np.isfinite(mari_samples_aligned[sample_index])),
+                            "ri_undefined_type": int(ri_undefined_types[sample_index]),
+                            "mari_undefined_type": int(mari_undefined_types[sample_index]),
+                        }
+                        for m_pos, m in enumerate(ccrr_m_values):
+                            record[f"ccrr_m{int(m)}"] = float(ccrr_samples_aligned_by_m[sample_index, m_pos])
+                        model_per_sample_rows.append(record)
+                    per_sample_rows_by_model[str(model)] = model_per_sample_rows
+                    per_sample_rows.extend(model_per_sample_rows)
+                else:
+                    ticker.log("[benchmark] skipping per-sample artifact for mode=paired")
                 for k in k_values:
                     k_sweep_rows.append(
                         {
@@ -882,6 +1053,13 @@ def main() -> int:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
         save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
         save_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
+        if write_per_sample_artifacts and per_sample_rows:
+            per_sample_rows_sorted = sorted(per_sample_rows, key=lambda row: (str(row["model"]), int(row["sample_index"])))
+            save_metrics(rows=per_sample_rows_sorted, csv_path=per_sample_csv, json_path=per_sample_json)
+            for model_name, model_rows in per_sample_rows_by_model.items():
+                model_csv, model_json = _per_sample_metrics_by_model_paths(results_dir, model_name)
+                model_rows_sorted = sorted(model_rows, key=lambda row: int(row["sample_index"]))
+                save_metrics(rows=model_rows_sorted, csv_path=model_csv, json_path=model_json)
         plot_knn_bio_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png")
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")

@@ -50,6 +50,8 @@ def test_compute_end_to_end(metric_cls, mode: str) -> None:
     assert result.n_pairs == 1
     assert result.pair_values.shape == (1,)
     assert result.sample_values.shape[0] <= 8
+    assert result.sample_values_aligned.shape == (len(manifest),)
+    assert result.sample_undefined_types.shape == (len(manifest),)
 
 
 def test_invalid_mode_rejected() -> None:

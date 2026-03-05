@@ -133,7 +133,7 @@ def test_defined_samples_have_undefined_type_zero() -> None:
 
 
 def test_undefined_frac_equals_sum_of_breakdown_fracs() -> None:
-    """undefined_frac must equal ss_dominated_frac + oo_dominated_frac + mixed_undefined_frac."""
+    """undefined_frac must equal the sum of the unconditional subtype fractions."""
     # Create a dataset where some samples are SS-dominated, some OO-dominated, some defined
     # 8 samples: 4 label=A, 4 label=B
     # Centers: A=[C1,C1,C2,C2], B=[C1,C1,C2,C2]
@@ -173,7 +173,9 @@ def test_undefined_frac_equals_sum_of_breakdown_fracs() -> None:
     )
 
     assert result.undefined_frac == pytest.approx(
-        result.ss_dominated_frac + result.oo_dominated_frac + result.mixed_undefined_frac
+        result.ss_dominated_undefined_frac
+        + result.oo_dominated_undefined_frac
+        + result.mixed_undefined_frac
     )
 
 
@@ -215,7 +217,7 @@ def test_mari_undefined_breakdown_matches_ri() -> None:
 
 
 def test_robustness_result_has_breakdown_fields() -> None:
-    """RobustnessResult should expose ss_dominated_frac, oo_dominated_frac, mixed_undefined_frac."""
+    """RobustnessResult should expose the unconditional undefined subtype fractions."""
     import pandas as pd
 
     manifest = pd.DataFrame(
@@ -251,10 +253,72 @@ def test_robustness_result_has_breakdown_fields() -> None:
     )
 
     assert hasattr(result, "undefined_frac")
-    assert hasattr(result, "ss_dominated_frac")
-    assert hasattr(result, "oo_dominated_frac")
+    assert hasattr(result, "ss_dominated_undefined_frac")
+    assert hasattr(result, "oo_dominated_undefined_frac")
     assert hasattr(result, "mixed_undefined_frac")
-    assert 0.0 <= result.ss_dominated_frac <= 1.0
-    assert 0.0 <= result.oo_dominated_frac <= 1.0
+    assert 0.0 <= result.ss_dominated_undefined_frac <= 1.0
+    assert 0.0 <= result.oo_dominated_undefined_frac <= 1.0
     assert 0.0 <= result.mixed_undefined_frac <= 1.0
     assert 0.0 <= result.undefined_frac <= 1.0
+
+
+def test_no_valid_neighbors_are_classified_as_mixed() -> None:
+    """Rows with zero valid neighbors must still land in an undefined bucket."""
+    labels = np.array([0, 1], dtype=int)
+    centers = np.array([0, 1], dtype=int)
+    neigh_idx = np.array([[-1], [-1]], dtype=int)
+    neigh_dist = np.array([[np.inf], [np.inf]], dtype=float)
+    valid_counts = np.array([0, 0], dtype=int)
+
+    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
+        labels=labels,
+        centers=centers,
+        neigh_idx=neigh_idx,
+        neigh_dist=neigh_dist,
+        valid_counts=valid_counts,
+        k=1,
+    )
+
+    assert informative_mask.tolist() == [False, False]
+    assert undefined_type.tolist() == [3, 3]
+
+
+def test_paired_mode_breakdown_is_not_reported() -> None:
+    """Paired-mode subtype fractions are intentionally undefined until aggregation semantics are specified."""
+    import pandas as pd
+
+    manifest = pd.DataFrame(
+        {
+            "sample_id": [f"s{i}" for i in range(8)],
+            "image_path": [f"/tmp/{i}.png" for i in range(8)],
+            "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
+            "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
+            "slide_id": [f"slide-{i}" for i in range(8)],
+            "dataset": ["toy"] * 8,
+        }
+    )
+    features = np.array(
+        [
+            [1.00, 0.00, 0.00, 0.00],
+            [0.95, 0.05, 0.00, 0.00],
+            [0.92, 0.08, 0.00, 0.00],
+            [0.90, 0.10, 0.00, 0.00],
+            [0.00, 1.00, 0.00, 0.00],
+            [0.05, 0.95, 0.00, 0.00],
+            [0.08, 0.92, 0.00, 0.00],
+            [0.10, 0.90, 0.00, 0.00],
+        ],
+        dtype=float,
+    )
+
+    result = RI.compute(
+        features=features,
+        manifest=manifest,
+        mode="paired",
+        k_candidates=[1, 3],
+        random_state=0,
+    )
+
+    assert np.isnan(result.ss_dominated_undefined_frac)
+    assert np.isnan(result.oo_dominated_undefined_frac)
+    assert np.isnan(result.mixed_undefined_frac)
