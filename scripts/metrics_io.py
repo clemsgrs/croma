@@ -40,8 +40,3 @@ def save_metrics(rows: list[dict], csv_path: Path, json_path: Path) -> None:
     json_path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
 
 
-def save_k_sweep_metrics(rows: list[dict], csv_path: Path, json_path: Path) -> None:
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(rows)
-    df.to_csv(csv_path, index=False)
-    json_path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")

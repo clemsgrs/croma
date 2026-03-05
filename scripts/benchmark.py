@@ -1,7 +1,6 @@
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
 from typing import cast
 
@@ -29,7 +28,6 @@ from metrics_io import (
     ccrr_search_signature,
     excluded_centers_signature,
     k_candidates_signature,
-    save_k_sweep_metrics,
     save_metrics,
 )
 from progress_utils import model_block, progress_write, resolve_progress_mode
@@ -866,8 +864,8 @@ def main() -> int:
 
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
-        save_k_sweep_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
-        save_k_sweep_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
+        save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
+        save_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
         plot_knn_bio_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png")
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
