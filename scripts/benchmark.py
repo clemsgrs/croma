@@ -1,9 +1,8 @@
 import argparse
 import json
 import sys
-import time
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -29,10 +28,9 @@ from metrics_io import (
     ccrr_search_signature,
     excluded_centers_signature,
     k_candidates_signature,
-    save_k_sweep_metrics,
     save_metrics,
 )
-from progress_utils import progress_bar, progress_write, resolve_progress_mode
+from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
@@ -314,33 +312,6 @@ def _compute_ccrr_by_m(
     )
 
 
-class _ModelTicker:
-    _ABBREV = {
-        "embed": "emb", "knn": "knn", "RI": "RI", "MaRI": "MaRI",
-        "CCRR:search": "CCRR-s", "CCRR:scalars": "CCRR-Δ", "save": "save",
-    }
-
-    def __init__(self, bar: Any, model: str, progress_enabled: bool) -> None:
-        self._bar = bar
-        self._enabled = progress_enabled
-        self._t0: float = 0.0
-        bar.set_description(f"[benchmark] {model}")
-        bar.set_postfix_str("")
-
-    def start(self, step: str) -> None:
-        self._t0 = time.perf_counter()
-        self._bar.set_postfix_str(f"⏳ {self._ABBREV[step]}")
-
-    def done(self, step: str, *, cached: bool = False) -> None:
-        elapsed = time.perf_counter() - self._t0
-        abbrev = self._ABBREV[step]
-        if cached:
-            line = f"  ⚡ {abbrev:<8} (cached)"
-        else:
-            line = f"  ✅ {abbrev:<8} {elapsed:.1f}s"
-        progress_write(line, enabled=self._enabled)
-        self._bar.set_postfix_str("")
-
 
 def main() -> int:
     args = _parse_args()
@@ -417,20 +388,13 @@ def main() -> int:
     center_labels = pd.factorize(eval_manifest["medical_center"])[0].astype(int)
     slide_ids = eval_manifest["slide_id"].astype(str).to_numpy()
 
-    with progress_bar(
-        total=len(models),
-        desc="[benchmark] models",
-        unit="model",
-        enabled=progress_enabled,
-    ) as model_bar:
-        for model in models:
+    for i, model in enumerate(models):
+        with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
             output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
             spec = registry[model]
-            ticker = _ModelTicker(model_bar, model, progress_enabled)
-            progress_write(f"\n[benchmark] === {model} ===", enabled=progress_enabled)
             ticker.start("embed")
             if output_path.exists() and not args.force_embed:
-                progress_write(f"[benchmark] embedding cache hit -> {output_path}", enabled=progress_enabled)
+                ticker.log(f"[benchmark] embedding cache hit -> {output_path}")
                 extraction_status[model] = "skipped"
                 ticker.done("embed", cached=True)
             else:
@@ -451,8 +415,7 @@ def main() -> int:
                     extraction_status[model] = "failed"
                     metrics_status[model] = "failed"
                     failures.append(f"{model}: extraction failed ({exc})")
-                    progress_write(f"[benchmark] extraction failed: {exc}", enabled=progress_enabled)
-                    model_bar.update(1)
+                    ticker.log(f"[benchmark] extraction failed: {exc}")
                     continue
 
             try:
@@ -726,7 +689,7 @@ def main() -> int:
                 ticker.done("MaRI", cached=mari_was_cached)
     
                 ccrr_was_cached = ccrr_by_m is not None and ccrr_samples is not None
-                ticker.start("CCRR:search")
+                ticker.start("CCRR")
                 if ccrr_by_m is None or ccrr_samples is None:
                     ccrr_results = _compute_ccrr_by_m(
                         features=_ensure_eval_features(),
@@ -748,9 +711,8 @@ def main() -> int:
                     cache.put_npy(key=keys["ccrr_m1_samples"], values=ccrr_samples)
                 else:
                     ccrr_samples = np.asarray(ccrr_samples, dtype=float)
-                ticker.done("CCRR:search", cached=ccrr_was_cached)
+                ticker.done("CCRR", cached=ccrr_was_cached)
 
-                ticker.start("CCRR:scalars")
                 ccrr_m_rows_for_model: list[dict] = []
                 for m in ccrr_m_values:
                     payload = ccrr_by_m[int(m)]
@@ -787,9 +749,7 @@ def main() -> int:
                     ccrr_auc = ccrr_curve[0] if ccrr_curve else float("nan")
                 ccrr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
                 ccrr_delta = float(ccrr_curve[-1] - ccrr_curve[0]) if len(ccrr_curve) > 1 else 0.0
-                ticker.done("CCRR:scalars")
 
-                ticker.start("save")
                 total_n = int(len(eval_manifest))
                 ri_undefined_n = int(round(float(ri_summary["undefined_frac"]) * total_n))
                 mari_undefined_n = int(round(float(mari_summary["undefined_frac"]) * total_n))
@@ -879,16 +839,14 @@ def main() -> int:
                         }
                     )
                 ccrr_m_sweep_rows.extend(ccrr_m_rows_for_model)
-                ticker.done("save")
 
                 metrics_status[model] = "cached" if all_cache_hit else "ok"
                 if all_cache_hit:
-                    progress_write("[benchmark] metrics cache hit", enabled=progress_enabled)
+                    ticker.log("[benchmark] metrics cache hit")
                 else:
-                    progress_write("[benchmark] metrics cache miss: partial/full recompute", enabled=progress_enabled)
-                progress_write(
-                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f}",
-                    enabled=progress_enabled,
+                    ticker.log("[benchmark] metrics cache miss: partial/full recompute")
+                ticker.log(
+                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f}"
                 )
                 undef_parts = []
                 if row["ri_undefined_frac"] > 0.0:
@@ -898,21 +856,16 @@ def main() -> int:
                 if row["ccrr_undefined_frac"] > 0.0:
                     undef_parts.append(f"CCRR={100*row['ccrr_undefined_frac']:.1f}%")
                 if undef_parts:
-                    progress_write(
-                        f"[benchmark] undefined samples: {', '.join(undef_parts)}",
-                        enabled=progress_enabled,
-                    )
+                    ticker.log(f"[benchmark] undefined samples: {', '.join(undef_parts)}")
             except Exception as exc:  # noqa: BLE001
                 metrics_status[model] = "failed"
                 failures.append(f"{model}: metrics failed ({exc})")
-                progress_write(f"[benchmark] metrics failed: {exc}", enabled=progress_enabled)
-            finally:
-                model_bar.update(1)
+                ticker.log(f"[benchmark] metrics failed: {exc}")
 
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
-        save_k_sweep_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
-        save_k_sweep_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
+        save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
+        save_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
         plot_knn_bio_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png")
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")

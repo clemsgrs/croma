@@ -56,22 +56,3 @@ def test_save_metrics_writes_csv_and_json(tmp_path: Path) -> None:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert isinstance(payload, list)
     assert len(payload) == 2
-
-
-def test_save_k_sweep_metrics_writes_csv_and_json(tmp_path: Path) -> None:
-    rows = [
-        {"model": "A", "k": 1, "ri": 0.4},
-        {"model": "A", "k": 3, "ri": 0.5},
-    ]
-    csv_path = tmp_path / "k_sweep.csv"
-    json_path = tmp_path / "k_sweep.json"
-
-    mio.save_k_sweep_metrics(rows=rows, csv_path=csv_path, json_path=json_path)
-
-    assert csv_path.exists()
-    assert json_path.exists()
-    df = pd.read_csv(csv_path)
-    assert set(df["k"]) == {1, 3}
-    payload = json.loads(json_path.read_text(encoding="utf-8"))
-    assert isinstance(payload, list)
-    assert len(payload) == 2
