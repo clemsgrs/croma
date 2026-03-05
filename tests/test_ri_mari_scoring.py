@@ -11,7 +11,7 @@ def test_ri_pooled_fallback_returns_half_when_no_so_or_os() -> None:
     neigh_dist = np.array([[0.1], [0.1]], dtype=float)
     valid_counts = np.array([1, 1], dtype=int)
 
-    score, sample_scores, informative_mask = RI._score_from_neighbors(
+    score, sample_scores, informative_mask, _undefined_type = RI._score_from_neighbors(
         labels=labels,
         centers=centers,
         neigh_idx=neigh_idx,
@@ -41,7 +41,7 @@ def test_mari_weights_change_score_when_distances_swap() -> None:
     close_so = np.array([[0.1, 1.0], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
     close_os = np.array([[1.0, 0.1], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
 
-    mari_close_so, _sample_scores, _informative_mask = MaRI._score_from_neighbors(
+    mari_close_so, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
         labels=labels,
         centers=centers,
         neigh_idx=neigh_idx,
@@ -50,7 +50,7 @@ def test_mari_weights_change_score_when_distances_swap() -> None:
         k=2,
         tau=0.2,
     )
-    mari_close_os, _sample_scores, _informative_mask = MaRI._score_from_neighbors(
+    mari_close_os, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
         labels=labels,
         centers=centers,
         neigh_idx=neigh_idx,
@@ -77,7 +77,7 @@ def test_mari_tau_controls_locality_strength() -> None:
     neigh_dist = np.array([[0.1, 1.0], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
     valid_counts = np.array([2, 0, 0], dtype=int)
 
-    small_tau, _sample_scores, _informative_mask = MaRI._score_from_neighbors(
+    small_tau, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
         labels=labels,
         centers=centers,
         neigh_idx=neigh_idx,
@@ -86,7 +86,7 @@ def test_mari_tau_controls_locality_strength() -> None:
         k=2,
         tau=0.1,
     )
-    large_tau, _sample_scores, _informative_mask = MaRI._score_from_neighbors(
+    large_tau, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
         labels=labels,
         centers=centers,
         neigh_idx=neigh_idx,

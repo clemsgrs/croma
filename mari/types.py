@@ -13,6 +13,10 @@ class RobustnessResult:
     n_pairs: int
     pair_values: np.ndarray
     sample_values: np.ndarray
+    undefined_frac: float = 0.0
+    ss_dominated_frac: float = 0.0
+    oo_dominated_frac: float = 0.0
+    mixed_undefined_frac: float = 0.0
 
 
 @dataclass(frozen=True)

@@ -29,6 +29,10 @@ _HIGHER_IS_BETTER = {
 
 _THRESH_RANK_SHIFT = 2.0
 _THRESH_UNDEFINED_HIGH = 0.75
+_THRESH_UNDEFINED_MODERATE = 0.30
+_THRESH_SS_DOMINATED_HIGH = 0.20
+_THRESH_OO_DOMINATED_HIGH = 0.10
+_THRESH_SS_RATIO_OF_UNDEFINED = 0.80
 _THRESH_TAIL_GAP_Q = 0.15
 _THRESH_TAIL_GAP_LTM = 0.20
 _THRESH_K_SWEEP_RANGE = 0.15
@@ -343,6 +347,108 @@ def _model_action_flags(
                     "detail": f"{_DISPLAY_NAMES.get(metric, metric)} undefined fraction is high ({row[col]:.3f}).",
                 }
             )
+
+    # Undefined breakdown flags (SS/OO).
+    for metric in ("ri", "mari"):
+        undef_col = f"{metric}_undefined_frac"
+        ss_col = f"{metric}_ss_dominated_frac"
+        oo_col = f"{metric}_oo_dominated_frac"
+
+        if undef_col in df_model.columns and float(df_model[undef_col].max()) > 0:
+            # high_undefined: > 30% undefined
+            for _, row in df_model[df_model[undef_col] >= _THRESH_UNDEFINED_MODERATE].iterrows():
+                rows.append(
+                    {
+                        "model": str(row["model"]),
+                        "flag": f"high_undefined_{metric}",
+                        "severity": "high",
+                        "value": float(row[undef_col]),
+                        "threshold": _THRESH_UNDEFINED_MODERATE,
+                        "detail": (
+                            f"{_DISPLAY_NAMES.get(metric, metric)} computed from a minority of samples "
+                            f"(undefined={row[undef_col]:.3f}); score may not be representative."
+                        ),
+                    }
+                )
+
+        if ss_col in df_model.columns:
+            # entangled_clusters: SS-dominated > 20%
+            for _, row in df_model[df_model[ss_col] >= _THRESH_SS_DOMINATED_HIGH].iterrows():
+                rows.append(
+                    {
+                        "model": str(row["model"]),
+                        "flag": f"entangled_clusters_{metric}",
+                        "severity": "medium",
+                        "value": float(row[ss_col]),
+                        "threshold": _THRESH_SS_DOMINATED_HIGH,
+                        "detail": (
+                            f"Many {_DISPLAY_NAMES.get(metric, metric)} neighborhoods are "
+                            f"(class x center)-entangled (SS-dominated={row[ss_col]:.3f})."
+                        ),
+                    }
+                )
+
+        if oo_col in df_model.columns:
+            # poor_embedding: OO-dominated > 10%
+            for _, row in df_model[df_model[oo_col] >= _THRESH_OO_DOMINATED_HIGH].iterrows():
+                rows.append(
+                    {
+                        "model": str(row["model"]),
+                        "flag": f"poor_embedding_{metric}",
+                        "severity": "high",
+                        "value": float(row[oo_col]),
+                        "threshold": _THRESH_OO_DOMINATED_HIGH,
+                        "detail": (
+                            f"Significant fraction of {_DISPLAY_NAMES.get(metric, metric)} samples "
+                            f"are poorly embedded (OO-dominated={row[oo_col]:.3f})."
+                        ),
+                    }
+                )
+
+        # ss_dominated_undefined: SS/undefined ratio > 80%
+        if ss_col in df_model.columns and undef_col in df_model.columns:
+            for _, row in df_model.iterrows():
+                undef_val = float(row[undef_col])
+                ss_val = float(row[ss_col])
+                if undef_val > 0 and (ss_val / undef_val) >= _THRESH_SS_RATIO_OF_UNDEFINED:
+                    rows.append(
+                        {
+                            "model": str(row["model"]),
+                            "flag": f"ss_dominated_undefined_{metric}",
+                            "severity": "medium",
+                            "value": float(ss_val / undef_val),
+                            "threshold": _THRESH_SS_RATIO_OF_UNDEFINED,
+                            "detail": (
+                                f"Undefined {_DISPLAY_NAMES.get(metric, metric)} samples are overwhelmingly "
+                                f"SS-dominated ({ss_val/undef_val:.1%}); fragility is due to cluster "
+                                f"entanglement, not poor embedding."
+                            ),
+                        }
+                    )
+
+    # Coverage mismatch: two models with similar RI but very different undefined_frac.
+    if "ri" in df_model.columns and "ri_undefined_frac" in df_model.columns and len(df_model) >= 2:
+        for i, row_a in df_model.iterrows():
+            for j, row_b in df_model.iterrows():
+                if i >= j:
+                    continue
+                ri_diff = abs(float(row_a["ri"]) - float(row_b["ri"]))
+                undef_diff = abs(float(row_a["ri_undefined_frac"]) - float(row_b["ri_undefined_frac"]))
+                if ri_diff < 0.05 and undef_diff >= 0.15:
+                    rows.append(
+                        {
+                            "model": f"{row_a['model']} vs {row_b['model']}",
+                            "flag": "coverage_mismatch",
+                            "severity": "high",
+                            "value": float(undef_diff),
+                            "threshold": 0.15,
+                            "detail": (
+                                f"Models have similar RI ({row_a['ri']:.3f} vs {row_b['ri']:.3f}) "
+                                f"but different undefined fractions ({row_a['ri_undefined_frac']:.3f} vs "
+                                f"{row_b['ri_undefined_frac']:.3f}); cross-model RI comparison is unreliable."
+                            ),
+                        }
+                    )
 
     # Tail gap risks for CCRR summaries.
     if {"ccrr", "ccrr_q_alpha"}.issubset(df_model.columns):
