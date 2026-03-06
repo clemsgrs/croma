@@ -1,5 +1,6 @@
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 from typing import cast
@@ -78,6 +79,62 @@ def _per_sample_metrics_by_model_dir(results_dir: Path) -> Path:
 def _per_sample_metrics_by_model_paths(results_dir: Path, model: str) -> tuple[Path, Path]:
     base = _per_sample_metrics_by_model_dir(results_dir) / _safe_model_name(model)
     return base.with_suffix(".csv"), base.with_suffix(".json")
+
+
+def _remove_stale_per_sample_artifacts(results_dir: Path) -> None:
+    for path in (_per_sample_metrics_path(results_dir), _per_sample_metrics_json_path(results_dir)):
+        if path.exists():
+            path.unlink()
+    per_model_dir = _per_sample_metrics_by_model_dir(results_dir)
+    if per_model_dir.exists():
+        shutil.rmtree(per_model_dir)
+
+
+def _build_per_sample_rows(
+    *,
+    eval_manifest: pd.DataFrame,
+    dataset_name: str,
+    model: str,
+    mode: str,
+    selected_k: int,
+    tau: float,
+    ccrr_alpha: float,
+    ccrr_search_sig: str,
+    excluded_centers_sig: str,
+    ri_samples_aligned: np.ndarray,
+    mari_samples_aligned: np.ndarray,
+    ri_undefined_types: np.ndarray,
+    mari_undefined_types: np.ndarray,
+    ccrr_samples_aligned_by_m: np.ndarray,
+    ccrr_m_values: list[int],
+) -> list[dict]:
+    model_per_sample_rows: list[dict] = []
+    for sample_index, sample_row in eval_manifest.reset_index(drop=True).iterrows():
+        record = {
+            "dataset": str(dataset_name),
+            "model": str(model),
+            "mode": str(mode),
+            "sample_index": int(sample_index),
+            "sample_id": str(sample_row["sample_id"]),
+            "slide_id": str(sample_row["slide_id"]),
+            "label": str(sample_row["label"]),
+            "medical_center": str(sample_row["medical_center"]),
+            "k": int(selected_k),
+            "tau": float(tau),
+            "ccrr_alpha": float(ccrr_alpha),
+            "ccrr_search": str(ccrr_search_sig),
+            "excluded_centers": str(excluded_centers_sig),
+            "ri": float(ri_samples_aligned[sample_index]),
+            "mari": float(mari_samples_aligned[sample_index]),
+            "ri_defined": bool(np.isfinite(ri_samples_aligned[sample_index])),
+            "mari_defined": bool(np.isfinite(mari_samples_aligned[sample_index])),
+            "ri_undefined_type": int(ri_undefined_types[sample_index]),
+            "mari_undefined_type": int(mari_undefined_types[sample_index]),
+        }
+        for m_pos, m in enumerate(ccrr_m_values):
+            record[f"ccrr_m{int(m)}"] = float(ccrr_samples_aligned_by_m[sample_index, m_pos])
+        model_per_sample_rows.append(record)
+    return model_per_sample_rows
 
 
 def _npy_matches_shape(values: np.ndarray | None, expected_shape: tuple[int, ...]) -> bool:
@@ -399,6 +456,8 @@ def main() -> int:
     per_sample_rows: list[dict] = []
     per_sample_rows_by_model: dict[str, list[dict]] = {}
     write_per_sample_artifacts = str(args.mode) == "global"
+    if not write_per_sample_artifacts:
+        _remove_stale_per_sample_artifacts(results_dir)
 
     progress_write(f"[benchmark] manifest={args.manifest}", enabled=progress_enabled)
     progress_write(f"[benchmark] models={', '.join(models)}", enabled=progress_enabled)
@@ -974,32 +1033,23 @@ def main() -> int:
                         or ccrr_samples_aligned_by_m is None
                     ):
                         raise RuntimeError("Missing aligned per-sample arrays required for global-mode per-sample artifact")
-                    model_per_sample_rows: list[dict] = []
-                    for sample_index, sample_row in eval_manifest.reset_index(drop=True).iterrows():
-                        record = {
-                            "dataset": str(args.dataset_name),
-                            "model": str(model),
-                            "mode": str(args.mode),
-                            "sample_index": int(sample_index),
-                            "sample_id": str(sample_row["sample_id"]),
-                            "slide_id": str(sample_row["slide_id"]),
-                            "label": str(sample_row["label"]),
-                            "medical_center": str(sample_row["medical_center"]),
-                            "k": int(ri_summary["k"]),
-                            "tau": float(args.tau),
-                            "ccrr_alpha": float(args.ccrr_alpha),
-                            "ccrr_search": str(ccrr_search_sig),
-                            "excluded_centers": str(excluded_centers_sig),
-                            "ri": float(ri_samples_aligned[sample_index]),
-                            "mari": float(mari_samples_aligned[sample_index]),
-                            "ri_defined": bool(np.isfinite(ri_samples_aligned[sample_index])),
-                            "mari_defined": bool(np.isfinite(mari_samples_aligned[sample_index])),
-                            "ri_undefined_type": int(ri_undefined_types[sample_index]),
-                            "mari_undefined_type": int(mari_undefined_types[sample_index]),
-                        }
-                        for m_pos, m in enumerate(ccrr_m_values):
-                            record[f"ccrr_m{int(m)}"] = float(ccrr_samples_aligned_by_m[sample_index, m_pos])
-                        model_per_sample_rows.append(record)
+                    model_per_sample_rows = _build_per_sample_rows(
+                        eval_manifest=eval_manifest,
+                        dataset_name=str(args.dataset_name),
+                        model=str(model),
+                        mode=str(args.mode),
+                        selected_k=int(ri_summary["k"]),
+                        tau=float(args.tau),
+                        ccrr_alpha=float(args.ccrr_alpha),
+                        ccrr_search_sig=str(ccrr_search_sig),
+                        excluded_centers_sig=str(excluded_centers_sig),
+                        ri_samples_aligned=np.asarray(ri_samples_aligned, dtype=float),
+                        mari_samples_aligned=np.asarray(mari_samples_aligned, dtype=float),
+                        ri_undefined_types=np.asarray(ri_undefined_types, dtype=int),
+                        mari_undefined_types=np.asarray(mari_undefined_types, dtype=int),
+                        ccrr_samples_aligned_by_m=np.asarray(ccrr_samples_aligned_by_m, dtype=float),
+                        ccrr_m_values=ccrr_m_values,
+                    )
                     per_sample_rows_by_model[str(model)] = model_per_sample_rows
                     per_sample_rows.extend(model_per_sample_rows)
                 else:

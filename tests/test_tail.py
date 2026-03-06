@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from mari import CCRR
-from mari.metrics.tail import TailMetrics, compute_tail_metrics
+from mari.metrics.tail import TailMetrics, compute_tail_metrics, select_exact_size_tail_set
 
 
 class TestComputeTailMetrics:
@@ -136,3 +136,60 @@ class TestCCRRTailIntegration:
 
         assert result.alpha == 0.25
         assert result.sample_values_aligned.shape == (len(manifest),)
+
+
+class TestExactSizeTailSet:
+
+    def test_selects_exactly_ceil_alpha_defined_rows(self) -> None:
+        table = pd.DataFrame(
+            {
+                "sample_id": ["s0", "s1", "s2", "s3", "s4"],
+                "ccrr_m1": [0.50, 0.20, np.nan, 0.10, 0.40],
+            }
+        )
+
+        tail = select_exact_size_tail_set(table, value_column="ccrr_m1", alpha=0.40)
+
+        assert tail["sample_id"].tolist() == ["s3", "s1"]
+        assert tail["ccrr_m1"].tolist() == [0.10, 0.20]
+
+    def test_excludes_undefined_rows_before_sizing_tail(self) -> None:
+        table = pd.DataFrame(
+            {
+                "sample_id": ["s0", "s1", "s2", "s3"],
+                "ccrr_m1": [np.nan, 0.10, 0.20, np.nan],
+            }
+        )
+
+        tail = select_exact_size_tail_set(table, value_column="ccrr_m1", alpha=0.50)
+
+        assert tail["sample_id"].tolist() == ["s1"]
+        assert tail["ccrr_m1"].tolist() == [0.10]
+
+    def test_breaks_value_ties_by_sample_id(self) -> None:
+        table = pd.DataFrame(
+            {
+                "sample_id": ["s_b", "s_a", "s_c", "s_d"],
+                "ccrr_m1": [0.10, 0.10, 0.20, 0.30],
+            }
+        )
+
+        tail = select_exact_size_tail_set(table, value_column="ccrr_m1", alpha=0.25)
+
+        assert tail["sample_id"].tolist() == ["s_a"]
+        assert tail["ccrr_m1"].tolist() == [0.10]
+
+    def test_is_stable_under_input_reordering(self) -> None:
+        table = pd.DataFrame(
+            {
+                "sample_id": ["s_c", "s_a", "s_b", "s_d"],
+                "ccrr_m1": [0.10, 0.10, 0.10, 0.20],
+            }
+        )
+        shuffled = table.iloc[[2, 0, 3, 1]].reset_index(drop=True)
+
+        tail_a = select_exact_size_tail_set(table, value_column="ccrr_m1", alpha=0.50)
+        tail_b = select_exact_size_tail_set(shuffled, value_column="ccrr_m1", alpha=0.50)
+
+        assert tail_a["sample_id"].tolist() == ["s_a", "s_b"]
+        assert tail_b["sample_id"].tolist() == ["s_a", "s_b"]
