@@ -35,12 +35,6 @@ def main() -> None:
     shared.add_argument("--manifest", required=True, help="Path to manifest CSV.")
     shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
     shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
-    shared.add_argument(
-        "--mode",
-        required=True,
-        choices=["paired", "global"],
-        help="Evaluation mode: paired=PathoROB-style 2x2 aggregation, global=single full-dataset evaluation.",
-    )
     shared.add_argument("--k-candidates", type=_parse_k_candidates, default=[5, 11, 21])
     shared.add_argument(
         "--exclude-center",
@@ -57,12 +51,6 @@ def main() -> None:
     ccrr_shared.add_argument("--manifest", required=True, help="Path to manifest CSV.")
     ccrr_shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
     ccrr_shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
-    ccrr_shared.add_argument(
-        "--mode",
-        required=True,
-        choices=["paired", "global"],
-        help="Evaluation mode: paired=PathoROB-style 2x2 aggregation, global=single full-dataset evaluation.",
-    )
     ccrr_shared.add_argument(
         "--exclude-center",
         action="append",
@@ -100,7 +88,6 @@ def main() -> None:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode=str(args.mode),
             m=int(args.m),
             alpha=float(args.alpha),
             exclude_centers=excluded_centers,
@@ -130,7 +117,6 @@ def main() -> None:
         result = RI.compute(
             features=features,
             manifest=manifest,
-            mode=str(args.mode),
             k_candidates=args.k_candidates,
             exclude_centers=excluded_centers,
         )
@@ -138,7 +124,6 @@ def main() -> None:
         result = MaRI.compute(
             features=features,
             manifest=manifest,
-            mode=str(args.mode),
             k_candidates=args.k_candidates,
             tau=float(args.tau),
             exclude_centers=excluded_centers,

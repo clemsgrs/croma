@@ -19,8 +19,6 @@ from mari.metrics.pairs import (
 )
 from mari.types import CCRRResult
 
-_PAIR_MODES = {"paired", "global"}
-
 
 @dataclass(frozen=True)
 class _CCRRSearchMeta:
@@ -204,7 +202,6 @@ class CrossConfounderRetrievalRatio:
         features: np.ndarray,
         manifest: pd.DataFrame,
         *,
-        mode: str,
         m: int | list[int] | tuple[int, ...] = 1,
         alpha: float = 0.10,
         exclude_centers: object | None = None,
@@ -214,9 +211,6 @@ class CrossConfounderRetrievalRatio:
         start_k: int = 200,
         k_growth_factor: float = 2.0,
     ) -> CCRRResult | dict[int, CCRRResult]:
-        mode_value = str(mode).strip().lower()
-        if mode_value not in _PAIR_MODES:
-            raise ValueError("mode must be one of {'paired', 'global'}")
         if isinstance(m, (list, tuple)):
             if len(m) <= 0:
                 raise ValueError("m must include at least one integer")
@@ -260,18 +254,15 @@ class CrossConfounderRetrievalRatio:
             features = features[keep_mask.to_numpy()]
             df = df.loc[keep_mask].reset_index(drop=True)
 
-        if mode_value == "paired":
-            pairs = infer_2x2_pairs(
-                df,
-                dataset_name=dataset_name,
-                max_pairs=max_pairs,
-                random_state=random_state,
-            )
-            if not pairs:
-                raise RuntimeError(f"{dataset_name}: no valid 2x2 pairs for CCRR")
-            subsets = [subset_by_pair(df, pair) for pair in pairs]
-        else:
-            subsets = [df]
+        pairs = infer_2x2_pairs(
+            df,
+            dataset_name=dataset_name,
+            max_pairs=max_pairs,
+            random_state=random_state,
+        )
+        if not pairs:
+            raise RuntimeError(f"{dataset_name}: no valid 2x2 pairs for CCRR")
+        subsets = [subset_by_pair(df, pair) for pair in pairs]
 
         pair_medians: dict[int, list[float]] = {int(m): [] for m in unique_m_values}
         sample_sum: dict[int, np.ndarray] = {

@@ -24,7 +24,6 @@ def test_cache_key_is_stable_for_semantically_equivalent_inputs() -> None:
             "excluded_centers_signature": "C1,C2",
         },
         params={
-            "mode": "global",
             "k_values": [3, 1, 3],
             "tau": 0.2,
         },
@@ -40,7 +39,6 @@ def test_cache_key_is_stable_for_semantically_equivalent_inputs() -> None:
         params={
             "tau": 0.2,
             "k_values": [1, 3],
-            "mode": "global",
         },
     )
     assert key_a["key_hash"] == key_b["key_hash"]
@@ -55,7 +53,7 @@ def test_cache_key_changes_when_dependent_parameter_changes() -> None:
             "embedding_fingerprint": "e",
             "excluded_centers_signature": "",
         },
-        params={"mode": "global", "k_values": [1, 3], "tau": 0.2},
+        params={"k_values": [1, 3], "tau": 0.2},
     )
     key_b = mcache.build_cache_key(
         artifact_name="mari_curve",
@@ -65,7 +63,7 @@ def test_cache_key_changes_when_dependent_parameter_changes() -> None:
             "embedding_fingerprint": "e",
             "excluded_centers_signature": "",
         },
-        params={"mode": "global", "k_values": [1, 3], "tau": 0.25},
+        params={"k_values": [1, 3], "tau": 0.25},
     )
     assert key_a["key_hash"] != key_b["key_hash"]
 
@@ -85,6 +83,25 @@ def test_manifest_fingerprint_changes_with_content(tmp_path: Path) -> None:
     df2.loc[1, "label"] = "A"
     b = ifp.manifest_fingerprint(df2)
     assert a != b
+
+
+def test_manifest_fingerprint_ignores_patch_id() -> None:
+    df = pd.DataFrame(
+        {
+            "sample_id": ["s0", "s1"],
+            "image_path": ["/tmp/0.png", "/tmp/1.png"],
+            "label": ["A", "B"],
+            "medical_center": ["C1", "C2"],
+            "slide_id": ["sl0", "sl1"],
+            "patch_id": ["p0", "p1"],
+            "subset": ["pair0", "pair0"],
+        }
+    )
+    a = ifp.manifest_fingerprint(df)
+    df2 = df.copy()
+    df2["patch_id"] = ["q0", "q1"]
+    b = ifp.manifest_fingerprint(df2)
+    assert a == b
 
 
 def test_embedding_fingerprint_changes_with_sidecar_metadata(tmp_path: Path) -> None:

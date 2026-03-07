@@ -14,11 +14,16 @@ class RobustnessResult:
     pair_values: np.ndarray
     sample_values: np.ndarray
     sample_values_aligned: np.ndarray
+    occurrence_defined_mask: np.ndarray
     sample_undefined_types: np.ndarray
+    occurrence_subsets: np.ndarray
+    occurrence_source_indices: np.ndarray
     undefined_frac: float = 0.0
     ss_dominated_undefined_frac: float = 0.0
     oo_dominated_undefined_frac: float = 0.0
     mixed_undefined_frac: float = 0.0
+    evaluation_design: str = "paired_2x2"
+    evaluation_unit: str = "occurrence"
 
 
 @dataclass(frozen=True)

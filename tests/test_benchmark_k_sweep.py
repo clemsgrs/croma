@@ -23,9 +23,14 @@ def _toy_manifest() -> pd.DataFrame:
             "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
             "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
             "slide_id": [f"slide-{i}" for i in range(8)],
+            "subset": ["pair0"] * 8,
             "dataset": ["toy"] * 8,
         }
     )
+
+
+def _dataset_wide_manifest() -> pd.DataFrame:
+    return _toy_manifest().drop(columns=["subset"])
 
 
 def _toy_features(model_name: str) -> np.ndarray:
@@ -87,8 +92,6 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
             ",".join(models),
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
         ],
@@ -189,8 +192,10 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
     assert {
         "dataset",
         "model",
-        "mode",
+        "occurrence_index",
         "sample_index",
+        "source_sample_index",
+        "subset",
         "sample_id",
         "slide_id",
         "label",
@@ -208,10 +213,12 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
         "mari_undefined_type",
         "ccrr_m1",
     }.issubset(per_sample_df.columns)
-    assert set(per_sample_df["sample_index"]) == set(range(len(manifest)))
     for model in models:
-        model_rows = per_sample_df[per_sample_df["model"] == model].sort_values("sample_index").reset_index(drop=True)
+        model_rows = per_sample_df[per_sample_df["model"] == model].sort_values("occurrence_index").reset_index(drop=True)
+        assert model_rows["occurrence_index"].tolist() == list(range(len(manifest)))
         assert model_rows["sample_index"].tolist() == list(range(len(manifest)))
+        assert model_rows["source_sample_index"].tolist() == list(range(len(manifest)))
+        assert set(model_rows["subset"]) == {"pair0"}
         assert model_rows["sample_id"].tolist() == manifest["sample_id"].tolist()
         assert model_rows["slide_id"].tolist() == manifest["slide_id"].tolist()
         assert model_rows["label"].tolist() == manifest["label"].tolist()
@@ -223,7 +230,7 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
         assert model_json.exists()
         model_df = pd.read_csv(model_csv)
         assert len(model_df) == len(manifest)
-        assert model_df.sort_values("sample_index")["sample_id"].tolist() == manifest["sample_id"].tolist()
+        assert model_df.sort_values("occurrence_index")["sample_id"].tolist() == manifest["sample_id"].tolist()
 
     for model in models:
         mari_dist_path = sample_dist_dir / f"mari.{model}.npy"
@@ -236,6 +243,183 @@ def test_benchmark_writes_k_sweep_rows_and_plot(monkeypatch, tmp_path: Path) -> 
         ri_arr = np.load(ri_dist_path)
         assert 0 < arr.shape[0] <= 8
         assert 0 < ri_arr.shape[0] <= 8
+
+
+def test_benchmark_dataset_wide_rows_include_design_metadata(monkeypatch, tmp_path: Path) -> None:
+    manifest = _dataset_wide_manifest()
+    manifest_path = tmp_path / "dataset_wide.csv"
+    manifest.to_csv(manifest_path, index=False)
+
+    output_dir = tmp_path / "out"
+    model = "M1"
+    observed_designs: list[str] = []
+
+    def fake_registry() -> dict:
+        return {model: object()}
+
+    def fake_embed_manifest(
+        manifest_path: Path,
+        output_path: Path,
+        spec: object,
+        batch_size: int,
+        num_workers: int,
+        device_arg: str,
+        **kwargs: object,
+    ) -> tuple[Path, tuple[int, int]]:
+        arr = _toy_features(model)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(output_path, arr)
+        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+
+    class _FakeRobustnessResult:
+        def __init__(self) -> None:
+            aligned = np.asarray([0.10, 0.20, np.nan, 0.40, 0.50, np.nan, 0.70, 0.80], dtype=float)
+            informative = np.isfinite(aligned)
+            self.dataset = "dataset"
+            self.k = 1
+            self.value = 0.5
+            self.std = 0.0
+            self.n_pairs = 1
+            self.pair_values = np.asarray([0.5], dtype=float)
+            self.sample_values = aligned[informative]
+            self.sample_values_aligned = aligned
+            self.occurrence_defined_mask = informative
+            self.sample_undefined_types = np.asarray([0, 0, 2, 0, 0, 1, 0, 0], dtype=int)
+            self.occurrence_subsets = np.asarray(["dataset"] * len(aligned), dtype=object).astype(str)
+            self.occurrence_source_indices = np.arange(len(aligned), dtype=int)
+            self.undefined_frac = float((~informative).mean())
+            self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
+            self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
+            self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
+            self.evaluation_design = "dataset_wide"
+            self.evaluation_unit = "sample"
+
+    class _FakeCCRRResult:
+        def __init__(self, m: int) -> None:
+            aligned = np.asarray([1.1, 1.0, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0], dtype=float)
+            informative = np.isfinite(aligned)
+            self.dataset = "toy"
+            self.m = int(m)
+            self.value = 1.1
+            self.std = 0.0
+            self.n_pairs = 1
+            self.pair_values = np.asarray([1.1], dtype=float)
+            self.sample_values = aligned[informative]
+            self.sample_values_aligned = aligned
+            self.undefined_frac = float((~informative).mean())
+            self.acceptance_threshold = 0.0
+            self.acceptance_met = True
+            self.k_start = 200
+            self.k_final = 200
+            self.retries = 0
+            self.alpha = 0.10
+            self.q_alpha = 0.5
+            self.ltm_alpha = 0.4
+
+    def fake_compute_curve(
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        k_values: list[int],
+        tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
+    ) -> dict[int, float]:
+        observed_designs.append(str(evaluation_design))
+        return {int(k): 0.5 for k in k_values}
+
+    def fake_compute(
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        k_candidates: list[int],
+        tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
+    ) -> _FakeRobustnessResult:
+        observed_designs.append(str(evaluation_design))
+        return _FakeRobustnessResult()
+
+    def fake_ccrr_compute(
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        m: list[int],
+        alpha: float,
+        start_k: int,
+        k_growth_factor: float,
+    ) -> dict[int, _FakeCCRRResult]:
+        return {int(mm): _FakeCCRRResult(int(mm)) for mm in m}
+
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
+    monkeypatch.setattr(bm.RI, "compute_curve", fake_compute_curve)
+    monkeypatch.setattr(bm.MaRI, "compute_curve", fake_compute_curve)
+    monkeypatch.setattr(bm.RI, "compute", fake_compute)
+    monkeypatch.setattr(bm.MaRI, "compute", fake_compute)
+    monkeypatch.setattr(bm.CCRR, "compute", fake_ccrr_compute)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            model,
+            "--output-dir",
+            str(output_dir),
+            "--k-candidates",
+            "1,3",
+            "--evaluation-design",
+            "dataset_wide",
+        ],
+    )
+
+    assert bm.main() == 0
+    assert observed_designs
+    assert set(observed_designs) == {"dataset_wide"}
+
+    dataset_dir = output_dir / manifest_path.stem
+    metrics_df = pd.read_csv(dataset_dir / "results" / "metrics.csv")
+    per_sample_df = pd.read_csv(dataset_dir / "results" / "per_sample_metrics.csv")
+
+    assert metrics_df["evaluation_design"].tolist() == ["dataset_wide"]
+    assert metrics_df["evaluation_unit"].tolist() == ["sample"]
+    assert per_sample_df["evaluation_design"].tolist() == ["dataset_wide"] * len(manifest)
+    assert per_sample_df["evaluation_unit"].tolist() == ["sample"] * len(manifest)
+    assert per_sample_df["subset"].tolist() == ["dataset"] * len(manifest)
+    assert per_sample_df["source_sample_index"].tolist() == list(range(len(manifest)))
+
+
+def test_benchmark_paired_requires_subset_column(monkeypatch, tmp_path: Path) -> None:
+    manifest = _dataset_wide_manifest()
+    manifest_path = tmp_path / "no_subsets.csv"
+    manifest.to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+    model = "M1"
+
+    def fake_registry() -> dict:
+        return {model: object()}
+
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            model,
+            "--output-dir",
+            str(output_dir),
+            "--k-candidates",
+            "1,3",
+        ],
+    )
+
+    with pytest.raises(ValueError, match="subset' column"):
+        bm.main()
 
 
 def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, tmp_path: Path) -> None:
@@ -275,7 +459,10 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
             self.pair_values = np.asarray([0.5], dtype=float)
             self.sample_values = aligned[informative]
             self.sample_values_aligned = aligned
+            self.occurrence_defined_mask = informative
             self.sample_undefined_types = np.asarray(undef_types, dtype=int)
+            self.occurrence_subsets = np.asarray(["pair0"] * len(aligned), dtype=str)
+            self.occurrence_source_indices = np.arange(len(aligned), dtype=int)
             self.undefined_frac = float((~informative).mean())
             self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
             self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
@@ -307,9 +494,9 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_values: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> dict[int, float]:
         return {int(k): 0.5 for k in k_values}
 
@@ -317,9 +504,9 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_candidates: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> _FakeRobustnessResult:
         return _FakeRobustnessResult(
             k=int(k_candidates[0]),
@@ -331,9 +518,9 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_candidates: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> _FakeRobustnessResult:
         return _FakeRobustnessResult(
             k=int(k_candidates[0]),
@@ -345,7 +532,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         m: list[int],
         alpha: float,
         start_k: int,
@@ -375,8 +561,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--ccrr-m-max",
@@ -389,7 +573,10 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
 
     per_sample_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv")
     assert len(per_sample_df) == len(manifest)
+    assert per_sample_df["occurrence_index"].tolist() == list(range(len(manifest)))
     assert per_sample_df["sample_index"].tolist() == list(range(len(manifest)))
+    assert per_sample_df["source_sample_index"].tolist() == list(range(len(manifest)))
+    assert set(per_sample_df["subset"]) == {"pair0"}
     assert per_sample_df["ri_defined"].tolist() == [True, False, True, False, True, True, False, True]
     assert per_sample_df["mari_defined"].tolist() == [True, False, True, False, True, True, False, True]
     assert per_sample_df["ri_undefined_type"].tolist() == [0, 1, 0, 2, 0, 0, 3, 0]
@@ -437,7 +624,10 @@ def test_benchmark_outputs_support_ccrr_tail_reconstruction(monkeypatch, tmp_pat
             self.pair_values = np.asarray([0.5], dtype=float)
             self.sample_values = aligned[informative]
             self.sample_values_aligned = aligned
+            self.occurrence_defined_mask = informative
             self.sample_undefined_types = np.asarray(undef_types, dtype=int)
+            self.occurrence_subsets = np.asarray(["pair0"] * len(aligned), dtype=str)
+            self.occurrence_source_indices = np.arange(len(aligned), dtype=int)
             self.undefined_frac = float((~informative).mean())
             self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
             self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
@@ -469,9 +659,9 @@ def test_benchmark_outputs_support_ccrr_tail_reconstruction(monkeypatch, tmp_pat
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_values: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> dict[int, float]:
         return {int(k): 0.5 for k in k_values}
 
@@ -479,9 +669,9 @@ def test_benchmark_outputs_support_ccrr_tail_reconstruction(monkeypatch, tmp_pat
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_candidates: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> _FakeRobustnessResult:
         return _FakeRobustnessResult(
             k=int(k_candidates[0]),
@@ -493,9 +683,9 @@ def test_benchmark_outputs_support_ccrr_tail_reconstruction(monkeypatch, tmp_pat
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_candidates: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> _FakeRobustnessResult:
         return _FakeRobustnessResult(
             k=int(k_candidates[0]),
@@ -507,7 +697,6 @@ def test_benchmark_outputs_support_ccrr_tail_reconstruction(monkeypatch, tmp_pat
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         m: list[int],
         alpha: float,
         start_k: int,
@@ -537,8 +726,6 @@ def test_benchmark_outputs_support_ccrr_tail_reconstruction(monkeypatch, tmp_pat
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--ccrr-m-max",
@@ -610,8 +797,6 @@ def test_benchmark_reuses_cached_per_sample_artifacts(monkeypatch, tmp_path: Pat
         model,
         "--output-dir",
         str(output_dir),
-        "--mode",
-        "global",
         "--k-candidates",
         "1,3",
         "--ccrr-m-max",
@@ -694,8 +879,6 @@ def test_benchmark_recomputes_per_sample_artifact_when_ccrr_m_max_changes(monkey
         model,
         "--output-dir",
         str(output_dir),
-        "--mode",
-        "global",
         "--k-candidates",
         "1,3",
         "--ccrr-m-max",
@@ -742,8 +925,6 @@ def test_benchmark_recomputes_per_sample_artifact_when_ccrr_m_max_changes(monkey
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--ccrr-m-max",
@@ -795,8 +976,6 @@ def test_benchmark_recomputes_per_sample_artifact_when_tau_changes(monkeypatch, 
         model,
         "--output-dir",
         str(output_dir),
-        "--mode",
-        "global",
         "--k-candidates",
         "1,3",
         "--tau",
@@ -841,8 +1020,6 @@ def test_benchmark_recomputes_per_sample_artifact_when_tau_changes(monkeypatch, 
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--tau",
@@ -857,137 +1034,6 @@ def test_benchmark_recomputes_per_sample_artifact_when_tau_changes(monkeypatch, 
     assert ccrr_calls["n"] == 0
     assert set(before_df["tau"]) == {0.2}
     assert set(after_df["tau"]) == {0.4}
-
-
-def test_benchmark_skips_per_sample_artifact_in_paired_mode(monkeypatch, tmp_path: Path) -> None:
-    manifest = _toy_manifest()
-    manifest_path = tmp_path / "toy.csv"
-    manifest.to_csv(manifest_path, index=False)
-
-    output_dir = tmp_path / "out"
-    model = "M1"
-
-    def fake_registry() -> dict:
-        return {model: object()}
-
-    def fake_embed_manifest(
-        manifest_path: Path,
-        output_path: Path,
-        spec: object,
-        batch_size: int,
-        num_workers: int,
-        device_arg: str,
-        **kwargs: object,
-    ) -> tuple[Path, tuple[int, int]]:
-        arr = _toy_features(model)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, arr)
-        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
-
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            model,
-            "--output-dir",
-            str(output_dir),
-            "--mode",
-            "paired",
-            "--k-candidates",
-            "1,3",
-        ],
-    )
-
-    assert bm.main() == 0
-    results_dir = output_dir / manifest_path.stem / "results"
-    assert (results_dir / "metrics.csv").exists()
-    assert not (results_dir / "per_sample_metrics.csv").exists()
-    assert not (results_dir / "per_sample_metrics.json").exists()
-    assert not (results_dir / "per_sample_metrics_by_model").exists()
-
-
-def test_benchmark_removes_stale_per_sample_artifacts_when_switching_to_paired_mode(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest = _toy_manifest()
-    manifest_path = tmp_path / "toy.csv"
-    manifest.to_csv(manifest_path, index=False)
-
-    output_dir = tmp_path / "out"
-    model = "M1"
-
-    def fake_registry() -> dict:
-        return {model: object()}
-
-    def fake_embed_manifest(
-        manifest_path: Path,
-        output_path: Path,
-        spec: object,
-        batch_size: int,
-        num_workers: int,
-        device_arg: str,
-        **kwargs: object,
-    ) -> tuple[Path, tuple[int, int]]:
-        arr = _toy_features(model)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, arr)
-        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
-
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
-
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            model,
-            "--output-dir",
-            str(output_dir),
-            "--mode",
-            "global",
-            "--k-candidates",
-            "1,3",
-        ],
-    )
-    assert bm.main() == 0
-
-    results_dir = output_dir / manifest_path.stem / "results"
-    assert (results_dir / "per_sample_metrics.csv").exists()
-    assert (results_dir / "per_sample_metrics.json").exists()
-    assert (results_dir / "per_sample_metrics_by_model").exists()
-
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            model,
-            "--output-dir",
-            str(output_dir),
-            "--mode",
-            "paired",
-            "--k-candidates",
-            "1,3",
-        ],
-    )
-    assert bm.main() == 0
-
-    assert not (results_dir / "per_sample_metrics.csv").exists()
-    assert not (results_dir / "per_sample_metrics.json").exists()
-    assert not (results_dir / "per_sample_metrics_by_model").exists()
 
 
 def test_benchmark_uses_all_registry_models_when_models_arg_missing(monkeypatch, tmp_path: Path) -> None:
@@ -1028,8 +1074,6 @@ def test_benchmark_uses_all_registry_models_when_models_arg_missing(monkeypatch,
             str(manifest_path),
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
         ],
@@ -1084,8 +1128,6 @@ def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Pat
             ",".join(models),
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "3,5",
             "--continuous-k-sweep-max",
@@ -1146,9 +1188,14 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
             self.k = int(k)
             self.value = 0.5
             self.std = 0.0
+            self.n_pairs = 1
+            self.pair_values = np.asarray([0.5], dtype=float)
             self.sample_values = np.asarray([0.2, 0.6, 0.8], dtype=float)
             self.sample_values_aligned = np.asarray([0.2, np.nan, 0.6, 0.8, np.nan, np.nan, np.nan, np.nan], dtype=float)
+            self.occurrence_defined_mask = np.asarray([True, False, True, True, False, False, False, False], dtype=bool)
             self.sample_undefined_types = np.asarray([0, 3, 0, 0, 3, 3, 3, 3], dtype=int)
+            self.occurrence_subsets = np.asarray(["pair0"] * 8, dtype=str)
+            self.occurrence_source_indices = np.arange(8, dtype=int)
             self.undefined_frac = 0.0
             self.ss_dominated_undefined_frac = 0.0
             self.oo_dominated_undefined_frac = 0.0
@@ -1158,9 +1205,9 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_values: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> dict[int, float]:
         return {int(k): 0.5 for k in k_values}
 
@@ -1168,9 +1215,9 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        mode: str,
         k_candidates: list[int],
         tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
     ) -> _CurveResult:
         return _CurveResult(k=int(k_candidates[0]))
 
@@ -1193,8 +1240,6 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
             ",".join(models),
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
         ],
@@ -1252,7 +1297,6 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
                 "dataset": "dataset",
                 "model": model,
                 "k": 1,
-                "mode": "global",
                 "tau": 0.2,
                 "alpha": 10.0,
                 "k_candidates": "1,3",
@@ -1273,7 +1317,6 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
             {
                 "dataset": "dataset",
                 "model": model,
-                "mode": "global",
                 "tau": 0.2,
                 "alpha": 10.0,
                 "k_candidates": "1,3",
@@ -1288,7 +1331,6 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
             {
                 "dataset": "dataset",
                 "model": model,
-                "mode": "global",
                 "tau": 0.2,
                 "alpha": 10.0,
                 "k_candidates": "1,3",
@@ -1320,8 +1362,6 @@ def test_benchmark_recomputes_when_cached_schema_is_stale(monkeypatch, tmp_path:
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
         ],
@@ -1378,8 +1418,6 @@ def test_benchmark_records_excluded_centers_signature(monkeypatch, tmp_path: Pat
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--exclude-center",
@@ -1400,7 +1438,29 @@ def test_benchmark_records_excluded_centers_signature(monkeypatch, tmp_path: Pat
 
 
 def test_benchmark_recomputes_per_sample_artifact_when_excluded_centers_change(monkeypatch, tmp_path: Path) -> None:
-    manifest = _toy_manifest()
+    # Use a 3-center manifest so excluding C3 still leaves 2 centers for valid 2x2 pairs
+    base_manifest = pd.DataFrame(
+        {
+            "sample_id": [f"s{i}" for i in range(12)],
+            "image_path": [f"/tmp/{i}.png" for i in range(12)],
+            "label": ["A", "A", "A", "A", "A", "A", "B", "B", "B", "B", "B", "B"],
+            "medical_center": ["C1", "C1", "C2", "C2", "C3", "C3", "C1", "C1", "C2", "C2", "C3", "C3"],
+            "slide_id": [f"slide-{i}" for i in range(12)],
+            "dataset": ["toy"] * 12,
+        }
+    )
+    subset_map = {
+        "C1": ("pair12", "pair13"),
+        "C2": ("pair12", "pair23"),
+        "C3": ("pair13", "pair23"),
+    }
+    manifest = pd.DataFrame(
+        [
+            {**row, "subset": subset_id}
+            for row in base_manifest.to_dict(orient="records")
+            for subset_id in subset_map[str(row["medical_center"])]
+        ]
+    )
     manifest_path = tmp_path / "toy.csv"
     manifest.to_csv(manifest_path, index=False)
 
@@ -1419,7 +1479,8 @@ def test_benchmark_recomputes_per_sample_artifact_when_excluded_centers_change(m
         device_arg: str,
         **kwargs: object,
     ) -> tuple[Path, tuple[int, int]]:
-        arr = _toy_features(model)
+        rng = np.random.default_rng(42)
+        arr = np.repeat(rng.standard_normal((12, 4)).astype(float), repeats=2, axis=0)
         output_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(output_path, arr)
         return output_path, (int(arr.shape[0]), int(arr.shape[1]))
@@ -1435,8 +1496,6 @@ def test_benchmark_recomputes_per_sample_artifact_when_excluded_centers_change(m
         model,
         "--output-dir",
         str(output_dir),
-        "--mode",
-        "global",
         "--k-candidates",
         "1,3",
     ]
@@ -1445,7 +1504,7 @@ def test_benchmark_recomputes_per_sample_artifact_when_excluded_centers_change(m
 
     results_dir = output_dir / manifest_path.stem / "results"
     before_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
-    assert len(before_df) == len(manifest)
+    assert len(before_df) == 24
 
     ri_calls = {"n": 0}
     mari_calls = {"n": 0}
@@ -1480,24 +1539,24 @@ def test_benchmark_recomputes_per_sample_artifact_when_excluded_centers_change(m
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--exclude-center",
-            "C2",
+            "C3",
         ],
     )
     assert bm.main() == 0
 
     after_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
-    kept_manifest = manifest.loc[manifest["medical_center"] != "C2"].reset_index(drop=True)
+    kept_manifest = manifest.loc[
+        (manifest["medical_center"] != "C3") & (manifest["subset"] == "pair12")
+    ].reset_index(drop=True)
     assert ri_calls["n"] > 0
     assert mari_calls["n"] > 0
     assert ccrr_calls["n"] > 0
     assert len(after_df) == len(kept_manifest)
     assert after_df["sample_id"].tolist() == kept_manifest["sample_id"].tolist()
-    assert set(after_df["excluded_centers"]) == {"C2"}
+    assert set(after_df["excluded_centers"]) == {"C3"}
 
 
 def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_path: Path) -> None:
@@ -1539,8 +1598,6 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
         ],
@@ -1577,8 +1634,6 @@ def test_benchmark_recomputes_when_ccrr_search_settings_change(monkeypatch, tmp_
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--ccrr-start-k",
@@ -1652,8 +1707,6 @@ def test_benchmark_runs_with_progress_off(monkeypatch, tmp_path: Path) -> None:
             model,
             "--output-dir",
             str(output_dir),
-            "--mode",
-            "global",
             "--k-candidates",
             "1,3",
             "--progress",
@@ -1665,3 +1718,125 @@ def test_benchmark_runs_with_progress_off(monkeypatch, tmp_path: Path) -> None:
     assert code == 0
     dataset_dir = output_dir / manifest_path.stem
     assert (dataset_dir / "results" / "metrics.csv").exists()
+
+
+def test_benchmark_writes_occurrence_grained_ri_mari_rows(monkeypatch, tmp_path: Path) -> None:
+    manifest = _toy_manifest()
+    manifest_path = tmp_path / "toy.csv"
+    manifest.to_csv(manifest_path, index=False)
+
+    output_dir = tmp_path / "out"
+    model = "M1"
+
+    def fake_registry() -> dict:
+        return {model: object()}
+
+    def fake_embed_manifest(
+        manifest_path: Path,
+        output_path: Path,
+        spec: object,
+        batch_size: int,
+        num_workers: int,
+        device_arg: str,
+        **kwargs: object,
+    ) -> tuple[Path, tuple[int, int]]:
+        arr = _toy_features(model)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(output_path, arr)
+        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+
+    class _FakeRobustnessResult:
+        def __init__(self) -> None:
+            self.dataset = "toy"
+            self.k = 1
+            self.value = 0.5
+            self.std = 0.0
+            self.n_pairs = 2
+            self.pair_values = np.asarray([0.45, 0.55], dtype=float)
+            self.sample_values = np.asarray([0.10, 0.30, 0.40, 0.80, 0.90], dtype=float)
+            self.sample_values_aligned = np.asarray([0.10, np.nan, 0.30, 0.40, np.nan, 0.80, 0.90], dtype=float)
+            self.occurrence_defined_mask = np.asarray([True, False, True, True, False, True, True], dtype=bool)
+            self.sample_undefined_types = np.asarray([0, 1, 0, 2, 3, 0, 0], dtype=int)
+            self.occurrence_subsets = np.asarray(["pair0", "pair0", "pair0", "pair1", "pair1", "pair1", "pair1"], dtype=str)
+            self.occurrence_source_indices = np.asarray([0, 1, 2, 0, 3, 4, 5], dtype=int)
+            self.undefined_frac = float(np.mean(~self.occurrence_defined_mask))
+            self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
+            self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
+            self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
+
+    class _FakeCCRRResult:
+        def __init__(self, m: int) -> None:
+            aligned = np.asarray([1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0], dtype=float)
+            informative = np.isfinite(aligned)
+            self.dataset = "toy"
+            self.m = int(m)
+            self.value = 1.1
+            self.std = 0.0
+            self.n_pairs = 1
+            self.pair_values = np.asarray([1.1], dtype=float)
+            self.sample_values = aligned[informative]
+            self.sample_values_aligned = aligned
+            self.undefined_frac = float((~informative).mean())
+            self.acceptance_threshold = 0.0
+            self.acceptance_met = True
+            self.k_start = 200
+            self.k_final = 200
+            self.retries = 0
+            self.alpha = 0.10
+            self.q_alpha = 0.5
+            self.ltm_alpha = 0.4
+
+    def fake_compute_curve(
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        k_values: list[int],
+        tau: float | None = None,
+        evaluation_design: str = "paired_2x2",
+    ) -> dict[int, float]:
+        return {int(k): 0.5 for k in k_values}
+
+    def fake_ri_compute(**kwargs: object) -> _FakeRobustnessResult:
+        return _FakeRobustnessResult()
+
+    def fake_mari_compute(**kwargs: object) -> _FakeRobustnessResult:
+        return _FakeRobustnessResult()
+
+    def fake_ccrr_compute(**kwargs: object) -> dict[int, _FakeCCRRResult]:
+        return {1: _FakeCCRRResult(1), 2: _FakeCCRRResult(2)}
+
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
+    monkeypatch.setattr(bm.RI, "compute_curve", fake_compute_curve)
+    monkeypatch.setattr(bm.MaRI, "compute_curve", fake_compute_curve)
+    monkeypatch.setattr(bm.RI, "compute", fake_ri_compute)
+    monkeypatch.setattr(bm.MaRI, "compute", fake_mari_compute)
+    monkeypatch.setattr(bm.CCRR, "compute", fake_ccrr_compute)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            model,
+            "--output-dir",
+            str(output_dir),
+            "--k-candidates",
+            "1,3",
+            "--ccrr-m-max",
+            "2",
+        ],
+    )
+
+    assert bm.main() == 0
+
+    per_sample_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv")
+    assert len(per_sample_df) == 7
+    assert per_sample_df["occurrence_index"].tolist() == list(range(7))
+    assert per_sample_df["source_sample_index"].tolist() == [0, 1, 2, 0, 3, 4, 5]
+    assert per_sample_df["subset"].tolist() == ["pair0", "pair0", "pair0", "pair1", "pair1", "pair1", "pair1"]
+    assert per_sample_df["sample_id"].tolist() == ["s0", "s1", "s2", "s0", "s3", "s4", "s5"]
+    assert per_sample_df.loc[0, "ccrr_m1"] == pytest.approx(1.1)
+    assert per_sample_df.loc[3, "ccrr_m1"] == pytest.approx(1.1)

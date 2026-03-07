@@ -87,13 +87,12 @@ class TestCCRRCompute:
         by_m = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=[1, 2],
         )
         assert isinstance(by_m, dict)
 
-        single_m1 = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
-        single_m2 = CCRR.compute(features=features, manifest=manifest, mode="global", m=2)
+        single_m1 = CCRR.compute(features=features, manifest=manifest, m=1)
+        single_m2 = CCRR.compute(features=features, manifest=manifest, m=2)
 
         assert by_m[1].value == pytest.approx(single_m1.value)
         assert by_m[1].std == pytest.approx(single_m1.std)
@@ -120,7 +119,6 @@ class TestCCRRCompute:
         by_m = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=[1, 2],
         )
         assert isinstance(by_m, dict)
@@ -128,13 +126,11 @@ class TestCCRRCompute:
         assert set(by_m) == {1, 2}
         assert calls["n"] == 1
 
-    @pytest.mark.parametrize("mode", ["paired", "global"])
-    def test_compute_returns_valid_result(self, mode: str) -> None:
+    def test_compute_returns_valid_result(self) -> None:
         features, manifest = _toy_features_so_closer()
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode=mode,
             m=1,
         )
 
@@ -149,7 +145,7 @@ class TestCCRRCompute:
 
     def test_so_closer_yields_ccrr_above_one(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
+        result = CCRR.compute(features=features, manifest=manifest, m=1)
         assert result.value > 1.0
 
     def test_os_closer_yields_ccrr_below_one(self) -> None:
@@ -171,10 +167,10 @@ class TestCCRRCompute:
             ],
             dtype=float,
         )
-        result = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
+        result = CCRR.compute(features=features, manifest=manifest, m=1)
         assert result.value < 1.0
 
-    def test_all_same_label_and_center_are_undefined(self) -> None:
+    def test_all_same_label_and_center_raises(self) -> None:
         manifest = _make_manifest(
             n=4,
             labels=["A", "A", "A", "A"],
@@ -182,12 +178,8 @@ class TestCCRRCompute:
         )
         features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
 
-        result = CCRR.compute(features=features, manifest=manifest, mode="global", m=1)
-
-        assert result.undefined_frac == pytest.approx(1.0)
-        assert result.sample_values.shape[0] == 0
-        assert result.sample_values_aligned.shape == (len(manifest),)
-        assert np.isnan(result.sample_values_aligned).all()
+        with pytest.raises(RuntimeError, match="no valid 2x2 pairs"):
+            CCRR.compute(features=features, manifest=manifest, m=1)
 
     def test_relaxed_acceptance_threshold_stops_earlier(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -195,7 +187,6 @@ class TestCCRRCompute:
         strict = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             start_k=1,
             acceptance_threshold=0.0,
@@ -204,7 +195,6 @@ class TestCCRRCompute:
         relaxed = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             start_k=1,
             acceptance_threshold=1.0,
@@ -234,7 +224,6 @@ class TestCCRRCompute:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             start_k=1,
             acceptance_threshold=0.0,
@@ -248,7 +237,7 @@ class TestCCRRCompute:
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = CCRR.compute(features=features, manifest=manifest, mode="global", m=1, start_k=200)
+        result = CCRR.compute(features=features, manifest=manifest, m=1, start_k=200)
         assert result.k_start == len(manifest) - 1
 
     def test_growth_schedule_follows_factor(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -285,7 +274,6 @@ class TestCCRRCompute:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             start_k=2,
             acceptance_threshold=0.0,
@@ -343,7 +331,6 @@ class TestCCRRCompute:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             start_k=1,
             acceptance_threshold=0.0,
@@ -354,32 +341,27 @@ class TestCCRRCompute:
         assert query_sizes[1] < query_sizes[0]
         assert result.acceptance_met
 
-    def test_invalid_mode_rejected(self) -> None:
-        features, manifest = _toy_features_so_closer()
-        with pytest.raises(ValueError, match="mode"):
-            CCRR.compute(features=features, manifest=manifest, mode="auto", m=1)
-
     def test_m_zero_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="m must be >= 1"):
-            CCRR.compute(features=features, manifest=manifest, mode="global", m=0)
+            CCRR.compute(features=features, manifest=manifest, m=0)
 
     def test_acceptance_threshold_bounds_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="acceptance_threshold"):
-            CCRR.compute(features=features, manifest=manifest, mode="global", m=1, acceptance_threshold=-0.1)
+            CCRR.compute(features=features, manifest=manifest, m=1, acceptance_threshold=-0.1)
         with pytest.raises(ValueError, match="acceptance_threshold"):
-            CCRR.compute(features=features, manifest=manifest, mode="global", m=1, acceptance_threshold=1.1)
+            CCRR.compute(features=features, manifest=manifest, m=1, acceptance_threshold=1.1)
 
     def test_growth_factor_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="k_growth_factor"):
-            CCRR.compute(features=features, manifest=manifest, mode="global", m=1, k_growth_factor=1.0)
+            CCRR.compute(features=features, manifest=manifest, m=1, k_growth_factor=1.0)
 
     def test_start_k_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="start_k"):
-            CCRR.compute(features=features, manifest=manifest, mode="global", m=1, start_k=0)
+            CCRR.compute(features=features, manifest=manifest, m=1, start_k=0)
 
     def test_exclude_centers(self) -> None:
         manifest = _make_manifest(
@@ -408,14 +390,12 @@ class TestCCRRCompute:
         result_excluded = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             exclude_centers=["C3"],
         )
         result_manual = CCRR.compute(
             features=features[mask.to_numpy()],
             manifest=manifest.loc[mask].reset_index(drop=True),
-            mode="global",
             m=1,
         )
         assert result_excluded.value == pytest.approx(result_manual.value)
@@ -426,4 +406,4 @@ class TestCCRRCompute:
     def test_manual_kmax_not_supported(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(TypeError):
-            CCRR.compute(features=features, manifest=manifest, mode="global", m=1, kmax=3)  # type: ignore[call-arg]
+            CCRR.compute(features=features, manifest=manifest, m=1, kmax=3)  # type: ignore[call-arg]

@@ -90,7 +90,6 @@ class TestCCRRTailIntegration:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             alpha=0.10,
         )
@@ -129,7 +128,6 @@ class TestCCRRTailIntegration:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
             m=1,
             alpha=0.25,
         )

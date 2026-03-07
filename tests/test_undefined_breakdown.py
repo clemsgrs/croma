@@ -1,156 +1,27 @@
-
 import numpy as np
 import pytest
 
 from mari import MaRI, RI
 
 
-def test_ss_dominated_undefined_samples() -> None:
-    """Samples whose k-neighborhood has only SS neighbors should be classified as SS-dominated."""
-    # 4 samples: labels [0, 0, 0, 1], centers [0, 0, 0, 1]
-    # Sample 0's neighbors at k=2: samples 1,2 -> same label, same center -> SS
-    # SO+OS=0 -> undefined, SS-dominated
-    labels = np.array([0, 0, 0, 1], dtype=int)
-    centers = np.array([0, 0, 0, 1], dtype=int)
-    neigh_idx = np.array(
-        [
-            [1, 2],  # neighbors of sample 0: both label=0, center=0 -> SS
-            [0, 2],  # neighbors of sample 1: both label=0, center=0 -> SS
-            [0, 1],  # neighbors of sample 2: both label=0, center=0 -> SS
-            [0, 1],  # neighbors of sample 3: label=0!=1, center=0!=1 -> OO
-        ],
-        dtype=int,
-    )
-    neigh_dist = np.full((4, 2), 0.1, dtype=float)
-    valid_counts = np.array([2, 2, 2, 2], dtype=int)
-
-    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=neigh_dist,
-        valid_counts=valid_counts,
-        k=2,
-    )
-
-    # Samples 0, 1, 2 are undefined (all SS neighbors) -> SS-dominated (type 1)
-    # Sample 3 is undefined (all OO neighbors) -> OO-dominated (type 2)
-    assert informative_mask.tolist() == [False, False, False, False]
-    assert undefined_type[0] == 1  # SS-dominated
-    assert undefined_type[1] == 1  # SS-dominated
-    assert undefined_type[2] == 1  # SS-dominated
-    assert undefined_type[3] == 2  # OO-dominated
-
-
-def test_oo_dominated_undefined_samples() -> None:
-    """Samples whose k-neighborhood has only OO neighbors should be classified as OO-dominated."""
-    # 3 samples: labels [0, 1, 1], centers [0, 1, 1]
-    # Sample 0's neighbors: samples 1,2 -> different label, different center -> OO
-    labels = np.array([0, 1, 1], dtype=int)
-    centers = np.array([0, 1, 1], dtype=int)
-    neigh_idx = np.array(
-        [
-            [1, 2],  # OO, OO
-            [2, 0],  # SS, OO
-            [1, 0],  # SS, OO
-        ],
-        dtype=int,
-    )
-    neigh_dist = np.full((3, 2), 0.1, dtype=float)
-    valid_counts = np.array([2, 2, 2], dtype=int)
-
-    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=neigh_dist,
-        valid_counts=valid_counts,
-        k=2,
-    )
-
-    # Sample 0: all OO -> OO-dominated
-    assert informative_mask[0] is np.bool_(False)
-    assert undefined_type[0] == 2  # OO-dominated
-
-
-def test_mixed_undefined_samples() -> None:
-    """Samples with equal SS and OO neighbors (no SO/OS) should be classified as mixed."""
-    # Sample 0 has 1 SS neighbor and 1 OO neighbor, no SO/OS
-    labels = np.array([0, 0, 1], dtype=int)
-    centers = np.array([0, 0, 1], dtype=int)
-    neigh_idx = np.array(
-        [
-            [1, 2],  # SS (label=0,center=0), OO (label=1,center=1)
-            [0, 2],
-            [0, 1],
-        ],
-        dtype=int,
-    )
-    neigh_dist = np.full((3, 2), 0.1, dtype=float)
-    valid_counts = np.array([2, 2, 2], dtype=int)
-
-    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=neigh_dist,
-        valid_counts=valid_counts,
-        k=2,
-    )
-
-    # Sample 0: 1 SS + 1 OO -> mixed (type 3)
-    assert informative_mask[0] is np.bool_(False)
-    assert undefined_type[0] == 3  # mixed
-
-
-def test_defined_samples_have_undefined_type_zero() -> None:
-    """Samples with SO+OS > 0 (informative) should have undefined_type = 0."""
-    labels = np.array([0, 0, 1], dtype=int)
-    centers = np.array([0, 1, 0], dtype=int)
-    neigh_idx = np.array(
-        [
-            [1, 2],  # SO (same label, diff center), OS (diff label, same center)
-            [0, 2],
-            [0, 1],
-        ],
-        dtype=int,
-    )
-    neigh_dist = np.full((3, 2), 0.1, dtype=float)
-    valid_counts = np.array([2, 2, 2], dtype=int)
-
-    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=neigh_dist,
-        valid_counts=valid_counts,
-        k=2,
-    )
-
-    # Sample 0 has SO and OS neighbors -> defined
-    assert informative_mask[0] is np.bool_(True)
-    assert undefined_type[0] == 0
-
-
-def test_undefined_frac_equals_sum_of_breakdown_fracs() -> None:
-    """undefined_frac must equal the sum of the unconditional subtype fractions."""
-    # Create a dataset where some samples are SS-dominated, some OO-dominated, some defined
-    # 8 samples: 4 label=A, 4 label=B
-    # Centers: A=[C1,C1,C2,C2], B=[C1,C1,C2,C2]
-    # At small k, some samples will have only SS neighbors
+def _single_subset_manifest():
     import pandas as pd
 
-    manifest = pd.DataFrame(
+    return pd.DataFrame(
         {
             "sample_id": [f"s{i}" for i in range(8)],
             "image_path": [f"/tmp/{i}.png" for i in range(8)],
             "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
             "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
             "slide_id": [f"slide-{i}" for i in range(8)],
+            "subset": ["pair0"] * 8,
             "dataset": ["toy"] * 8,
         }
     )
-    features = np.array(
+
+
+def _single_subset_features() -> np.ndarray:
+    return np.array(
         [
             [1.00, 0.00, 0.00, 0.00],
             [0.95, 0.05, 0.00, 0.00],
@@ -164,34 +35,201 @@ def test_undefined_frac_equals_sum_of_breakdown_fracs() -> None:
         dtype=float,
     )
 
+
+def _multi_subset_manifest():
+    import pandas as pd
+
+    base = pd.DataFrame(
+        {
+            "sample_id": [f"s{i}" for i in range(12)],
+            "image_path": [f"/tmp/{i}.png" for i in range(12)],
+            "label": ["A"] * 6 + ["B"] * 6,
+            "medical_center": [
+                "C1",
+                "C1",
+                "C2",
+                "C2",
+                "C3",
+                "C3",
+                "C1",
+                "C1",
+                "C2",
+                "C2",
+                "C3",
+                "C3",
+            ],
+            "slide_id": [f"slide-{i}" for i in range(12)],
+            "dataset": ["toy3"] * 12,
+        }
+    )
+    subset_map = {
+        "C1": ("pair12", "pair13"),
+        "C2": ("pair12", "pair23"),
+        "C3": ("pair13", "pair23"),
+    }
+    rows: list[dict] = []
+    for row in base.to_dict(orient="records"):
+        for subset_id in subset_map[str(row["medical_center"])]:
+            rows.append({**row, "subset": subset_id})
+    return pd.DataFrame(rows)
+
+
+def _multi_subset_features() -> np.ndarray:
+    base = np.array(
+        [
+            [1.00, 0.00],
+            [0.99, 0.01],
+            [0.98, 0.02],
+            [0.97, 0.03],
+            [0.96, 0.04],
+            [0.95, 0.05],
+            [0.00, 1.00],
+            [0.01, 0.99],
+            [0.02, 0.98],
+            [0.03, 0.97],
+            [0.04, 0.96],
+            [0.05, 0.95],
+        ],
+        dtype=float,
+    )
+    return np.repeat(base, repeats=2, axis=0)
+
+
+def _dataset_wide_undefined_manifest():
+    import pandas as pd
+
+    return pd.DataFrame(
+        {
+            "sample_id": [f"u{i}" for i in range(4)],
+            "image_path": [f"/tmp/u{i}.png" for i in range(4)],
+            "label": ["A", "A", "B", "B"],
+            "medical_center": ["C1", "C1", "C2", "C2"],
+            "slide_id": [f"u-slide-{i}" for i in range(4)],
+            "dataset": ["toy_dw_undef"] * 4,
+        }
+    )
+
+
+def _dataset_wide_undefined_features() -> np.ndarray:
+    return np.array(
+        [
+            [1.00, 0.00],
+            [0.99, 0.01],
+            [0.00, 1.00],
+            [0.01, 0.99],
+        ],
+        dtype=float,
+    )
+
+
+def test_ss_dominated_undefined_samples() -> None:
+    labels = np.array([0, 0, 0, 1], dtype=int)
+    centers = np.array([0, 0, 0, 1], dtype=int)
+    neigh_idx = np.array([[1, 2], [0, 2], [0, 1], [0, 1]], dtype=int)
+    neigh_dist = np.full((4, 2), 0.1, dtype=float)
+    valid_counts = np.array([2, 2, 2, 2], dtype=int)
+
+    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
+        labels=labels,
+        centers=centers,
+        neigh_idx=neigh_idx,
+        neigh_dist=neigh_dist,
+        valid_counts=valid_counts,
+        k=2,
+    )
+
+    assert informative_mask.tolist() == [False, False, False, False]
+    assert undefined_type.tolist() == [1, 1, 1, 2]
+
+
+def test_oo_dominated_undefined_samples() -> None:
+    labels = np.array([0, 1, 1], dtype=int)
+    centers = np.array([0, 1, 1], dtype=int)
+    neigh_idx = np.array([[1, 2], [2, 0], [1, 0]], dtype=int)
+    neigh_dist = np.full((3, 2), 0.1, dtype=float)
+    valid_counts = np.array([2, 2, 2], dtype=int)
+
+    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
+        labels=labels,
+        centers=centers,
+        neigh_idx=neigh_idx,
+        neigh_dist=neigh_dist,
+        valid_counts=valid_counts,
+        k=2,
+    )
+
+    assert informative_mask[0] is np.bool_(False)
+    assert undefined_type[0] == 2
+
+
+def test_mixed_undefined_samples() -> None:
+    labels = np.array([0, 0, 1], dtype=int)
+    centers = np.array([0, 0, 1], dtype=int)
+    neigh_idx = np.array([[1, 2], [0, 2], [0, 1]], dtype=int)
+    neigh_dist = np.full((3, 2), 0.1, dtype=float)
+    valid_counts = np.array([2, 2, 2], dtype=int)
+
+    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
+        labels=labels,
+        centers=centers,
+        neigh_idx=neigh_idx,
+        neigh_dist=neigh_dist,
+        valid_counts=valid_counts,
+        k=2,
+    )
+
+    assert informative_mask[0] is np.bool_(False)
+    assert undefined_type[0] == 3
+
+
+def test_defined_samples_have_undefined_type_zero() -> None:
+    labels = np.array([0, 0, 1], dtype=int)
+    centers = np.array([0, 1, 0], dtype=int)
+    neigh_idx = np.array([[1, 2], [0, 2], [0, 1]], dtype=int)
+    neigh_dist = np.full((3, 2), 0.1, dtype=float)
+    valid_counts = np.array([2, 2, 2], dtype=int)
+
+    _score, _sample_scores, informative_mask, undefined_type = RI._score_from_neighbors(
+        labels=labels,
+        centers=centers,
+        neigh_idx=neigh_idx,
+        neigh_dist=neigh_dist,
+        valid_counts=valid_counts,
+        k=2,
+    )
+
+    assert informative_mask[0] is np.bool_(True)
+    assert undefined_type[0] == 0
+
+
+def test_occurrence_weighted_breakdown_fracs_are_reported() -> None:
+    manifest = _single_subset_manifest()
+    features = _single_subset_features()
+
     result = RI.compute(
         features=features,
         manifest=manifest,
-        mode="global",
         k_candidates=[1, 3],
         random_state=0,
     )
 
-    assert result.undefined_frac == pytest.approx(
-        result.ss_dominated_undefined_frac
-        + result.oo_dominated_undefined_frac
-        + result.mixed_undefined_frac
+    assert 0.0 <= result.undefined_frac <= 1.0
+    assert 0.0 <= result.ss_dominated_undefined_frac <= 1.0
+    assert 0.0 <= result.oo_dominated_undefined_frac <= 1.0
+    assert 0.0 <= result.mixed_undefined_frac <= 1.0
+    assert result.undefined_frac == np.sum(
+        [
+            result.ss_dominated_undefined_frac,
+            result.oo_dominated_undefined_frac,
+            result.mixed_undefined_frac,
+        ]
     )
 
 
 def test_mari_undefined_breakdown_matches_ri() -> None:
-    """MaRI should produce the same undefined_type classification as RI for the same neighborhood."""
     labels = np.array([0, 0, 0, 1], dtype=int)
     centers = np.array([0, 0, 0, 1], dtype=int)
-    neigh_idx = np.array(
-        [
-            [1, 2],
-            [0, 2],
-            [0, 1],
-            [0, 1],
-        ],
-        dtype=int,
-    )
+    neigh_idx = np.array([[1, 2], [0, 2], [0, 1], [0, 1]], dtype=int)
     neigh_dist = np.full((4, 2), 0.1, dtype=float)
     valid_counts = np.array([2, 2, 2, 2], dtype=int)
 
@@ -217,37 +255,12 @@ def test_mari_undefined_breakdown_matches_ri() -> None:
 
 
 def test_robustness_result_has_breakdown_fields() -> None:
-    """RobustnessResult should expose the unconditional undefined subtype fractions."""
-    import pandas as pd
-
-    manifest = pd.DataFrame(
-        {
-            "sample_id": [f"s{i}" for i in range(8)],
-            "image_path": [f"/tmp/{i}.png" for i in range(8)],
-            "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
-            "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
-            "slide_id": [f"slide-{i}" for i in range(8)],
-            "dataset": ["toy"] * 8,
-        }
-    )
-    features = np.array(
-        [
-            [1.00, 0.00, 0.00, 0.00],
-            [0.95, 0.05, 0.00, 0.00],
-            [0.92, 0.08, 0.00, 0.00],
-            [0.90, 0.10, 0.00, 0.00],
-            [0.00, 1.00, 0.00, 0.00],
-            [0.05, 0.95, 0.00, 0.00],
-            [0.08, 0.92, 0.00, 0.00],
-            [0.10, 0.90, 0.00, 0.00],
-        ],
-        dtype=float,
-    )
+    manifest = _single_subset_manifest()
+    features = _single_subset_features()
 
     result = RI.compute(
         features=features,
         manifest=manifest,
-        mode="global",
         k_candidates=[1, 3],
         random_state=0,
     )
@@ -256,14 +269,37 @@ def test_robustness_result_has_breakdown_fields() -> None:
     assert hasattr(result, "ss_dominated_undefined_frac")
     assert hasattr(result, "oo_dominated_undefined_frac")
     assert hasattr(result, "mixed_undefined_frac")
+    assert hasattr(result, "occurrence_defined_mask")
+    assert hasattr(result, "occurrence_subsets")
+    assert hasattr(result, "occurrence_source_indices")
+    assert 0.0 <= result.undefined_frac <= 1.0
     assert 0.0 <= result.ss_dominated_undefined_frac <= 1.0
     assert 0.0 <= result.oo_dominated_undefined_frac <= 1.0
     assert 0.0 <= result.mixed_undefined_frac <= 1.0
-    assert 0.0 <= result.undefined_frac <= 1.0
+
+
+def test_occurrence_weighted_undefined_fraction_counts_repeated_memberships() -> None:
+    manifest = _multi_subset_manifest()
+    features = _multi_subset_features()
+
+    result = RI.compute(
+        features=features,
+        manifest=manifest,
+        k_candidates=[1, 3],
+        random_state=0,
+    )
+
+    occurrence_total = int(result.sample_values_aligned.shape[0])
+    undefined_total = int(np.count_nonzero(~result.occurrence_defined_mask))
+    assert occurrence_total == 24
+    assert result.undefined_frac == np.divide(undefined_total, occurrence_total)
+    assert result.undefined_frac == np.mean(~result.occurrence_defined_mask)
+    assert result.ss_dominated_undefined_frac == np.mean(result.sample_undefined_types == 1)
+    assert result.oo_dominated_undefined_frac == np.mean(result.sample_undefined_types == 2)
+    assert result.mixed_undefined_frac == np.mean(result.sample_undefined_types == 3)
 
 
 def test_no_valid_neighbors_are_classified_as_mixed() -> None:
-    """Rows with zero valid neighbors must still land in an undefined bucket."""
     labels = np.array([0, 1], dtype=int)
     centers = np.array([0, 1], dtype=int)
     neigh_idx = np.array([[-1], [-1]], dtype=int)
@@ -283,42 +319,23 @@ def test_no_valid_neighbors_are_classified_as_mixed() -> None:
     assert undefined_type.tolist() == [3, 3]
 
 
-def test_paired_mode_breakdown_is_not_reported() -> None:
-    """Paired-mode subtype fractions are intentionally undefined until aggregation semantics are specified."""
-    import pandas as pd
-
-    manifest = pd.DataFrame(
-        {
-            "sample_id": [f"s{i}" for i in range(8)],
-            "image_path": [f"/tmp/{i}.png" for i in range(8)],
-            "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
-            "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
-            "slide_id": [f"slide-{i}" for i in range(8)],
-            "dataset": ["toy"] * 8,
-        }
-    )
-    features = np.array(
-        [
-            [1.00, 0.00, 0.00, 0.00],
-            [0.95, 0.05, 0.00, 0.00],
-            [0.92, 0.08, 0.00, 0.00],
-            [0.90, 0.10, 0.00, 0.00],
-            [0.00, 1.00, 0.00, 0.00],
-            [0.05, 0.95, 0.00, 0.00],
-            [0.08, 0.92, 0.00, 0.00],
-            [0.10, 0.90, 0.00, 0.00],
-        ],
-        dtype=float,
-    )
+def test_dataset_wide_undefined_fraction_uses_sample_denominator() -> None:
+    manifest = _dataset_wide_undefined_manifest()
+    features = _dataset_wide_undefined_features()
 
     result = RI.compute(
         features=features,
         manifest=manifest,
-        mode="paired",
-        k_candidates=[1, 3],
-        random_state=0,
+        k_candidates=[1],
+        evaluation_design="dataset_wide",
     )
 
-    assert np.isnan(result.ss_dominated_undefined_frac)
-    assert np.isnan(result.oo_dominated_undefined_frac)
-    assert np.isnan(result.mixed_undefined_frac)
+    assert result.evaluation_design == "dataset_wide"
+    assert result.evaluation_unit == "sample"
+    assert result.sample_values.shape == (0,)
+    assert result.sample_values_aligned.shape == (len(manifest),)
+    assert result.undefined_frac == pytest.approx(1.0)
+    assert result.ss_dominated_undefined_frac == pytest.approx(1.0)
+    assert result.oo_dominated_undefined_frac == pytest.approx(0.0)
+    assert result.mixed_undefined_frac == pytest.approx(0.0)
+    assert np.array_equal(result.sample_undefined_types, np.ones(len(manifest), dtype=int))

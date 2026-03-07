@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 _MANIFEST_COLUMNS = ("sample_id", "label", "medical_center", "slide_id", "image_path")
+_OPTIONAL_MANIFEST_COLUMNS = ("subset",)
 
 
 def _sha256_text(payload: str) -> str:
@@ -21,12 +22,13 @@ def manifest_fingerprint(manifest: pd.DataFrame) -> str:
     if missing:
         raise ValueError(f"manifest is missing required columns for fingerprinting: {missing}")
 
+    columns = list(_MANIFEST_COLUMNS) + [c for c in _OPTIONAL_MANIFEST_COLUMNS if c in manifest.columns]
     rows = [
         [_normalize_manifest_value(v) for v in row]
-        for row in manifest.loc[:, list(_MANIFEST_COLUMNS)].itertuples(index=False, name=None)
+        for row in manifest.loc[:, columns].itertuples(index=False, name=None)
     ]
     payload = {
-        "columns": list(_MANIFEST_COLUMNS),
+        "columns": columns,
         "rows": rows,
     }
     return _sha256_text(json.dumps(payload, sort_keys=True, separators=(",", ":")))

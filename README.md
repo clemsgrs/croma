@@ -21,28 +21,29 @@ from mari import CCRR, RI, MaRI
 manifest = pd.read_csv("data/prostate-shift-binary.csv")
 features = np.load("embeddings.npy")  # shape: (N, D)
 
-ri = RI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21])
-mari = MaRI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21], tau=0.2)
+ri = RI.compute(features, manifest, k_candidates=[5, 11, 21])
+mari = MaRI.compute(features, manifest, k_candidates=[5, 11, 21], tau=0.2)
 ccrr = CCRR.compute(
     features,
     manifest,
-    mode="paired",
     m=1,
 )
 # optional: exclude one or more centers before RI/MaRI computation
 mari_no_center_x = MaRI.compute(
     features,
     manifest,
-    mode="paired",
     k_candidates=[5, 11, 21],
     tau=0.2,
     exclude_centers=["CENTER_X"],
 )
 ```
 
-`sample_values` contains informative per-sample scores only:
-- samples with undefined per-sample ratio (`SO_i + OS_i = 0`) are excluded
-- in `mode="paired"`, repeated appearances of the same sample across valid 2x2 pairs are averaged to one value per sample
+For RI/MaRI:
+- the manifest must define evaluation subsets through an explicit `subset` column
+- every subset must be a complete 2x2 label-center subset
+- `sample_values` contains informative subset occurrences only
+- `sample_values_aligned` is occurrence-grained and can repeat the same physical sample across subsets
+- `undefined_frac` is the fraction of undefined subset occurrences (`SO_i + OS_i = 0`)
 
 CCRR neighbor search is fully automatic:
 - expands neighborhood size and retries unresolved samples automatically
@@ -54,10 +55,9 @@ Required manifest columns:
 - `label`
 - `medical_center`
 - `slide_id`
+- plus `subset` for paired RI/MaRI evaluation
 
-`mode` is required and must be one of:
-- `"paired"`: 2x2 pairing and aggregation.
-- `"global"`: single full-dataset evaluation without 2x2 decomposition.
+No other columns are required at runtime. Fields such as `patch_id` may exist in data-preparation pipelines, but they are not part of the RI/MaRI/CCRR manifest contract.
 
 ## Why use 2x2 pairs
 
@@ -65,12 +65,12 @@ RI/MaRI/CCRR compare two competing neighbor signals:
 - `SO`: same class, opposite center (desired)
 - `OS`: opposite class, same center (undesired)
 
-To keep this comparison meaningful and unbiased, the `"paired"` mode builds each evaluation subset as a valid **2x2 pair**:
+To keep this comparison meaningful and unbiased, RI/MaRI evaluate only manifest-defined **2x2 subsets**:
 - 2 classes
 - 2 centers
 - all 4 class-center cells present
 
-This avoids one-vs-rest base-rate bias (where large complements dominate neighbors), keeping the metric interpretable.
+This matches the PathoROB setup and avoids one-vs-rest base-rate bias (where large complements dominate neighbors), keeping the metric interpretable.
 
 ## Unified Benchmark
 
@@ -119,7 +119,6 @@ Model-specific dependency note:
 With direct imports, missing benchmark dependencies fail at import/runtime immediately.
 
 Defaults:
-- `--mode global`
 - `--k-candidates 3,5,7,10,15,20,25`
 - `--tau 0.2`
 - `--ccrr-m-candidates 1,5,10,15,20`
@@ -186,37 +185,48 @@ Outputs:
 - `ccrr_undefined_frac`
 
 `sample_distributions/` stores raw per-sample RI/MaRI/CCRR values for each model.
+For RI/MaRI these arrays are occurrence-grained rather than unique-sample-grained.
 
 `metrics.csv`/`.json` also include:
-- `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
+- `ri_undefined_frac`, `mari_undefined_frac`: fraction of subset occurrences with undefined RI/MaRI score (`SO_i + OS_i = 0`)
+- `ri_ss_dominated_undefined_frac`, `ri_oo_dominated_undefined_frac`, `ri_mixed_undefined_frac`
+- `mari_ss_dominated_undefined_frac`, `mari_oo_dominated_undefined_frac`, `mari_mixed_undefined_frac`
 
 ### Analyze Saved Metrics
 
-You can compute correlations, rank tables, and rank-shift summaries from a `metrics.csv` file:
+You can turn a benchmark `metrics.csv` into compact per-model and cross-model findings:
 
 ```bash
 python scripts/analyze_results.py \
-  --metrics-csv /path/to/results/metrics.csv \
-  --rank-reference RI
+  --metrics-csv /path/to/results/metrics.csv
 ```
 
 Outputs are written to `/path/to/results/analysis/` by default:
-- `correlation_pearson.csv`, `correlation_spearman.csv`
-- `model_ranks.csv`
-- `rank_deltas.csv`, `rank_agreement.csv`
-- `top_models_by_metric.csv`
-- `model_action_flags.csv` (threshold-based per-model action flags)
-- `k_sweep_sensitivity.csv` (when `k_sweep_metrics.csv` is available)
-- `ccrr_m_sweep_sensitivity.csv` (when `ccrr_m_sweep_metrics.csv` is available)
-- `analysis_report.md`
+- default:
+  - `single_model_tail_characterization.md`
+  - `single_model_tail_characterization.csv`
+  - `cross_model_findings.csv`
+- with `--detailed`:
+  - the default outputs above
+  - retained appendix CSVs such as `model_ranks.csv`, `model_action_flags.csv`, subgroup enrichment tables, cross-model prevalence tables, overlap tables, and sweep sensitivity tables
 
-`scripts/analyze_results.py` auto-detects sibling sweep files next to `metrics.csv` by default:
+The single-model tail characterization output is organized around the main paper-facing questions:
+- which `(biology, confounder)` strata are over-represented in the lower tail?
+- which biological classes are over-represented in the lower tail?
+- which centers are over-represented in the lower tail?
+- is fragility concentrated in a few strata or diffuse across many?
+- which supported strata are most severe in the tail by `tail_mean_ccrr`?
+- which slides show disproportionate tail representation?
+
+`scripts/analyze_results.py` auto-detects sibling analysis inputs next to `metrics.csv` by default:
 - `k_sweep_metrics.csv`
 - `ccrr_m_sweep_metrics.csv`
+- `per_sample_metrics.csv`
 
 You can also override with:
 - `--k-sweep-csv /path/to/k_sweep_metrics.csv`
 - `--ccrr-m-sweep-csv /path/to/ccrr_m_sweep_metrics.csv`
+- `--per-sample-csv /path/to/per_sample_metrics.csv`
 
 ### Metric Cache Behavior
 
@@ -228,6 +238,6 @@ You can also override with:
   - changing `tau` recomputes only MaRI artifacts
   - changing CCRR search parameters recomputes only CCRR artifacts
   - changing `k` candidates recomputes kNN/RI/MaRI artifacts only
-  - changing `mode` recomputes RI/MaRI/CCRR artifacts (kNN artifacts are reused)
+  - changing subset metadata recomputes RI/MaRI/CCRR artifacts through the manifest fingerprint
 - Report files (`metrics.csv`, `k_sweep_metrics.csv`, `ccrr_m_sweep_metrics.csv`) are rewritten every run from current artifacts.
 - `--recompute-metrics` bypasses cache reads but still refreshes cache artifacts.
