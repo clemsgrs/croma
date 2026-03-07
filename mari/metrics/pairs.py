@@ -58,6 +58,8 @@ def load_manifest(csv_path: str, dataset_name: str = "dataset") -> pd.DataFrame:
     out["medical_center"] = out["medical_center"].map(_normalize_str)
     out["slide_id"] = out["slide_id"].map(_normalize_str)
     out["image_path"] = out["image_path"].map(_normalize_str)
+    if "subset" in out.columns:
+        out["subset"] = out["subset"].map(_normalize_str)
     return out.reset_index(drop=True)
 
 
