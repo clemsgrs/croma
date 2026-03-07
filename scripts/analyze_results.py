@@ -102,13 +102,30 @@ def _is_higher_better(metric_name: str) -> bool:
     return str(metric_name).strip().lower() in _HIGHER_IS_BETTER
 
 
+def _scoped_model_labels(df: pd.DataFrame) -> pd.Series:
+    labels = df["model"].astype(str)
+    parts: list[pd.Series] = []
+    if "evaluation_design" in df.columns:
+        parts.append(df["evaluation_design"].astype(str))
+    if "evaluation_unit" in df.columns:
+        parts.append(df["evaluation_unit"].astype(str))
+    if not parts:
+        return labels
+    scope = parts[0]
+    for extra in parts[1:]:
+        scope = scope + ";" + extra
+    return labels + " [" + scope + "]"
+
+
 def _aggregate_by_model(df: pd.DataFrame) -> pd.DataFrame:
     if "model" not in df.columns:
         raise ValueError("metrics CSV must include a 'model' column")
-    numeric_cols = [c for c in df.columns if c != "model" and pd.api.types.is_numeric_dtype(df[c])]
+    working = df.copy()
+    working["model"] = _scoped_model_labels(working)
+    numeric_cols = [c for c in working.columns if c != "model" and pd.api.types.is_numeric_dtype(working[c])]
     if not numeric_cols:
         raise ValueError("metrics CSV has no numeric columns to analyze")
-    grouped = df.groupby("model", as_index=False)[numeric_cols].mean(numeric_only=True)
+    grouped = working.groupby("model", as_index=False)[numeric_cols].mean(numeric_only=True)
     return grouped
 
 
@@ -250,9 +267,11 @@ def _k_sweep_sensitivity(df_k: pd.DataFrame | None) -> pd.DataFrame:
     required = {"model", "k", "ri", "mari"}
     if not required.issubset(df_k.columns):
         return pd.DataFrame()
+    working = df_k.copy()
+    working["model"] = _scoped_model_labels(working)
 
     grouped = (
-        df_k.groupby("model", as_index=False)
+        working.groupby("model", as_index=False)
         .agg(
             k_min=("k", "min"),
             k_max=("k", "max"),
@@ -276,9 +295,11 @@ def _ccrr_m_sweep_sensitivity(df_m: pd.DataFrame | None) -> pd.DataFrame:
     required = {"model", "m", "ccrr", "ccrr_q_alpha", "ccrr_ltm_alpha"}
     if not required.issubset(df_m.columns):
         return pd.DataFrame()
+    working = df_m.copy()
+    working["model"] = _scoped_model_labels(working)
 
     grouped_rows: list[dict] = []
-    for model, grp in df_m.groupby("model"):
+    for model, grp in working.groupby("model"):
         grp_sorted = grp.sort_values("m", ascending=True)
         row: dict = {
             "model": str(model),

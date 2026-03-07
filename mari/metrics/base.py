@@ -1,13 +1,32 @@
-
 import warnings
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
 
-from mari.metrics.neighbors import _normalize_k_values, _optimal_k_by_knn_balanced_accuracy, _prepare_neighbors
-from mari.metrics.pairs import ensure_required_columns, infer_2x2_pairs, normalize_center_values, subset_by_pair
+from mari.metrics.neighbors import (
+    _knn_balanced_accuracy_by_k,
+    _normalize_k_values,
+    _prepare_neighbors,
+    _select_k_from_balanced_accuracy,
+)
+from mari.metrics.pairs import (
+    EvaluationSubset,
+    ensure_required_columns,
+    normalize_center_values,
+    resolve_manifest_subsets,
+    validate_subset_manifest,
+)
 from mari.types import RobustnessResult
+
+
+EVALUATION_DESIGN_PAIRED_2X2 = "paired_2x2"
+EVALUATION_DESIGN_DATASET_WIDE = "dataset_wide"
+VALID_EVALUATION_DESIGNS = (
+    EVALUATION_DESIGN_PAIRED_2X2,
+    EVALUATION_DESIGN_DATASET_WIDE,
+)
 
 
 def _ratio_or_default(so: float, os: float, default: float = 0.5) -> float:
@@ -17,16 +36,32 @@ def _ratio_or_default(so: float, os: float, default: float = 0.5) -> float:
     return float(float(so) / denom)
 
 
-def _ratio_or_nan(so: float, os: float) -> float:
-    denom = float(so + os)
-    if denom <= 0:
-        return float("nan")
-    return float(float(so) / denom)
+def _normalize_evaluation_design(value: object) -> str:
+    normalized = str(value).strip().lower()
+    if normalized not in VALID_EVALUATION_DESIGNS:
+        raise ValueError(f"evaluation_design must be one of {list(VALID_EVALUATION_DESIGNS)}")
+    return normalized
+
+
+@dataclass(frozen=True)
+class _PreparedSubsetInputs:
+    subset_id: str
+    source_indices: np.ndarray
+    features: np.ndarray
+    labels: np.ndarray
+    centers: np.ndarray
+    slide_ids: np.ndarray
+
+
+@dataclass(frozen=True)
+class _UndefinedBreakdown:
+    total_frac: float
+    ss_frac: float
+    oo_frac: float
+    mixed_frac: float
 
 
 class BaseRobustnessIndex(ABC):
-    _PAIR_MODES = {"paired", "global"}
-
     @classmethod
     def _infer_dataset_name(cls, df: pd.DataFrame) -> str:
         if "dataset" not in df.columns or len(df) == 0:
@@ -86,62 +121,249 @@ class BaseRobustnessIndex(ABC):
         k: int,
         **kwargs: float,
     ) -> tuple[float, np.ndarray, np.ndarray, np.ndarray]:
+        n = len(labels)
         target_k = int(k)
-        so_total = 0.0
-        os_total = 0.0
-        sample_scores = np.full((len(labels),), np.nan, dtype=float)
-        informative_mask = np.zeros((len(labels),), dtype=bool)
-        # 0=defined, 1=SS-dominated, 2=OO-dominated, 3=mixed / unclassified
-        undefined_type = np.zeros((len(labels),), dtype=int)
+        eff_k = np.minimum(valid_counts, target_k)
 
-        for i in range(len(labels)):
-            eff_k = min(target_k, int(valid_counts[i]))
-            if eff_k <= 0:
-                undefined_type[i] = 3
+        col_indices = np.arange(min(target_k, neigh_idx.shape[1]))[np.newaxis, :]
+        slot_valid = (col_indices < eff_k[:, np.newaxis]) & (neigh_idx[:, :target_k] >= 0)
+
+        idx = neigh_idx[:, :target_k]
+        dist = neigh_dist[:, :target_k]
+        safe_idx = np.where(slot_valid, idx, 0)
+
+        neigh_labels = labels[safe_idx]
+        neigh_centers = centers[safe_idx]
+
+        same_label = neigh_labels == labels[:, np.newaxis]
+        same_center = neigh_centers == centers[:, np.newaxis]
+
+        so_mask = slot_valid & same_label & ~same_center
+        os_mask = slot_valid & ~same_label & same_center
+        ss_mask = slot_valid & same_label & same_center
+        oo_mask = slot_valid & ~same_label & ~same_center
+
+        weights = cls._weights(dist, **kwargs)
+        so_per_sample = np.where(so_mask, weights, 0.0).sum(axis=1)
+        os_per_sample = np.where(os_mask, weights, 0.0).sum(axis=1)
+
+        denom = so_per_sample + os_per_sample
+        informative = denom > 0
+        sample_scores = np.full(n, np.nan, dtype=float)
+        sample_scores[informative] = so_per_sample[informative] / denom[informative]
+
+        undefined_type = np.zeros(n, dtype=int)
+        undef = ~informative
+        has_neighbors = eff_k > 0
+        undef_with_neigh = undef & has_neighbors
+        undef_no_neigh = undef & ~has_neighbors
+
+        if undef_with_neigh.any():
+            ss_count = ss_mask[undef_with_neigh].sum(axis=1)
+            oo_count = oo_mask[undef_with_neigh].sum(axis=1)
+            undefined_type[undef_with_neigh] = np.where(
+                ss_count > oo_count,
+                1,
+                np.where(oo_count > ss_count, 2, 3),
+            )
+        undefined_type[undef_no_neigh] = 3
+
+        pooled = _ratio_or_default(float(so_per_sample.sum()), float(os_per_sample.sum()))
+        return pooled, sample_scores, informative, undefined_type
+
+    @classmethod
+    def _score_all_k_from_neighbors(
+        cls,
+        labels: np.ndarray,
+        centers: np.ndarray,
+        neigh_idx: np.ndarray,
+        neigh_dist: np.ndarray,
+        valid_counts: np.ndarray,
+        k_values: list[int],
+        **kwargs: float,
+    ) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+        n = len(labels)
+        kmax = int(max(k_values))
+        actual_cols = min(kmax, neigh_idx.shape[1])
+
+        col_indices = np.arange(actual_cols)[np.newaxis, :]
+        eff_k_max = np.minimum(valid_counts, kmax)
+        slot_valid = (col_indices < eff_k_max[:, np.newaxis]) & (neigh_idx[:, :actual_cols] >= 0)
+
+        idx = neigh_idx[:, :actual_cols]
+        dist = neigh_dist[:, :actual_cols]
+        safe_idx = np.where(slot_valid, idx, 0)
+
+        neigh_labels = labels[safe_idx]
+        neigh_centers = centers[safe_idx]
+
+        same_label = neigh_labels == labels[:, np.newaxis]
+        same_center = neigh_centers == centers[:, np.newaxis]
+
+        so_mask = slot_valid & same_label & ~same_center
+        os_mask = slot_valid & ~same_label & same_center
+        ss_mask = slot_valid & same_label & same_center
+        oo_mask = slot_valid & ~same_label & ~same_center
+
+        weights = cls._weights(dist, **kwargs)
+        so_weighted = np.where(so_mask, weights, 0.0)
+        os_weighted = np.where(os_mask, weights, 0.0)
+
+        so_cum = np.cumsum(so_weighted, axis=1)
+        os_cum = np.cumsum(os_weighted, axis=1)
+        ss_cum = np.cumsum(ss_mask.astype(int), axis=1)
+        oo_cum = np.cumsum(oo_mask.astype(int), axis=1)
+
+        out: dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+        for k in k_values:
+            ki = min(int(k), actual_cols) - 1
+            if ki < 0:
+                out[int(k)] = (
+                    0.5,
+                    np.full(n, np.nan, dtype=float),
+                    np.zeros(n, dtype=bool),
+                    np.full(n, 3, dtype=int),
+                    np.zeros(n, dtype=float),
+                    np.zeros(n, dtype=float),
+                )
                 continue
 
-            row_idx = neigh_idx[i, :eff_k]
-            row_dist = neigh_dist[i, :eff_k]
-            keep = row_idx >= 0
-            if not bool(np.any(keep)):
-                undefined_type[i] = 3
+            so_at_k = so_cum[:, ki]
+            os_at_k = os_cum[:, ki]
+            denom = so_at_k + os_at_k
+            informative = denom > 0
+
+            sample_scores = np.full(n, np.nan, dtype=float)
+            sample_scores[informative] = so_at_k[informative] / denom[informative]
+
+            eff_k_this = np.minimum(valid_counts, int(k))
+            undefined_type = np.zeros(n, dtype=int)
+            undef = ~informative
+            has_neighbors = eff_k_this > 0
+            undef_with_neigh = undef & has_neighbors
+            undef_no_neigh = undef & ~has_neighbors
+
+            if undef_with_neigh.any():
+                ss_count = ss_cum[undef_with_neigh, ki]
+                oo_count = oo_cum[undef_with_neigh, ki]
+                undefined_type[undef_with_neigh] = np.where(
+                    ss_count > oo_count,
+                    1,
+                    np.where(oo_count > ss_count, 2, 3),
+                )
+            undefined_type[undef_no_neigh] = 3
+
+            pooled = _ratio_or_default(float(so_at_k.sum()), float(os_at_k.sum()))
+            out[int(k)] = (pooled, sample_scores, informative, undefined_type, so_at_k, os_at_k)
+
+        return out
+
+    @classmethod
+    def _prepare_subset_inputs(
+        cls,
+        *,
+        features: np.ndarray,
+        subset: EvaluationSubset,
+    ) -> _PreparedSubsetInputs | None:
+        subset_rows = subset.rows
+        if len(subset_rows) <= 1:
+            return None
+
+        source_indices = subset_rows["source_sample_index"].to_numpy(dtype=int)
+        subset_features = features[source_indices]
+        subset_features = subset_features / (np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12)
+
+        return _PreparedSubsetInputs(
+            subset_id=str(subset.subset_id),
+            source_indices=source_indices,
+            features=subset_features,
+            labels=pd.factorize(subset_rows["label"])[0].astype(int),
+            centers=pd.factorize(subset_rows["medical_center"])[0].astype(int),
+            slide_ids=subset_rows["slide_id"].astype(str).to_numpy(),
+        )
+
+    @classmethod
+    def _select_subset_k(
+        cls,
+        *,
+        features: np.ndarray,
+        subsets: list[EvaluationSubset],
+        k_candidates: list[int],
+        dataset_name: str,
+    ) -> int:
+        all_scores: list[dict[int, float]] = []
+        for subset in subsets:
+            prepared = cls._prepare_subset_inputs(features=features, subset=subset)
+            if prepared is None:
                 continue
+            sub_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
+            if not sub_candidates:
+                continue
+            scores = _knn_balanced_accuracy_by_k(
+                features=prepared.features,
+                labels=prepared.labels,
+                slide_ids=prepared.slide_ids,
+                k_values=sub_candidates,
+                warn_context=f"{dataset_name} subset k-selection",
+            )
+            all_scores.append(scores)
 
-            row_idx = row_idx[keep]
-            row_dist = row_dist[keep]
+        if not all_scores:
+            raise RuntimeError(f"{dataset_name}: subset k-selection failed on all subsets")
 
-            neigh_labels = labels[row_idx]
-            neigh_centers = centers[row_idx]
-            sample_label = labels[i]
-            sample_center = centers[i]
+        all_k = sorted({k for scores in all_scores for k in scores})
+        averaged: dict[int, float] = {}
+        for k in all_k:
+            vals = [scores[k] for scores in all_scores if k in scores]
+            if vals:
+                averaged[k] = float(np.mean(vals))
+        return _select_k_from_balanced_accuracy(k_values=all_k, scores=averaged)
 
-            weights = cls._weights(row_dist, **kwargs)
-            if weights.shape != row_dist.shape:
-                raise ValueError("weight function must return one weight per neighbor distance")
+    @classmethod
+    def _warn_undefined_occurrences(
+        cls,
+        *,
+        dataset_name: str,
+        evaluation_unit: str,
+        undefined_frac: float,
+        ss_dominated_undefined_frac: float,
+        oo_dominated_undefined_frac: float,
+        mixed_undefined_frac: float,
+    ) -> None:
+        unit_label = "subset occurrences" if str(evaluation_unit) == "occurrence" else "samples"
+        if undefined_frac > 0.0:
+            warnings.warn(
+                f"{dataset_name}: RI/MaRI undefined coverage is {undefined_frac * 100.0:.1f}% across {unit_label}.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+        if oo_dominated_undefined_frac > max(ss_dominated_undefined_frac, mixed_undefined_frac, 0.0):
+            warnings.warn(
+                f"{dataset_name}: undefined RI/MaRI {unit_label} are predominantly OO-dominated ({oo_dominated_undefined_frac * 100.0:.1f}%).",
+                RuntimeWarning,
+                stacklevel=2,
+            )
 
-            so_mask = np.logical_and(neigh_labels == sample_label, neigh_centers != sample_center)
-            os_mask = np.logical_and(neigh_labels != sample_label, neigh_centers == sample_center)
+    @classmethod
+    def _compute_undefined_breakdown(
+        cls,
+        *,
+        occurrence_total: int,
+        ss_undefined: int,
+        oo_undefined: int,
+        mixed_undefined: int,
+    ) -> _UndefinedBreakdown:
+        if occurrence_total <= 0:
+            return _UndefinedBreakdown(total_frac=0.0, ss_frac=0.0, oo_frac=0.0, mixed_frac=0.0)
 
-            so_i = float(weights[so_mask].sum())
-            os_i = float(weights[os_mask].sum())
-            sample_score = _ratio_or_nan(so_i, os_i)
-            if np.isfinite(sample_score):
-                sample_scores[i] = float(sample_score)
-                informative_mask[i] = True
-            else:
-                ss_count = int(np.logical_and(neigh_labels == sample_label, neigh_centers == sample_center).sum())
-                oo_count = int(np.logical_and(neigh_labels != sample_label, neigh_centers != sample_center).sum())
-                if ss_count > oo_count:
-                    undefined_type[i] = 1  # SS-dominated
-                elif oo_count > ss_count:
-                    undefined_type[i] = 2  # OO-dominated
-                else:
-                    undefined_type[i] = 3  # mixed
-
-            so_total += so_i
-            os_total += os_i
-
-        return _ratio_or_default(so_total, os_total), sample_scores, informative_mask, undefined_type
+        total_undefined = ss_undefined + oo_undefined + mixed_undefined
+        denominator = float(occurrence_total)
+        return _UndefinedBreakdown(
+            total_frac=float(total_undefined / denominator),
+            ss_frac=float(ss_undefined / denominator),
+            oo_frac=float(oo_undefined / denominator),
+            mixed_frac=float(mixed_undefined / denominator),
+        )
 
     @classmethod
     def _compute(
@@ -149,23 +371,20 @@ class BaseRobustnessIndex(ABC):
         features: np.ndarray,
         manifest: pd.DataFrame,
         *,
-        mode: str,
         k_candidates: list[int] | tuple[int, ...],
+        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
         exclude_centers: object | None = None,
         max_pairs: int | None = None,
         random_state: int = 0,
         **kwargs: float,
     ) -> RobustnessResult:
-        mode_value = str(mode).strip().lower()
-        if mode_value not in cls._PAIR_MODES:
-            raise ValueError(
-                "mode must be one of {'paired', 'global'}"
-            )
-
         cls._validate_inputs(features, manifest)
 
         df = manifest.reset_index(drop=True).copy()
         dataset_name = cls._infer_dataset_name(df)
+        evaluation_design = _normalize_evaluation_design(evaluation_design)
+        if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
+            validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
         features, df = cls._apply_center_exclusion(
             features=features,
             manifest=df,
@@ -174,67 +393,77 @@ class BaseRobustnessIndex(ABC):
         )
         candidates = _normalize_k_values(k_candidates)
 
-        k = _optimal_k_by_knn_balanced_accuracy(
-            features=features,
-            labels=pd.factorize(df["label"])[0].astype(int),
-            slide_ids=df["slide_id"].astype(str).to_numpy(),
-            k_values=candidates,
-            warn_context=f"{dataset_name} k-selection",
-        )
+        if evaluation_design == EVALUATION_DESIGN_DATASET_WIDE:
+            return cls._compute_dataset_wide(
+                features=features,
+                df=df,
+                dataset_name=dataset_name,
+                k_candidates=candidates,
+                **kwargs,
+            )
 
         subsets = cls._build_subsets(
             df=df,
-            mode_value=mode_value,
             dataset_name=dataset_name,
             max_pairs=max_pairs,
             random_state=random_state,
+        )
+        k = cls._select_subset_k(
+            features=features,
+            subsets=subsets,
+            k_candidates=candidates,
+            dataset_name=dataset_name,
         )
         by_k = cls._score_subsets_by_k(
             features=features,
             subsets=subsets,
             k_values=[int(k)],
-            mode_value=mode_value,
             dataset_name=dataset_name,
             **kwargs,
         )
-        pair_arr, sample_arr, sample_aligned, undef_type_arr = by_k[int(k)]
+        (
+            pooled,
+            pair_arr,
+            sample_arr,
+            occurrence_values,
+            occurrence_defined_mask,
+            undef_type_arr,
+            occurrence_subsets,
+            occurrence_source_indices,
+            undefined_frac,
+            ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac,
+            mixed_undefined_frac,
+        ) = by_k[int(k)]
 
-        total_n = len(features)
-        informative_n = len(sample_arr)
-        undefined_n = max(0, total_n - informative_n)
-        undefined_frac = float(undefined_n / total_n) if total_n > 0 else 0.0
-        if mode_value == "paired":
-            warnings.warn(
-                "RI/MaRI undefined subtype breakdown is only well-defined in global mode; "
-                "paired-mode subtype fractions are reported as NaN until paired aggregation semantics are specified.",
-                RuntimeWarning,
-                stacklevel=2,
-            )
-            ss_dominated_undefined_frac = float("nan")
-            oo_dominated_undefined_frac = float("nan")
-            mixed_undefined_frac = float("nan")
-        else:
-            ss_count = int((undef_type_arr == 1).sum())
-            oo_count = int((undef_type_arr == 2).sum())
-            mixed_count = int((undef_type_arr == 3).sum())
-            ss_dominated_undefined_frac = float(ss_count / total_n) if total_n > 0 else 0.0
-            oo_dominated_undefined_frac = float(oo_count / total_n) if total_n > 0 else 0.0
-            mixed_undefined_frac = float(mixed_count / total_n) if total_n > 0 else 0.0
-
-        return RobustnessResult(
-            dataset=dataset_name,
-            k=int(k),
-            value=float(pair_arr.mean()),
-            std=float(pair_arr.std(ddof=0)),
-            n_pairs=int(len(pair_arr)),
-            pair_values=pair_arr,
-            sample_values=sample_arr,
-            sample_values_aligned=sample_aligned,
-            sample_undefined_types=undef_type_arr,
+        cls._warn_undefined_occurrences(
+            dataset_name=dataset_name,
+            evaluation_unit="occurrence",
             undefined_frac=undefined_frac,
             ss_dominated_undefined_frac=ss_dominated_undefined_frac,
             oo_dominated_undefined_frac=oo_dominated_undefined_frac,
             mixed_undefined_frac=mixed_undefined_frac,
+        )
+
+        return RobustnessResult(
+            dataset=dataset_name,
+            k=int(k),
+            value=float(pooled),
+            std=float(pair_arr.std(ddof=0)),
+            n_pairs=int(len(pair_arr)),
+            pair_values=pair_arr,
+            sample_values=sample_arr,
+            sample_values_aligned=occurrence_values,
+            occurrence_defined_mask=occurrence_defined_mask,
+            sample_undefined_types=undef_type_arr,
+            occurrence_subsets=occurrence_subsets,
+            occurrence_source_indices=occurrence_source_indices,
+            undefined_frac=undefined_frac,
+            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
+            mixed_undefined_frac=mixed_undefined_frac,
+            evaluation_design=evaluation_design,
+            evaluation_unit="occurrence",
         )
 
     @classmethod
@@ -243,22 +472,20 @@ class BaseRobustnessIndex(ABC):
         features: np.ndarray,
         manifest: pd.DataFrame,
         *,
-        mode: str,
         k_values: list[int] | tuple[int, ...],
+        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
         exclude_centers: object | None = None,
         max_pairs: int | None = None,
         random_state: int = 0,
         **kwargs: float,
     ) -> dict[int, float]:
-        mode_value = str(mode).strip().lower()
-        if mode_value not in cls._PAIR_MODES:
-            raise ValueError(
-                "mode must be one of {'paired', 'global'}"
-            )
         cls._validate_inputs(features, manifest)
 
         df = manifest.reset_index(drop=True).copy()
         dataset_name = cls._infer_dataset_name(df)
+        evaluation_design = _normalize_evaluation_design(evaluation_design)
+        if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
+            validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
         features, df = cls._apply_center_exclusion(
             features=features,
             manifest=df,
@@ -266,9 +493,16 @@ class BaseRobustnessIndex(ABC):
             exclude_centers=exclude_centers,
         )
         candidates = _normalize_k_values(k_values)
+        if evaluation_design == EVALUATION_DESIGN_DATASET_WIDE:
+            return cls._compute_curve_dataset_wide(
+                features=features,
+                df=df,
+                dataset_name=dataset_name,
+                k_values=candidates,
+                **kwargs,
+            )
         subsets = cls._build_subsets(
             df=df,
-            mode_value=mode_value,
             dataset_name=dataset_name,
             max_pairs=max_pairs,
             random_state=random_state,
@@ -277,115 +511,297 @@ class BaseRobustnessIndex(ABC):
             features=features,
             subsets=subsets,
             k_values=candidates,
-            mode_value=mode_value,
             dataset_name=dataset_name,
             **kwargs,
         )
-        return {int(k): float(by_k[int(k)][0].mean()) for k in candidates if int(k) in by_k}
+        return {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
+
+    @classmethod
+    def _prepare_dataset_wide_inputs(
+        cls,
+        *,
+        features: np.ndarray,
+        df: pd.DataFrame,
+    ) -> _PreparedSubsetInputs:
+        source_indices = np.arange(len(df), dtype=int)
+        normalized_features = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-12)
+        return _PreparedSubsetInputs(
+            subset_id="dataset",
+            source_indices=source_indices,
+            features=normalized_features,
+            labels=pd.factorize(df["label"])[0].astype(int),
+            centers=pd.factorize(df["medical_center"])[0].astype(int),
+            slide_ids=df["slide_id"].astype(str).to_numpy(),
+        )
+
+    @classmethod
+    def _select_dataset_wide_k(
+        cls,
+        *,
+        prepared: _PreparedSubsetInputs,
+        k_candidates: list[int],
+        dataset_name: str,
+    ) -> int:
+        valid_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
+        if not valid_candidates:
+            raise RuntimeError(f"{dataset_name}: dataset-wide k-selection failed because no valid k candidates remain")
+        scores = _knn_balanced_accuracy_by_k(
+            features=prepared.features,
+            labels=prepared.labels,
+            slide_ids=prepared.slide_ids,
+            k_values=valid_candidates,
+            warn_context=f"{dataset_name} dataset-wide k-selection",
+        )
+        return _select_k_from_balanced_accuracy(k_values=valid_candidates, scores=scores)
+
+    @classmethod
+    def _score_dataset_wide_by_k(
+        cls,
+        *,
+        prepared: _PreparedSubsetInputs,
+        k_values: list[int] | tuple[int, ...],
+        dataset_name: str,
+        **kwargs: float,
+    ) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]]:
+        candidates = _normalize_k_values(k_values)
+        kmax = int(max(candidates))
+        neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(prepared.features, prepared.slide_ids, kmax)
+        all_k_results = cls._score_all_k_from_neighbors(
+            labels=prepared.labels,
+            centers=prepared.centers,
+            neigh_idx=neigh_idx,
+            neigh_dist=neigh_dist,
+            valid_counts=valid_counts,
+            k_values=candidates,
+            **kwargs,
+        )
+        out: dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]] = {}
+        occurrence_subsets = np.full(len(prepared.source_indices), prepared.subset_id, dtype=object).astype(str)
+        occurrence_sources = prepared.source_indices.astype(int)
+        for k in candidates:
+            pooled, per_sample, informative_mask, undefined_type, _so_arr, _os_arr = all_k_results[int(k)]
+            sample_arr = np.asarray(per_sample[informative_mask], dtype=float)
+            undefined_breakdown = cls._compute_undefined_breakdown(
+                occurrence_total=len(per_sample),
+                ss_undefined=int(np.count_nonzero(undefined_type == 1)),
+                oo_undefined=int(np.count_nonzero(undefined_type == 2)),
+                mixed_undefined=int(np.count_nonzero(undefined_type == 3)),
+            )
+            pair_arr = np.asarray([pooled], dtype=float)
+            out[int(k)] = (
+                float(pooled),
+                pair_arr,
+                sample_arr,
+                np.asarray(per_sample, dtype=float),
+                np.asarray(informative_mask, dtype=bool),
+                np.asarray(undefined_type, dtype=int),
+                occurrence_subsets,
+                occurrence_sources,
+                undefined_breakdown.total_frac,
+                undefined_breakdown.ss_frac,
+                undefined_breakdown.oo_frac,
+                undefined_breakdown.mixed_frac,
+            )
+        if not out:
+            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on the dataset-wide evaluation design")
+        return out
+
+    @classmethod
+    def _compute_dataset_wide(
+        cls,
+        *,
+        features: np.ndarray,
+        df: pd.DataFrame,
+        dataset_name: str,
+        k_candidates: list[int],
+        **kwargs: float,
+    ) -> RobustnessResult:
+        prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
+        k = cls._select_dataset_wide_k(
+            prepared=prepared,
+            k_candidates=k_candidates,
+            dataset_name=dataset_name,
+        )
+        by_k = cls._score_dataset_wide_by_k(
+            prepared=prepared,
+            k_values=[int(k)],
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        (
+            pooled,
+            pair_arr,
+            sample_arr,
+            sample_values_aligned,
+            occurrence_defined_mask,
+            undefined_types,
+            occurrence_subsets,
+            occurrence_source_indices,
+            undefined_frac,
+            ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac,
+            mixed_undefined_frac,
+        ) = by_k[int(k)]
+
+        cls._warn_undefined_occurrences(
+            dataset_name=dataset_name,
+            evaluation_unit="sample",
+            undefined_frac=undefined_frac,
+            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
+            mixed_undefined_frac=mixed_undefined_frac,
+        )
+
+        return RobustnessResult(
+            dataset=dataset_name,
+            k=int(k),
+            value=float(pooled),
+            std=float(pair_arr.std(ddof=0)),
+            n_pairs=1,
+            pair_values=pair_arr,
+            sample_values=sample_arr,
+            sample_values_aligned=sample_values_aligned,
+            occurrence_defined_mask=occurrence_defined_mask,
+            sample_undefined_types=undefined_types,
+            occurrence_subsets=occurrence_subsets,
+            occurrence_source_indices=occurrence_source_indices,
+            undefined_frac=undefined_frac,
+            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
+            mixed_undefined_frac=mixed_undefined_frac,
+            evaluation_design=EVALUATION_DESIGN_DATASET_WIDE,
+            evaluation_unit="sample",
+        )
+
+    @classmethod
+    def _compute_curve_dataset_wide(
+        cls,
+        *,
+        features: np.ndarray,
+        df: pd.DataFrame,
+        dataset_name: str,
+        k_values: list[int],
+        **kwargs: float,
+    ) -> dict[int, float]:
+        prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
+        by_k = cls._score_dataset_wide_by_k(
+            prepared=prepared,
+            k_values=k_values,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        return {int(k): float(by_k[int(k)][0]) for k in k_values if int(k) in by_k}
 
     @classmethod
     def _build_subsets(
         cls,
         *,
         df: pd.DataFrame,
-        mode_value: str,
         dataset_name: str,
         max_pairs: int | None,
         random_state: int,
-    ) -> list[pd.DataFrame]:
-        if mode_value == "paired":
-            pairs = infer_2x2_pairs(
-                df,
-                dataset_name=dataset_name,
-                max_pairs=max_pairs,
-                random_state=random_state,
-            )
-            if not pairs:
-                raise RuntimeError(f"{dataset_name}: no valid 2x2 pairs for RI/MaRI")
-            return [subset_by_pair(df, pair) for pair in pairs]
-        return [df]
+    ) -> list[EvaluationSubset]:
+        del max_pairs, random_state
+        subsets = resolve_manifest_subsets(df)
+        if not subsets:
+            raise RuntimeError(f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for RI/MaRI")
+        return subsets
 
     @classmethod
     def _score_subsets_by_k(
         cls,
         *,
         features: np.ndarray,
-        subsets: list[pd.DataFrame],
+        subsets: list[EvaluationSubset],
         k_values: list[int] | tuple[int, ...],
-        mode_value: str,
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]]:
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
-        per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
-        per_k_sample_sum: dict[int, np.ndarray] = {
-            int(k): np.zeros((len(features),), dtype=float) for k in candidates
-        }
-        per_k_sample_count: dict[int, np.ndarray] = {
-            int(k): np.zeros((len(features),), dtype=int) for k in candidates
-        }
-        # Track undefined type per sample (last-seen wins for multi-subset)
-        per_k_undefined_type: dict[int, np.ndarray] = {
-            int(k): np.zeros((len(features),), dtype=int) for k in candidates
-        }
 
-        for sub in subsets:
-            if len(sub) <= 1:
+        per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
+        per_k_so_total: dict[int, float] = {int(k): 0.0 for k in candidates}
+        per_k_os_total: dict[int, float] = {int(k): 0.0 for k in candidates}
+        per_k_occurrence_values: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_defined: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_types: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_subsets: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_sources: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_undefined_counts: dict[int, dict[int, int]] = {int(k): {1: 0, 2: 0, 3: 0} for k in candidates}
+        per_k_occurrence_total: dict[int, int] = {int(k): 0 for k in candidates}
+
+        for subset in subsets:
+            prepared = cls._prepare_subset_inputs(features=features, subset=subset)
+            if prepared is None:
                 continue
 
-            idx = sub.index.to_numpy()
-            pair_features = features[idx]
-            norms = np.linalg.norm(pair_features, axis=1, keepdims=True) + 1e-12
-            pair_features = pair_features / norms
+            neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
+                prepared.features,
+                prepared.slide_ids,
+                kmax,
+            )
+            all_k_results = cls._score_all_k_from_neighbors(
+                labels=prepared.labels,
+                centers=prepared.centers,
+                neigh_idx=neigh_idx,
+                neigh_dist=neigh_dist,
+                valid_counts=valid_counts,
+                k_values=candidates,
+                **kwargs,
+            )
 
-            labels = pd.factorize(sub["label"])[0].astype(int)
-            centers = pd.factorize(sub["medical_center"])[0].astype(int)
-            slide_ids = sub["slide_id"].astype(str).to_numpy()
-
-            neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(pair_features, slide_ids, kmax)
             for k in candidates:
-                pair_value, per_sample, informative_mask, undefined_type = cls._score_from_neighbors(
-                    labels=labels,
-                    centers=centers,
-                    neigh_idx=neigh_idx,
-                    neigh_dist=neigh_dist,
-                    valid_counts=valid_counts,
-                    k=int(k),
-                    **kwargs,
-                )
+                pair_value, per_sample, informative_mask, undefined_type, so_arr, os_arr = all_k_results[int(k)]
                 per_k_pair_values[int(k)].append(float(pair_value))
-                if bool(np.any(informative_mask)):
-                    global_idx = idx[informative_mask]
-                    per_k_sample_sum[int(k)][global_idx] += per_sample[informative_mask]
-                    per_k_sample_count[int(k)][global_idx] += 1
-                # For undefined samples, store their type (using global indices)
-                undefined_mask = ~informative_mask & (undefined_type > 0)
-                if bool(np.any(undefined_mask)):
-                    global_undef_idx = idx[undefined_mask]
-                    per_k_undefined_type[int(k)][global_undef_idx] = undefined_type[undefined_mask]
+                per_k_occurrence_total[int(k)] += int(len(per_sample))
+                per_k_so_total[int(k)] += float(so_arr.sum())
+                per_k_os_total[int(k)] += float(os_arr.sum())
+                per_k_occurrence_values[int(k)].append(np.asarray(per_sample, dtype=float))
+                per_k_occurrence_defined[int(k)].append(np.asarray(informative_mask, dtype=bool))
+                per_k_occurrence_types[int(k)].append(np.asarray(undefined_type, dtype=int))
+                per_k_occurrence_subsets[int(k)].append(np.full(len(per_sample), prepared.subset_id, dtype=object))
+                per_k_occurrence_sources[int(k)].append(prepared.source_indices)
+                per_k_undefined_counts[int(k)][1] += int(np.count_nonzero(undefined_type == 1))
+                per_k_undefined_counts[int(k)][2] += int(np.count_nonzero(undefined_type == 2))
+                per_k_undefined_counts[int(k)][3] += int(np.count_nonzero(undefined_type == 3))
 
         if not any(per_k_pair_values[int(k)] for k in candidates):
-            if mode_value == "paired":
-                raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all inferred 2x2 pairs")
-            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on full dataset")
+            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets")
 
-        out: dict[int, tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]] = {}
+        out: dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]] = {}
         for k in candidates:
             pair_values = per_k_pair_values[int(k)]
             if not pair_values:
                 continue
+
+            pooled = _ratio_or_default(per_k_so_total[int(k)], per_k_os_total[int(k)])
             pair_arr = np.asarray(pair_values, dtype=float)
-            counts = per_k_sample_count[int(k)]
-            informative = counts > 0
-            sample_aligned = np.full((len(features),), np.nan, dtype=float)
-            if bool(np.any(informative)):
-                sample_aligned[informative] = (
-                    per_k_sample_sum[int(k)][informative] / counts[informative]
-                ).astype(float)
-                sample_arr = sample_aligned[informative].astype(float)
-            else:
-                sample_arr = np.empty((0,), dtype=float)
-            undef_type_arr = per_k_undefined_type[int(k)]
-            out[int(k)] = (pair_arr, sample_arr, sample_aligned, undef_type_arr)
+            occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(float)
+            occurrence_defined_mask = np.concatenate(per_k_occurrence_defined[int(k)]).astype(bool)
+            undef_type_arr = np.concatenate(per_k_occurrence_types[int(k)]).astype(int)
+            occurrence_subsets = np.concatenate(per_k_occurrence_subsets[int(k)]).astype(str)
+            occurrence_source_indices = np.concatenate(per_k_occurrence_sources[int(k)]).astype(int)
+            sample_arr = occurrence_values[occurrence_defined_mask].astype(float)
+
+            undefined_breakdown = cls._compute_undefined_breakdown(
+                occurrence_total=int(per_k_occurrence_total[int(k)]),
+                ss_undefined=int(per_k_undefined_counts[int(k)][1]),
+                oo_undefined=int(per_k_undefined_counts[int(k)][2]),
+                mixed_undefined=int(per_k_undefined_counts[int(k)][3]),
+            )
+            out[int(k)] = (
+                pooled,
+                pair_arr,
+                sample_arr,
+                occurrence_values,
+                occurrence_defined_mask,
+                undef_type_arr,
+                occurrence_subsets,
+                occurrence_source_indices,
+                undefined_breakdown.total_frac,
+                undefined_breakdown.ss_frac,
+                undefined_breakdown.oo_frac,
+                undefined_breakdown.mixed_frac,
+            )
         return out

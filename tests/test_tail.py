@@ -90,7 +90,7 @@ class TestCCRRTailIntegration:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
+            evaluation_design="dataset_wide",
             m=1,
             alpha=0.10,
         )
@@ -129,7 +129,7 @@ class TestCCRRTailIntegration:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode="global",
+            evaluation_design="dataset_wide",
             m=1,
             alpha=0.25,
         )

@@ -23,6 +23,9 @@ def _result_payload(result) -> dict:
         "value": result.value,
         "std": result.std,
         "n_pairs": result.n_pairs,
+        "undefined_frac": result.undefined_frac,
+        "evaluation_design": result.evaluation_design,
+        "evaluation_unit": result.evaluation_unit,
     }
     return payload
 
@@ -36,10 +39,10 @@ def main() -> None:
     shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
     shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
     shared.add_argument(
-        "--mode",
+        "--evaluation-design",
         required=True,
-        choices=["paired", "global"],
-        help="Evaluation mode: paired=PathoROB-style 2x2 aggregation, global=single full-dataset evaluation.",
+        choices=["paired_2x2", "dataset_wide"],
+        help="Evaluation design: paired_2x2=explicit manifest-defined 2x2 subsets, dataset_wide=one full-dataset evaluation.",
     )
     shared.add_argument("--k-candidates", type=_parse_k_candidates, default=[5, 11, 21])
     shared.add_argument(
@@ -58,10 +61,10 @@ def main() -> None:
     ccrr_shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
     ccrr_shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
     ccrr_shared.add_argument(
-        "--mode",
+        "--evaluation-design",
         required=True,
-        choices=["paired", "global"],
-        help="Evaluation mode: paired=PathoROB-style 2x2 aggregation, global=single full-dataset evaluation.",
+        choices=["paired_2x2", "dataset_wide"],
+        help="Evaluation design: paired_2x2=explicit manifest-defined 2x2 subsets, dataset_wide=one full-dataset evaluation.",
     )
     ccrr_shared.add_argument(
         "--exclude-center",
@@ -100,7 +103,7 @@ def main() -> None:
         result = CCRR.compute(
             features=features,
             manifest=manifest,
-            mode=str(args.mode),
+            evaluation_design=str(args.evaluation_design),
             m=int(args.m),
             alpha=float(args.alpha),
             exclude_centers=excluded_centers,
@@ -121,6 +124,8 @@ def main() -> None:
             "alpha": result.alpha,
             "q_alpha": result.q_alpha,
             "ltm_alpha": result.ltm_alpha,
+            "evaluation_design": result.evaluation_design,
+            "evaluation_unit": result.evaluation_unit,
             "excluded_centers": list(excluded_centers),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -130,7 +135,7 @@ def main() -> None:
         result = RI.compute(
             features=features,
             manifest=manifest,
-            mode=str(args.mode),
+            evaluation_design=str(args.evaluation_design),
             k_candidates=args.k_candidates,
             exclude_centers=excluded_centers,
         )
@@ -138,7 +143,7 @@ def main() -> None:
         result = MaRI.compute(
             features=features,
             manifest=manifest,
-            mode=str(args.mode),
+            evaluation_design=str(args.evaluation_design),
             k_candidates=args.k_candidates,
             tau=float(args.tau),
             exclude_centers=excluded_centers,
