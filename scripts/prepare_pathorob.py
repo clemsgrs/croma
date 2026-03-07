@@ -1,3 +1,11 @@
+"""Fetch PathoROB datasets from Hugging Face, convert parquet rows to local PNG tiles,
+and emit MaRI-compatible manifests aligned with PathoROB experimental configurations.
+
+Two-phase workflow:
+  Phase A (extract): download HF parquets → decode images → write source manifests
+  Phase B (align):   join source manifests with PathoROB metadata → write config manifests
+"""
+
 import argparse
 import base64
 import io
@@ -14,6 +22,11 @@ import pyarrow.parquet as pq
 from huggingface_hub import HfApi, snapshot_download
 from PIL import Image
 from progress_utils import progress_bar, progress_write, resolve_progress_mode
+
+
+# ---------------------------------------------------------------------------
+# Dataset specifications
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -45,6 +58,33 @@ DATASETS: dict[str, DatasetSpec] = {
         output_slug="tolkach_esca",
     ),
 }
+
+
+@dataclass(frozen=True)
+class AlignmentSpec:
+    """Maps a PathoROB metadata CSV to the output manifest it produces."""
+
+    metadata_filename: str
+    dataset_key: str
+    output_name: str
+    has_subset: bool  # True → subset col present; False → id_ood col instead
+
+
+ALIGNMENTS: list[AlignmentSpec] = [
+    AlignmentSpec("camelyon.csv", "camelyon", "pathorob-camelyon", has_subset=False),
+    AlignmentSpec("camelyon_reduced.csv", "camelyon", "pathorob-camelyon-reduced", has_subset=True),
+    AlignmentSpec("tcga_4x4.csv", "tcga", "pathorob-tcga-4x4", has_subset=False),
+    AlignmentSpec("tcga_2x2.csv", "tcga", "pathorob-tcga-2x2", has_subset=True),
+    AlignmentSpec("tolkach_esca.csv", "tolkach_esca", "pathorob-tolkach-esca", has_subset=False),
+    AlignmentSpec(
+        "tolkach_esca_reduced.csv", "tolkach_esca", "pathorob-tolkach-esca-reduced", has_subset=True
+    ),
+]
+
+
+# ---------------------------------------------------------------------------
+# Helpers: sanitization, column resolution, image decoding
+# ---------------------------------------------------------------------------
 
 
 def _sanitize_token(value: str) -> str:
@@ -105,14 +145,12 @@ def _infer_image_source_in_batch(
     required_columns: set[str],
     preferred_image_col: str | None,
 ) -> tuple[str | None, str | None, str | None]:
-    # 1) Prefer explicit image-like candidate columns when present.
     if _column_present_in_batch(batch, preferred_image_col):
         return preferred_image_col, None, None
     for cand in dataset.image_candidates:
         if _column_present_in_batch(batch, cand):
             return str(cand), None, None
 
-    # 2) Infer from sample values of non-required columns in this batch.
     bytes_col: str | None = None
     path_col: str | None = None
     dict_image_col: str | None = None
@@ -205,6 +243,11 @@ def _normalize_string(value: Any) -> str:
     return str(value).strip()
 
 
+# ---------------------------------------------------------------------------
+# Phase A: Extract — download parquets and write source manifests
+# ---------------------------------------------------------------------------
+
+
 def _convert_parquet_to_rows(
     *,
     dataset: DatasetSpec,
@@ -277,12 +320,16 @@ def _convert_parquet_to_rows(
 
             batch_len = len(sample_values)
             for i in range(batch_len):
-                sample_stem = _normalize_string(sample_values[i])
-                if not sample_stem:
-                    sample_stem = f"sample_{global_idx:08d}"
-                base_sample_id = (
-                    f"{sample_stem}__{str(shard_token)}" if shard_token is not None and str(shard_token).strip() else sample_stem
-                )
+                patch_id_raw = _normalize_string(sample_values[i])
+                if not patch_id_raw:
+                    patch_id_raw = f"sample_{global_idx:08d}"
+
+                slide = _normalize_string(slide_values[i])
+                # Build a unique sample_id from slide_id + patch_id (+ shard if multi-part)
+                base_sample_id = f"{slide}__{patch_id_raw}"
+                if shard_token is not None and str(shard_token).strip():
+                    base_sample_id = f"{base_sample_id}__{str(shard_token)}"
+
                 sample_id = base_sample_id
                 dup_idx = 1
                 while sample_id in seen_sample_ids:
@@ -300,7 +347,6 @@ def _convert_parquet_to_rows(
 
                 label = _normalize_string(label_values[i])
                 center = _normalize_string(center_values[i])
-                slide = _normalize_string(slide_values[i])
                 if not label or not center or not slide:
                     raise ValueError(
                         f"{parquet_path}: empty value at row {global_idx} "
@@ -327,12 +373,14 @@ def _convert_parquet_to_rows(
                         "label": label,
                         "medical_center": center,
                         "slide_id": slide,
+                        "patch_id": patch_id_raw,
                     }
                 )
                 global_idx += 1
                 bar.update(1)
 
-    out_df = pd.DataFrame(rows, columns=["sample_id", "image_path", "label", "medical_center", "slide_id"])
+    source_columns = ["sample_id", "image_path", "label", "medical_center", "slide_id", "patch_id"]
+    out_df = pd.DataFrame(rows, columns=source_columns)
     if out_df.empty:
         raise ValueError(f"{parquet_path}: conversion produced an empty manifest")
 
@@ -405,11 +453,226 @@ def _download_dataset_to_temp(
     return str(info.sha)
 
 
+SOURCE_COLUMNS = ["sample_id", "image_path", "label", "medical_center", "slide_id", "patch_id"]
+
+
+def extract_dataset(
+    *,
+    spec: DatasetSpec,
+    pathorob_root: Path,
+    manifest_dir: Path,
+    revision: str,
+    hf_token: str | None,
+    batch_size: int,
+    max_workers: int,
+    progress_on: bool,
+) -> Path:
+    """Phase A: download HF parquets, decode images, write source manifest.
+
+    Returns the path to the source manifest CSV.
+    """
+    dataset_root = pathorob_root / spec.output_slug
+    images_root = dataset_root / "images"
+    tmp_download = dataset_root / "_tmp_parquet_download"
+    dataset_root.mkdir(parents=True, exist_ok=True)
+    if images_root.exists():
+        shutil.rmtree(images_root)
+    images_root.mkdir(parents=True, exist_ok=True)
+
+    progress_write(f"[extract] dataset={spec.key} repo={spec.repo_id}", enabled=progress_on)
+    conversions: list[dict[str, Any]] = []
+    dataset_rows: list[dict[str, str]] = []
+    seen_sample_ids: set[str] = set()
+    seen_file_tokens: set[str] = set()
+    resolved_sha = ""
+    completed = False
+    try:
+        resolved_sha = _download_dataset_to_temp(
+            dataset=spec,
+            revision=revision,
+            tmp_dir=tmp_download,
+            token=hf_token,
+            max_workers=max_workers,
+        )
+        parquet_paths = sorted(tmp_download.rglob("*.parquet"))
+        if not parquet_paths:
+            raise FileNotFoundError(f"{spec.repo_id}: no parquet files found under {tmp_download}")
+
+        progress_write(
+            f"[extract] {spec.key}: found {len(parquet_paths)} parquet file(s) at revision {resolved_sha}",
+            enabled=progress_on,
+        )
+
+        multi_part = len(parquet_paths) > 1
+        for parquet_path in parquet_paths:
+            part_token = _sanitize_token(parquet_path.relative_to(tmp_download).with_suffix("").as_posix())
+            progress_write(
+                f"[extract] convert parquet={parquet_path.relative_to(tmp_download)}",
+                enabled=progress_on,
+            )
+            rows_part, conversion = _convert_parquet_to_rows(
+                dataset=spec,
+                parquet_path=parquet_path,
+                images_dir=images_root,
+                batch_size=batch_size,
+                progress_on=progress_on,
+                seen_sample_ids=seen_sample_ids,
+                seen_file_tokens=seen_file_tokens,
+                shard_token=part_token if multi_part else None,
+            )
+            dataset_rows.extend(rows_part)
+            conversions.append(conversion)
+
+        source_manifest = manifest_dir / f"pathorob-{spec.output_slug}-source.csv"
+        dataset_df = pd.DataFrame(dataset_rows, columns=SOURCE_COLUMNS)
+        if dataset_df.empty:
+            raise ValueError(f"{spec.repo_id}: merged dataset manifest would be empty")
+        if dataset_df["sample_id"].duplicated().any():
+            dup = int(dataset_df["sample_id"].duplicated().sum())
+            raise ValueError(
+                f"{spec.repo_id}: merged dataset has duplicate sample_id values after conversion ({dup})"
+            )
+        missing_paths = [p for p in dataset_df["image_path"].tolist() if not Path(p).exists()]
+        if missing_paths:
+            raise FileNotFoundError(
+                f"{spec.repo_id}: {len(missing_paths)} merged image paths are missing on disk"
+            )
+        source_manifest.parent.mkdir(parents=True, exist_ok=True)
+        dataset_df.to_csv(source_manifest, index=False)
+
+        total_rows = int(len(dataset_df))
+        meta_path = _write_dataset_meta(
+            dataset_root=dataset_root,
+            dataset=spec,
+            requested_revision=revision,
+            resolved_sha=resolved_sha,
+            manifest_path=source_manifest,
+            total_rows=total_rows,
+            conversions=conversions,
+        )
+        progress_write(
+            f"[extract] done dataset={spec.key} manifest={source_manifest} rows={total_rows} meta={meta_path}",
+            enabled=progress_on,
+        )
+        completed = True
+    finally:
+        if completed and tmp_download.exists():
+            shutil.rmtree(tmp_download, ignore_errors=True)
+        elif not completed and tmp_download.exists():
+            progress_write(
+                f"[extract] preserving download cache after failure: {tmp_download}",
+                enabled=progress_on,
+            )
+
+    return source_manifest
+
+
+# ---------------------------------------------------------------------------
+# Phase B: Align — join source manifests with PathoROB metadata
+# ---------------------------------------------------------------------------
+
+
+def align_dataset(
+    *,
+    alignment: AlignmentSpec,
+    metadata_dir: Path,
+    manifest_dir: Path,
+    progress_on: bool,
+) -> Path:
+    """Join a source manifest with a PathoROB metadata CSV and write an aligned manifest.
+
+    Returns the path to the aligned manifest CSV.
+    """
+    metadata_path = metadata_dir / alignment.metadata_filename
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"PathoROB metadata not found: {metadata_path}")
+
+    source_key = DATASETS[alignment.dataset_key].output_slug
+    source_manifest = manifest_dir / f"pathorob-{source_key}-source.csv"
+    if not source_manifest.exists():
+        raise FileNotFoundError(
+            f"Source manifest not found: {source_manifest}. Run extraction first (without --skip-extract)."
+        )
+
+    meta_df = pd.read_csv(metadata_path, dtype=str)
+    source_df = pd.read_csv(source_manifest, dtype=str)
+
+    # Ensure join keys are strings
+    for col in ("slide_id", "patch_id"):
+        meta_df[col] = meta_df[col].astype(str).str.strip()
+        source_df[col] = source_df[col].astype(str).str.strip()
+
+    meta_unique = meta_df
+
+    # Keep only join keys + sample_id/image_path from source (avoid column clashes)
+    source_join = source_df[["slide_id", "patch_id", "sample_id", "image_path"]]
+
+    joined = pd.merge(
+        meta_unique,
+        source_join,
+        on=["slide_id", "patch_id"],
+        how="inner",
+    )
+
+    n_meta = len(meta_unique)
+    n_matched = len(joined)
+    n_unmatched = n_meta - n_matched
+
+    progress_write(
+        f"[align] {alignment.output_name}: {n_matched}/{n_meta} matched"
+        + (f", {n_unmatched} unmatched" if n_unmatched > 0 else ""),
+        enabled=progress_on,
+    )
+
+    if n_unmatched > 0:
+        raise ValueError(
+            f"Alignment failed: {n_unmatched}/{n_meta} metadata rows have no match in source manifest "
+            f"for {alignment.output_name}."
+        )
+
+    # Use label/center from metadata (ground truth), image_path/sample_id from source
+    label_col = "biological_class" if "biological_class" in joined.columns else "label"
+    center_col = "medical_center"
+
+    # Build output columns depending on mode
+    base = {
+        "sample_id": joined["sample_id"],
+        "image_path": joined["image_path"],
+        "label": joined[label_col],
+        "medical_center": joined[center_col],
+        "slide_id": joined["slide_id"],
+    }
+
+    if alignment.has_subset:
+        base["subset"] = joined["subset"]
+    elif not alignment.has_subset:
+        base["id_ood"] = joined["subset"]
+
+    out_df = pd.DataFrame(base)
+
+    output_path = manifest_dir / f"{alignment.output_name}.csv"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(output_path, index=False)
+
+    progress_write(
+        f"[align] wrote {output_path} ({len(out_df)} rows)",
+        enabled=progress_on,
+    )
+
+
+    return output_path
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Fetch PathoROB datasets from Hugging Face, convert parquet rows to local PNG tiles, "
-            "and emit MaRI-compatible manifests."
+            "and emit MaRI-compatible manifests aligned with PathoROB experimental configurations."
         )
     )
     parser.add_argument(
@@ -429,7 +692,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--manifest-dir",
         type=Path,
-        default=Path("data"),
+        default=Path("data/pathorob/manifests"),
         help="Directory where generated manifests are written.",
     )
     parser.add_argument(
@@ -479,107 +742,50 @@ def main() -> int:
     manifest_dir = Path(args.manifest_dir).expanduser().resolve()
     manifest_dir.mkdir(parents=True, exist_ok=True)
 
+    metadata_dir = Path("data/pathorob/metadata")
+
     progress_write(f"[prepare] pathorob_root={pathorob_root}", enabled=progress_on)
     progress_write(f"[prepare] manifest_dir={manifest_dir}", enabled=progress_on)
+    progress_write(f"[prepare] metadata_dir={metadata_dir}", enabled=progress_on)
 
+    # Phase A: Extract
     for key in requested_keys:
         spec = DATASETS[key]
-        dataset_root = pathorob_root / spec.output_slug
-        images_root = dataset_root / "images"
-        tmp_download = dataset_root / "_tmp_parquet_download"
-        dataset_root.mkdir(parents=True, exist_ok=True)
-        if images_root.exists():
-            shutil.rmtree(images_root)
-        images_root.mkdir(parents=True, exist_ok=True)
+        extract_dataset(
+            spec=spec,
+            pathorob_root=pathorob_root,
+            manifest_dir=manifest_dir,
+            revision=str(args.revision),
+            hf_token=args.hf_token,
+            batch_size=int(args.batch_size),
+            max_workers=int(args.max_workers),
+            progress_on=progress_on,
+        )
 
-        progress_write(f"[prepare] dataset={spec.key} repo={spec.repo_id}", enabled=progress_on)
-        conversions: list[dict[str, Any]] = []
-        dataset_rows: list[dict[str, str]] = []
-        seen_sample_ids: set[str] = set()
-        seen_file_tokens: set[str] = set()
-        resolved_sha = ""
-        completed = False
-        try:
-            resolved_sha = _download_dataset_to_temp(
-                dataset=spec,
-                revision=str(args.revision),
-                tmp_dir=tmp_download,
-                token=args.hf_token,
-                max_workers=int(args.max_workers),
-            )
-            parquet_paths = sorted(tmp_download.rglob("*.parquet"))
-            if not parquet_paths:
-                raise FileNotFoundError(f"{spec.repo_id}: no parquet files found under {tmp_download}")
+    # Phase B: Align
+    if not metadata_dir.exists():
+        progress_write(
+            f"[prepare] PathoROB metadata dir not found: {metadata_dir}. Skipping alignment.",
+            enabled=progress_on,
+        )
+        return 0
 
+    for alignment in ALIGNMENTS:
+        if alignment.dataset_key not in requested_keys:
+            continue
+        metadata_path = metadata_dir / alignment.metadata_filename
+        if not metadata_path.exists():
             progress_write(
-                f"[prepare] {spec.key}: found {len(parquet_paths)} parquet file(s) at revision {resolved_sha}",
+                f"[align] skipping {alignment.output_name}: metadata file not found ({metadata_path})",
                 enabled=progress_on,
             )
-
-            multi_part = len(parquet_paths) > 1
-            for parquet_path in parquet_paths:
-                part_token = _sanitize_token(parquet_path.relative_to(tmp_download).with_suffix("").as_posix())
-                progress_write(
-                    f"[prepare] convert parquet={parquet_path.relative_to(tmp_download)}",
-                    enabled=progress_on,
-                )
-                rows_part, conversion = _convert_parquet_to_rows(
-                    dataset=spec,
-                    parquet_path=parquet_path,
-                    images_dir=images_root,
-                    batch_size=int(args.batch_size),
-                    progress_on=progress_on,
-                    seen_sample_ids=seen_sample_ids,
-                    seen_file_tokens=seen_file_tokens,
-                    shard_token=part_token if multi_part else None,
-                )
-                dataset_rows.extend(rows_part)
-                conversions.append(conversion)
-
-            manifest_path = manifest_dir / f"pathorob-{spec.output_slug}.csv"
-            dataset_df = pd.DataFrame(
-                dataset_rows,
-                columns=["sample_id", "image_path", "label", "medical_center", "slide_id"],
-            )
-            if dataset_df.empty:
-                raise ValueError(f"{spec.repo_id}: merged dataset manifest would be empty")
-            if dataset_df["sample_id"].duplicated().any():
-                dup = int(dataset_df["sample_id"].duplicated().sum())
-                raise ValueError(
-                    f"{spec.repo_id}: merged dataset has duplicate sample_id values after conversion ({dup})"
-                )
-            missing_paths = [p for p in dataset_df["image_path"].tolist() if not Path(p).exists()]
-            if missing_paths:
-                raise FileNotFoundError(
-                    f"{spec.repo_id}: {len(missing_paths)} merged image paths are missing on disk"
-                )
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
-            dataset_df.to_csv(manifest_path, index=False)
-
-            total_rows = int(len(dataset_df))
-            meta_path = _write_dataset_meta(
-                dataset_root=dataset_root,
-                dataset=spec,
-                requested_revision=str(args.revision),
-                resolved_sha=resolved_sha,
-                manifest_path=manifest_path,
-                total_rows=total_rows,
-                conversions=conversions,
-            )
-            progress_write(
-                f"[prepare] done dataset={spec.key} manifest={manifest_path} rows={total_rows} meta={meta_path}",
-                enabled=progress_on,
-            )
-            completed = True
-        finally:
-            # Remove parquet payloads only after successful conversion.
-            if completed and tmp_download.exists():
-                shutil.rmtree(tmp_download, ignore_errors=True)
-            elif not completed and tmp_download.exists():
-                progress_write(
-                    f"[prepare] preserving download cache after failure: {tmp_download}",
-                    enabled=progress_on,
-                )
+            continue
+        align_dataset(
+            alignment=alignment,
+            metadata_dir=metadata_dir,
+            manifest_dir=manifest_dir,
+            progress_on=progress_on,
+        )
 
     return 0
 
