@@ -21,28 +21,30 @@ from mari import CCRR, RI, MaRI
 manifest = pd.read_csv("data/prostate-shift-binary.csv")
 features = np.load("embeddings.npy")  # shape: (N, D)
 
-ri = RI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21])
-mari = MaRI.compute(features, manifest, mode="paired", k_candidates=[5, 11, 21], tau=0.2)
+ri = RI.compute(features, manifest, evaluation_design="paired_2x2", k_candidates=[5, 11, 21])
+mari = MaRI.compute(features, manifest, evaluation_design="paired_2x2", k_candidates=[5, 11, 21], tau=0.2)
 ccrr = CCRR.compute(
     features,
     manifest,
-    mode="paired",
+    evaluation_design="paired_2x2",
     m=1,
 )
 # optional: exclude one or more centers before RI/MaRI computation
 mari_no_center_x = MaRI.compute(
     features,
     manifest,
-    mode="paired",
+    evaluation_design="paired_2x2",
     k_candidates=[5, 11, 21],
     tau=0.2,
     exclude_centers=["CENTER_X"],
 )
 ```
 
-`sample_values` contains informative per-sample scores only:
-- samples with undefined per-sample ratio (`SO_i + OS_i = 0`) are excluded
-- in `mode="paired"`, repeated appearances of the same sample across valid 2x2 pairs are averaged to one value per sample
+`sample_values` contains informative evaluation-unit scores only:
+- samples/occurrences with undefined per-row ratio (`SO_i + OS_i = 0`) are excluded
+- `sample_values_aligned` preserves the full aligned output with `NaN` for undefined rows
+- `paired_2x2` is occurrence-level and faithful to the manifest-defined PathoROB subsets
+- `dataset_wide` is sample-level and evaluates the retained dataset once
 
 CCRR neighbor search is fully automatic:
 - expands neighborhood size and retries unresolved samples automatically
@@ -55,9 +57,9 @@ Required manifest columns:
 - `medical_center`
 - `slide_id`
 
-`mode` is required and must be one of:
-- `"paired"`: 2x2 pairing and aggregation.
-- `"global"`: single full-dataset evaluation without 2x2 decomposition.
+`evaluation_design` is required and must be one of:
+- `"paired_2x2"`: explicit manifest-defined 2x2 subsets; requires a `subset` column.
+- `"dataset_wide"`: single full-dataset evaluation without 2x2 decomposition.
 
 ## Why use 2x2 pairs
 
@@ -65,12 +67,12 @@ RI/MaRI/CCRR compare two competing neighbor signals:
 - `SO`: same class, opposite center (desired)
 - `OS`: opposite class, same center (undesired)
 
-To keep this comparison meaningful and unbiased, the `"paired"` mode builds each evaluation subset as a valid **2x2 pair**:
+To keep this comparison meaningful and unbiased, the `"paired_2x2"` design requires each evaluation subset to be a valid **2x2 pair**:
 - 2 classes
 - 2 centers
 - all 4 class-center cells present
 
-This avoids one-vs-rest base-rate bias (where large complements dominate neighbors), keeping the metric interpretable.
+The paired implementation does not infer all valid pairings from an arbitrary manifest. It only uses the explicit subset memberships provided in the manifest, matching the PathoROB contract.
 
 ## Unified Benchmark
 
@@ -119,17 +121,17 @@ Model-specific dependency note:
 With direct imports, missing benchmark dependencies fail at import/runtime immediately.
 
 Defaults:
-- `--mode global`
+- `--evaluation-design paired_2x2`
 - `--k-candidates 3,5,7,10,15,20,25`
 - `--tau 0.2`
-- `--ccrr-m-candidates 1,5,10,15,20`
+- `--ccrr-m-max 20`
 - `--ccrr-alpha 0.10`
 - `--progress auto` (show tqdm bars on TTY; plain logs otherwise)
 
 Optional:
 - `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
 - `--exclude-center CENTER_X` (repeatable) to exclude one or more centers from evaluation.
-- `--ccrr-m-candidates ...` to override CCRR sweep values (must include `1`).
+- `--evaluation-design dataset_wide` to run one full-dataset evaluation instead of subset-defined paired evaluation.
 - `--ccrr-alpha ...` to choose the CCRR tail percentile used for `Q_alpha` and `LTM_alpha`.
 - `--recompute-metrics` to bypass metric cache reads and force full metric recomputation.
 - `--progress off` to force log-only output (recommended for CI/log redirects).
@@ -163,6 +165,7 @@ Outputs:
   - `<output-dir>/<manifest_stem>/plots/benchmark_6panel_summary.png`
 
 `k_sweep_metrics.*` stores one row per `(model, k)` with:
+- `evaluation_design`, `evaluation_unit`
 - biological kNN balanced accuracy at `k` (`knn_bacc`)
 - center kNN balanced accuracy at `k` (`knn_center_bacc`)
 - RI at the same `k`
@@ -172,6 +175,7 @@ Outputs:
 - excluded center signature (`excluded_centers`; comma-separated normalized names, empty when not used)
 
 `metrics.csv`/`.json` additionally include model-level kNN summaries:
+- `evaluation_design`, `evaluation_unit`
 - `bio_knn_bacc`: biological balanced accuracy at `selected_k`
 - `center_knn_bacc`: center balanced accuracy at `selected_k_center`
 - `selected_k_center`: center task selected `k`
@@ -182,10 +186,15 @@ Outputs:
 - `ccrr_search`: includes CCRR search settings and alpha (`thr=...;start=...;growth=...;alpha=...`)
 
 `ccrr_m_sweep_metrics.*` stores one row per `(model, m)` with:
+- `evaluation_design`, `evaluation_unit`
 - `ccrr`, `ccrr_std`
 - `ccrr_undefined_frac`
 
-`sample_distributions/` stores raw per-sample RI/MaRI/CCRR values for each model.
+`per_sample_metrics.*` stores one row per aligned evaluation unit:
+- `dataset_wide`: one row per retained sample (`evaluation_unit="sample"`, `subset="dataset"`)
+- `paired_2x2`: one row per retained subset occurrence (`evaluation_unit="occurrence"`, explicit `subset`)
+
+`sample_distributions/` stores raw informative RI/MaRI/CCRR values for each model.
 
 `metrics.csv`/`.json` also include:
 - `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
@@ -228,6 +237,6 @@ You can also override with:
   - changing `tau` recomputes only MaRI artifacts
   - changing CCRR search parameters recomputes only CCRR artifacts
   - changing `k` candidates recomputes kNN/RI/MaRI artifacts only
-  - changing `mode` recomputes RI/MaRI/CCRR artifacts (kNN artifacts are reused)
+  - changing `evaluation_design` recomputes kNN/RI/MaRI/CCRR artifacts
 - Report files (`metrics.csv`, `k_sweep_metrics.csv`, `ccrr_m_sweep_metrics.csv`) are rewritten every run from current artifacts.
 - `--recompute-metrics` bypasses cache reads but still refreshes cache artifacts.

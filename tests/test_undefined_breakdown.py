@@ -5,7 +5,7 @@ import pytest
 from mari import MaRI, RI
 
 
-def _manifest() -> pd.DataFrame:
+def _paired_manifest() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "sample_id": [f"s{i}" for i in range(8)],
@@ -14,11 +14,12 @@ def _manifest() -> pd.DataFrame:
             "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
             "slide_id": [f"slide-{i}" for i in range(8)],
             "dataset": ["toy"] * 8,
+            "subset": ["pair0"] * 8,
         }
     )
 
 
-def _features() -> np.ndarray:
+def _paired_features() -> np.ndarray:
     return np.array(
         [
             [1.00, 0.00, 0.00, 0.00],
@@ -29,6 +30,31 @@ def _features() -> np.ndarray:
             [0.05, 0.95, 0.00, 0.00],
             [0.08, 0.92, 0.00, 0.00],
             [0.10, 0.90, 0.00, 0.00],
+        ],
+        dtype=float,
+    )
+
+
+def _dataset_wide_undefined_manifest() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "sample_id": ["a1", "a2", "b1", "b2"],
+            "image_path": [f"/tmp/{i}.png" for i in range(4)],
+            "label": ["A", "A", "B", "B"],
+            "medical_center": ["C1", "C1", "C2", "C2"],
+            "slide_id": [f"slide-{i}" for i in range(4)],
+            "dataset": ["toy"] * 4,
+        }
+    )
+
+
+def _dataset_wide_undefined_features() -> np.ndarray:
+    return np.array(
+        [
+            [1.00, 0.00],
+            [0.99, 0.01],
+            [0.00, 1.00],
+            [0.01, 0.99],
         ],
         dtype=float,
     )
@@ -96,15 +122,17 @@ def test_no_valid_neighbors_are_classified_as_mixed() -> None:
     assert undefined_type.tolist() == [3, 3]
 
 
-def test_global_undefined_breakdown_sums_to_undefined_fraction() -> None:
+def test_dataset_wide_undefined_fraction_uses_sample_denominator() -> None:
     result = RI.compute(
-        features=_features(),
-        manifest=_manifest(),
-        mode="global",
-        k_candidates=[1, 3],
-        random_state=0,
+        features=_dataset_wide_undefined_features(),
+        manifest=_dataset_wide_undefined_manifest(),
+        evaluation_design="dataset_wide",
+        k_candidates=[1],
     )
 
+    assert result.evaluation_design == "dataset_wide"
+    assert result.evaluation_unit == "sample"
+    assert result.undefined_frac == pytest.approx(1.0)
     assert result.undefined_frac == pytest.approx(
         result.ss_dominated_undefined_frac
         + result.oo_dominated_undefined_frac
@@ -140,15 +168,19 @@ def test_mari_uses_the_same_undefined_type_classification_as_ri() -> None:
     np.testing.assert_array_equal(undef_ri, undef_mari)
 
 
-def test_paired_mode_breakdown_is_reported_as_nan() -> None:
+def test_paired_breakdown_sums_to_occurrence_weighted_undefined_fraction() -> None:
     result = RI.compute(
-        features=_features(),
-        manifest=_manifest(),
-        mode="paired",
+        features=_paired_features(),
+        manifest=_paired_manifest(),
+        evaluation_design="paired_2x2",
         k_candidates=[1, 3],
         random_state=0,
     )
 
-    assert np.isnan(result.ss_dominated_undefined_frac)
-    assert np.isnan(result.oo_dominated_undefined_frac)
-    assert np.isnan(result.mixed_undefined_frac)
+    assert result.evaluation_design == "paired_2x2"
+    assert result.evaluation_unit == "occurrence"
+    assert result.undefined_frac == pytest.approx(
+        result.ss_dominated_undefined_frac
+        + result.oo_dominated_undefined_frac
+        + result.mixed_undefined_frac
+    )
