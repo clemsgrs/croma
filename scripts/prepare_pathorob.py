@@ -19,9 +19,22 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from huggingface_hub import HfApi, snapshot_download
-from PIL import Image
 from progress_utils import progress_bar, progress_write, resolve_progress_mode
+
+try:
+    from huggingface_hub import HfApi, snapshot_download
+except ModuleNotFoundError as exc:
+    if exc.name != "huggingface_hub":
+        raise
+    HfApi = None
+    snapshot_download = None
+
+try:
+    from PIL import Image
+except ModuleNotFoundError as exc:
+    if exc.name not in {"PIL", "PIL.Image"}:
+        raise
+    Image = None
 
 try:
     import pyarrow.parquet as pq
@@ -244,6 +257,11 @@ def _batch_column_values(
 
 
 def _decode_to_rgb_image(value: Any, parquet_parent: Path) -> "Image.Image":
+    if Image is None:
+        raise ModuleNotFoundError(
+            "Pillow is required for PathoROB parquet extraction. "
+            "Install it to run scripts/prepare_pathorob.py extract/full."
+        )
     raw = _to_bytes(value, parquet_parent)
     img = Image.open(io.BytesIO(raw))
     img.load()
@@ -259,6 +277,15 @@ def _require_pyarrow_parquet() -> Any:
             "Install it to run scripts/prepare_pathorob.py extract/full."
         )
     return pq
+
+
+def _require_huggingface_hub() -> tuple[Any, Any]:
+    if HfApi is None or snapshot_download is None:
+        raise ModuleNotFoundError(
+            "huggingface_hub is required for PathoROB dataset download. "
+            "Install it to run scripts/prepare_pathorob.py extract/full."
+        )
+    return HfApi, snapshot_download
 
 
 def _normalize_string(value: Any) -> str:
@@ -509,7 +536,8 @@ def _download_dataset_to_temp(
     token: str | None,
     max_workers: int,
 ) -> str:
-    api = HfApi(token=token)
+    hub_api_cls, hub_snapshot_download = _require_huggingface_hub()
+    api = hub_api_cls(token=token)
     info = api.dataset_info(dataset.repo_id, revision=revision)
 
     if tmp_dir.exists():
@@ -519,7 +547,7 @@ def _download_dataset_to_temp(
         shutil.rmtree(tmp_dir)
     tmp_dir.mkdir(parents=True, exist_ok=True)
 
-    snapshot_download(
+    hub_snapshot_download(
         repo_id=dataset.repo_id,
         repo_type="dataset",
         revision=revision,
