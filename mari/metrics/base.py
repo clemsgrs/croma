@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 
 from mari.metrics.neighbors import (
+    _balanced_accuracy_by_k_from_prepared_neighbors,
     _knn_balanced_accuracy_by_k,
     _normalize_k_values,
     _prepare_neighbors,
@@ -54,11 +55,29 @@ class _PreparedSubsetInputs:
 
 
 @dataclass(frozen=True)
+class _PreparedNeighborSubset:
+    subset_id: str
+    source_indices: np.ndarray
+    labels: np.ndarray
+    centers: np.ndarray
+    slide_ids: np.ndarray
+    neigh_idx: np.ndarray
+    neigh_dist: np.ndarray
+    valid_counts: np.ndarray
+
+
+@dataclass(frozen=True)
 class _UndefinedBreakdown:
     total_frac: float
     ss_frac: float
     oo_frac: float
     mixed_frac: float
+
+
+@dataclass(frozen=True)
+class _RobustnessArtifacts:
+    curve: dict[int, float]
+    result: RobustnessResult | None = None
 
 
 class BaseRobustnessIndex(ABC):
@@ -264,6 +283,7 @@ class BaseRobustnessIndex(ABC):
         *,
         features: np.ndarray,
         subset: EvaluationSubset,
+        assume_normalized: bool = False,
     ) -> _PreparedSubsetInputs | None:
         subset_rows = subset.rows
         if len(subset_rows) <= 1:
@@ -271,7 +291,8 @@ class BaseRobustnessIndex(ABC):
 
         source_indices = subset_rows["source_sample_index"].to_numpy(dtype=int)
         subset_features = features[source_indices]
-        subset_features = subset_features / (np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12)
+        if not assume_normalized:
+            subset_features = subset_features / (np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12)
 
         return _PreparedSubsetInputs(
             subset_id=str(subset.subset_id),
@@ -307,6 +328,117 @@ class BaseRobustnessIndex(ABC):
                 warn_context=f"{dataset_name} subset k-selection",
             )
             all_scores.append(scores)
+
+        if not all_scores:
+            raise RuntimeError(f"{dataset_name}: subset k-selection failed on all subsets")
+
+        all_k = sorted({k for scores in all_scores for k in scores})
+        averaged: dict[int, float] = {}
+        for k in all_k:
+            vals = [scores[k] for scores in all_scores if k in scores]
+            if vals:
+                averaged[k] = float(np.mean(vals))
+        return _select_k_from_balanced_accuracy(k_values=all_k, scores=averaged)
+
+    @classmethod
+    def _prepare_paired_subset_neighbor_cache(
+        cls,
+        *,
+        features: np.ndarray,
+        subsets: list[EvaluationSubset],
+        k_values: list[int] | tuple[int, ...],
+    ) -> list[_PreparedNeighborSubset]:
+        candidates = _normalize_k_values(k_values)
+        kmax = int(max(candidates))
+        prepared_subsets: list[_PreparedNeighborSubset] = []
+        for subset in subsets:
+            prepared = cls._prepare_subset_inputs(
+                features=features,
+                subset=subset,
+                assume_normalized=True,
+            )
+            if prepared is None:
+                continue
+            neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
+                prepared.features,
+                prepared.slide_ids,
+                kmax,
+            )
+            prepared_subsets.append(
+                _PreparedNeighborSubset(
+                    subset_id=prepared.subset_id,
+                    source_indices=prepared.source_indices,
+                    labels=prepared.labels,
+                    centers=prepared.centers,
+                    slide_ids=prepared.slide_ids,
+                    neigh_idx=neigh_idx,
+                    neigh_dist=neigh_dist,
+                    valid_counts=valid_counts,
+                )
+            )
+        return prepared_subsets
+
+    @classmethod
+    def _knn_balanced_accuracy_by_k_from_prepared_subsets(
+        cls,
+        *,
+        prepared_subsets: list[_PreparedNeighborSubset],
+        target: str,
+        k_values: list[int] | tuple[int, ...],
+        warn_context: str,
+    ) -> dict[int, float]:
+        candidates = _normalize_k_values(k_values)
+        subset_scores: list[dict[int, float]] = []
+        for prepared in prepared_subsets:
+            if str(target) == "label":
+                encoded = prepared.labels
+            elif str(target) == "medical_center":
+                encoded = prepared.centers
+            else:
+                raise ValueError(f"Unsupported prepared-subset target: {target}")
+            valid_k = [int(k) for k in candidates if int(k) < len(prepared.source_indices)]
+            if not valid_k:
+                continue
+            subset_scores.append(
+                _balanced_accuracy_by_k_from_prepared_neighbors(
+                    labels=encoded,
+                    neigh_idx=prepared.neigh_idx,
+                    valid_counts=prepared.valid_counts,
+                    k_values=valid_k,
+                )
+            )
+
+        if not subset_scores:
+            raise RuntimeError(f"{warn_context}: no evaluable paired_2x2 subsets remain for kNN curves")
+
+        out: dict[int, float] = {}
+        for k in candidates:
+            vals = [scores[int(k)] for scores in subset_scores if int(k) in scores]
+            if vals:
+                out[int(k)] = float(np.mean(vals))
+        return out
+
+    @classmethod
+    def _select_subset_k_from_prepared_subsets(
+        cls,
+        *,
+        prepared_subsets: list[_PreparedNeighborSubset],
+        k_candidates: list[int],
+        dataset_name: str,
+    ) -> int:
+        all_scores: list[dict[int, float]] = []
+        for prepared in prepared_subsets:
+            sub_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
+            if not sub_candidates:
+                continue
+            all_scores.append(
+                _balanced_accuracy_by_k_from_prepared_neighbors(
+                    labels=prepared.labels,
+                    neigh_idx=prepared.neigh_idx,
+                    valid_counts=prepared.valid_counts,
+                    k_values=sub_candidates,
+                )
+            )
 
         if not all_scores:
             raise RuntimeError(f"{dataset_name}: subset k-selection failed on all subsets")
@@ -378,93 +510,21 @@ class BaseRobustnessIndex(ABC):
         random_state: int = 0,
         **kwargs: float,
     ) -> RobustnessResult:
-        cls._validate_inputs(features, manifest)
-
-        df = manifest.reset_index(drop=True).copy()
-        dataset_name = cls._infer_dataset_name(df)
-        evaluation_design = _normalize_evaluation_design(evaluation_design)
-        if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
-            validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
-        features, df = cls._apply_center_exclusion(
+        artifacts = cls._compute_artifacts(
             features=features,
-            manifest=df,
-            dataset_name=dataset_name,
+            manifest=manifest,
+            k_values=k_candidates,
+            evaluation_design=evaluation_design,
             exclude_centers=exclude_centers,
-        )
-        candidates = _normalize_k_values(k_candidates)
-
-        if evaluation_design == EVALUATION_DESIGN_DATASET_WIDE:
-            return cls._compute_dataset_wide(
-                features=features,
-                df=df,
-                dataset_name=dataset_name,
-                k_candidates=candidates,
-                **kwargs,
-            )
-
-        subsets = cls._build_subsets(
-            df=df,
-            dataset_name=dataset_name,
             max_pairs=max_pairs,
             random_state=random_state,
-        )
-        k = cls._select_subset_k(
-            features=features,
-            subsets=subsets,
-            k_candidates=candidates,
-            dataset_name=dataset_name,
-        )
-        by_k = cls._score_subsets_by_k(
-            features=features,
-            subsets=subsets,
-            k_values=[int(k)],
-            dataset_name=dataset_name,
+            include_selected_result=True,
+            warn_selected_result=True,
             **kwargs,
         )
-        (
-            pooled,
-            pair_arr,
-            sample_arr,
-            occurrence_values,
-            occurrence_defined_mask,
-            undef_type_arr,
-            occurrence_subsets,
-            occurrence_source_indices,
-            undefined_frac,
-            ss_dominated_undefined_frac,
-            oo_dominated_undefined_frac,
-            mixed_undefined_frac,
-        ) = by_k[int(k)]
-
-        cls._warn_undefined_occurrences(
-            dataset_name=dataset_name,
-            evaluation_unit="occurrence",
-            undefined_frac=undefined_frac,
-            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
-            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
-            mixed_undefined_frac=mixed_undefined_frac,
-        )
-
-        return RobustnessResult(
-            dataset=dataset_name,
-            k=int(k),
-            value=float(pooled),
-            std=float(pair_arr.std(ddof=0)),
-            n_pairs=int(len(pair_arr)),
-            pair_values=pair_arr,
-            sample_values=sample_arr,
-            sample_values_aligned=occurrence_values,
-            occurrence_defined_mask=occurrence_defined_mask,
-            sample_undefined_types=undef_type_arr,
-            occurrence_subsets=occurrence_subsets,
-            occurrence_source_indices=occurrence_source_indices,
-            undefined_frac=undefined_frac,
-            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
-            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
-            mixed_undefined_frac=mixed_undefined_frac,
-            evaluation_design=evaluation_design,
-            evaluation_unit="occurrence",
-        )
+        if artifacts.result is None:
+            raise RuntimeError("RI/MaRI compute did not produce a selected-k result")
+        return artifacts.result
 
     @classmethod
     def _compute_curve(
@@ -479,6 +539,94 @@ class BaseRobustnessIndex(ABC):
         random_state: int = 0,
         **kwargs: float,
     ) -> dict[int, float]:
+        artifacts = cls._compute_artifacts(
+            features=features,
+            manifest=manifest,
+            k_values=k_values,
+            evaluation_design=evaluation_design,
+            exclude_centers=exclude_centers,
+            max_pairs=max_pairs,
+            random_state=random_state,
+            include_selected_result=False,
+            warn_selected_result=False,
+            **kwargs,
+        )
+        return artifacts.curve
+
+    @classmethod
+    def _build_result_from_by_k_entry(
+        cls,
+        *,
+        dataset_name: str,
+        evaluation_design: str,
+        evaluation_unit: str,
+        k: int,
+        scored_entry: tuple[
+            float,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            float,
+            float,
+            float,
+            float,
+        ],
+    ) -> RobustnessResult:
+        (
+            pooled,
+            pair_arr,
+            sample_arr,
+            sample_values_aligned,
+            occurrence_defined_mask,
+            undefined_types,
+            occurrence_subsets,
+            occurrence_source_indices,
+            undefined_frac,
+            ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac,
+            mixed_undefined_frac,
+        ) = scored_entry
+        return RobustnessResult(
+            dataset=dataset_name,
+            k=int(k),
+            value=float(pooled),
+            std=float(pair_arr.std(ddof=0)),
+            n_pairs=int(len(pair_arr)),
+            pair_values=pair_arr,
+            sample_values=sample_arr,
+            sample_values_aligned=sample_values_aligned,
+            occurrence_defined_mask=occurrence_defined_mask,
+            sample_undefined_types=undefined_types,
+            occurrence_subsets=occurrence_subsets,
+            occurrence_source_indices=occurrence_source_indices,
+            undefined_frac=undefined_frac,
+            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
+            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
+            mixed_undefined_frac=mixed_undefined_frac,
+            evaluation_design=evaluation_design,
+            evaluation_unit=evaluation_unit,
+        )
+
+    @classmethod
+    def _compute_artifacts(
+        cls,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        *,
+        k_values: list[int] | tuple[int, ...],
+        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
+        exclude_centers: object | None = None,
+        max_pairs: int | None = None,
+        random_state: int = 0,
+        selected_k: int | None = None,
+        include_selected_result: bool = True,
+        warn_selected_result: bool = False,
+        **kwargs: float,
+    ) -> _RobustnessArtifacts:
         cls._validate_inputs(features, manifest)
 
         df = manifest.reset_index(drop=True).copy()
@@ -493,28 +641,69 @@ class BaseRobustnessIndex(ABC):
             exclude_centers=exclude_centers,
         )
         candidates = _normalize_k_values(k_values)
+
         if evaluation_design == EVALUATION_DESIGN_DATASET_WIDE:
-            return cls._compute_curve_dataset_wide(
-                features=features,
-                df=df,
-                dataset_name=dataset_name,
+            prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
+            by_k = cls._score_dataset_wide_by_k(
+                prepared=prepared,
                 k_values=candidates,
+                dataset_name=dataset_name,
                 **kwargs,
             )
-        subsets = cls._build_subsets(
-            df=df,
-            dataset_name=dataset_name,
-            max_pairs=max_pairs,
-            random_state=random_state,
-        )
-        by_k = cls._score_subsets_by_k(
-            features=features,
-            subsets=subsets,
-            k_values=candidates,
-            dataset_name=dataset_name,
-            **kwargs,
-        )
-        return {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
+            evaluation_unit = "sample"
+            if include_selected_result and selected_k is None:
+                selected_k = cls._select_dataset_wide_k(
+                    prepared=prepared,
+                    k_candidates=candidates,
+                    dataset_name=dataset_name,
+                )
+        else:
+            subsets = cls._build_subsets(
+                df=df,
+                dataset_name=dataset_name,
+                max_pairs=max_pairs,
+                random_state=random_state,
+            )
+            by_k = cls._score_subsets_by_k(
+                features=features,
+                subsets=subsets,
+                k_values=candidates,
+                dataset_name=dataset_name,
+                **kwargs,
+            )
+            evaluation_unit = "occurrence"
+            if include_selected_result and selected_k is None:
+                selected_k = cls._select_subset_k(
+                    features=features,
+                    subsets=subsets,
+                    k_candidates=candidates,
+                    dataset_name=dataset_name,
+                )
+
+        curve = {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
+        result: RobustnessResult | None = None
+        if include_selected_result:
+            if selected_k is None:
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
+            if int(selected_k) not in by_k:
+                raise RuntimeError(f"selected_k={selected_k} is not available in scored-by-k results")
+            result = cls._build_result_from_by_k_entry(
+                dataset_name=dataset_name,
+                evaluation_design=evaluation_design,
+                evaluation_unit=evaluation_unit,
+                k=int(selected_k),
+                scored_entry=by_k[int(selected_k)],
+            )
+            if warn_selected_result:
+                cls._warn_undefined_occurrences(
+                    dataset_name=dataset_name,
+                    evaluation_unit=evaluation_unit,
+                    undefined_frac=result.undefined_frac,
+                    ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
+                    oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
+                    mixed_undefined_frac=result.mixed_undefined_frac,
+                )
+        return _RobustnessArtifacts(curve=curve, result=result)
 
     @classmethod
     def _prepare_dataset_wide_inputs(
@@ -522,9 +711,14 @@ class BaseRobustnessIndex(ABC):
         *,
         features: np.ndarray,
         df: pd.DataFrame,
+        assume_normalized: bool = False,
     ) -> _PreparedSubsetInputs:
         source_indices = np.arange(len(df), dtype=int)
-        normalized_features = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-12)
+        normalized_features = (
+            features
+            if assume_normalized
+            else features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-12)
+        )
         return _PreparedSubsetInputs(
             subset_id="dataset",
             source_indices=source_indices,
@@ -607,92 +801,6 @@ class BaseRobustnessIndex(ABC):
         return out
 
     @classmethod
-    def _compute_dataset_wide(
-        cls,
-        *,
-        features: np.ndarray,
-        df: pd.DataFrame,
-        dataset_name: str,
-        k_candidates: list[int],
-        **kwargs: float,
-    ) -> RobustnessResult:
-        prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
-        k = cls._select_dataset_wide_k(
-            prepared=prepared,
-            k_candidates=k_candidates,
-            dataset_name=dataset_name,
-        )
-        by_k = cls._score_dataset_wide_by_k(
-            prepared=prepared,
-            k_values=[int(k)],
-            dataset_name=dataset_name,
-            **kwargs,
-        )
-        (
-            pooled,
-            pair_arr,
-            sample_arr,
-            sample_values_aligned,
-            occurrence_defined_mask,
-            undefined_types,
-            occurrence_subsets,
-            occurrence_source_indices,
-            undefined_frac,
-            ss_dominated_undefined_frac,
-            oo_dominated_undefined_frac,
-            mixed_undefined_frac,
-        ) = by_k[int(k)]
-
-        cls._warn_undefined_occurrences(
-            dataset_name=dataset_name,
-            evaluation_unit="sample",
-            undefined_frac=undefined_frac,
-            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
-            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
-            mixed_undefined_frac=mixed_undefined_frac,
-        )
-
-        return RobustnessResult(
-            dataset=dataset_name,
-            k=int(k),
-            value=float(pooled),
-            std=float(pair_arr.std(ddof=0)),
-            n_pairs=1,
-            pair_values=pair_arr,
-            sample_values=sample_arr,
-            sample_values_aligned=sample_values_aligned,
-            occurrence_defined_mask=occurrence_defined_mask,
-            sample_undefined_types=undefined_types,
-            occurrence_subsets=occurrence_subsets,
-            occurrence_source_indices=occurrence_source_indices,
-            undefined_frac=undefined_frac,
-            ss_dominated_undefined_frac=ss_dominated_undefined_frac,
-            oo_dominated_undefined_frac=oo_dominated_undefined_frac,
-            mixed_undefined_frac=mixed_undefined_frac,
-            evaluation_design=EVALUATION_DESIGN_DATASET_WIDE,
-            evaluation_unit="sample",
-        )
-
-    @classmethod
-    def _compute_curve_dataset_wide(
-        cls,
-        *,
-        features: np.ndarray,
-        df: pd.DataFrame,
-        dataset_name: str,
-        k_values: list[int],
-        **kwargs: float,
-    ) -> dict[int, float]:
-        prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
-        by_k = cls._score_dataset_wide_by_k(
-            prepared=prepared,
-            k_values=k_values,
-            dataset_name=dataset_name,
-            **kwargs,
-        )
-        return {int(k): float(by_k[int(k)][0]) for k in k_values if int(k) in by_k}
-
-    @classmethod
     def _build_subsets(
         cls,
         *,
@@ -706,6 +814,196 @@ class BaseRobustnessIndex(ABC):
         if not subsets:
             raise RuntimeError(f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for RI/MaRI")
         return subsets
+
+    @classmethod
+    def _score_prepared_subsets_by_k(
+        cls,
+        *,
+        prepared_subsets: list[_PreparedNeighborSubset],
+        k_values: list[int] | tuple[int, ...],
+        dataset_name: str,
+        **kwargs: float,
+    ) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]]:
+        candidates = _normalize_k_values(k_values)
+
+        per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
+        per_k_so_total: dict[int, float] = {int(k): 0.0 for k in candidates}
+        per_k_os_total: dict[int, float] = {int(k): 0.0 for k in candidates}
+        per_k_occurrence_values: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_defined: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_types: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_subsets: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_sources: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_undefined_counts: dict[int, dict[int, int]] = {int(k): {1: 0, 2: 0, 3: 0} for k in candidates}
+        per_k_occurrence_total: dict[int, int] = {int(k): 0 for k in candidates}
+
+        for prepared in prepared_subsets:
+            all_k_results = cls._score_all_k_from_neighbors(
+                labels=prepared.labels,
+                centers=prepared.centers,
+                neigh_idx=prepared.neigh_idx,
+                neigh_dist=prepared.neigh_dist,
+                valid_counts=prepared.valid_counts,
+                k_values=candidates,
+                **kwargs,
+            )
+
+            for k in candidates:
+                pair_value, per_sample, informative_mask, undefined_type, so_arr, os_arr = all_k_results[int(k)]
+                per_k_pair_values[int(k)].append(float(pair_value))
+                per_k_occurrence_total[int(k)] += int(len(per_sample))
+                per_k_so_total[int(k)] += float(so_arr.sum())
+                per_k_os_total[int(k)] += float(os_arr.sum())
+                per_k_occurrence_values[int(k)].append(np.asarray(per_sample, dtype=float))
+                per_k_occurrence_defined[int(k)].append(np.asarray(informative_mask, dtype=bool))
+                per_k_occurrence_types[int(k)].append(np.asarray(undefined_type, dtype=int))
+                per_k_occurrence_subsets[int(k)].append(np.full(len(per_sample), prepared.subset_id, dtype=object))
+                per_k_occurrence_sources[int(k)].append(prepared.source_indices)
+                per_k_undefined_counts[int(k)][1] += int(np.count_nonzero(undefined_type == 1))
+                per_k_undefined_counts[int(k)][2] += int(np.count_nonzero(undefined_type == 2))
+                per_k_undefined_counts[int(k)][3] += int(np.count_nonzero(undefined_type == 3))
+
+        if not any(per_k_pair_values[int(k)] for k in candidates):
+            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets")
+
+        out: dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]] = {}
+        for k in candidates:
+            pair_values = per_k_pair_values[int(k)]
+            if not pair_values:
+                continue
+
+            pooled = _ratio_or_default(per_k_so_total[int(k)], per_k_os_total[int(k)])
+            pair_arr = np.asarray(pair_values, dtype=float)
+            occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(float)
+            occurrence_defined_mask = np.concatenate(per_k_occurrence_defined[int(k)]).astype(bool)
+            undef_type_arr = np.concatenate(per_k_occurrence_types[int(k)]).astype(int)
+            occurrence_subsets = np.concatenate(per_k_occurrence_subsets[int(k)]).astype(str)
+            occurrence_source_indices = np.concatenate(per_k_occurrence_sources[int(k)]).astype(int)
+            sample_arr = occurrence_values[occurrence_defined_mask].astype(float)
+
+            undefined_breakdown = cls._compute_undefined_breakdown(
+                occurrence_total=int(per_k_occurrence_total[int(k)]),
+                ss_undefined=int(per_k_undefined_counts[int(k)][1]),
+                oo_undefined=int(per_k_undefined_counts[int(k)][2]),
+                mixed_undefined=int(per_k_undefined_counts[int(k)][3]),
+            )
+            out[int(k)] = (
+                pooled,
+                pair_arr,
+                sample_arr,
+                occurrence_values,
+                occurrence_defined_mask,
+                undef_type_arr,
+                occurrence_subsets,
+                occurrence_source_indices,
+                undefined_breakdown.total_frac,
+                undefined_breakdown.ss_frac,
+                undefined_breakdown.oo_frac,
+                undefined_breakdown.mixed_frac,
+            )
+        return out
+
+    @classmethod
+    def _compute_artifacts_from_prepared_dataset_wide_inputs(
+        cls,
+        *,
+        prepared: _PreparedSubsetInputs,
+        dataset_name: str,
+        k_values: list[int] | tuple[int, ...],
+        evaluation_design: str = EVALUATION_DESIGN_DATASET_WIDE,
+        selected_k: int | None = None,
+        include_selected_result: bool = True,
+        warn_selected_result: bool = False,
+        **kwargs: float,
+    ) -> _RobustnessArtifacts:
+        candidates = _normalize_k_values(k_values)
+        by_k = cls._score_dataset_wide_by_k(
+            prepared=prepared,
+            k_values=candidates,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        if include_selected_result and selected_k is None:
+            selected_k = cls._select_dataset_wide_k(
+                prepared=prepared,
+                k_candidates=candidates,
+                dataset_name=dataset_name,
+            )
+        curve = {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
+        result: RobustnessResult | None = None
+        if include_selected_result:
+            if selected_k is None:
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
+            if int(selected_k) not in by_k:
+                raise RuntimeError(f"selected_k={selected_k} is not available in scored-by-k results")
+            result = cls._build_result_from_by_k_entry(
+                dataset_name=dataset_name,
+                evaluation_design=str(evaluation_design),
+                evaluation_unit="sample",
+                k=int(selected_k),
+                scored_entry=by_k[int(selected_k)],
+            )
+            if warn_selected_result:
+                cls._warn_undefined_occurrences(
+                    dataset_name=dataset_name,
+                    evaluation_unit="sample",
+                    undefined_frac=result.undefined_frac,
+                    ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
+                    oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
+                    mixed_undefined_frac=result.mixed_undefined_frac,
+                )
+        return _RobustnessArtifacts(curve=curve, result=result)
+
+    @classmethod
+    def _compute_artifacts_from_prepared_subsets(
+        cls,
+        *,
+        prepared_subsets: list[_PreparedNeighborSubset],
+        dataset_name: str,
+        k_values: list[int] | tuple[int, ...],
+        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
+        selected_k: int | None = None,
+        include_selected_result: bool = True,
+        warn_selected_result: bool = False,
+        **kwargs: float,
+    ) -> _RobustnessArtifacts:
+        candidates = _normalize_k_values(k_values)
+        by_k = cls._score_prepared_subsets_by_k(
+            prepared_subsets=prepared_subsets,
+            k_values=candidates,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        if include_selected_result and selected_k is None:
+            selected_k = cls._select_subset_k_from_prepared_subsets(
+                prepared_subsets=prepared_subsets,
+                k_candidates=candidates,
+                dataset_name=dataset_name,
+            )
+        curve = {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
+        result: RobustnessResult | None = None
+        if include_selected_result:
+            if selected_k is None:
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
+            if int(selected_k) not in by_k:
+                raise RuntimeError(f"selected_k={selected_k} is not available in scored-by-k results")
+            result = cls._build_result_from_by_k_entry(
+                dataset_name=dataset_name,
+                evaluation_design=str(evaluation_design),
+                evaluation_unit="occurrence",
+                k=int(selected_k),
+                scored_entry=by_k[int(selected_k)],
+            )
+            if warn_selected_result:
+                cls._warn_undefined_occurrences(
+                    dataset_name=dataset_name,
+                    evaluation_unit="occurrence",
+                    undefined_frac=result.undefined_frac,
+                    ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
+                    oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
+                    mixed_undefined_frac=result.mixed_undefined_frac,
+                )
+        return _RobustnessArtifacts(curve=curve, result=result)
 
     @classmethod
     def _score_subsets_by_k(

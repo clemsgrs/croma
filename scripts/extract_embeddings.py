@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from input_fingerprint import manifest_fingerprint
 
 try:
     import torch
@@ -59,6 +60,13 @@ def _load_manifest(manifest_path: Path) -> pd.DataFrame:
     if "image_path" not in df.columns:
         raise ValueError("Manifest must contain an 'image_path' column.")
     return df.copy()
+
+
+def _optional_manifest_fingerprint(manifest: pd.DataFrame) -> str | None:
+    try:
+        return manifest_fingerprint(manifest)
+    except ValueError:
+        return None
 
 
 def _device_from_arg(device_arg: str):
@@ -179,6 +187,7 @@ def embed_manifest(
     tile_progress_leave: bool = True,
 ) -> tuple[Path, tuple[int, int]]:
     manifest = _load_manifest(manifest_path)
+    manifest_fp = _optional_manifest_fingerprint(manifest)
     device = _device_from_arg(device_arg)
     progress_on = bool(progress_enabled) if progress_enabled is not None else True
 
@@ -226,6 +235,7 @@ def embed_manifest(
         json.dumps(
             {
                 "manifest": str(manifest_path),
+                "manifest_fingerprint": manifest_fp,
                 "n_samples": int(arr.shape[0]),
                 "embedding_dim": int(arr.shape[1]),
                 "backend": spec.backend,

@@ -12,6 +12,7 @@ import io
 import json
 import re
 import shutil
+from itertools import combinations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,17 +68,25 @@ class AlignmentSpec:
     metadata_filename: str
     dataset_key: str
     output_name: str
-    has_subset: bool  # True → subset col present; False → id_ood col instead
+    subset_mode: str  # one of: "id_ood", "paired_passthrough", "paired_expand_grid"
 
 
 ALIGNMENTS: list[AlignmentSpec] = [
-    AlignmentSpec("camelyon.csv", "camelyon", "pathorob-camelyon", has_subset=False),
-    AlignmentSpec("camelyon_reduced.csv", "camelyon", "pathorob-camelyon-reduced", has_subset=True),
-    AlignmentSpec("tcga_4x4.csv", "tcga", "pathorob-tcga-4x4", has_subset=False),
-    AlignmentSpec("tcga_2x2.csv", "tcga", "pathorob-tcga-2x2", has_subset=True),
-    AlignmentSpec("tolkach_esca.csv", "tolkach_esca", "pathorob-tolkach-esca", has_subset=False),
+    AlignmentSpec("camelyon.csv", "camelyon", "pathorob-camelyon", subset_mode="id_ood"),
     AlignmentSpec(
-        "tolkach_esca_reduced.csv", "tolkach_esca", "pathorob-tolkach-esca-reduced", has_subset=True
+        "camelyon_reduced.csv",
+        "camelyon",
+        "pathorob-camelyon-reduced",
+        subset_mode="paired_expand_grid",
+    ),
+    AlignmentSpec("tcga_4x4.csv", "tcga", "pathorob-tcga-4x4", subset_mode="id_ood"),
+    AlignmentSpec("tcga_2x2.csv", "tcga", "pathorob-tcga-2x2", subset_mode="paired_passthrough"),
+    AlignmentSpec("tolkach_esca.csv", "tolkach_esca", "pathorob-tolkach-esca", subset_mode="id_ood"),
+    AlignmentSpec(
+        "tolkach_esca_reduced.csv",
+        "tolkach_esca",
+        "pathorob-tolkach-esca-reduced",
+        subset_mode="paired_expand_grid",
     ),
 ]
 
@@ -241,6 +250,59 @@ def _normalize_string(value: Any) -> str:
     if pd.isna(value):
         return ""
     return str(value).strip()
+
+
+def _is_complete_2x2_block(df: pd.DataFrame, *, label_col: str, center_col: str) -> bool:
+    labels = sorted(df[label_col].astype(str).unique().tolist())
+    centers = sorted(df[center_col].astype(str).unique().tolist())
+    if len(labels) != 2 or len(centers) != 2:
+        return False
+    for label in labels:
+        for center in centers:
+            cell_n = int(((df[label_col].astype(str) == label) & (df[center_col].astype(str) == center)).sum())
+            if cell_n <= 0:
+                return False
+    return True
+
+
+def _paired_subset_id(
+    label_pair: tuple[str, str],
+    center_pair: tuple[str, str],
+    *,
+    total_label_count: int,
+) -> str:
+    center_token = "_".join(_sanitize_token(part) for part in center_pair)
+    if int(total_label_count) == 2:
+        return center_token
+    label_token = "+".join(_sanitize_token(part) for part in label_pair)
+    return f"{label_token}__{center_token}"
+
+
+def _expand_grid_paired_subsets(df: pd.DataFrame, *, label_col: str, center_col: str) -> pd.DataFrame:
+    labels = sorted(df[label_col].astype(str).unique().tolist())
+    centers = sorted(df[center_col].astype(str).unique().tolist())
+    if len(labels) < 2 or len(centers) < 2:
+        raise ValueError("paired_expand_grid requires at least 2 labels and 2 medical centers")
+
+    expanded_frames: list[pd.DataFrame] = []
+    for label_pair in combinations(labels, 2):
+        for center_pair in combinations(centers, 2):
+            subset_df = df.loc[
+                df[label_col].astype(str).isin(label_pair) & df[center_col].astype(str).isin(center_pair)
+            ].copy()
+            if not _is_complete_2x2_block(subset_df, label_col=label_col, center_col=center_col):
+                continue
+            subset_df["subset"] = _paired_subset_id(
+                label_pair,
+                center_pair,
+                total_label_count=len(labels),
+            )
+            expanded_frames.append(subset_df)
+
+    if not expanded_frames:
+        raise ValueError("paired_expand_grid could not construct any complete 2x2 subsets")
+
+    return pd.concat(expanded_frames, ignore_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -634,21 +696,24 @@ def align_dataset(
     label_col = "biological_class" if "biological_class" in joined.columns else "label"
     center_col = "medical_center"
 
-    # Build output columns depending on mode
-    base = {
-        "sample_id": joined["sample_id"],
-        "image_path": joined["image_path"],
-        "label": joined[label_col],
-        "medical_center": joined[center_col],
-        "slide_id": joined["slide_id"],
-    }
+    out_df = pd.DataFrame(
+        {
+            "sample_id": joined["sample_id"],
+            "image_path": joined["image_path"],
+            "label": joined[label_col],
+            "medical_center": joined[center_col],
+            "slide_id": joined["slide_id"],
+        }
+    )
 
-    if alignment.has_subset:
-        base["subset"] = joined["subset"]
-    elif not alignment.has_subset:
-        base["id_ood"] = joined["subset"]
-
-    out_df = pd.DataFrame(base)
+    if alignment.subset_mode == "paired_passthrough":
+        out_df["subset"] = joined["subset"].astype(str)
+    elif alignment.subset_mode == "paired_expand_grid":
+        out_df = _expand_grid_paired_subsets(out_df, label_col="label", center_col="medical_center")
+    elif alignment.subset_mode == "id_ood":
+        out_df["id_ood"] = joined["subset"].astype(str)
+    else:
+        raise ValueError(f"Unknown subset_mode for {alignment.output_name}: {alignment.subset_mode}")
 
     output_path = manifest_dir / f"{alignment.output_name}.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)

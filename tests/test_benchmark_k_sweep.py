@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -255,45 +256,46 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
             self.q_alpha = 0.5
             self.ltm_alpha = 0.4
 
-    def fake_compute_curve(
+    def fake_ri_compute_artifacts(
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        evaluation_design: str,
         k_values: list[int],
-        tau: float | None = None,
-    ) -> dict[int, float]:
-        assert evaluation_design == "dataset_wide"
-        return {int(k): 0.5 for k in k_values}
-
-    def fake_ri_compute(
-        *,
-        features: np.ndarray,
-        manifest: pd.DataFrame,
         evaluation_design: str,
-        k_candidates: list[int],
-    ) -> _FakeRobustnessResult:
+        selected_k: int,
+        include_selected_result: bool,
+        warn_selected_result: bool,
+    ) -> SimpleNamespace:
         assert evaluation_design == "dataset_wide"
-        return _FakeRobustnessResult(
-            k=int(k_candidates[0]),
+        assert include_selected_result is True
+        assert warn_selected_result is True
+        result = _FakeRobustnessResult(
+            k=int(selected_k),
             values=[0.10, np.nan, 0.30, np.nan, 0.50, 0.60, np.nan, 0.80],
             undef_types=[0, 1, 0, 2, 0, 0, 3, 0],
         )
+        return SimpleNamespace(curve={int(k): 0.5 for k in k_values}, result=result)
 
-    def fake_mari_compute(
+    def fake_mari_compute_artifacts(
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
+        k_values: list[int],
         evaluation_design: str,
-        k_candidates: list[int],
+        selected_k: int,
+        include_selected_result: bool,
+        warn_selected_result: bool,
         tau: float,
-    ) -> _FakeRobustnessResult:
+    ) -> SimpleNamespace:
         assert evaluation_design == "dataset_wide"
-        return _FakeRobustnessResult(
-            k=int(k_candidates[0]),
+        assert include_selected_result is True
+        assert warn_selected_result is True
+        result = _FakeRobustnessResult(
+            k=int(selected_k),
             values=[0.20, np.nan, 0.35, np.nan, 0.55, 0.65, np.nan, 0.85],
             undef_types=[0, 3, 0, 1, 0, 0, 2, 0],
         )
+        return SimpleNamespace(curve={int(k): 0.5 for k in k_values}, result=result)
 
     def fake_ccrr_compute(
         *,
@@ -313,10 +315,8 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
 
     _install_fake_registry_and_embed(monkeypatch, models=[model])
     _install_noop_plots(monkeypatch)
-    monkeypatch.setattr(bm.RI, "compute_curve", fake_compute_curve)
-    monkeypatch.setattr(bm.MaRI, "compute_curve", fake_compute_curve)
-    monkeypatch.setattr(bm.RI, "compute", fake_ri_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", fake_mari_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", fake_ri_compute_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_mari_compute_artifacts)
     monkeypatch.setattr(bm.CCRR, "compute", fake_ccrr_compute)
 
     assert _run_benchmark(
@@ -394,33 +394,28 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
             return {int(k): v for k, v in zip(k_values, [0.60, 0.92], strict=False)}
         return {int(k): v for k, v in zip(k_values, [0.90, 0.70], strict=False)}
 
-    def fake_compute_curve(
+    def fake_compute_artifacts(
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
-        evaluation_design: str,
         k_values: list[int],
-        tau: float | None = None,
-    ) -> dict[int, float]:
-        return {int(k): 0.5 for k in k_values}
-
-    def fake_compute(
-        *,
-        features: np.ndarray,
-        manifest: pd.DataFrame,
         evaluation_design: str,
-        k_candidates: list[int],
+        selected_k: int,
+        include_selected_result: bool,
+        warn_selected_result: bool,
         tau: float | None = None,
-    ) -> _CurveResult:
-        return _CurveResult(k=int(k_candidates[0]))
+    ) -> SimpleNamespace:
+        del include_selected_result, warn_selected_result
+        return SimpleNamespace(
+            curve={int(k): 0.5 for k in k_values},
+            result=_CurveResult(k=int(selected_k)),
+        )
 
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
     _install_noop_plots(monkeypatch)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k)
-    monkeypatch.setattr(bm.RI, "compute_curve", fake_compute_curve)
-    monkeypatch.setattr(bm.MaRI, "compute_curve", fake_compute_curve)
-    monkeypatch.setattr(bm.RI, "compute", fake_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", fake_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", fake_compute_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_compute_artifacts)
 
     assert _run_benchmark(
         monkeypatch,

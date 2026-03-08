@@ -110,6 +110,9 @@ Behavior:
 - writes images next to Camelyon under sibling dataset folders (for example `.../pathorob/tcga/images/`)
 - merges multi-shard parquet datasets (for example TCGA) into one dataset output
 - writes one manifest per dataset to `data/` (`pathorob-tcga.csv`, `pathorob-tolkach_esca.csv`, `pathorob-camelyon.csv`)
+- for reduced paired PathoROB metadata, expands cell-level buckets into explicit runtime `subset` quartets so `paired_2x2` matches the paper design
+  - binary reduced datasets use short center-pair ids such as `RUMC_UMCU`
+  - multi-class reduced datasets use `LABEL1+LABEL2__CENTER1_CENTER2`
 - always removes downloaded parquet payloads after conversion and validation
 - writes per-dataset provenance metadata to `prepared_meta.json`
 
@@ -123,6 +126,9 @@ With direct imports, missing benchmark dependencies fail at import/runtime immed
 Defaults:
 - `--evaluation-design paired_2x2`
 - `--k-candidates 3,5,7,10,15,20,25`
+
+Benchmark extraction note:
+- when the evaluation manifest repeats the same physical sample across multiple paired subsets, embeddings are extracted once per unique `(sample_id, image_path, label, medical_center, slide_id)` source row and then reused for the repeated occurrence-level metric rows
 - `--tau 0.2`
 - `--ccrr-m-max 20`
 - `--ccrr-alpha 0.10`
