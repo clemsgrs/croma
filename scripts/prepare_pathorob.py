@@ -19,10 +19,16 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import pyarrow.parquet as pq
 from huggingface_hub import HfApi, snapshot_download
 from PIL import Image
 from progress_utils import progress_bar, progress_write, resolve_progress_mode
+
+try:
+    import pyarrow.parquet as pq
+except ModuleNotFoundError as exc:
+    if exc.name not in {"pyarrow", "pyarrow.parquet"}:
+        raise
+    pq = None
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +252,15 @@ def _decode_to_rgb_image(value: Any, parquet_parent: Path) -> "Image.Image":
     return img
 
 
+def _require_pyarrow_parquet() -> Any:
+    if pq is None:
+        raise ModuleNotFoundError(
+            "pyarrow is required for PathoROB parquet extraction. "
+            "Install it to run scripts/prepare_pathorob.py extract/full."
+        )
+    return pq
+
+
 def _normalize_string(value: Any) -> str:
     if pd.isna(value):
         return ""
@@ -321,7 +336,8 @@ def _convert_parquet_to_rows(
     seen_file_tokens: set[str],
     shard_token: str | None,
 ) -> tuple[list[dict[str, str]], dict[str, Any]]:
-    parquet_file = pq.ParquetFile(parquet_path)
+    parquet_module = _require_pyarrow_parquet()
+    parquet_file = parquet_module.ParquetFile(parquet_path)
     columns = list(parquet_file.schema.names)
 
     sample_col = _resolve_column(columns, dataset.sample_candidates, "sample_id", parquet_path)

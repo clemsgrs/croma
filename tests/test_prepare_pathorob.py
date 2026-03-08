@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from pathlib import Path
 
@@ -32,6 +33,25 @@ def _alignment(output_name: str) -> pp.AlignmentSpec:
         if spec.output_name == output_name:
             return spec
     raise AssertionError(f"missing alignment {output_name}")
+
+
+def test_prepare_pathorob_imports_without_pyarrow(tmp_path: Path) -> None:
+    script = """
+import sys
+from pathlib import Path
+
+scripts = Path(sys.argv[1])
+sys.path.insert(0, str(scripts))
+sys.modules["pyarrow"] = None
+import prepare_pathorob  # noqa: F401
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", script, str(SCRIPTS)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
 
 
 def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(tmp_path: Path) -> None:
