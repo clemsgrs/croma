@@ -131,19 +131,42 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
 
     assert _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir) == 0
 
-    calls = {"ri": 0, "mari": 0, "ccrr": 0, "knn": 0}
-    original_ri_compute = bm.RI.compute
-    original_mari_compute = bm.MaRI.compute
+    calls = {
+        "ri": 0,
+        "ri_prepared": 0,
+        "mari": 0,
+        "mari_prepared": 0,
+        "ccrr": 0,
+        "knn": 0,
+        "knn_prepared": 0,
+    }
+    original_ri_artifacts = bm.RI._compute_artifacts
+    original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
+    original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
+    original_mari_artifacts = bm.MaRI._compute_artifacts
+    original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_ccrr_compute = bm.CCRR.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
-    def wrapped_ri_compute(*args, **kwargs):
+    def wrapped_ri_artifacts(*args, **kwargs):
         calls["ri"] += 1
-        return original_ri_compute(*args, **kwargs)
+        return original_ri_artifacts(*args, **kwargs)
 
-    def wrapped_mari_compute(*args, **kwargs):
+    def wrapped_ri_prepared(*args, **kwargs):
+        calls["ri_prepared"] += 1
+        return original_ri_prepared(*args, **kwargs)
+
+    def wrapped_knn_prepared(*args, **kwargs):
+        calls["knn_prepared"] += 1
+        return original_knn_prepared(*args, **kwargs)
+
+    def wrapped_mari_artifacts(*args, **kwargs):
         calls["mari"] += 1
-        return original_mari_compute(*args, **kwargs)
+        return original_mari_artifacts(*args, **kwargs)
+
+    def wrapped_mari_prepared(*args, **kwargs):
+        calls["mari_prepared"] += 1
+        return original_mari_prepared(*args, **kwargs)
 
     def wrapped_ccrr_compute(*args, **kwargs):
         calls["ccrr"] += 1
@@ -153,8 +176,11 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
         calls["knn"] += 1
         return original_knn(*args, **kwargs)
 
-    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", wrapped_mari_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", wrapped_ri_artifacts)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
+    monkeypatch.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", wrapped_mari_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
@@ -181,19 +207,42 @@ def test_ccrr_search_change_recomputes_only_ccrr(monkeypatch, tmp_path: Path) ->
 
     assert _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir) == 0
 
-    calls = {"ri": 0, "mari": 0, "ccrr": 0, "knn": 0}
-    original_ri_compute = bm.RI.compute
-    original_mari_compute = bm.MaRI.compute
+    calls = {
+        "ri": 0,
+        "ri_prepared": 0,
+        "mari": 0,
+        "mari_prepared": 0,
+        "ccrr": 0,
+        "knn": 0,
+        "knn_prepared": 0,
+    }
+    original_ri_artifacts = bm.RI._compute_artifacts
+    original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
+    original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
+    original_mari_artifacts = bm.MaRI._compute_artifacts
+    original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_ccrr_compute = bm.CCRR.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
-    def wrapped_ri_compute(*args, **kwargs):
+    def wrapped_ri_artifacts(*args, **kwargs):
         calls["ri"] += 1
-        return original_ri_compute(*args, **kwargs)
+        return original_ri_artifacts(*args, **kwargs)
 
-    def wrapped_mari_compute(*args, **kwargs):
+    def wrapped_ri_prepared(*args, **kwargs):
+        calls["ri_prepared"] += 1
+        return original_ri_prepared(*args, **kwargs)
+
+    def wrapped_knn_prepared(*args, **kwargs):
+        calls["knn_prepared"] += 1
+        return original_knn_prepared(*args, **kwargs)
+
+    def wrapped_mari_artifacts(*args, **kwargs):
         calls["mari"] += 1
-        return original_mari_compute(*args, **kwargs)
+        return original_mari_artifacts(*args, **kwargs)
+
+    def wrapped_mari_prepared(*args, **kwargs):
+        calls["mari_prepared"] += 1
+        return original_mari_prepared(*args, **kwargs)
 
     def wrapped_ccrr_compute(*args, **kwargs):
         calls["ccrr"] += 1
@@ -203,8 +252,11 @@ def test_ccrr_search_change_recomputes_only_ccrr(monkeypatch, tmp_path: Path) ->
         calls["knn"] += 1
         return original_knn(*args, **kwargs)
 
-    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", wrapped_mari_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", wrapped_ri_artifacts)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
+    monkeypatch.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", wrapped_mari_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
@@ -231,19 +283,29 @@ def test_k_values_change_recomputes_knn_ri_mari_not_ccrr(monkeypatch, tmp_path: 
 
     assert _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir) == 0
 
-    calls = {"ri": 0, "mari": 0, "ccrr": 0, "knn": 0}
-    original_ri_compute = bm.RI.compute
-    original_mari_compute = bm.MaRI.compute
+    calls = {"ri": 0, "ri_prepared": 0, "mari": 0, "mari_prepared": 0, "ccrr": 0, "knn": 0}
+    original_ri_artifacts = bm.RI._compute_artifacts
+    original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
+    original_mari_artifacts = bm.MaRI._compute_artifacts
+    original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_ccrr_compute = bm.CCRR.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
-    def wrapped_ri_compute(*args, **kwargs):
+    def wrapped_ri_artifacts(*args, **kwargs):
         calls["ri"] += 1
-        return original_ri_compute(*args, **kwargs)
+        return original_ri_artifacts(*args, **kwargs)
 
-    def wrapped_mari_compute(*args, **kwargs):
+    def wrapped_ri_prepared(*args, **kwargs):
+        calls["ri_prepared"] += 1
+        return original_ri_prepared(*args, **kwargs)
+
+    def wrapped_mari_artifacts(*args, **kwargs):
         calls["mari"] += 1
-        return original_mari_compute(*args, **kwargs)
+        return original_mari_artifacts(*args, **kwargs)
+
+    def wrapped_mari_prepared(*args, **kwargs):
+        calls["mari_prepared"] += 1
+        return original_mari_prepared(*args, **kwargs)
 
     def wrapped_ccrr_compute(*args, **kwargs):
         calls["ccrr"] += 1
@@ -253,8 +315,10 @@ def test_k_values_change_recomputes_knn_ri_mari_not_ccrr(monkeypatch, tmp_path: 
         calls["knn"] += 1
         return original_knn(*args, **kwargs)
 
-    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", wrapped_mari_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", wrapped_ri_artifacts)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", wrapped_mari_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
@@ -286,19 +350,42 @@ def test_evaluation_design_change_recomputes_all_artifacts(monkeypatch, tmp_path
         evaluation_design="dataset_wide",
     ) == 0
 
-    calls = {"ri": 0, "mari": 0, "ccrr": 0, "knn": 0}
-    original_ri_compute = bm.RI.compute
-    original_mari_compute = bm.MaRI.compute
+    calls = {
+        "ri": 0,
+        "ri_prepared": 0,
+        "mari": 0,
+        "mari_prepared": 0,
+        "ccrr": 0,
+        "knn": 0,
+        "knn_prepared": 0,
+    }
+    original_ri_artifacts = bm.RI._compute_artifacts
+    original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
+    original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
+    original_mari_artifacts = bm.MaRI._compute_artifacts
+    original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_ccrr_compute = bm.CCRR.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
-    def wrapped_ri_compute(*args, **kwargs):
+    def wrapped_ri_artifacts(*args, **kwargs):
         calls["ri"] += 1
-        return original_ri_compute(*args, **kwargs)
+        return original_ri_artifacts(*args, **kwargs)
 
-    def wrapped_mari_compute(*args, **kwargs):
+    def wrapped_ri_prepared(*args, **kwargs):
+        calls["ri_prepared"] += 1
+        return original_ri_prepared(*args, **kwargs)
+
+    def wrapped_knn_prepared(*args, **kwargs):
+        calls["knn_prepared"] += 1
+        return original_knn_prepared(*args, **kwargs)
+
+    def wrapped_mari_artifacts(*args, **kwargs):
         calls["mari"] += 1
-        return original_mari_compute(*args, **kwargs)
+        return original_mari_artifacts(*args, **kwargs)
+
+    def wrapped_mari_prepared(*args, **kwargs):
+        calls["mari_prepared"] += 1
+        return original_mari_prepared(*args, **kwargs)
 
     def wrapped_ccrr_compute(*args, **kwargs):
         calls["ccrr"] += 1
@@ -308,8 +395,11 @@ def test_evaluation_design_change_recomputes_all_artifacts(monkeypatch, tmp_path
         calls["knn"] += 1
         return original_knn(*args, **kwargs)
 
-    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", wrapped_mari_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", wrapped_ri_artifacts)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
+    monkeypatch.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", wrapped_mari_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
@@ -320,10 +410,10 @@ def test_evaluation_design_change_recomputes_all_artifacts(monkeypatch, tmp_path
         evaluation_design="paired_2x2",
     ) == 0
 
-    assert calls["ri"] > 0
-    assert calls["mari"] > 0
+    assert calls["ri"] > 0 or calls["ri_prepared"] > 0
+    assert calls["mari"] > 0 or calls["mari_prepared"] > 0
     assert calls["ccrr"] > 0
-    assert calls["knn"] > 0
+    assert calls["knn"] > 0 or calls["knn_prepared"] > 0
 
 
 def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
@@ -337,18 +427,18 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
     assert _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir) == 0
 
     calls = {"ri": 0, "mari": 0, "ccrr": 0, "knn": 0}
-    original_ri_compute = bm.RI.compute
-    original_mari_compute = bm.MaRI.compute
+    original_ri_artifacts = bm.RI._compute_artifacts
+    original_mari_artifacts = bm.MaRI._compute_artifacts
     original_ccrr_compute = bm.CCRR.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
-    def wrapped_ri_compute(*args, **kwargs):
+    def wrapped_ri_artifacts(*args, **kwargs):
         calls["ri"] += 1
-        return original_ri_compute(*args, **kwargs)
+        return original_ri_artifacts(*args, **kwargs)
 
-    def wrapped_mari_compute(*args, **kwargs):
+    def wrapped_mari_artifacts(*args, **kwargs):
         calls["mari"] += 1
-        return original_mari_compute(*args, **kwargs)
+        return original_mari_artifacts(*args, **kwargs)
 
     def wrapped_ccrr_compute(*args, **kwargs):
         calls["ccrr"] += 1
@@ -358,8 +448,8 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
         calls["knn"] += 1
         return original_knn(*args, **kwargs)
 
-    monkeypatch.setattr(bm.RI, "compute", wrapped_ri_compute)
-    monkeypatch.setattr(bm.MaRI, "compute", wrapped_mari_compute)
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", wrapped_ri_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", wrapped_mari_artifacts)
     monkeypatch.setattr(bm.CCRR, "compute", wrapped_ccrr_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
@@ -374,3 +464,39 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
     assert calls["mari"] > 0
     assert calls["ccrr"] > 0
     assert calls["knn"] > 0
+
+
+def test_cold_cache_uses_one_shared_scoring_pass_per_metric(monkeypatch, tmp_path: Path) -> None:
+    manifest = _toy_manifest()
+    manifest_path = tmp_path / "toy.csv"
+    manifest.to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+    _install_fake_registry_and_embed(monkeypatch, model="M1")
+    _install_noop_plots(monkeypatch)
+
+    calls = {"ri": 0, "mari": 0}
+    original_ri_artifacts = bm.RI._compute_artifacts
+    original_mari_artifacts = bm.MaRI._compute_artifacts
+
+    def wrapped_ri_artifacts(*args, **kwargs):
+        calls["ri"] += 1
+        return original_ri_artifacts(*args, **kwargs)
+
+    def wrapped_mari_artifacts(*args, **kwargs):
+        calls["mari"] += 1
+        return original_mari_artifacts(*args, **kwargs)
+
+    def fail_public_metric_api(*args, **kwargs):
+        raise AssertionError("benchmark should use the shared _compute_artifacts path on cold-cache RI/MaRI misses")
+
+    monkeypatch.setattr(bm.RI, "_compute_artifacts", wrapped_ri_artifacts)
+    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", wrapped_mari_artifacts)
+    monkeypatch.setattr(bm.RI, "compute", fail_public_metric_api)
+    monkeypatch.setattr(bm.RI, "compute_curve", fail_public_metric_api)
+    monkeypatch.setattr(bm.MaRI, "compute", fail_public_metric_api)
+    monkeypatch.setattr(bm.MaRI, "compute_curve", fail_public_metric_api)
+
+    assert _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir) == 0
+
+    assert calls["ri"] == 1
+    assert calls["mari"] == 1

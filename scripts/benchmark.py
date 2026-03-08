@@ -91,6 +91,64 @@ def _npy_matches_shape(values: np.ndarray | None, expected_shape: tuple[int, ...
     return tuple(int(v) for v in values.shape) == tuple(int(v) for v in expected_shape)
 
 
+_EMBEDDING_SOURCE_COLUMNS = ("sample_id", "image_path", "label", "medical_center", "slide_id")
+
+
+def _build_embedding_source_manifest(manifest_df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
+    missing = [col for col in _EMBEDDING_SOURCE_COLUMNS if col not in manifest_df.columns]
+    if missing:
+        raise ValueError(f"manifest is missing required columns for embedding-source dedupe: {missing}")
+
+    unique_rows: list[tuple[str, ...]] = []
+    key_to_index: dict[tuple[str, ...], int] = {}
+    row_to_source: list[int] = []
+    for row in manifest_df.loc[:, list(_EMBEDDING_SOURCE_COLUMNS)].itertuples(index=False, name=None):
+        key = tuple(str(value) for value in row)
+        idx = key_to_index.get(key)
+        if idx is None:
+            idx = len(unique_rows)
+            key_to_index[key] = idx
+            unique_rows.append(key)
+        row_to_source.append(int(idx))
+
+    embedding_manifest = pd.DataFrame(unique_rows, columns=_EMBEDDING_SOURCE_COLUMNS)
+    return embedding_manifest, np.asarray(row_to_source, dtype=int)
+
+
+def _embedding_manifest_path(dataset_dir: Path) -> Path:
+    return dataset_dir / "embedding_source_manifest.csv"
+
+
+def _embedding_cache_matches_expected(
+    output_path: Path,
+    *,
+    expected_n_samples: int,
+    expected_manifest_fingerprint: str,
+    expected_manifest_path: Path,
+) -> bool:
+    if not output_path.exists():
+        return False
+    try:
+        arr = np.load(output_path, mmap_mode="r")
+    except Exception:  # noqa: BLE001
+        return False
+    if int(arr.shape[0]) != int(expected_n_samples):
+        return False
+    sidecar_path = output_path.with_suffix(output_path.suffix + ".json")
+    if not sidecar_path.exists():
+        return False
+    try:
+        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False
+    if not isinstance(payload, dict):
+        return False
+    cached_manifest_fingerprint = str(payload.get("manifest_fingerprint", "")).strip()
+    if cached_manifest_fingerprint:
+        return cached_manifest_fingerprint == str(expected_manifest_fingerprint)
+    return str(payload.get("manifest", "")).strip() == str(expected_manifest_path)
+
+
 def _save_mari_sample_distribution(
     *,
     results_dir: Path,
@@ -254,7 +312,7 @@ def _prepare_eval_manifest(
     dataset_name: str,
     excluded_centers: list[str] | tuple[str, ...],
     evaluation_design: str,
-) -> tuple[pd.DataFrame, np.ndarray]:
+) -> pd.DataFrame:
     center_series = manifest_df["medical_center"].map(str).str.strip()
     keep_mask = ~center_series.isin(excluded_centers)
     if not bool(keep_mask.any()):
@@ -264,7 +322,6 @@ def _prepare_eval_manifest(
         )
 
     eval_manifest = manifest_df.loc[keep_mask].copy()
-    eval_manifest["_embedding_source_index"] = np.flatnonzero(keep_mask.to_numpy())
     if evaluation_design == "paired_2x2":
         if "subset" not in eval_manifest.columns:
             raise ValueError(
@@ -276,9 +333,7 @@ def _prepare_eval_manifest(
     elif len(eval_manifest) == 0:
         raise ValueError(f"No evaluable samples remain for dataset '{dataset_name}'")
 
-    keep_indices = eval_manifest["_embedding_source_index"].to_numpy(dtype=int)
-    eval_manifest = eval_manifest.drop(columns=["_embedding_source_index"]).reset_index(drop=True)
-    return eval_manifest, keep_indices
+    return eval_manifest.reset_index(drop=True)
 
 
 def _build_aligned_manifest(
@@ -371,6 +426,7 @@ def _knn_balanced_accuracy_by_k_for_design(
     k_values: list[int],
     evaluation_design: str,
     warn_context: str,
+    prepared_subsets: list | None = None,
 ) -> dict[int, float]:
     if evaluation_design == "dataset_wide":
         labels = pd.factorize(manifest[target_column])[0].astype(int)
@@ -379,6 +435,14 @@ def _knn_balanced_accuracy_by_k_for_design(
             features=features,
             labels=labels,
             slide_ids=slide_ids,
+            k_values=k_values,
+            warn_context=warn_context,
+        )
+
+    if prepared_subsets is not None:
+        return RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
+            prepared_subsets=prepared_subsets,
+            target=str(target_column),
             k_values=k_values,
             warn_context=warn_context,
         )
@@ -589,7 +653,7 @@ def main() -> int:
     progress_write(f"[benchmark] evaluation_design={evaluation_design}", enabled=progress_enabled)
     manifest_df = load_manifest(str(args.manifest), dataset_name=str(args.dataset_name))
     base_manifest_fingerprint = manifest_fingerprint(manifest_df)
-    eval_manifest, keep_indices = _prepare_eval_manifest(
+    eval_manifest = _prepare_eval_manifest(
         manifest_df=manifest_df,
         dataset_name=str(args.dataset_name),
         excluded_centers=excluded_centers,
@@ -599,20 +663,32 @@ def main() -> int:
         eval_manifest=eval_manifest,
         evaluation_design=evaluation_design,
     )
+    embedding_manifest, embedding_keep_indices = _build_embedding_source_manifest(eval_manifest)
+    embedding_manifest_path = _embedding_manifest_path(dataset_dir)
+    embedding_manifest.to_csv(embedding_manifest_path, index=False)
+    embedding_manifest_fingerprint = manifest_fingerprint(embedding_manifest)
 
     for i, model in enumerate(models):
         with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
             output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
             spec = registry[model]
             ticker.start("embed")
-            if output_path.exists() and not args.force_embed:
+            if (
+                not args.force_embed
+                and _embedding_cache_matches_expected(
+                    output_path,
+                    expected_n_samples=len(embedding_manifest),
+                    expected_manifest_fingerprint=embedding_manifest_fingerprint,
+                    expected_manifest_path=embedding_manifest_path,
+                )
+            ):
                 ticker.log(f"[benchmark] embedding cache hit -> {output_path}")
                 extraction_status[model] = "skipped"
                 ticker.done("embed", cached=True)
             else:
                 try:
                     ee.embed_manifest(
-                        manifest_path=args.manifest,
+                        manifest_path=embedding_manifest_path,
                         output_path=output_path,
                         spec=spec,
                         batch_size=int(args.batch_size),
@@ -847,36 +923,59 @@ def main() -> int:
     
                 features_full: np.ndarray | None = None
                 eval_features: np.ndarray | None = None
-    
+                eval_features_norm: np.ndarray | None = None
+                paired_subset_cache = None
+
                 def _ensure_eval_features() -> np.ndarray:
                     nonlocal features_full, eval_features
                     if eval_features is None:
                         if features_full is None:
                             features_full = np.load(output_path)
-                        eval_features = features_full[keep_indices]
+                        eval_features = features_full[embedding_keep_indices]
                     return eval_features
-    
+
+                def _ensure_eval_features_norm() -> np.ndarray:
+                    nonlocal eval_features_norm
+                    if eval_features_norm is None:
+                        arr = _ensure_eval_features()
+                        eval_features_norm = arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12)
+                    return eval_features_norm
+
+                def _ensure_paired_subset_cache():
+                    nonlocal paired_subset_cache
+                    if evaluation_design != "paired_2x2":
+                        raise RuntimeError("paired subset cache is only available for paired_2x2 evaluation")
+                    if paired_subset_cache is None:
+                        paired_subset_cache = RI._prepare_paired_subset_neighbor_cache(
+                            features=_ensure_eval_features_norm(),
+                            subsets=resolve_manifest_subsets(eval_manifest),
+                            k_values=k_values,
+                        )
+                    return paired_subset_cache
+
                 knn_was_cached = knn_bacc_by_k is not None and knn_center_bacc_by_k is not None
                 ticker.start("knn")
                 if knn_bacc_by_k is None:
                     knn_bacc_by_k = _knn_balanced_accuracy_by_k_for_design(
-                        features=_ensure_eval_features(),
+                        features=_ensure_eval_features_norm(),
                         manifest=eval_manifest,
                         target_column="label",
                         k_values=k_values,
                         evaluation_design=evaluation_design,
                         warn_context=f"{args.dataset_name} k-curve",
+                        prepared_subsets=_ensure_paired_subset_cache() if evaluation_design == "paired_2x2" else None,
                     )
                     cache.put_json(key=keys["knn_bio_curve"], payload=_curve_payload(knn_bacc_by_k))
 
                 if knn_center_bacc_by_k is None:
                     knn_center_bacc_by_k = _knn_balanced_accuracy_by_k_for_design(
-                        features=_ensure_eval_features(),
+                        features=_ensure_eval_features_norm(),
                         manifest=eval_manifest,
                         target_column="medical_center",
                         k_values=k_values,
                         evaluation_design=evaluation_design,
                         warn_context=f"{args.dataset_name} center-k-curve",
+                        prepared_subsets=_ensure_paired_subset_cache() if evaluation_design == "paired_2x2" else None,
                     )
                     cache.put_json(key=keys["knn_center_curve"], payload=_curve_payload(knn_center_bacc_by_k))
     
@@ -898,22 +997,37 @@ def main() -> int:
                     and ri_undefined_types is not None
                 )
                 ticker.start("RI")
-                if ri_curve is None:
-                    ri_curve = RI.compute_curve(
-                        features=_ensure_eval_features(),
-                        manifest=eval_manifest,
-                        evaluation_design=evaluation_design,
-                        k_values=k_values,
-                    )
-                    cache.put_json(key=keys["ri_curve"], payload=_curve_payload(ri_curve))
-
-                if ri_summary is None or ri_samples is None or ri_samples_aligned is None or ri_undefined_types is None:
-                    ri = RI.compute(
-                        features=_ensure_eval_features(),
-                        manifest=eval_manifest,
-                        evaluation_design=evaluation_design,
-                        k_candidates=k_values,
-                    )
+                if (
+                    ri_curve is None
+                    or ri_summary is None
+                    or ri_samples is None
+                    or ri_samples_aligned is None
+                    or ri_undefined_types is None
+                ):
+                    if evaluation_design == "paired_2x2":
+                        ri_artifacts = RI._compute_artifacts_from_prepared_subsets(
+                            prepared_subsets=_ensure_paired_subset_cache(),
+                            dataset_name=str(args.dataset_name),
+                            k_values=k_values,
+                            evaluation_design=evaluation_design,
+                            selected_k=int(selected_k),
+                            include_selected_result=True,
+                            warn_selected_result=True,
+                        )
+                    else:
+                        ri_artifacts = RI._compute_artifacts(
+                            features=_ensure_eval_features_norm(),
+                            manifest=eval_manifest,
+                            k_values=k_values,
+                            evaluation_design=evaluation_design,
+                            selected_k=int(selected_k),
+                            include_selected_result=True,
+                            warn_selected_result=True,
+                        )
+                    ri_curve = dict(ri_artifacts.curve)
+                    if ri_artifacts.result is None:
+                        raise RuntimeError("RI shared scoring did not return a selected-k result")
+                    ri = ri_artifacts.result
                     if int(ri.k) != int(selected_k):
                         raise RuntimeError(
                             f"Inconsistent selected k: RI returned {ri.k} but kNN balanced accuracy selected {selected_k}"
@@ -932,6 +1046,7 @@ def main() -> int:
                     ri_samples = np.asarray(ri.sample_values, dtype=float)
                     ri_samples_aligned = np.asarray(ri.sample_values_aligned, dtype=float)
                     ri_undefined_types = np.asarray(ri.sample_undefined_types, dtype=int)
+                    cache.put_json(key=keys["ri_curve"], payload=_curve_payload(ri_curve))
                     cache.put_json(key=keys["ri_summary"], payload=ri_summary)
                     cache.put_npy(key=keys["ri_samples"], values=ri_samples)
                     cache.put_npy(key=keys["ri_samples_aligned"], values=ri_samples_aligned)
@@ -952,24 +1067,39 @@ def main() -> int:
                     and mari_undefined_types is not None
                 )
                 ticker.start("MaRI")
-                if mari_curve is None:
-                    mari_curve = MaRI.compute_curve(
-                        features=_ensure_eval_features(),
-                        manifest=eval_manifest,
-                        evaluation_design=evaluation_design,
-                        k_values=k_values,
-                        tau=float(args.tau),
-                    )
-                    cache.put_json(key=keys["mari_curve"], payload=_curve_payload(mari_curve))
-
-                if mari_summary is None or mari_samples is None or mari_samples_aligned is None or mari_undefined_types is None:
-                    mari = MaRI.compute(
-                        features=_ensure_eval_features(),
-                        manifest=eval_manifest,
-                        evaluation_design=evaluation_design,
-                        k_candidates=k_values,
-                        tau=float(args.tau),
-                    )
+                if (
+                    mari_curve is None
+                    or mari_summary is None
+                    or mari_samples is None
+                    or mari_samples_aligned is None
+                    or mari_undefined_types is None
+                ):
+                    if evaluation_design == "paired_2x2":
+                        mari_artifacts = MaRI._compute_artifacts_from_prepared_subsets(
+                            prepared_subsets=_ensure_paired_subset_cache(),
+                            dataset_name=str(args.dataset_name),
+                            k_values=k_values,
+                            evaluation_design=evaluation_design,
+                            selected_k=int(selected_k),
+                            include_selected_result=True,
+                            warn_selected_result=True,
+                            tau=float(args.tau),
+                        )
+                    else:
+                        mari_artifacts = MaRI._compute_artifacts(
+                            features=_ensure_eval_features_norm(),
+                            manifest=eval_manifest,
+                            k_values=k_values,
+                            evaluation_design=evaluation_design,
+                            selected_k=int(selected_k),
+                            include_selected_result=True,
+                            warn_selected_result=True,
+                            tau=float(args.tau),
+                        )
+                    mari_curve = dict(mari_artifacts.curve)
+                    if mari_artifacts.result is None:
+                        raise RuntimeError("MaRI shared scoring did not return a selected-k result")
+                    mari = mari_artifacts.result
                     if int(mari.k) != int(selected_k):
                         raise RuntimeError(
                             f"Inconsistent selected k: MaRI returned {mari.k} but kNN balanced accuracy selected {selected_k}"
@@ -988,6 +1118,7 @@ def main() -> int:
                     mari_samples = np.asarray(mari.sample_values, dtype=float)
                     mari_samples_aligned = np.asarray(mari.sample_values_aligned, dtype=float)
                     mari_undefined_types = np.asarray(mari.sample_undefined_types, dtype=int)
+                    cache.put_json(key=keys["mari_curve"], payload=_curve_payload(mari_curve))
                     cache.put_json(key=keys["mari_summary"], payload=mari_summary)
                     cache.put_npy(key=keys["mari_samples"], values=mari_samples)
                     cache.put_npy(key=keys["mari_samples_aligned"], values=mari_samples_aligned)

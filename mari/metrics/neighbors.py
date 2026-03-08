@@ -199,6 +199,29 @@ def _predict_labels_from_neighbors(
     return pred, used_mask
 
 
+def _balanced_accuracy_by_k_from_prepared_neighbors(
+    labels: np.ndarray,
+    neigh_idx: np.ndarray,
+    valid_counts: np.ndarray,
+    k_values: Sequence[int],
+) -> dict[int, float]:
+    candidates = _normalize_k_values(k_values)
+    out: dict[int, float] = {}
+    for k in candidates:
+        pred, used_mask = _predict_labels_from_neighbors(
+            labels=labels,
+            neigh_idx=neigh_idx,
+            valid_counts=valid_counts,
+            k=int(k),
+        )
+        if not bool(np.any(used_mask)):
+            continue
+        out[int(k)] = float(balanced_accuracy_score(labels[used_mask], pred[used_mask]))
+    if not out:
+        raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
+    return out
+
+
 def _prepare_neighbors(
     features: np.ndarray,
     slide_ids: np.ndarray,
@@ -306,22 +329,12 @@ def _knn_balanced_accuracy_by_k(
         target_k=kmax,
         context=warn_context_with_fetch,
     )
-
-    out: dict[int, float] = {}
-    for k in candidates:
-        pred, used_mask = _predict_labels_from_neighbors(
-            labels=labels,
-            neigh_idx=neigh,
-            valid_counts=valid_counts,
-            k=int(k),
-        )
-        if not bool(np.any(used_mask)):
-            continue
-        out[int(k)] = float(balanced_accuracy_score(labels[used_mask], pred[used_mask]))
-
-    if not out:
-        raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
-    return out
+    return _balanced_accuracy_by_k_from_prepared_neighbors(
+        labels=labels,
+        neigh_idx=neigh,
+        valid_counts=valid_counts,
+        k_values=candidates,
+    )
 
 
 def _select_k_from_balanced_accuracy(

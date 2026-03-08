@@ -43,7 +43,7 @@ def _sidecar_payload(sidecar_path: Path) -> dict:
         return {}
     if not isinstance(raw, dict):
         return {}
-    keys = ("manifest", "model_id", "extract", "mixed_precision", "n_samples", "embedding_dim")
+    keys = ("manifest", "manifest_fingerprint", "model_id", "extract", "mixed_precision", "n_samples", "embedding_dim")
     return {key: raw.get(key) for key in keys if key in raw}
 
 
