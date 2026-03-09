@@ -207,7 +207,7 @@ Outputs:
 
 ### Analyze Saved Metrics
 
-You can compute correlations, rank tables, and rank-shift summaries from a `metrics.csv` file:
+You can compute correlations, rank tables, rank-shift summaries, and model-specific CCRR subgroup summaries from a `metrics.csv` file:
 
 ```bash
 python scripts/analyze_results.py \
@@ -224,10 +224,113 @@ Outputs are written to `/path/to/results/analysis/` by default:
 - `k_sweep_sensitivity.csv` (when `k_sweep_metrics.csv` is available)
 - `ccrr_m_sweep_sensitivity.csv` (when `ccrr_m_sweep_metrics.csv` is available)
 - `analysis_report.md`
+- `model_specific_ccrr_subgroups.csv` (when `per_sample_metrics.csv` is available)
+- `model_specific_ccrr_subgroups.md` (when `per_sample_metrics.csv` is available)
 
 `scripts/analyze_results.py` auto-detects sibling sweep files next to `metrics.csv` by default:
 - `k_sweep_metrics.csv`
 - `ccrr_m_sweep_metrics.csv`
+- `per_sample_metrics.csv`
+
+`model_action_flags.csv` is intentionally narrow now. It keeps only:
+- rank-shift flags for meaningful rank disagreements
+- `coverage_risk` when undefined coverage is high
+- `poor_embedding` for OO-dominated undefined mass
+- `tail_gap_ltm_high` for large CCRR vs lower-tail-mean gaps
+
+`analysis_report.md` now renders:
+- a dedicated `Rank Shift Analysis (Pairwise)` section
+- a dedicated `Coverage Risk` section with one row per model
+- an `Additional Insights and Action Flags` section that excludes repeated `coverage_risk` and `rank_shift_*` entries
+
+The subgroup analysis uses `ccrr_m1` and treats each analysis context as either:
+- one binary `dataset_wide` sample universe, or
+- one explicit `paired_2x2` subset
+
+For each `(model, context)`, it reports three subgroup scopes:
+- `stratum` = `(label, medical_center)` as the primary clinical view
+- `label`
+- `medical_center`
+
+Each subgroup row carries descriptive evidence:
+- `n_samples`, `group_frac`
+- `mean_ccrr`, `rest_mean_ccrr`, `mean_ccrr_delta_vs_rest`
+- `median_ccrr`, `rest_median_ccrr`, `median_ccrr_delta_vs_rest`
+- `ccrr_lt1_frac`, `ccrr_lt1_count`, `rest_ccrr_lt1_frac`, `ccrr_lt1_frac_delta_vs_rest`
+- `subgroup_q_alpha`, `subgroup_ltm_alpha`, `internal_tail_drop`
+- `tier1_status`, `tier2_status`
+- `tail_count`, `tail_prevalence`, `context_tail_prevalence`, `tail_prevalence_delta`, `tail_prevalence_ratio`, `tail_share`
+- `tail_mean_ccrr`, `rest_tail_mean_ccrr`, `tail_mean_ccrr_delta_vs_rest`
+- `tail_severity_label`, `tier3_status`
+
+The markdown report is now split into three tiered tables per `(model, context)`:
+
+1. `Broad Subgroup Weakness`
+   - complement-based comparison
+   - columns:
+     - `median_ccrr`, `rest_median_ccrr`, `median_ccrr_delta_vs_rest`
+     - `ccrr_lt1_frac`, `rest_ccrr_lt1_frac`, `ccrr_lt1_frac_delta_vs_rest`
+     - `tier1_status`
+   - `tier1_status` uses three non-neutral labels when:
+     - `median_ccrr_delta_vs_rest <= -0.05`
+     - `ccrr_lt1_frac_delta_vs_rest >= 0.05`
+   - `broad_weakness` when:
+     - `median_ccrr < 1.0`
+     - `rest_median_ccrr >= 1.0`
+   - `relative_weakness` when:
+     - `median_ccrr >= 1.0`
+     - `rest_median_ccrr >= 1.0`
+   - `aggravated_weakness` when:
+     - `median_ccrr < 1.0`
+     - `rest_median_ccrr < 1.0`
+   - if the subgroup median stays `>= 1.0` while the rest median is already `< 1.0`, Tier 1 stays `neutral`
+
+2. `Hidden Subgroup Pockets`
+   - subgroup-internal comparison
+   - markdown columns:
+     - `n_samples`
+     - `ccrr_lt1_frac`
+     - `ccrr_lt1_count`
+     - `median_ccrr`
+     - `subgroup_ltm_alpha`
+     - `internal_tail_drop = median_ccrr - subgroup_ltm_alpha`
+     - `tier2_status`
+   - Tier 2 now uses a stricter internal-pocket gate so a few extreme samples do not drive the label by themselves:
+     - `n_samples >= 10`
+     - `subgroup_ltm_alpha <= 0.90`
+     - `internal_tail_drop >= 0.25`
+     - `ccrr_lt1_frac >= 0.15`
+     - `ccrr_lt1_count >= 3`
+   - `tier2_status = hidden_pocket` when that gate is met and:
+     - `median_ccrr >= 1.15`
+   - `tier2_status = aggravated_weakness` when that gate is met and:
+     - `median_ccrr < 1.0`
+   - `tier2_status = internal_spread` when:
+     - `n_samples >= 10`
+     - `median_ccrr >= 1.15`
+     - `subgroup_ltm_alpha >= 1.0`
+     - `internal_tail_drop >= 0.25`
+   - `subgroup_q_alpha` is kept in the CSV evidence table but not headlined in markdown
+
+3. `Tail-Specific Fragility`
+   - global-tail enrichment plus rest-of-tail severity
+   - columns:
+     - `tail_prevalence`, `context_tail_prevalence`, `tail_prevalence_ratio`
+     - `tail_mean_ccrr`, `rest_tail_mean_ccrr`
+     - `tail_severity_label`
+     - `tier3_status`
+   - `tier3_status` is derived independently from:
+     - enrichment: `tail_prevalence_ratio >= 2.0`
+     - severity label:
+       - `more severe` when `tail_mean_ccrr_delta_vs_rest <= -0.05`
+       - `similar` when `|tail_mean_ccrr_delta_vs_rest| < 0.05`
+       - `not more severe` when `tail_mean_ccrr_delta_vs_rest >= 0.05`
+
+All subgroup rows are shown in markdown now. Low-support rows are retained with `insufficient_support` status instead of being dropped from the report.
+
+The full tier semantics and thresholds are documented in [`docs/ccrr-breakdown.md`](docs/ccrr-breakdown.md).
+
+`dataset_wide` subgroup interpretation is intentionally skipped for multi-class datasets, because pooled class boundaries are heterogeneous and the resulting subgroup conclusions are clinically weak. Use paired runs for clinically meaningful subgroup analysis there.
 
 You can also override with:
 - `--k-sweep-csv /path/to/k_sweep_metrics.csv`
