@@ -13,7 +13,6 @@ if str(ROOT) not in sys.path:
 
 import extract_embeddings as ee
 from model_registry import ModelSpec, _build_model_registry, _parse_models
-from common import parse_k_candidates
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from mari import CCRR, MaRI, RI
 from mari.metrics.neighbors import (
@@ -34,7 +33,9 @@ from metrics_io import (
     ccrr_search_signature,
     excluded_centers_signature,
     k_candidates_signature,
+    parse_k_candidates,
     save_metrics,
+    safe_model_name,
 )
 from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
@@ -52,21 +53,16 @@ from plotting import (
     plot_ri_k_sweep,
 )
 
-
-def _safe_model_name(model: str) -> str:
-    return str(model).replace("/", "_").replace(":", "_")
-
-
 def _sample_distribution_dir(results_dir: Path) -> Path:
     return results_dir / "sample_distributions"
 
 
 def _distribution_path(results_dir: Path, metric_name: str, model: str) -> Path:
-    return _sample_distribution_dir(results_dir) / f"{metric_name}.{_safe_model_name(model)}.npy"
+    return _sample_distribution_dir(results_dir) / f"{metric_name}.{safe_model_name(model)}.npy"
 
 
 def _distribution_meta_path(results_dir: Path, metric_name: str, model: str) -> Path:
-    return _sample_distribution_dir(results_dir) / f"{metric_name}.{_safe_model_name(model)}.json"
+    return _sample_distribution_dir(results_dir) / f"{metric_name}.{safe_model_name(model)}.json"
 
 
 def _per_sample_metrics_path(results_dir: Path) -> Path:
@@ -82,7 +78,7 @@ def _per_sample_metrics_by_model_dir(results_dir: Path) -> Path:
 
 
 def _per_sample_metrics_by_model_paths(results_dir: Path, model: str) -> tuple[Path, Path]:
-    base = _per_sample_metrics_by_model_dir(results_dir) / _safe_model_name(model)
+    base = _per_sample_metrics_by_model_dir(results_dir) / safe_model_name(model)
     return base.with_suffix(".csv"), base.with_suffix(".json")
 
 

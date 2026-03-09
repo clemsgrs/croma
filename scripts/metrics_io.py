@@ -4,6 +4,17 @@ from pathlib import Path
 from typing import Iterable, Mapping, TextIO
 
 
+def parse_k_candidates(raw: str) -> list[int]:
+    values = [int(v.strip()) for v in raw.split(",") if v.strip()]
+    if not values:
+        raise ValueError("k-candidates must include at least one integer")
+    return values
+
+
+def safe_model_name(model: str) -> str:
+    return str(model).replace("/", "_").replace(":", "_")
+
+
 def k_candidates_signature(k_candidates: list[int] | tuple[int, ...]) -> str:
     uniq = sorted({int(k) for k in k_candidates})
     if not uniq:
@@ -100,4 +111,3 @@ def save_metrics(rows: Iterable[Mapping[str, object]], csv_path: Path, json_path
     writer = StreamingMetricsWriter(csv_path=csv_path, json_path=json_path)
     writer.write_rows(rows)
     writer.close()
-
