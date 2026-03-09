@@ -1,7 +1,7 @@
+import csv
 import json
 from pathlib import Path
-
-import pandas as pd
+from typing import Iterable, Mapping, TextIO
 
 
 def k_candidates_signature(k_candidates: list[int] | tuple[int, ...]) -> str:
@@ -33,10 +33,71 @@ def ccrr_search_signature(
     )
 
 
-def save_metrics(rows: list[dict], csv_path: Path, json_path: Path) -> None:
-    csv_path.parent.mkdir(parents=True, exist_ok=True)
-    df = pd.DataFrame(rows)
-    df.to_csv(csv_path, index=False)
-    json_path.write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+class StreamingMetricsWriter:
+    def __init__(self, *, csv_path: Path, json_path: Path) -> None:
+        self.csv_path = csv_path
+        self.json_path = json_path
+        self._csv_file: TextIO | None = None
+        self._json_file: TextIO | None = None
+        self._csv_writer: csv.DictWriter | None = None
+        self._fieldnames: list[str] | None = None
+        self._has_rows = False
+        self._is_closed = False
 
+    @property
+    def has_rows(self) -> bool:
+        return self._has_rows
+
+    def write_rows(self, rows: Iterable[Mapping[str, object]]) -> int:
+        count = 0
+        for row in rows:
+            normalized = dict(row)
+            self._ensure_open(normalized)
+            assert self._csv_writer is not None
+            assert self._json_file is not None
+            self._csv_writer.writerow(normalized)
+            if self._has_rows:
+                self._json_file.write(",\n")
+            else:
+                self._json_file.write("[\n")
+            self._json_file.write(json.dumps(normalized, allow_nan=True))
+            self._has_rows = True
+            count += 1
+        return count
+
+    def close(self) -> None:
+        if self._is_closed:
+            return
+        if self._json_file is not None:
+            if self._has_rows:
+                self._json_file.write("\n]\n")
+            else:
+                self._json_file.write("[]\n")
+            self._json_file.close()
+            self._json_file = None
+        if self._csv_file is not None:
+            self._csv_file.close()
+            self._csv_file = None
+        self._csv_writer = None
+        self._fieldnames = None
+        self._is_closed = True
+
+    def _ensure_open(self, row: Mapping[str, object]) -> None:
+        if self._is_closed:
+            raise RuntimeError("cannot write rows after closing StreamingMetricsWriter")
+        if self._csv_writer is not None and self._json_file is not None:
+            return
+        self.csv_path.parent.mkdir(parents=True, exist_ok=True)
+        self.json_path.parent.mkdir(parents=True, exist_ok=True)
+        self._fieldnames = list(row.keys())
+        self._csv_file = self.csv_path.open("w", encoding="utf-8", newline="")
+        self._json_file = self.json_path.open("w", encoding="utf-8")
+        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=self._fieldnames, extrasaction="ignore")
+        self._csv_writer.writeheader()
+
+
+def save_metrics(rows: Iterable[Mapping[str, object]], csv_path: Path, json_path: Path) -> None:
+    writer = StreamingMetricsWriter(csv_path=csv_path, json_path=json_path)
+    writer.write_rows(rows)
+    writer.close()
 

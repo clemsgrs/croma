@@ -30,6 +30,7 @@ from mari.metrics.pairs import (
 from mari.types import CCRRResult
 from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
+    StreamingMetricsWriter,
     ccrr_search_signature,
     excluded_centers_signature,
     k_candidates_signature,
@@ -643,8 +644,7 @@ def main() -> int:
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
     ccrr_m_sweep_rows: list[dict] = []
-    per_sample_rows: list[dict] = []
-    per_sample_rows_by_model: dict[str, list[dict]] = {}
+    per_sample_writer = StreamingMetricsWriter(csv_path=per_sample_csv, json_path=per_sample_json)
 
     progress_write(f"[benchmark] manifest={args.manifest}", enabled=progress_enabled)
     progress_write(f"[benchmark] models={', '.join(models)}", enabled=progress_enabled)
@@ -1310,8 +1310,10 @@ def main() -> int:
                     ccrr_samples_aligned_by_m=np.asarray(ccrr_samples_aligned_by_m, dtype=float),
                     ccrr_m_values=ccrr_m_values,
                 )
-                per_sample_rows_by_model[str(model)] = model_per_sample_rows
-                per_sample_rows.extend(model_per_sample_rows)
+                model_per_sample_rows = sorted(model_per_sample_rows, key=lambda row: int(row["occurrence_index"]))
+                model_csv, model_json = _per_sample_metrics_by_model_paths(results_dir, str(model))
+                save_metrics(rows=model_per_sample_rows, csv_path=model_csv, json_path=model_json)
+                per_sample_writer.write_rows(model_per_sample_rows)
                 for k in k_values:
                     k_sweep_rows.append(
                         {
@@ -1358,20 +1360,12 @@ def main() -> int:
                 failures.append(f"{model}: metrics failed ({exc})")
                 ticker.log(f"[benchmark] metrics failed: {exc}")
 
+    per_sample_writer.close()
+
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
         save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
         save_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
-        if per_sample_rows:
-            per_sample_rows_sorted = sorted(
-                per_sample_rows,
-                key=lambda row: (str(row["model"]), int(row["occurrence_index"])),
-            )
-            save_metrics(rows=per_sample_rows_sorted, csv_path=per_sample_csv, json_path=per_sample_json)
-            for model_name, model_rows in per_sample_rows_by_model.items():
-                model_csv, model_json = _per_sample_metrics_by_model_paths(results_dir, model_name)
-                model_rows_sorted = sorted(model_rows, key=lambda row: int(row["occurrence_index"]))
-                save_metrics(rows=model_rows_sorted, csv_path=model_csv, json_path=model_json)
         plot_knn_bio_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png")
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
