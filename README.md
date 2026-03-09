@@ -227,6 +227,8 @@ Outputs are written to `/path/to/results/analysis/` by default:
 - `model_specific_ccrr_subgroups.csv` (when `per_sample_metrics.csv` is available)
 - `model_specific_ccrr_subgroups.md` (when `per_sample_metrics.csv` is available)
 
+`scripts/analyze_results.py` no longer writes correlation PNG heatmaps; the CSVs are the canonical correlation artifacts.
+
 `scripts/analyze_results.py` auto-detects sibling sweep files next to `metrics.csv` by default:
 - `k_sweep_metrics.csv`
 - `ccrr_m_sweep_metrics.csv`

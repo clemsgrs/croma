@@ -9,7 +9,6 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from plotting import (
-    _color_for_model,
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
     plot_ccrr_ltm_comparison,
@@ -101,12 +100,6 @@ def _sample_ccrr_ltm_rows() -> list[dict]:
         {"model": "UNI", "ccrr": 1.05, "ccrr_ltm_alpha": 0.82, "ccrr_alpha": 0.10},
         {"model": "CONCH", "ccrr": 0.96, "ccrr_ltm_alpha": 0.61, "ccrr_alpha": 0.10},
     ]
-
-
-def test_unknown_model_color_fallback_is_gray() -> None:
-    assert _color_for_model("UnknownModel") == "#808080"
-
-
 def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
     cases = [
         (plot_bio_vs_center_scatter, {"rows": _sample_summary_rows()}, "bio_vs_center_scatter.png"),

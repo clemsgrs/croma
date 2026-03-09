@@ -39,10 +39,7 @@ _HIGHER_IS_BETTER = {
 
 _THRESH_RANK_SHIFT = 2.0
 _THRESH_UNDEFINED_COVERAGE_RISK = 0.25
-_THRESH_SS_DOMINATED_HIGH = 0.20
 _THRESH_OO_DOMINATED_HIGH = 0.10
-_THRESH_SS_RATIO_OF_UNDEFINED = 0.80
-_THRESH_TAIL_GAP_Q = 0.15
 _THRESH_TAIL_GAP_LTM = 0.20
 _THRESH_K_SWEEP_RANGE = 0.15
 _THRESH_M_SWEEP_CCRR_GAIN = 0.08
@@ -106,7 +103,6 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Optional CCRR m-sweep CSV path (default: auto-detect next to metrics CSV).",
     )
-    parser.add_argument("--no-plots", action="store_true", help="Skip PNG plot generation.")
     return parser.parse_args()
 
 
@@ -1291,22 +1287,6 @@ def _write_report(
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _write_heatmap(df: pd.DataFrame, out_path: Path, title: str) -> None:
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots(figsize=(8, 6))
-    mat = ax.imshow(df.to_numpy(dtype=float), cmap="coolwarm", vmin=-1.0, vmax=1.0, aspect="auto")
-    ax.set_xticks(range(len(df.columns)))
-    ax.set_xticklabels(df.columns, rotation=45, ha="right")
-    ax.set_yticks(range(len(df.index)))
-    ax.set_yticklabels(df.index)
-    ax.set_title(title)
-    fig.colorbar(mat, ax=ax, fraction=0.046, pad=0.04)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=180)
-    plt.close(fig)
-
-
 def main() -> int:
     args = _parse_args()
     metrics_csv = Path(args.metrics_csv)
@@ -1386,13 +1366,6 @@ def main() -> int:
         k_sensitivity_df=k_sensitivity_df,
         ccrr_m_sensitivity_df=ccrr_m_sensitivity_df,
     )
-
-    if not bool(args.no_plots):
-        try:
-            _write_heatmap(pearson_corr, out_dir / "correlation_pearson.png", "Pearson Correlation")
-            _write_heatmap(spearman_corr, out_dir / "correlation_spearman.png", "Spearman Correlation")
-        except ModuleNotFoundError as exc:
-            print(f"[analyze_results] Plot generation skipped (missing dependency): {exc}")
 
     print(f"[analyze_results] wrote analysis to: {out_dir}")
     return 0

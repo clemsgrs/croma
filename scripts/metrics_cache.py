@@ -6,6 +6,7 @@ from pathlib import Path
 
 import hashlib
 import numpy as np
+from metrics_io import safe_model_name
 
 CACHE_SCHEMA_VERSION = 1
 CACHE_CODE_FINGERPRINT = "benchmark-metrics-v1"
@@ -55,11 +56,6 @@ def build_cache_key(
     key["key_hash"] = key_hash
     return key
 
-
-def _safe_model_name(model: str) -> str:
-    return str(model).replace("/", "_").replace(":", "_")
-
-
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as tmp:
@@ -88,7 +84,7 @@ class MetricsArtifactCache:
         self.index_path = self.cache_dir / "index.jsonl"
 
     def _artifact_path(self, *, artifact_name: str, model: str, key_hash: str, suffix: str) -> Path:
-        return self.artifacts_dir / str(artifact_name) / _safe_model_name(model) / f"{key_hash}{suffix}"
+        return self.artifacts_dir / str(artifact_name) / safe_model_name(model) / f"{key_hash}{suffix}"
 
     def _load_index(self) -> dict[str, dict]:
         if not self.index_path.exists():
