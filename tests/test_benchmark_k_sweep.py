@@ -148,6 +148,7 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path:
     metrics_df = pd.read_csv(results_dir / "metrics.csv")
     k_sweep_df = pd.read_csv(results_dir / "k_sweep_metrics.csv")
     per_sample_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
+    per_model_dir = results_dir / "per_sample_metrics_by_model"
 
     assert set(metrics_df["model"]) == set(models)
     assert set(metrics_df["evaluation_design"]) == {"dataset_wide"}
@@ -164,12 +165,17 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path:
         model_rows = per_sample_df[per_sample_df["model"] == model].sort_values("occurrence_index")
         assert model_rows["occurrence_index"].tolist() == list(range(len(_toy_manifest())))
         assert model_rows["sample_index"].tolist() == list(range(len(_toy_manifest())))
+        model_df = pd.read_csv(per_model_dir / f"{model}.csv")
+        assert model_df["occurrence_index"].tolist() == list(range(len(_toy_manifest())))
+        assert set(model_df["model"]) == {model}
 
     for path in (
         results_dir / "metrics.csv",
         results_dir / "k_sweep_metrics.csv",
         results_dir / "ccrr_m_sweep_metrics.csv",
         results_dir / "per_sample_metrics.csv",
+        per_model_dir / "M1.csv",
+        per_model_dir / "M2.csv",
         plots_dir / "benchmark_6panel_summary.png",
         plots_dir / "ccrr_ltm_comparison.png",
     ):

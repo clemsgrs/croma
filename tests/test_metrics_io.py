@@ -56,3 +56,25 @@ def test_save_metrics_writes_csv_and_json(tmp_path: Path) -> None:
     payload = json.loads(json_path.read_text(encoding="utf-8"))
     assert isinstance(payload, list)
     assert len(payload) == 2
+
+
+def test_save_metrics_accepts_generators(tmp_path: Path) -> None:
+    csv_path = tmp_path / "metrics.csv"
+    json_path = tmp_path / "metrics.json"
+
+    def row_iter():
+        yield {"model": "A", "ri": 0.5, "mari": 0.6}
+        yield {"model": "B", "ri": 0.4, "mari": 0.7}
+
+    mio.save_metrics(rows=row_iter(), csv_path=csv_path, json_path=json_path)
+
+    df = pd.read_csv(csv_path)
+    assert df.to_dict(orient="records") == [
+        {"model": "A", "ri": 0.5, "mari": 0.6},
+        {"model": "B", "ri": 0.4, "mari": 0.7},
+    ]
+    payload = json.loads(json_path.read_text(encoding="utf-8"))
+    assert payload == [
+        {"model": "A", "ri": 0.5, "mari": 0.6},
+        {"model": "B", "ri": 0.4, "mari": 0.7},
+    ]
