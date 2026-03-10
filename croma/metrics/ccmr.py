@@ -15,7 +15,6 @@ from croma.metrics.neighbors import _filter_query_neighbors_excluding_same_slide
 from croma.metrics.pairs import (
     EvaluationSubset,
     ensure_required_columns,
-    normalize_center_values,
     resolve_manifest_subsets,
     validate_subset_manifest,
 )
@@ -27,7 +26,6 @@ logger = logging.getLogger("croma")
 
 @dataclass(frozen=True)
 class _CCMRSearchMeta:
-    acceptance_met: bool
     k_start: int
     k_final: int
     retries: int
@@ -99,7 +97,6 @@ def _iterative_typed_neighbor_search(
     centers: np.ndarray,
     slide_ids: np.ndarray,
     m: int,
-    acceptance_threshold: float,
     start_k: int,
     k_growth_factor: float,
 ) -> tuple[np.ndarray, np.ndarray, _CCMRSearchMeta]:
@@ -112,7 +109,6 @@ def _iterative_typed_neighbor_search(
             so_dists,
             os_dists,
             _CCMRSearchMeta(
-                acceptance_met=True,
                 k_start=0,
                 k_final=0,
                 retries=0,
@@ -136,7 +132,6 @@ def _iterative_typed_neighbor_search(
                 so_dists,
                 os_dists,
                 _CCMRSearchMeta(
-                    acceptance_met=True,
                     k_start=k_start_used,
                     k_final=int(k_current),
                     retries=int(retries),
@@ -169,25 +164,11 @@ def _iterative_typed_neighbor_search(
             defined_mask[query_indices[newly_defined]] = True
         unresolved_mask = ~defined_mask
 
-        undefined_frac = float(np.count_nonzero(unresolved_mask)) / float(n_samples)
-        if undefined_frac <= float(acceptance_threshold):
-            return (
-                so_dists,
-                os_dists,
-                _CCMRSearchMeta(
-                    acceptance_met=True,
-                    k_start=k_start_used,
-                    k_final=int(k_current),
-                    retries=int(retries),
-                ),
-            )
-
         if int(k_current) >= n_samples - 1:
             return (
                 so_dists,
                 os_dists,
                 _CCMRSearchMeta(
-                    acceptance_met=False,
                     k_start=k_start_used,
                     k_final=int(k_current),
                     retries=int(retries),
@@ -217,14 +198,9 @@ class CrossConfounderMarginRatio:
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
         m: int | list[int] | tuple[int, ...] = 1,
         alpha: float = 0.10,
-        exclude_centers: object | None = None,
-        max_pairs: int | None = None,
-        random_state: int = 0,
-        acceptance_threshold: float = 0.0,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
     ) -> CCMRResult | dict[int, CCMRResult]:
-        del max_pairs, random_state
         evaluation_design = _normalize_evaluation_design(evaluation_design)
 
         if isinstance(m, (list, tuple)):
@@ -238,8 +214,6 @@ class CrossConfounderMarginRatio:
         unique_m_values = sorted(set(ordered_m_values))
         if min(unique_m_values) < 1:
             raise ValueError("m must be >= 1")
-        if float(acceptance_threshold) < 0.0 or float(acceptance_threshold) > 1.0:
-            raise ValueError("acceptance_threshold must be in [0, 1]")
         if int(start_k) < 1:
             raise ValueError("start_k must be >= 1")
         if float(k_growth_factor) <= 1.0:
@@ -260,18 +234,6 @@ class CrossConfounderMarginRatio:
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
             validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
 
-        excluded = normalize_center_values(exclude_centers)
-        if excluded:
-            center_series = df["medical_center"].map(lambda v: str(v).strip())
-            keep_mask = ~center_series.isin(excluded)
-            if not bool(keep_mask.any()):
-                excluded_txt = ", ".join(excluded)
-                raise ValueError(
-                    f"No samples remain after excluding centers [{excluded_txt}] from dataset '{dataset_name}'"
-                )
-            features = features[keep_mask.to_numpy()]
-            df = df.loc[keep_mask].reset_index(drop=True)
-
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
             subsets = resolve_manifest_subsets(df)
             if not subsets:
@@ -291,7 +253,6 @@ class CrossConfounderMarginRatio:
         k_start_values: list[int] = []
         k_final_values: list[int] = []
         retries_values: list[int] = []
-        acceptance_met_values: dict[int, list[bool]] = {int(mm): [] for mm in unique_m_values}
         m_max = int(max(unique_m_values))
 
         for subset in subsets:
@@ -313,7 +274,6 @@ class CrossConfounderMarginRatio:
                 centers=centers,
                 slide_ids=slide_ids,
                 m=int(m_max),
-                acceptance_threshold=float(acceptance_threshold),
                 start_k=int(start_k),
                 k_growth_factor=float(k_growth_factor),
             )
@@ -330,13 +290,6 @@ class CrossConfounderMarginRatio:
                 n_informative = int(informative.sum())
                 n_undefined = int(n_sub - n_informative)
                 total_undefined[int(mm)] += n_undefined
-
-                if int(mm) == int(m_max):
-                    acceptance_met_values[int(mm)].append(bool(search_meta.acceptance_met))
-                else:
-                    acceptance_met_values[int(mm)].append(
-                        bool((float(n_undefined) / float(n_sub)) <= float(acceptance_threshold))
-                    )
 
                 occurrence_values_by_m[int(mm)].append(np.asarray(sample_ccmr, dtype=float))
                 occurrence_subsets_by_m[int(mm)].append(np.full(n_sub, str(subset.subset_id), dtype=object))
@@ -377,20 +330,14 @@ class CrossConfounderMarginRatio:
                 if occurrence_sources_by_m[int(mm)]
                 else np.empty((0,), dtype=int)
             )
+            occurrence_defined_mask = np.isfinite(occurrence_values)
             sample_values = occurrence_values[np.isfinite(occurrence_values)].astype(float)
             undefined_frac = float(total_undefined[int(mm)] / occurrence_total) if occurrence_total > 0 else 0.0
-            acceptance_met = bool(all(acceptance_met_values[int(mm)])) if acceptance_met_values[int(mm)] else True
-
-            if occurrence_total > 0 and not acceptance_met:
-                logger.warning(
-                    f"[CCMR] undefined threshold unmet: {total_undefined[int(mm)]}/{occurrence_total} "
-                    f"({undefined_frac * 100.0:.1f}%) > target {float(acceptance_threshold) * 100.0:.1f}% "
-                    f"after reaching k={k_final_value}. Returning best-effort result."
-                )
 
             if total_undefined[int(mm)] > 0:
                 logger.warning(
-                    f"[CCMR] {total_undefined[int(mm)]}/{occurrence_total} samples "
+                    f"[CCMR] dataset '{dataset_name}' ({evaluation_design}) has "
+                    f"{total_undefined[int(mm)]}/{occurrence_total} unresolved samples "
                     f"({undefined_frac * 100.0:.1f}%) could not find {mm} SO and {mm} OS neighbor(s)."
                 )
 
@@ -404,13 +351,12 @@ class CrossConfounderMarginRatio:
                 pair_values=finite_pair,
                 sample_values=sample_values,
                 sample_values_aligned=occurrence_values,
+                occurrence_defined_mask=occurrence_defined_mask,
                 undefined_frac=undefined_frac,
                 evaluation_design=str(evaluation_design),
                 evaluation_unit=str(evaluation_unit),
                 occurrence_subsets=occurrence_subsets,
                 occurrence_source_indices=occurrence_sources,
-                acceptance_threshold=float(acceptance_threshold),
-                acceptance_met=bool(acceptance_met),
                 k_start=int(k_start_value),
                 k_final=int(k_final_value),
                 retries=int(retries_value),

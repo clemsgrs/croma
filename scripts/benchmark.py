@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 import extract_embeddings as ee
 from model_registry import ModelSpec, _build_model_registry, _parse_models
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
+from croma.alignment import build_embedding_source_manifest
 from croma import CCMR, MaRI, RI
 from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
@@ -22,7 +23,6 @@ from croma.metrics.neighbors import (
 )
 from croma.metrics.pairs import (
     load_manifest,
-    normalize_center_values,
     resolve_manifest_subsets,
     retain_complete_subset_memberships,
 )
@@ -31,7 +31,6 @@ from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
     StreamingMetricsWriter,
     ccmr_search_signature,
-    excluded_centers_signature,
     k_candidates_signature,
     parse_k_candidates,
     save_metrics,
@@ -86,30 +85,6 @@ def _npy_matches_shape(values: np.ndarray | None, expected_shape: tuple[int, ...
     if values is None:
         return False
     return tuple(int(v) for v in values.shape) == tuple(int(v) for v in expected_shape)
-
-
-_EMBEDDING_SOURCE_COLUMNS = ("sample_id", "image_path", "label", "medical_center", "slide_id")
-
-
-def _build_embedding_source_manifest(manifest_df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
-    missing = [col for col in _EMBEDDING_SOURCE_COLUMNS if col not in manifest_df.columns]
-    if missing:
-        raise ValueError(f"manifest is missing required columns for embedding-source dedupe: {missing}")
-
-    unique_rows: list[tuple[str, ...]] = []
-    key_to_index: dict[tuple[str, ...], int] = {}
-    row_to_source: list[int] = []
-    for row in manifest_df.loc[:, list(_EMBEDDING_SOURCE_COLUMNS)].itertuples(index=False, name=None):
-        key = tuple(str(value) for value in row)
-        idx = key_to_index.get(key)
-        if idx is None:
-            idx = len(unique_rows)
-            key_to_index[key] = idx
-            unique_rows.append(key)
-        row_to_source.append(int(idx))
-
-    embedding_manifest = pd.DataFrame(unique_rows, columns=_EMBEDDING_SOURCE_COLUMNS)
-    return embedding_manifest, np.asarray(row_to_source, dtype=int)
 
 
 def _embedding_manifest_path(dataset_dir: Path) -> Path:
@@ -217,7 +192,6 @@ def _parse_args() -> argparse.Namespace:
         description="Unified benchmark pipeline: extract embeddings, compute RI/MaRI metrics, and plot results."
     )
     parser.add_argument("--manifest", required=True, type=Path, help="Path to manifest CSV.")
-    parser.add_argument("--dataset-name", default="dataset", help="Dataset label for metrics output.")
     parser.add_argument(
         "--models",
         default="",
@@ -262,12 +236,6 @@ def _parse_args() -> argparse.Namespace:
         default=0.10,
         help="Tail percentile alpha used for CCMR Q_alpha/LTM_alpha reporting (default 0.10).",
     )
-    parser.add_argument(
-        "--exclude-center",
-        action="append",
-        default=[],
-        help="Medical center to exclude from computation. Repeat flag to exclude multiple centers.",
-    )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="auto", help="auto|cpu|cuda|cuda:0")
@@ -307,18 +275,9 @@ def _prepare_eval_manifest(
     *,
     manifest_df: pd.DataFrame,
     dataset_name: str,
-    excluded_centers: list[str] | tuple[str, ...],
     evaluation_design: str,
 ) -> pd.DataFrame:
-    center_series = manifest_df["medical_center"].map(str).str.strip()
-    keep_mask = ~center_series.isin(excluded_centers)
-    if not bool(keep_mask.any()):
-        excluded_txt = ", ".join(excluded_centers)
-        raise ValueError(
-            f"No samples remain after excluding centers [{excluded_txt}] from dataset '{dataset_name}'"
-        )
-
-    eval_manifest = manifest_df.loc[keep_mask].copy()
+    eval_manifest = manifest_df.copy()
     if evaluation_design == "paired_2x2":
         if "subset" not in eval_manifest.columns:
             raise ValueError(
@@ -364,7 +323,6 @@ def _build_per_sample_rows(
     tau: float,
     ccmr_alpha: float,
     ccmr_search_sig: str,
-    excluded_centers_sig: str,
     ri_samples_aligned: np.ndarray,
     mari_samples_aligned: np.ndarray,
     ri_defined_mask: np.ndarray,
@@ -401,7 +359,6 @@ def _build_per_sample_rows(
             "tau": float(tau),
             "ccmr_alpha": float(ccmr_alpha),
             "ccmr_search": str(ccmr_search_sig),
-            "excluded_centers": str(excluded_centers_sig),
             "ri": float(ri_samples_aligned[occurrence_index]),
             "mari": float(mari_samples_aligned[occurrence_index]),
             "ri_defined": bool(ri_defined_mask[occurrence_index]),
@@ -625,13 +582,12 @@ def main() -> int:
     )
     ccmr_m_values = list(range(1, int(args.ccmr_m_max) + 1))
     k_candidates_sig = k_candidates_signature(k_values)
-    excluded_centers = normalize_center_values(args.exclude_center)
-    excluded_centers_sig = excluded_centers_signature(excluded_centers)
     ccmr_search_sig = ccmr_search_signature(
         start_k=int(args.ccmr_start_k),
         k_growth_factor=float(args.ccmr_k_growth_factor),
         alpha=float(args.ccmr_alpha),
     )
+    dataset_name = str(args.manifest.stem)
 
     extraction_status: dict[str, str] = {}
     metrics_status: dict[str, str] = {}
@@ -647,19 +603,18 @@ def main() -> int:
     progress_write(f"[benchmark] output_dir={output_dir}", enabled=progress_enabled)
     progress_write(f"[benchmark] dataset_dir={dataset_dir}", enabled=progress_enabled)
     progress_write(f"[benchmark] evaluation_design={evaluation_design}", enabled=progress_enabled)
-    manifest_df = load_manifest(str(args.manifest), dataset_name=str(args.dataset_name))
+    manifest_df = load_manifest(str(args.manifest))
     base_manifest_fingerprint = manifest_fingerprint(manifest_df)
     eval_manifest = _prepare_eval_manifest(
         manifest_df=manifest_df,
-        dataset_name=str(args.dataset_name),
-        excluded_centers=excluded_centers,
+        dataset_name=dataset_name,
         evaluation_design=evaluation_design,
     )
     aligned_manifest = _build_aligned_manifest(
         eval_manifest=eval_manifest,
         evaluation_design=evaluation_design,
     )
-    embedding_manifest, embedding_keep_indices = _build_embedding_source_manifest(eval_manifest)
+    embedding_manifest, embedding_keep_indices = build_embedding_source_manifest(eval_manifest)
     embedding_manifest_path = _embedding_manifest_path(dataset_dir)
     embedding_manifest.to_csv(embedding_manifest_path, index=False)
     embedding_manifest_fingerprint = manifest_fingerprint(embedding_manifest)
@@ -707,7 +662,6 @@ def main() -> int:
                 input_fp = {
                     "manifest_fingerprint": base_manifest_fingerprint,
                     "embedding_fingerprint": embedding_fp,
-                    "excluded_centers_signature": excluded_centers_sig,
                 }
     
                 k_values_param = [int(k) for k in k_values]
@@ -958,7 +912,7 @@ def main() -> int:
                         target_column="label",
                         k_values=k_values,
                         evaluation_design=evaluation_design,
-                        warn_context=f"{args.dataset_name} k-curve",
+                        warn_context=f"{dataset_name} k-curve",
                         prepared_subsets=_ensure_paired_subset_cache() if evaluation_design == "paired_2x2" else None,
                     )
                     cache.put_json(key=keys["knn_bio_curve"], payload=_curve_payload(knn_bacc_by_k))
@@ -970,7 +924,7 @@ def main() -> int:
                         target_column="medical_center",
                         k_values=k_values,
                         evaluation_design=evaluation_design,
-                        warn_context=f"{args.dataset_name} center-k-curve",
+                        warn_context=f"{dataset_name} center-k-curve",
                         prepared_subsets=_ensure_paired_subset_cache() if evaluation_design == "paired_2x2" else None,
                     )
                     cache.put_json(key=keys["knn_center_curve"], payload=_curve_payload(knn_center_bacc_by_k))
@@ -1003,7 +957,7 @@ def main() -> int:
                     if evaluation_design == "paired_2x2":
                         ri_artifacts = RI._compute_artifacts_from_prepared_subsets(
                             prepared_subsets=_ensure_paired_subset_cache(),
-                            dataset_name=str(args.dataset_name),
+                            dataset_name=dataset_name,
                             k_values=k_values,
                             evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
@@ -1073,7 +1027,7 @@ def main() -> int:
                     if evaluation_design == "paired_2x2":
                         mari_artifacts = MaRI._compute_artifacts_from_prepared_subsets(
                             prepared_subsets=_ensure_paired_subset_cache(),
-                            dataset_name=str(args.dataset_name),
+                            dataset_name=dataset_name,
                             k_values=k_values,
                             evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
@@ -1171,13 +1125,12 @@ def main() -> int:
                     payload = ccmr_by_m[int(m)]
                     ccmr_m_rows_for_model.append(
                         {
-                            "dataset": str(args.dataset_name),
+                            "dataset": dataset_name,
                             "model": str(model),
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
                             "tau": float(args.tau),
                             "k_candidates": str(k_candidates_sig),
-                            "excluded_centers": str(excluded_centers_sig),
                             "ccmr_search": str(ccmr_search_sig),
                             "m": int(payload["m"]),
                             "ccmr": float(payload["ccmr"]),
@@ -1216,7 +1169,7 @@ def main() -> int:
                 saved_dist_path = _save_mari_sample_distribution(
                     results_dir=results_dir,
                     model=model,
-                    dataset=str(args.dataset_name),
+                    dataset=dataset_name,
                     evaluation_design=evaluation_design,
                     evaluation_unit=evaluation_unit,
                     tau=float(args.tau),
@@ -1228,7 +1181,7 @@ def main() -> int:
                 saved_ri_dist_path = _save_ri_sample_distribution(
                     results_dir=results_dir,
                     model=model,
-                    dataset=str(args.dataset_name),
+                    dataset=dataset_name,
                     evaluation_design=evaluation_design,
                     evaluation_unit=evaluation_unit,
                     selected_k=int(selected_k),
@@ -1243,14 +1196,13 @@ def main() -> int:
                 np.save(ccmr_dist_path, ccmr_samples)
     
                 row = {
-                    "dataset": str(args.dataset_name),
+                    "dataset": dataset_name,
                     "model": model,
                     "k": int(ri_summary["k"]),
                     "evaluation_design": evaluation_design,
                     "evaluation_unit": evaluation_unit,
                     "tau": float(args.tau),
                     "k_candidates": k_candidates_sig,
-                    "excluded_centers": excluded_centers_sig,
                     "ccmr_search": ccmr_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
                     "center_knn_bacc": float(knn_center_bacc_by_k[int(selected_k_center)]),
@@ -1288,7 +1240,7 @@ def main() -> int:
                 rows.append(row)
                 model_per_sample_rows = _build_per_sample_rows(
                     aligned_manifest=aligned_manifest,
-                    dataset_name=str(args.dataset_name),
+                    dataset_name=dataset_name,
                     model=str(model),
                     evaluation_design=evaluation_design,
                     evaluation_unit=evaluation_unit,
@@ -1296,7 +1248,6 @@ def main() -> int:
                     tau=float(args.tau),
                     ccmr_alpha=float(args.ccmr_alpha),
                     ccmr_search_sig=str(ccmr_search_sig),
-                    excluded_centers_sig=str(excluded_centers_sig),
                     ri_samples_aligned=np.asarray(ri_samples_aligned, dtype=float),
                     mari_samples_aligned=np.asarray(mari_samples_aligned, dtype=float),
                     ri_defined_mask=np.isfinite(np.asarray(ri_samples_aligned, dtype=float)),
@@ -1313,13 +1264,12 @@ def main() -> int:
                 for k in k_values:
                     k_sweep_rows.append(
                         {
-                            "dataset": str(args.dataset_name),
+                            "dataset": dataset_name,
                             "model": model,
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
                             "tau": float(args.tau),
                             "k_candidates": k_candidates_sig,
-                            "excluded_centers": excluded_centers_sig,
                             "ccmr_search": ccmr_search_sig,
                             "k": int(k),
                             "knn_bacc": float(knn_bacc_by_k[int(k)]),

@@ -35,13 +35,12 @@ class CCMRResult:
     pair_values: np.ndarray
     sample_values: np.ndarray
     sample_values_aligned: np.ndarray
+    occurrence_defined_mask: np.ndarray
     undefined_frac: float
     evaluation_design: str = "paired_2x2"
     evaluation_unit: str = "occurrence"
     occurrence_subsets: np.ndarray | None = None
     occurrence_source_indices: np.ndarray | None = None
-    acceptance_threshold: float = 0.0
-    acceptance_met: bool = True
     k_start: int = 0
     k_final: int = 0
     retries: int = 0

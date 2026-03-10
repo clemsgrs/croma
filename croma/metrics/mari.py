@@ -21,9 +21,6 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         k_candidates: list[int] | tuple[int, ...],
         tau: float = 0.2,
         evaluation_design: str = "paired_2x2",
-        exclude_centers: object | None = None,
-        max_pairs: int | None = None,
-        random_state: int = 0,
     ) -> RobustnessResult:
         if float(tau) <= 0.0:
             raise ValueError("tau must be > 0")
@@ -32,9 +29,6 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
             manifest=manifest,
             k_candidates=k_candidates,
             evaluation_design=evaluation_design,
-            exclude_centers=exclude_centers,
-            max_pairs=max_pairs,
-            random_state=random_state,
             tau=float(tau),
         )
 
@@ -47,9 +41,6 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         k_values: list[int] | tuple[int, ...],
         tau: float = 0.2,
         evaluation_design: str = "paired_2x2",
-        exclude_centers: object | None = None,
-        max_pairs: int | None = None,
-        random_state: int = 0,
     ) -> dict[int, float]:
         if float(tau) <= 0.0:
             raise ValueError("tau must be > 0")
@@ -58,8 +49,5 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
             manifest=manifest,
             k_values=k_values,
             evaluation_design=evaluation_design,
-            exclude_centers=exclude_centers,
-            max_pairs=max_pairs,
-            random_state=random_state,
             tau=float(tau),
         )

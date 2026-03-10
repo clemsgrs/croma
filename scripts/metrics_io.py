@@ -24,13 +24,6 @@ def k_candidates_signature(k_candidates: list[int] | tuple[int, ...]) -> str:
     return ",".join(str(int(k)) for k in uniq)
 
 
-def excluded_centers_signature(excluded_centers: list[str] | tuple[str, ...] | None) -> str:
-    if not excluded_centers:
-        return ""
-    uniq = sorted({str(center).strip() for center in excluded_centers if str(center).strip()})
-    return ",".join(uniq)
-
-
 def ccmr_search_signature(
     *,
     start_k: int,
