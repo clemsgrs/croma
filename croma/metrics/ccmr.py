@@ -6,34 +6,34 @@ import numpy as np
 import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
-from mari.metrics.base import (
+from croma.metrics.base import (
     EVALUATION_DESIGN_DATASET_WIDE,
     EVALUATION_DESIGN_PAIRED_2X2,
     _normalize_evaluation_design,
 )
-from mari.metrics.neighbors import _filter_query_neighbors_excluding_same_slide, _initial_n_neighbors
-from mari.metrics.pairs import (
+from croma.metrics.neighbors import _filter_query_neighbors_excluding_same_slide, _initial_n_neighbors
+from croma.metrics.pairs import (
     EvaluationSubset,
     ensure_required_columns,
     normalize_center_values,
     resolve_manifest_subsets,
     validate_subset_manifest,
 )
-from mari.metrics.tail import compute_tail_metrics
-from mari.types import CCRRResult
+from croma.metrics.tail import compute_tail_metrics
+from croma.types import CCMRResult
 
-logger = logging.getLogger("mari")
+logger = logging.getLogger("croma")
 
 
 @dataclass(frozen=True)
-class _CCRRSearchMeta:
+class _CCMRSearchMeta:
     acceptance_met: bool
     k_start: int
     k_final: int
     retries: int
 
 
-def _compute_sample_ccrr(
+def _compute_sample_ccmr(
     so_dists: np.ndarray,
     os_dists: np.ndarray,
 ) -> np.ndarray:
@@ -45,11 +45,11 @@ def _compute_sample_ccrr(
     mean_os = np.mean(os_dists, axis=1)
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        ccrr = mean_os / mean_so
+        ccmr = mean_os / mean_so
 
-    ccrr[undefined] = np.nan
-    ccrr[mean_so == 0.0] = np.nan
-    return ccrr
+    ccmr[undefined] = np.nan
+    ccmr[mean_so == 0.0] = np.nan
+    return ccmr
 
 
 def _scan_typed_neighbors_for_query_rows(
@@ -102,7 +102,7 @@ def _iterative_typed_neighbor_search(
     acceptance_threshold: float,
     start_k: int,
     k_growth_factor: float,
-) -> tuple[np.ndarray, np.ndarray, _CCRRSearchMeta]:
+) -> tuple[np.ndarray, np.ndarray, _CCMRSearchMeta]:
     n_samples = int(len(labels))
     so_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
     os_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
@@ -111,7 +111,7 @@ def _iterative_typed_neighbor_search(
         return (
             so_dists,
             os_dists,
-            _CCRRSearchMeta(
+            _CCMRSearchMeta(
                 acceptance_met=True,
                 k_start=0,
                 k_final=0,
@@ -135,7 +135,7 @@ def _iterative_typed_neighbor_search(
             return (
                 so_dists,
                 os_dists,
-                _CCRRSearchMeta(
+                _CCMRSearchMeta(
                     acceptance_met=True,
                     k_start=k_start_used,
                     k_final=int(k_current),
@@ -174,7 +174,7 @@ def _iterative_typed_neighbor_search(
             return (
                 so_dists,
                 os_dists,
-                _CCRRSearchMeta(
+                _CCMRSearchMeta(
                     acceptance_met=True,
                     k_start=k_start_used,
                     k_final=int(k_current),
@@ -186,7 +186,7 @@ def _iterative_typed_neighbor_search(
             return (
                 so_dists,
                 os_dists,
-                _CCRRSearchMeta(
+                _CCMRSearchMeta(
                     acceptance_met=False,
                     k_start=k_start_used,
                     k_final=int(k_current),
@@ -207,7 +207,7 @@ def _dataset_subset(df: pd.DataFrame) -> EvaluationSubset:
     return EvaluationSubset(subset_id="dataset", rows=subset_df)
 
 
-class CrossConfounderRetrievalRatio:
+class CrossConfounderMarginRatio:
     @classmethod
     def compute(
         cls,
@@ -223,7 +223,7 @@ class CrossConfounderRetrievalRatio:
         acceptance_threshold: float = 0.0,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
-    ) -> CCRRResult | dict[int, CCRRResult]:
+    ) -> CCMRResult | dict[int, CCMRResult]:
         del max_pairs, random_state
         evaluation_design = _normalize_evaluation_design(evaluation_design)
 
@@ -275,7 +275,7 @@ class CrossConfounderRetrievalRatio:
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
             subsets = resolve_manifest_subsets(df)
             if not subsets:
-                raise RuntimeError(f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for CCRR")
+                raise RuntimeError(f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for CCMR")
             evaluation_unit = "occurrence"
         else:
             subsets = [_dataset_subset(df)]
@@ -325,8 +325,8 @@ class CrossConfounderRetrievalRatio:
             retries_values.append(int(search_meta.retries))
 
             for mm in unique_m_values:
-                sample_ccrr = _compute_sample_ccrr(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
-                informative = np.isfinite(sample_ccrr)
+                sample_ccmr = _compute_sample_ccmr(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
+                informative = np.isfinite(sample_ccmr)
                 n_informative = int(informative.sum())
                 n_undefined = int(n_sub - n_informative)
                 total_undefined[int(mm)] += n_undefined
@@ -338,12 +338,12 @@ class CrossConfounderRetrievalRatio:
                         bool((float(n_undefined) / float(n_sub)) <= float(acceptance_threshold))
                     )
 
-                occurrence_values_by_m[int(mm)].append(np.asarray(sample_ccrr, dtype=float))
+                occurrence_values_by_m[int(mm)].append(np.asarray(sample_ccmr, dtype=float))
                 occurrence_subsets_by_m[int(mm)].append(np.full(n_sub, str(subset.subset_id), dtype=object))
                 occurrence_sources_by_m[int(mm)].append(idx.astype(int))
 
                 if n_informative > 0:
-                    pair_medians[int(mm)].append(float(np.median(sample_ccrr[informative])))
+                    pair_medians[int(mm)].append(float(np.median(sample_ccmr[informative])))
                 else:
                     pair_medians[int(mm)].append(float("nan"))
 
@@ -351,7 +351,7 @@ class CrossConfounderRetrievalRatio:
         k_final_value = int(max(k_final_values)) if k_final_values else 0
         retries_value = int(max(retries_values)) if retries_values else 0
 
-        by_m: dict[int, CCRRResult] = {}
+        by_m: dict[int, CCMRResult] = {}
         for mm in unique_m_values:
             finite_pair = np.asarray(pair_medians[int(mm)], dtype=float)
             finite_mask = np.isfinite(finite_pair)
@@ -383,19 +383,19 @@ class CrossConfounderRetrievalRatio:
 
             if occurrence_total > 0 and not acceptance_met:
                 logger.warning(
-                    f"[CCRR] undefined threshold unmet: {total_undefined[int(mm)]}/{occurrence_total} "
+                    f"[CCMR] undefined threshold unmet: {total_undefined[int(mm)]}/{occurrence_total} "
                     f"({undefined_frac * 100.0:.1f}%) > target {float(acceptance_threshold) * 100.0:.1f}% "
                     f"after reaching k={k_final_value}. Returning best-effort result."
                 )
 
             if total_undefined[int(mm)] > 0:
                 logger.warning(
-                    f"[CCRR] {total_undefined[int(mm)]}/{occurrence_total} samples "
+                    f"[CCMR] {total_undefined[int(mm)]}/{occurrence_total} samples "
                     f"({undefined_frac * 100.0:.1f}%) could not find {mm} SO and {mm} OS neighbor(s)."
                 )
 
             tail = compute_tail_metrics(sample_values, alpha=alpha)
-            by_m[int(mm)] = CCRRResult(
+            by_m[int(mm)] = CCMRResult(
                 dataset=dataset_name,
                 m=int(mm),
                 value=value,

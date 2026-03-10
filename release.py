@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PYPROJECT = ROOT / "pyproject.toml"
-INIT_PY = ROOT / "mari" / "__init__.py"
+INIT_PY = ROOT / "croma" / "__init__.py"
 
 
 def run(cmd: str, check: bool = True) -> str:
@@ -72,7 +72,7 @@ def _write_init_version(version: str) -> None:
         count=1,
     )
     if n != 1:
-        raise RuntimeError("Failed to update __version__ in mari/__init__.py")
+        raise RuntimeError("Failed to update __version__ in croma/__init__.py")
     INIT_PY.write_text(new_text, encoding="utf-8")
 
 
@@ -148,7 +148,7 @@ def main() -> int:
         write_version(next_version)
 
         run(f"git checkout -b {branch}")
-        run("git add pyproject.toml mari/__init__.py")
+        run("git add pyproject.toml croma/__init__.py")
         run(f'git commit -m "Bump version to {next_version}"')
         run(f"git push origin {branch}")
 

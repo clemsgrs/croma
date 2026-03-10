@@ -5,21 +5,21 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from mari.metrics.neighbors import (
+from croma.metrics.neighbors import (
     _balanced_accuracy_by_k_from_prepared_neighbors,
     _knn_balanced_accuracy_by_k,
     _normalize_k_values,
     _prepare_neighbors,
     _select_k_from_balanced_accuracy,
 )
-from mari.metrics.pairs import (
+from croma.metrics.pairs import (
     EvaluationSubset,
     ensure_required_columns,
     normalize_center_values,
     resolve_manifest_subsets,
     validate_subset_manifest,
 )
-from mari.types import RobustnessResult
+from croma.types import RobustnessResult
 
 
 EVALUATION_DESIGN_PAIRED_2X2 = "paired_2x2"

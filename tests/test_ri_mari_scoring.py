@@ -1,7 +1,7 @@
 
 import numpy as np
 
-from mari import MaRI, RI
+from croma import MaRI, RI
 
 
 def test_ri_pooled_fallback_returns_half_when_no_so_or_os() -> None:

@@ -82,11 +82,11 @@ def _install_noop_plots(monkeypatch) -> None:
     plot_names = [
         "plot_benchmark_6panel_summary",
         "plot_bio_vs_center_scatter",
-        "plot_ccrr_ltm_comparison",
-        "plot_ccrr_m_sweep_with_ltm",
-        "plot_ccrr_sample_distributions",
-        "plot_ccrr_trend_quadrants",
-        "plot_ccrr_vs_mari_scatter",
+        "plot_ccmr_ltm_comparison",
+        "plot_ccmr_m_sweep_with_ltm",
+        "plot_ccmr_sample_distributions",
+        "plot_ccmr_trend_quadrants",
+        "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_center_k_sweep",
         "plot_mari_k_sweep",
@@ -172,12 +172,12 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path:
     for path in (
         results_dir / "metrics.csv",
         results_dir / "k_sweep_metrics.csv",
-        results_dir / "ccrr_m_sweep_metrics.csv",
+        results_dir / "ccmr_m_sweep_metrics.csv",
         results_dir / "per_sample_metrics.csv",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
         plots_dir / "benchmark_6panel_summary.png",
-        plots_dir / "ccrr_ltm_comparison.png",
+        plots_dir / "ccmr_ltm_comparison.png",
     ):
         assert path.exists(), f"Missing output: {path}"
 
@@ -238,7 +238,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
             self.evaluation_design = "dataset_wide"
             self.evaluation_unit = "sample"
 
-    class _FakeCCRRResult:
+    class _FakeCCMRResult:
         def __init__(self, m: int, values: list[float]) -> None:
             aligned = np.asarray(values, dtype=float)
             informative = np.isfinite(aligned)
@@ -303,7 +303,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         )
         return SimpleNamespace(curve={int(k): 0.5 for k in k_values}, result=result)
 
-    def fake_ccrr_compute(
+    def fake_ccmr_compute(
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
@@ -312,25 +312,25 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         alpha: float,
         start_k: int,
         k_growth_factor: float,
-    ) -> dict[int, _FakeCCRRResult]:
+    ) -> dict[int, _FakeCCMRResult]:
         assert evaluation_design == "dataset_wide"
         return {
-            1: _FakeCCRRResult(1, [1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0]),
-            2: _FakeCCRRResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
+            1: _FakeCCMRResult(1, [1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0]),
+            2: _FakeCCMRResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
         }
 
     _install_fake_registry_and_embed(monkeypatch, models=[model])
     _install_noop_plots(monkeypatch)
     monkeypatch.setattr(bm.RI, "_compute_artifacts", fake_ri_compute_artifacts)
     monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_mari_compute_artifacts)
-    monkeypatch.setattr(bm.CCRR, "compute", fake_ccrr_compute)
+    monkeypatch.setattr(bm.CCMR, "compute", fake_ccmr_compute)
 
     assert _run_benchmark(
         monkeypatch,
         manifest_path=manifest_path,
         output_dir=output_dir,
         models=[model],
-        extra_args=["--ccrr-m-max", "2"],
+        extra_args=["--ccmr-m-max", "2"],
     ) == 0
 
     per_sample_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv")
@@ -342,8 +342,8 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
     assert per_sample_df["mari_undefined_type"].tolist() == [0, 3, 0, 1, 0, 0, 2, 0]
     assert np.isnan(per_sample_df.loc[1, "ri"])
     assert np.isnan(per_sample_df.loc[3, "mari"])
-    assert np.isnan(per_sample_df.loc[2, "ccrr_m1"])
-    assert np.isnan(per_sample_df.loc[5, "ccrr_m2"])
+    assert np.isnan(per_sample_df.loc[2, "ccmr_m1"])
+    assert np.isnan(per_sample_df.loc[5, "ccmr_m2"])
 
 
 def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Path) -> None:

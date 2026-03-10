@@ -31,7 +31,7 @@ def excluded_centers_signature(excluded_centers: list[str] | tuple[str, ...] | N
     return ",".join(uniq)
 
 
-def ccrr_search_signature(
+def ccmr_search_signature(
     *,
     start_k: int,
     k_growth_factor: float,

@@ -5,35 +5,35 @@ import numpy as np
 import pandas as pd
 
 try:
-    from mari.metrics.tail import compute_tail_metrics
+    from croma.metrics.tail import compute_tail_metrics
 except ModuleNotFoundError:
     import sys
 
     ROOT = Path(__file__).resolve().parents[1]
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
-    from mari.metrics.tail import compute_tail_metrics
+    from croma.metrics.tail import compute_tail_metrics
 
 
-_TOP_METRICS_CANONICAL = ["ri", "mari", "ccrr", "ccrr_q_alpha", "ccrr_ltm_alpha"]
-_CORR_METRICS_CANONICAL = ["ri", "mari", "ccrr"]
-_RANK_METRICS_CANONICAL = ["ri", "mari", "ccrr"]
-_RANK_SHIFT_PAIRS = [("ri", "mari"), ("ri", "ccrr"), ("mari", "ccrr")]
+_TOP_METRICS_CANONICAL = ["ri", "mari", "ccmr", "ccmr_q_alpha", "ccmr_ltm_alpha"]
+_CORR_METRICS_CANONICAL = ["ri", "mari", "ccmr"]
+_RANK_METRICS_CANONICAL = ["ri", "mari", "ccmr"]
+_RANK_SHIFT_PAIRS = [("ri", "mari"), ("ri", "ccmr"), ("mari", "ccmr")]
 
 _DISPLAY_NAMES = {
     "ri": "RI",
     "mari": "MaRI",
-    "ccrr": "CCRR",
-    "ccrr_q_alpha": "Q(CCRR)",
-    "ccrr_ltm_alpha": "LTM(CCRR)",
+    "ccmr": "CCMR",
+    "ccmr_q_alpha": "Q(CCMR)",
+    "ccmr_ltm_alpha": "LTM(CCMR)",
 }
 
 _HIGHER_IS_BETTER = {
     "ri",
     "mari",
-    "ccrr",
-    "ccrr_q_alpha",
-    "ccrr_ltm_alpha",
+    "ccmr",
+    "ccmr_q_alpha",
+    "ccmr_ltm_alpha",
     "bio_knn_bacc",
 }
 
@@ -42,7 +42,7 @@ _THRESH_UNDEFINED_COVERAGE_RISK = 0.25
 _THRESH_OO_DOMINATED_HIGH = 0.10
 _THRESH_TAIL_GAP_LTM = 0.20
 _THRESH_K_SWEEP_RANGE = 0.15
-_THRESH_M_SWEEP_CCRR_GAIN = 0.08
+_THRESH_M_SWEEP_CCMR_GAIN = 0.08
 _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO = 2.0
 _THRESH_TAIL_SEVERITY_MEANINGFUL_GAP = 0.05
 _THRESH_TIER1_MEDIAN_DELTA = 0.05
@@ -54,7 +54,7 @@ _THRESH_TIER2_LT1_FRAC_FLOOR = 0.15
 _THRESH_TIER2_MIN_SAMPLES = 10
 _THRESH_TIER2_MIN_LT1_COUNT = 3
 
-_SUBGROUP_SCORE_COLUMN = "ccrr_m1"
+_SUBGROUP_SCORE_COLUMN = "ccmr_m1"
 _SUBGROUP_MIN_HEADLINE_SAMPLES = 2
 _SUBGROUP_SCOPE_ORDER = ("stratum", "label", "medical_center")
 _SUBGROUP_SCOPE_TO_COLUMNS = {
@@ -98,10 +98,10 @@ def _parse_args() -> argparse.Namespace:
         help="Optional k-sweep CSV path (default: auto-detect next to metrics CSV).",
     )
     parser.add_argument(
-        "--ccrr-m-sweep-csv",
+        "--ccmr-m-sweep-csv",
         type=Path,
         default=None,
-        help="Optional CCRR m-sweep CSV path (default: auto-detect next to metrics CSV).",
+        help="Optional CCMR m-sweep CSV path (default: auto-detect next to metrics CSV).",
     )
     return parser.parse_args()
 
@@ -308,16 +308,16 @@ def _empty_subgroup_df() -> pd.DataFrame:
             "medical_center",
             "n_samples",
             "group_frac",
-            "mean_ccrr",
-            "rest_mean_ccrr",
-            "mean_ccrr_delta_vs_rest",
-            "median_ccrr",
-            "rest_median_ccrr",
-            "median_ccrr_delta_vs_rest",
-            "ccrr_lt1_frac",
-            "ccrr_lt1_count",
-            "rest_ccrr_lt1_frac",
-            "ccrr_lt1_frac_delta_vs_rest",
+            "mean_ccmr",
+            "rest_mean_ccmr",
+            "mean_ccmr_delta_vs_rest",
+            "median_ccmr",
+            "rest_median_ccmr",
+            "median_ccmr_delta_vs_rest",
+            "ccmr_lt1_frac",
+            "ccmr_lt1_count",
+            "rest_ccmr_lt1_frac",
+            "ccmr_lt1_frac_delta_vs_rest",
             "subgroup_q_alpha",
             "subgroup_ltm_alpha",
             "internal_tail_drop",
@@ -329,9 +329,9 @@ def _empty_subgroup_df() -> pd.DataFrame:
             "tail_prevalence_delta",
             "tail_prevalence_ratio",
             "tail_share",
-            "tail_mean_ccrr",
-            "rest_tail_mean_ccrr",
-            "tail_mean_ccrr_delta_vs_rest",
+            "tail_mean_ccmr",
+            "rest_tail_mean_ccmr",
+            "tail_mean_ccmr_delta_vs_rest",
             "tail_severity_label",
             "tier3_status",
             "n_defined_samples",
@@ -354,10 +354,10 @@ def _empty_context_df() -> pd.DataFrame:
             "n_defined_samples",
             "n_labels",
             "tail_size",
-            "ccrr_alpha",
-            "pooled_mean_ccrr",
-            "pooled_median_ccrr",
-            "pooled_tail_mean_ccrr",
+            "ccmr_alpha",
+            "pooled_mean_ccmr",
+            "pooled_median_ccmr",
+            "pooled_tail_mean_ccmr",
             "skipped",
             "skip_reason",
         ]
@@ -394,7 +394,7 @@ def _subgroup_report_sort(df: pd.DataFrame) -> pd.DataFrame:
         working["_tail_signal"] = working["tail_prevalence_ratio"]
     else:
         working["_tail_signal"] = float("nan")
-    sort_cols = ["_tail_signal", "tail_prevalence", "mean_ccrr", "ccrr_lt1_frac", "tail_mean_ccrr", "label", "medical_center"]
+    sort_cols = ["_tail_signal", "tail_prevalence", "mean_ccmr", "ccmr_lt1_frac", "tail_mean_ccmr", "label", "medical_center"]
     ascending = [False, False, True, False, True, True, True]
     available = [c for c in sort_cols if c in working.columns]
     asc = [ascending[sort_cols.index(c)] for c in available]
@@ -442,19 +442,19 @@ def _render_context_heading(*, dataset: object, context_id: object, evaluation_d
 def _tier1_status(
     *,
     n_samples: int,
-    median_ccrr: float,
-    rest_median_ccrr: float,
+    median_ccmr: float,
+    rest_median_ccmr: float,
     median_delta: float,
-    ccrr_lt1_delta: float,
+    ccmr_lt1_delta: float,
 ) -> str:
     if n_samples < _SUBGROUP_MIN_HEADLINE_SAMPLES:
         return "insufficient_support"
-    if median_delta <= -_THRESH_TIER1_MEDIAN_DELTA and ccrr_lt1_delta >= _THRESH_TIER1_LT1_DELTA:
-        if median_ccrr < 1.0 and rest_median_ccrr >= 1.0:
+    if median_delta <= -_THRESH_TIER1_MEDIAN_DELTA and ccmr_lt1_delta >= _THRESH_TIER1_LT1_DELTA:
+        if median_ccmr < 1.0 and rest_median_ccmr >= 1.0:
             return "broad_weakness"
-        if median_ccrr >= 1.0 and rest_median_ccrr >= 1.0:
+        if median_ccmr >= 1.0 and rest_median_ccmr >= 1.0:
             return "relative_weakness"
-        if median_ccrr < 1.0 and rest_median_ccrr < 1.0:
+        if median_ccmr < 1.0 and rest_median_ccmr < 1.0:
             return "aggravated_weakness"
     return "neutral"
 
@@ -462,26 +462,26 @@ def _tier1_status(
 def _tier2_status(
     *,
     n_samples: int,
-    median_ccrr: float,
+    median_ccmr: float,
     subgroup_ltm_alpha: float,
     internal_tail_drop: float,
-    ccrr_lt1_frac: float,
-    ccrr_lt1_count: int,
+    ccmr_lt1_frac: float,
+    ccmr_lt1_count: int,
 ) -> str:
     if n_samples < _THRESH_TIER2_MIN_SAMPLES:
         return "insufficient_support"
     pocket_gate = (
         subgroup_ltm_alpha <= _THRESH_TIER2_LTM_CEILING
         and internal_tail_drop >= _THRESH_TIER2_INTERNAL_DROP
-        and ccrr_lt1_frac >= _THRESH_TIER2_LT1_FRAC_FLOOR
-        and ccrr_lt1_count >= _THRESH_TIER2_MIN_LT1_COUNT
+        and ccmr_lt1_frac >= _THRESH_TIER2_LT1_FRAC_FLOOR
+        and ccmr_lt1_count >= _THRESH_TIER2_MIN_LT1_COUNT
     )
-    if pocket_gate and median_ccrr < 1.0:
+    if pocket_gate and median_ccmr < 1.0:
         return "aggravated_weakness"
-    if pocket_gate and median_ccrr >= _THRESH_TIER2_ROBUST_MEDIAN_FLOOR:
+    if pocket_gate and median_ccmr >= _THRESH_TIER2_ROBUST_MEDIAN_FLOOR:
         return "hidden_pocket"
     if (
-        median_ccrr >= _THRESH_TIER2_ROBUST_MEDIAN_FLOOR
+        median_ccmr >= _THRESH_TIER2_ROBUST_MEDIAN_FLOOR
         and subgroup_ltm_alpha >= 1.0
         and internal_tail_drop >= _THRESH_TIER2_INTERNAL_DROP
     ):
@@ -529,7 +529,7 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
             "insufficient_support": 4,
         }
         working["_status_order"] = working["tier1_status"].map(status_order).fillna(9).astype(int)
-        sort_cols = ["_status_order", "median_ccrr_delta_vs_rest", "ccrr_lt1_frac_delta_vs_rest", "_scope_order", "subgroup_name"]
+        sort_cols = ["_status_order", "median_ccmr_delta_vs_rest", "ccmr_lt1_frac_delta_vs_rest", "_scope_order", "subgroup_name"]
         ascending = [True, True, False, True, True]
     elif tier == "tier2":
         status_order = {
@@ -540,7 +540,7 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
             "insufficient_support": 4,
         }
         working["_status_order"] = working["tier2_status"].map(status_order).fillna(9).astype(int)
-        sort_cols = ["_status_order", "internal_tail_drop", "median_ccrr", "_scope_order", "subgroup_name"]
+        sort_cols = ["_status_order", "internal_tail_drop", "median_ccmr", "_scope_order", "subgroup_name"]
         ascending = [True, False, False, True, True]
     else:
         status_order = {
@@ -551,7 +551,7 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
             "insufficient_support": 4,
         }
         working["_status_order"] = working["tier3_status"].map(status_order).fillna(9).astype(int)
-        sort_cols = ["_status_order", "tail_prevalence_ratio", "tail_mean_ccrr_delta_vs_rest", "_scope_order", "subgroup_name"]
+        sort_cols = ["_status_order", "tail_prevalence_ratio", "tail_mean_ccmr_delta_vs_rest", "_scope_order", "subgroup_name"]
         ascending = [True, False, True, True, True]
     return working.sort_values(sort_cols, ascending=ascending, kind="mergesort").drop(columns=["_scope_order", "_status_order"]).reset_index(drop=True)
 
@@ -570,24 +570,24 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
             "Scope",
             "Subgroup",
             "Status",
-            "Median CCRR",
+            "Median CCMR",
             "Rest Median",
             "Median Delta",
-            "CCRR<1 Frac",
-            "Rest CCRR<1 Frac",
-            "CCRR<1 Delta",
+            "CCMR<1 Frac",
+            "Rest CCMR<1 Frac",
+            "CCMR<1 Delta",
         ]
         rows = [
             [
                 str(row["scope"]),
                 str(row["subgroup_name"]),
                 str(row["tier1_status"]),
-                _fmt_float(row["median_ccrr"]),
-                _fmt_float(row["rest_median_ccrr"]),
-                _fmt_float(row["median_ccrr_delta_vs_rest"]),
-                _fmt_float(row["ccrr_lt1_frac"]),
-                _fmt_float(row["rest_ccrr_lt1_frac"]),
-                _fmt_float(row["ccrr_lt1_frac_delta_vs_rest"]),
+                _fmt_float(row["median_ccmr"]),
+                _fmt_float(row["rest_median_ccmr"]),
+                _fmt_float(row["median_ccmr_delta_vs_rest"]),
+                _fmt_float(row["ccmr_lt1_frac"]),
+                _fmt_float(row["rest_ccmr_lt1_frac"]),
+                _fmt_float(row["ccmr_lt1_frac_delta_vs_rest"]),
             ]
             for _, row in sorted_rows.iterrows()
         ]
@@ -598,9 +598,9 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
             "Subgroup",
             "Status",
             "N",
-            "CCRR<1 Frac",
-            "CCRR<1 Count",
-            "Median CCRR",
+            "CCMR<1 Frac",
+            "CCMR<1 Count",
+            "Median CCMR",
             "Subgroup LTM@alpha",
             "Drop",
         ]
@@ -610,9 +610,9 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
                 str(row["subgroup_name"]),
                 str(row["tier2_status"]),
                 str(int(row["n_samples"])),
-                _fmt_float(row["ccrr_lt1_frac"]),
-                str(int(row["ccrr_lt1_count"])),
-                _fmt_float(row["median_ccrr"]),
+                _fmt_float(row["ccmr_lt1_frac"]),
+                str(int(row["ccmr_lt1_count"])),
+                _fmt_float(row["median_ccmr"]),
                 _fmt_float(row["subgroup_ltm_alpha"]),
                 _fmt_float(row["internal_tail_drop"]),
             ]
@@ -626,7 +626,7 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
         "Tail Prevalence",
         "Overall Tail Prev",
         "Ratio",
-        "Tail Mean CCRR",
+        "Tail Mean CCMR",
         "Rest Tail Mean",
         "Severity",
     ]
@@ -638,8 +638,8 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
             _fmt_float(row["tail_prevalence"]),
             _fmt_float(row["context_tail_prevalence"]),
             _fmt_ratio(row["tail_prevalence_ratio"]),
-            _fmt_float(row["tail_mean_ccrr"]),
-            _fmt_float(row["rest_tail_mean_ccrr"]),
+            _fmt_float(row["tail_mean_ccmr"]),
+            _fmt_float(row["rest_tail_mean_ccmr"]),
             str(row["tail_severity_label"]),
         ]
         for _, row in sorted_rows.iterrows()
@@ -668,16 +668,16 @@ def _build_context_row(
         "n_defined_samples": int(len(context_df)),
         "n_labels": int(n_labels),
         "tail_size": 0,
-        "ccrr_alpha": float(alpha),
-        "pooled_mean_ccrr": float("nan"),
-        "pooled_median_ccrr": float("nan"),
-        "pooled_tail_mean_ccrr": float("nan"),
+        "ccmr_alpha": float(alpha),
+        "pooled_mean_ccmr": float("nan"),
+        "pooled_median_ccmr": float("nan"),
+        "pooled_tail_mean_ccmr": float("nan"),
         "skipped": False,
         "skip_reason": "",
     }
 
 
-def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     subgroup_rows: list[dict[str, object]] = []
     context_rows: list[dict[str, object]] = []
     if df_per_sample is None or len(df_per_sample) == 0:
@@ -692,7 +692,7 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
         "sample_id",
         "label",
         "medical_center",
-        "ccrr_alpha",
+        "ccmr_alpha",
         _SUBGROUP_SCORE_COLUMN,
     }
     if not required.issubset(df_per_sample.columns):
@@ -702,7 +702,7 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
     for col in ("dataset", "model", "evaluation_design", "evaluation_unit", "subset", "sample_id", "label", "medical_center"):
         working[col] = working[col].astype(str)
     working[_SUBGROUP_SCORE_COLUMN] = pd.to_numeric(working[_SUBGROUP_SCORE_COLUMN], errors="coerce")
-    working["ccrr_alpha"] = pd.to_numeric(working["ccrr_alpha"], errors="coerce")
+    working["ccmr_alpha"] = pd.to_numeric(working["ccmr_alpha"], errors="coerce")
     working["context_id"] = np.where(
         working["evaluation_design"] == "paired_2x2",
         working["subset"],
@@ -713,7 +713,7 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
     for keys, group in working.groupby(group_cols, sort=True, dropna=False):
         dataset, model, evaluation_design, evaluation_unit, context_id = [str(v) for v in keys]
         defined = group[np.isfinite(group[_SUBGROUP_SCORE_COLUMN])].copy()
-        alpha = _safe_float(group["ccrr_alpha"].dropna().iloc[0] if group["ccrr_alpha"].notna().any() else np.nan, 0.10)
+        alpha = _safe_float(group["ccmr_alpha"].dropna().iloc[0] if group["ccmr_alpha"].notna().any() else np.nan, 0.10)
         n_labels = int(defined["label"].nunique())
         context_row = _build_context_row(
             context_df=defined,
@@ -728,7 +728,7 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
 
         if len(defined) == 0:
             context_row["skipped"] = True
-            context_row["skip_reason"] = "Skipped: no defined CCRR(m=1) samples are available for this context."
+            context_row["skip_reason"] = "Skipped: no defined CCMR(m=1) samples are available for this context."
             context_rows.append(context_row)
             continue
 
@@ -747,15 +747,15 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
         defined["is_tail"] = defined.index.isin(tail_index)
 
         context_row["tail_size"] = int(tail_size)
-        context_row["pooled_mean_ccrr"] = float(defined[_SUBGROUP_SCORE_COLUMN].mean())
-        context_row["pooled_median_ccrr"] = float(defined[_SUBGROUP_SCORE_COLUMN].median())
-        context_row["pooled_tail_mean_ccrr"] = float(defined.loc[defined["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
+        context_row["pooled_mean_ccmr"] = float(defined[_SUBGROUP_SCORE_COLUMN].mean())
+        context_row["pooled_median_ccmr"] = float(defined[_SUBGROUP_SCORE_COLUMN].median())
+        context_row["pooled_tail_mean_ccmr"] = float(defined.loc[defined["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
         context_rows.append(context_row)
 
         n_defined = int(len(defined))
-        context_mean_ccrr = float(context_row["pooled_mean_ccrr"])
+        context_mean_ccmr = float(context_row["pooled_mean_ccmr"])
         context_tail_prevalence = float(tail_size / n_defined) if n_defined > 0 else float("nan")
-        context_tail_mean_ccrr = float(context_row["pooled_tail_mean_ccrr"])
+        context_tail_mean_ccmr = float(context_row["pooled_tail_mean_ccmr"])
         for scope in _SUBGROUP_SCOPE_ORDER:
             cols = list(_SUBGROUP_SCOPE_TO_COLUMNS[scope])
             grouped = defined.groupby(cols, sort=True, dropna=False)
@@ -772,10 +772,10 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                 n_samples = int(len(subgroup))
                 tail_count = int(subgroup["is_tail"].sum())
                 group_frac = float(n_samples / n_defined)
-                mean_ccrr = float(subgroup[_SUBGROUP_SCORE_COLUMN].mean())
-                median_ccrr = float(subgroup[_SUBGROUP_SCORE_COLUMN].median())
-                ccrr_lt1_frac = float((subgroup[_SUBGROUP_SCORE_COLUMN] < 1.0).mean())
-                ccrr_lt1_count = int((subgroup[_SUBGROUP_SCORE_COLUMN] < 1.0).sum())
+                mean_ccmr = float(subgroup[_SUBGROUP_SCORE_COLUMN].mean())
+                median_ccmr = float(subgroup[_SUBGROUP_SCORE_COLUMN].median())
+                ccmr_lt1_frac = float((subgroup[_SUBGROUP_SCORE_COLUMN] < 1.0).mean())
+                ccmr_lt1_count = int((subgroup[_SUBGROUP_SCORE_COLUMN] < 1.0).sum())
                 tail_prevalence = float(tail_count / n_samples)
                 tail_prevalence_ratio = (
                     float(tail_prevalence / context_tail_prevalence)
@@ -783,17 +783,17 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                     else float("nan")
                 )
                 tail_share = float(tail_count / tail_size) if tail_size > 0 else float("nan")
-                tail_mean_ccrr = (
+                tail_mean_ccmr = (
                     float(subgroup.loc[subgroup["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
                     if tail_count > 0
                     else float("nan")
                 )
                 rest = defined.loc[~defined.index.isin(subgroup.index)]
-                rest_mean_ccrr = float(rest[_SUBGROUP_SCORE_COLUMN].mean()) if len(rest) > 0 else float("nan")
-                rest_median_ccrr = float(rest[_SUBGROUP_SCORE_COLUMN].median()) if len(rest) > 0 else float("nan")
-                rest_ccrr_lt1_frac = float((rest[_SUBGROUP_SCORE_COLUMN] < 1.0).mean()) if len(rest) > 0 else float("nan")
+                rest_mean_ccmr = float(rest[_SUBGROUP_SCORE_COLUMN].mean()) if len(rest) > 0 else float("nan")
+                rest_median_ccmr = float(rest[_SUBGROUP_SCORE_COLUMN].median()) if len(rest) > 0 else float("nan")
+                rest_ccmr_lt1_frac = float((rest[_SUBGROUP_SCORE_COLUMN] < 1.0).mean()) if len(rest) > 0 else float("nan")
                 rest_tail_count = int(rest["is_tail"].sum()) if len(rest) > 0 else 0
-                rest_tail_mean_ccrr = (
+                rest_tail_mean_ccmr = (
                     float(rest.loc[rest["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
                     if rest_tail_count > 0
                     else float("nan")
@@ -802,19 +802,19 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                     subgroup[_SUBGROUP_SCORE_COLUMN].to_numpy(dtype=float),
                     alpha=alpha,
                 )
-                median_ccrr_delta_vs_rest = (
-                    float(median_ccrr - rest_median_ccrr) if np.isfinite(rest_median_ccrr) else float("nan")
+                median_ccmr_delta_vs_rest = (
+                    float(median_ccmr - rest_median_ccmr) if np.isfinite(rest_median_ccmr) else float("nan")
                 )
-                ccrr_lt1_frac_delta_vs_rest = (
-                    float(ccrr_lt1_frac - rest_ccrr_lt1_frac) if np.isfinite(rest_ccrr_lt1_frac) else float("nan")
+                ccmr_lt1_frac_delta_vs_rest = (
+                    float(ccmr_lt1_frac - rest_ccmr_lt1_frac) if np.isfinite(rest_ccmr_lt1_frac) else float("nan")
                 )
-                tail_mean_ccrr_delta_vs_rest = (
-                    float(tail_mean_ccrr - rest_tail_mean_ccrr)
-                    if np.isfinite(tail_mean_ccrr) and np.isfinite(rest_tail_mean_ccrr)
+                tail_mean_ccmr_delta_vs_rest = (
+                    float(tail_mean_ccmr - rest_tail_mean_ccmr)
+                    if np.isfinite(tail_mean_ccmr) and np.isfinite(rest_tail_mean_ccmr)
                     else float("nan")
                 )
                 internal_tail_drop = (
-                    float(median_ccrr - subgroup_tail_metrics.ltm_alpha)
+                    float(median_ccmr - subgroup_tail_metrics.ltm_alpha)
                     if np.isfinite(subgroup_tail_metrics.ltm_alpha)
                     else float("nan")
                 )
@@ -824,23 +824,23 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                 )
                 tier1_status = _tier1_status(
                     n_samples=n_samples,
-                    median_ccrr=median_ccrr,
-                    rest_median_ccrr=rest_median_ccrr,
-                    median_delta=median_ccrr_delta_vs_rest,
-                    ccrr_lt1_delta=ccrr_lt1_frac_delta_vs_rest,
+                    median_ccmr=median_ccmr,
+                    rest_median_ccmr=rest_median_ccmr,
+                    median_delta=median_ccmr_delta_vs_rest,
+                    ccmr_lt1_delta=ccmr_lt1_frac_delta_vs_rest,
                 )
                 tail_severity_label = _tail_severity_label(
                     tail_count=tail_count,
                     rest_tail_count=rest_tail_count,
-                    tail_delta=tail_mean_ccrr_delta_vs_rest,
+                    tail_delta=tail_mean_ccmr_delta_vs_rest,
                 )
                 tier2_status = _tier2_status(
                     n_samples=n_samples,
-                    median_ccrr=median_ccrr,
+                    median_ccmr=median_ccmr,
                     subgroup_ltm_alpha=float(subgroup_tail_metrics.ltm_alpha),
                     internal_tail_drop=internal_tail_drop,
-                    ccrr_lt1_frac=ccrr_lt1_frac,
-                    ccrr_lt1_count=ccrr_lt1_count,
+                    ccmr_lt1_frac=ccmr_lt1_frac,
+                    ccmr_lt1_count=ccmr_lt1_count,
                 )
                 tier3_status = _tier3_status(
                     n_samples=n_samples,
@@ -861,18 +861,18 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                         "medical_center": medical_center,
                         "n_samples": n_samples,
                         "group_frac": group_frac,
-                        "mean_ccrr": mean_ccrr,
-                        "rest_mean_ccrr": rest_mean_ccrr,
-                        "mean_ccrr_delta_vs_rest": (
-                            float(mean_ccrr - rest_mean_ccrr) if np.isfinite(rest_mean_ccrr) else float("nan")
+                        "mean_ccmr": mean_ccmr,
+                        "rest_mean_ccmr": rest_mean_ccmr,
+                        "mean_ccmr_delta_vs_rest": (
+                            float(mean_ccmr - rest_mean_ccmr) if np.isfinite(rest_mean_ccmr) else float("nan")
                         ),
-                        "median_ccrr": median_ccrr,
-                        "rest_median_ccrr": rest_median_ccrr,
-                        "median_ccrr_delta_vs_rest": median_ccrr_delta_vs_rest,
-                        "ccrr_lt1_frac": ccrr_lt1_frac,
-                        "ccrr_lt1_count": ccrr_lt1_count,
-                        "rest_ccrr_lt1_frac": rest_ccrr_lt1_frac,
-                        "ccrr_lt1_frac_delta_vs_rest": ccrr_lt1_frac_delta_vs_rest,
+                        "median_ccmr": median_ccmr,
+                        "rest_median_ccmr": rest_median_ccmr,
+                        "median_ccmr_delta_vs_rest": median_ccmr_delta_vs_rest,
+                        "ccmr_lt1_frac": ccmr_lt1_frac,
+                        "ccmr_lt1_count": ccmr_lt1_count,
+                        "rest_ccmr_lt1_frac": rest_ccmr_lt1_frac,
+                        "ccmr_lt1_frac_delta_vs_rest": ccmr_lt1_frac_delta_vs_rest,
                         "subgroup_q_alpha": float(subgroup_tail_metrics.q_alpha),
                         "subgroup_ltm_alpha": float(subgroup_tail_metrics.ltm_alpha),
                         "internal_tail_drop": internal_tail_drop,
@@ -884,9 +884,9 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                         "tail_prevalence_delta": float(tail_prevalence - context_tail_prevalence),
                         "tail_prevalence_ratio": tail_prevalence_ratio,
                         "tail_share": tail_share,
-                        "tail_mean_ccrr": tail_mean_ccrr,
-                        "rest_tail_mean_ccrr": rest_tail_mean_ccrr,
-                        "tail_mean_ccrr_delta_vs_rest": tail_mean_ccrr_delta_vs_rest,
+                        "tail_mean_ccmr": tail_mean_ccmr,
+                        "rest_tail_mean_ccmr": rest_tail_mean_ccmr,
+                        "tail_mean_ccmr_delta_vs_rest": tail_mean_ccmr_delta_vs_rest,
                         "tail_severity_label": tail_severity_label,
                         "tier3_status": tier3_status,
                         "n_defined_samples": n_defined,
@@ -912,10 +912,10 @@ def _build_ccrr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
     return subgroup_out, context_out
 
 
-def _render_ccrr_subgroup_markdown(subgroup_df: pd.DataFrame, context_df: pd.DataFrame) -> str:
-    lines: list[str] = ["# Model-Specific CCRR Subgroup Analysis", ""]
+def _render_ccmr_subgroup_markdown(subgroup_df: pd.DataFrame, context_df: pd.DataFrame) -> str:
+    lines: list[str] = ["# Model-Specific CCMR Subgroup Analysis", ""]
     if len(context_df) == 0:
-        lines.append("- No per-sample CCRR(m=1) contexts available.")
+        lines.append("- No per-sample CCMR(m=1) contexts available.")
         return "\n".join(lines) + "\n"
 
     grouped_models = context_df.groupby("model", sort=True, dropna=False)
@@ -936,9 +936,9 @@ def _render_ccrr_subgroup_markdown(subgroup_df: pd.DataFrame, context_df: pd.Dat
                 "- "
                 f"Defined samples={int(context['n_defined_samples'])}, "
                 f"tail_size={int(context['tail_size'])}, "
-                f"pooled_mean_ccrr={float(context['pooled_mean_ccrr']):.3f}, "
-                f"pooled_median_ccrr={float(context['pooled_median_ccrr']):.3f}, "
-                f"tail_mean_ccrr={float(context['pooled_tail_mean_ccrr']):.3f}."
+                f"pooled_mean_ccmr={float(context['pooled_mean_ccmr']):.3f}, "
+                f"pooled_median_ccmr={float(context['pooled_median_ccmr']):.3f}, "
+                f"tail_mean_ccmr={float(context['pooled_tail_mean_ccmr']):.3f}."
             )
 
             context_rows = subgroup_df[
@@ -988,10 +988,10 @@ def _k_sweep_sensitivity(df_k: pd.DataFrame | None) -> pd.DataFrame:
     return grouped
 
 
-def _ccrr_m_sweep_sensitivity(df_m: pd.DataFrame | None) -> pd.DataFrame:
+def _ccmr_m_sweep_sensitivity(df_m: pd.DataFrame | None) -> pd.DataFrame:
     if df_m is None:
         return pd.DataFrame()
-    required = {"model", "m", "ccrr", "ccrr_q_alpha", "ccrr_ltm_alpha"}
+    required = {"model", "m", "ccmr", "ccmr_q_alpha", "ccmr_ltm_alpha"}
     if not required.issubset(df_m.columns):
         return pd.DataFrame()
     working = df_m.copy()
@@ -1004,22 +1004,22 @@ def _ccrr_m_sweep_sensitivity(df_m: pd.DataFrame | None) -> pd.DataFrame:
             "model": str(model),
             "m_min": float(grp_sorted["m"].iloc[0]),
             "m_max": float(grp_sorted["m"].iloc[-1]),
-            "ccrr_m_min": float(grp_sorted["ccrr"].iloc[0]),
-            "ccrr_m_max": float(grp_sorted["ccrr"].iloc[-1]),
-            "ccrr_gain": float(grp_sorted["ccrr"].iloc[-1] - grp_sorted["ccrr"].iloc[0]),
-            "q_gain": float(grp_sorted["ccrr_q_alpha"].iloc[-1] - grp_sorted["ccrr_q_alpha"].iloc[0]),
-            "ltm_gain": float(grp_sorted["ccrr_ltm_alpha"].iloc[-1] - grp_sorted["ccrr_ltm_alpha"].iloc[0]),
+            "ccmr_m_min": float(grp_sorted["ccmr"].iloc[0]),
+            "ccmr_m_max": float(grp_sorted["ccmr"].iloc[-1]),
+            "ccmr_gain": float(grp_sorted["ccmr"].iloc[-1] - grp_sorted["ccmr"].iloc[0]),
+            "q_gain": float(grp_sorted["ccmr_q_alpha"].iloc[-1] - grp_sorted["ccmr_q_alpha"].iloc[0]),
+            "ltm_gain": float(grp_sorted["ccmr_ltm_alpha"].iloc[-1] - grp_sorted["ccmr_ltm_alpha"].iloc[0]),
         }
-        if "ccrr_retries" in grp_sorted.columns:
-            row["ccrr_retries_max"] = float(grp_sorted["ccrr_retries"].max())
-        if "ccrr_k_final" in grp_sorted.columns:
-            row["ccrr_k_final_max"] = float(grp_sorted["ccrr_k_final"].max())
+        if "ccmr_retries" in grp_sorted.columns:
+            row["ccmr_retries_max"] = float(grp_sorted["ccmr_retries"].max())
+        if "ccmr_k_final" in grp_sorted.columns:
+            row["ccmr_k_final_max"] = float(grp_sorted["ccmr_k_final"].max())
         grouped_rows.append(row)
 
     out = pd.DataFrame(grouped_rows)
     if len(out) == 0:
         return out
-    sort_col = "ccrr_gain"
+    sort_col = "ccmr_gain"
     out = out.sort_values(sort_col, ascending=False).reset_index(drop=True)
     return out
 
@@ -1029,7 +1029,7 @@ def _model_action_flags(
     df_model: pd.DataFrame,
     delta_df: pd.DataFrame,
     k_sensitivity_df: pd.DataFrame,
-    ccrr_m_sensitivity_df: pd.DataFrame,
+    ccmr_m_sensitivity_df: pd.DataFrame,
 ) -> pd.DataFrame:
     rows: list[dict] = []
 
@@ -1053,7 +1053,7 @@ def _model_action_flags(
 
     # Coverage risks: RI/MaRI undefined coverage is shared in this benchmark path,
     # so emit one model-level flag using the max available undefined fraction.
-    coverage_cols = [c for c in ("ri_undefined_frac", "mari_undefined_frac", "ccrr_undefined_frac") if c in df_model.columns]
+    coverage_cols = [c for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac") if c in df_model.columns]
     if coverage_cols:
         for _, row in df_model.iterrows():
             coverage_values = [float(row[c]) for c in coverage_cols if np.isfinite(row[c])]
@@ -1092,10 +1092,10 @@ def _model_action_flags(
                     }
                 )
 
-    # Tail gap risks for CCRR summaries: keep only the lower-tail-mean gap.
-    if {"ccrr", "ccrr_ltm_alpha"}.issubset(df_model.columns):
-        df_tmp = df_model.loc[:, ["model", "ccrr", "ccrr_ltm_alpha"]].copy()
-        df_tmp["tail_gap_ltm"] = df_tmp["ccrr"] - df_tmp["ccrr_ltm_alpha"]
+    # Tail gap risks for CCMR summaries: keep only the lower-tail-mean gap.
+    if {"ccmr", "ccmr_ltm_alpha"}.issubset(df_model.columns):
+        df_tmp = df_model.loc[:, ["model", "ccmr", "ccmr_ltm_alpha"]].copy()
+        df_tmp["tail_gap_ltm"] = df_tmp["ccmr"] - df_tmp["ccmr_ltm_alpha"]
         for _, row in df_tmp[df_tmp["tail_gap_ltm"] >= _THRESH_TAIL_GAP_LTM].iterrows():
             rows.append(
                 {
@@ -1104,7 +1104,7 @@ def _model_action_flags(
                     "severity": "medium",
                     "value": float(row["tail_gap_ltm"]),
                     "threshold": _THRESH_TAIL_GAP_LTM,
-                    "detail": f"CCRR - LTM(CCRR) tail gap is large ({row['tail_gap_ltm']:.3f}).",
+                    "detail": f"CCMR - LTM(CCMR) tail gap is large ({row['tail_gap_ltm']:.3f}).",
                 }
             )
 
@@ -1122,18 +1122,18 @@ def _model_action_flags(
                 }
             )
 
-    # m-sweep CCRR gain and compute cost.
-    if len(ccrr_m_sensitivity_df) > 0:
-        if "ccrr_gain" in ccrr_m_sensitivity_df.columns:
-            for _, row in ccrr_m_sensitivity_df[ccrr_m_sensitivity_df["ccrr_gain"] >= _THRESH_M_SWEEP_CCRR_GAIN].iterrows():
+    # m-sweep CCMR gain and compute cost.
+    if len(ccmr_m_sensitivity_df) > 0:
+        if "ccmr_gain" in ccmr_m_sensitivity_df.columns:
+            for _, row in ccmr_m_sensitivity_df[ccmr_m_sensitivity_df["ccmr_gain"] >= _THRESH_M_SWEEP_CCMR_GAIN].iterrows():
                 rows.append(
                     {
                         "model": str(row["model"]),
-                        "flag": "ccrr_m_sweep_gain_high",
+                        "flag": "ccmr_m_sweep_gain_high",
                         "severity": "medium",
-                        "value": float(row["ccrr_gain"]),
-                        "threshold": _THRESH_M_SWEEP_CCRR_GAIN,
-                        "detail": f"CCRR gain across m-sweep is high ({row['ccrr_gain']:.3f}).",
+                        "value": float(row["ccmr_gain"]),
+                        "threshold": _THRESH_M_SWEEP_CCMR_GAIN,
+                        "detail": f"CCMR gain across m-sweep is high ({row['ccmr_gain']:.3f}).",
                     }
                 )
     out = pd.DataFrame(rows)
@@ -1163,10 +1163,10 @@ def _write_report(
     top_k: int,
     action_flags_df: pd.DataFrame,
     k_sensitivity_df: pd.DataFrame,
-    ccrr_m_sensitivity_df: pd.DataFrame,
+    ccmr_m_sensitivity_df: pd.DataFrame,
 ) -> None:
     strong_corr = _strongest_corr_pairs(pearson, top_n=8)
-    coverage_cols = [c for c in ("ri_undefined_frac", "mari_undefined_frac", "ccrr_undefined_frac") if c in df_model.columns]
+    coverage_cols = [c for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac") if c in df_model.columns]
 
     lines: list[str] = []
     lines.append("# Benchmark Metrics Analysis")
@@ -1189,7 +1189,7 @@ def _write_report(
         lines.append("")
 
     lines.append("")
-    lines.append("## Pearson Correlations (RI / MaRI / CCRR)")
+    lines.append("## Pearson Correlations (RI / MaRI / CCMR)")
     lines.append("")
     for m1, m2, val in strong_corr:
         lines.append(f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}")
@@ -1272,15 +1272,15 @@ def _write_report(
                 f"mari_range={float(row['mari_range']):.3f}, max_range={float(row['max_range']):.3f}"
             )
     lines.append("")
-    lines.append("## CCRR m-Sweep Sensitivity and Cost")
+    lines.append("## CCMR m-Sweep Sensitivity and Cost")
     lines.append("")
-    if len(ccrr_m_sensitivity_df) == 0:
-        lines.append("- CCRR m-sweep metrics unavailable.")
+    if len(ccmr_m_sensitivity_df) == 0:
+        lines.append("- CCMR m-sweep metrics unavailable.")
     else:
-        lines.append(f"- Sensitivity threshold: `ccrr_gain >= {_THRESH_M_SWEEP_CCRR_GAIN:.2f}`")
-        for _, row in ccrr_m_sensitivity_df.head(5).iterrows():
+        lines.append(f"- Sensitivity threshold: `ccmr_gain >= {_THRESH_M_SWEEP_CCMR_GAIN:.2f}`")
+        for _, row in ccmr_m_sensitivity_df.head(5).iterrows():
             lines.append(
-                f"- {row['model']}: ccrr_gain={float(row['ccrr_gain']):.3f}, "
+                f"- {row['model']}: ccmr_gain={float(row['ccmr_gain']):.3f}, "
                 f"q_gain={float(row['q_gain']):.3f}, ltm_gain={float(row['ltm_gain']):.3f}"
             )
     lines.append("")
@@ -1315,22 +1315,22 @@ def main() -> int:
     agreement_df = _rank_agreement(rank_df)
 
     k_sweep_path = Path(args.k_sweep_csv) if args.k_sweep_csv is not None else metrics_csv.parent / "k_sweep_metrics.csv"
-    ccrr_m_sweep_path = (
-        Path(args.ccrr_m_sweep_csv) if args.ccrr_m_sweep_csv is not None else metrics_csv.parent / "ccrr_m_sweep_metrics.csv"
+    ccmr_m_sweep_path = (
+        Path(args.ccmr_m_sweep_csv) if args.ccmr_m_sweep_csv is not None else metrics_csv.parent / "ccmr_m_sweep_metrics.csv"
     )
     per_sample_path = metrics_csv.parent / "per_sample_metrics.csv"
     df_k_sweep = _load_optional_csv(k_sweep_path)
-    df_ccrr_m_sweep = _load_optional_csv(ccrr_m_sweep_path)
+    df_ccmr_m_sweep = _load_optional_csv(ccmr_m_sweep_path)
     df_per_sample = _load_optional_csv(per_sample_path)
     k_sensitivity_df = _k_sweep_sensitivity(df_k_sweep)
-    ccrr_m_sensitivity_df = _ccrr_m_sweep_sensitivity(df_ccrr_m_sweep)
+    ccmr_m_sensitivity_df = _ccmr_m_sweep_sensitivity(df_ccmr_m_sweep)
     action_flags_df = _model_action_flags(
         df_model=df_model,
         delta_df=delta_df,
         k_sensitivity_df=k_sensitivity_df,
-        ccrr_m_sensitivity_df=ccrr_m_sensitivity_df,
+        ccmr_m_sensitivity_df=ccmr_m_sensitivity_df,
     )
-    subgroup_df, subgroup_context_df = _build_ccrr_subgroup_analysis(df_per_sample)
+    subgroup_df, subgroup_context_df = _build_ccmr_subgroup_analysis(df_per_sample)
 
     pearson_corr.to_csv(out_dir / "correlation_pearson.csv")
     spearman_corr.to_csv(out_dir / "correlation_spearman.csv")
@@ -1341,12 +1341,12 @@ def main() -> int:
     action_flags_df.to_csv(out_dir / "model_action_flags.csv", index=False)
     if len(k_sensitivity_df) > 0:
         k_sensitivity_df.to_csv(out_dir / "k_sweep_sensitivity.csv", index=False)
-    if len(ccrr_m_sensitivity_df) > 0:
-        ccrr_m_sensitivity_df.to_csv(out_dir / "ccrr_m_sweep_sensitivity.csv", index=False)
+    if len(ccmr_m_sensitivity_df) > 0:
+        ccmr_m_sensitivity_df.to_csv(out_dir / "ccmr_m_sweep_sensitivity.csv", index=False)
     if df_per_sample is not None:
-        subgroup_df.to_csv(out_dir / "model_specific_ccrr_subgroups.csv", index=False)
-        (out_dir / "model_specific_ccrr_subgroups.md").write_text(
-            _render_ccrr_subgroup_markdown(subgroup_df, subgroup_context_df),
+        subgroup_df.to_csv(out_dir / "model_specific_ccmr_subgroups.csv", index=False)
+        (out_dir / "model_specific_ccmr_subgroups.md").write_text(
+            _render_ccmr_subgroup_markdown(subgroup_df, subgroup_context_df),
             encoding="utf-8",
         )
     _write_report(
@@ -1364,7 +1364,7 @@ def main() -> int:
         top_k=int(args.top_k),
         action_flags_df=action_flags_df,
         k_sensitivity_df=k_sensitivity_df,
-        ccrr_m_sensitivity_df=ccrr_m_sensitivity_df,
+        ccmr_m_sensitivity_df=ccmr_m_sensitivity_df,
     )
 
     print(f"[analyze_results] wrote analysis to: {out_dir}")

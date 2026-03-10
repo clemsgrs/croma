@@ -11,8 +11,8 @@ if str(SCRIPTS) not in sys.path:
 from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
-    plot_ccrr_ltm_comparison,
-    plot_ccrr_m_sweep_with_ltm,
+    plot_ccmr_ltm_comparison,
+    plot_ccmr_m_sweep_with_ltm,
     plot_knn_center_k_sweep,
     plot_mari_k_sweep,
     plot_ri_k_sweep,
@@ -83,27 +83,27 @@ def _sample_summary_rows() -> list[dict]:
     ]
 
 
-def _sample_ccrr_m_rows() -> list[dict]:
+def _sample_ccmr_m_rows() -> list[dict]:
     return [
-        {"model": "Virchow2", "m": 1, "ccrr": 1.40, "ccrr_ltm_alpha": 1.05},
-        {"model": "Virchow2", "m": 2, "ccrr": 1.22, "ccrr_ltm_alpha": 0.95},
-        {"model": "Virchow2", "m": 3, "ccrr": 1.10, "ccrr_ltm_alpha": 0.88},
-        {"model": "UNI", "m": 1, "ccrr": 0.92, "ccrr_ltm_alpha": 0.70},
-        {"model": "UNI", "m": 2, "ccrr": 0.97, "ccrr_ltm_alpha": 0.75},
-        {"model": "UNI", "m": 3, "ccrr": 1.03, "ccrr_ltm_alpha": 0.80},
+        {"model": "Virchow2", "m": 1, "ccmr": 1.40, "ccmr_ltm_alpha": 1.05},
+        {"model": "Virchow2", "m": 2, "ccmr": 1.22, "ccmr_ltm_alpha": 0.95},
+        {"model": "Virchow2", "m": 3, "ccmr": 1.10, "ccmr_ltm_alpha": 0.88},
+        {"model": "UNI", "m": 1, "ccmr": 0.92, "ccmr_ltm_alpha": 0.70},
+        {"model": "UNI", "m": 2, "ccmr": 0.97, "ccmr_ltm_alpha": 0.75},
+        {"model": "UNI", "m": 3, "ccmr": 1.03, "ccmr_ltm_alpha": 0.80},
     ]
 
 
-def _sample_ccrr_ltm_rows() -> list[dict]:
+def _sample_ccmr_ltm_rows() -> list[dict]:
     return [
-        {"model": "Virchow2", "ccrr": 1.30, "ccrr_ltm_alpha": 1.10, "ccrr_alpha": 0.10},
-        {"model": "UNI", "ccrr": 1.05, "ccrr_ltm_alpha": 0.82, "ccrr_alpha": 0.10},
-        {"model": "CONCH", "ccrr": 0.96, "ccrr_ltm_alpha": 0.61, "ccrr_alpha": 0.10},
+        {"model": "Virchow2", "ccmr": 1.30, "ccmr_ltm_alpha": 1.10, "ccmr_alpha": 0.10},
+        {"model": "UNI", "ccmr": 1.05, "ccmr_ltm_alpha": 0.82, "ccmr_alpha": 0.10},
+        {"model": "CONCH", "ccmr": 0.96, "ccmr_ltm_alpha": 0.61, "ccmr_alpha": 0.10},
     ]
 def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
     cases = [
         (plot_bio_vs_center_scatter, {"rows": _sample_summary_rows()}, "bio_vs_center_scatter.png"),
-        (plot_ccrr_m_sweep_with_ltm, {"rows": _sample_ccrr_m_rows()}, "ccrr_m_sweep.png"),
+        (plot_ccmr_m_sweep_with_ltm, {"rows": _sample_ccmr_m_rows()}, "ccmr_m_sweep.png"),
         (
             plot_benchmark_6panel_summary,
             {"rows": _sample_summary_rows(), "k_sweep_rows": _sample_k_rows()},
@@ -118,7 +118,7 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
         assert out_path.stat().st_size > 0
 
 
-def test_plot_ccrr_ltm_comparison_filters_invalid_rows_and_sorts_descending(monkeypatch, tmp_path: Path) -> None:
+def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
 
     points: list[tuple[float, float]] = []
@@ -141,9 +141,9 @@ def test_plot_ccrr_ltm_comparison_filters_invalid_rows_and_sorts_descending(monk
     monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
     monkeypatch.setattr(matplotlib.axes.Axes, "bar", spy_bar)
 
-    rows = _sample_ccrr_ltm_rows() + [{"model": "Bad", "ccrr": float("nan"), "ccrr_ltm_alpha": 0.5, "ccrr_alpha": 0.1}]
-    out_path = tmp_path / "ccrr_ltm_comparison.png"
-    plot_ccrr_ltm_comparison(rows=rows, out_path=out_path)
+    rows = _sample_ccmr_ltm_rows() + [{"model": "Bad", "ccmr": float("nan"), "ccmr_ltm_alpha": 0.5, "ccmr_alpha": 0.1}]
+    out_path = tmp_path / "ccmr_ltm_comparison.png"
+    plot_ccmr_ltm_comparison(rows=rows, out_path=out_path)
 
     assert out_path.exists()
     assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)}.issubset(set(points))

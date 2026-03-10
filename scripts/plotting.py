@@ -319,14 +319,14 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
-    fig, (ax_ccrr, ax_ltm) = plt.subplots(2, 1, figsize=(9.0, 8.0), sharex=True)
-    ccrr_rows = [
+def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
+    fig, (ax_ccmr, ax_ltm) = plt.subplots(2, 1, figsize=(9.0, 8.0), sharex=True)
+    ccmr_rows = [
         r for r in rows
-        if "m" in r and "ccrr" in r and np.isfinite(float(r["m"])) and np.isfinite(float(r["ccrr"]))
+        if "m" in r and "ccmr" in r and np.isfinite(float(r["m"])) and np.isfinite(float(r["ccmr"]))
     ]
-    if not ccrr_rows:
-        for ax in (ax_ccrr, ax_ltm):
+    if not ccmr_rows:
+        for ax in (ax_ccmr, ax_ltm):
             ax.set_visible(False)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
@@ -335,13 +335,13 @@ def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
         return
 
     by_model: dict[str, list[dict]] = {}
-    for row in ccrr_rows:
+    for row in ccmr_rows:
         model = str(row["model"])
         by_model.setdefault(model, []).append(row)
     for model in by_model:
         by_model[model] = sorted(by_model[model], key=lambda r: int(r["m"]))
 
-    m_all = sorted({int(row["m"]) for row in ccrr_rows})
+    m_all = sorted({int(row["m"]) for row in ccmr_rows})
     m_min, m_max = m_all[0], m_all[-1]
 
     def _configure_ax(ax: plt.Axes, ylabel: str, title: str, values: np.ndarray) -> None:
@@ -357,12 +357,12 @@ def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
         pad = max(0.05, span * 0.10) if span > 1e-9 else max(0.1, abs(vmin) * 0.10)
         ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
 
-    ccrr_values = np.asarray([float(r["ccrr"]) for r in ccrr_rows], dtype=float)
+    ccmr_values = np.asarray([float(r["ccmr"]) for r in ccmr_rows], dtype=float)
     ltm_values = np.asarray(
-        [float(r["ccrr_ltm_alpha"]) for r in ccrr_rows if "ccrr_ltm_alpha" in r],
+        [float(r["ccmr_ltm_alpha"]) for r in ccmr_rows if "ccmr_ltm_alpha" in r],
         dtype=float,
     )
-    _configure_ax(ax_ccrr, "CCRR", "CCRR over m", ccrr_values)
+    _configure_ax(ax_ccmr, "CCMR", "CCMR over m", ccmr_values)
     if ltm_values.size > 0:
         _configure_ax(ax_ltm, "LTM", "LTM over m", ltm_values)
 
@@ -370,10 +370,10 @@ def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
         model_rows = by_model[model]
         color = _color_for_model(model)
         ms = np.asarray([int(r["m"]) for r in model_rows], dtype=int)
-        vals = np.asarray([float(r["ccrr"]) for r in model_rows], dtype=float)
-        ax_ccrr.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, label=model)
-        if "ccrr_ltm_alpha" in model_rows[0]:
-            ltms = np.asarray([float(r["ccrr_ltm_alpha"]) for r in model_rows], dtype=float)
+        vals = np.asarray([float(r["ccmr"]) for r in model_rows], dtype=float)
+        ax_ccmr.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, label=model)
+        if "ccmr_ltm_alpha" in model_rows[0]:
+            ltms = np.asarray([float(r["ccmr_ltm_alpha"]) for r in model_rows], dtype=float)
             ax_ltm.plot(ms, ltms, color=color, linewidth=1.8, alpha=0.95, label=model)
 
     # x-axis: integer ticks spanning the full sweep range
@@ -388,7 +388,7 @@ def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     ax_ltm.set_xlim(m_min - 0.5, m_max + 0.5)
     ax_ltm.set_xlabel("m", fontsize=11)
 
-    ax_ccrr.legend(frameon=False, loc="best", fontsize=9)
+    ax_ccmr.legend(frameon=False, loc="best", fontsize=9)
     ax_ltm.legend(frameon=False, loc="best", fontsize=9)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -397,7 +397,7 @@ def plot_ccrr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccrr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
+def plot_ccmr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
     by_model: dict[str, list[dict]] = {}
     for row in rows:
         model = str(row["model"])
@@ -409,21 +409,21 @@ def plot_ccrr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
         for r in model_rows:
             try:
                 m_val = int(r["m"])
-                ccrr_val = float(r["ccrr"])
-                ltm_val = float(r["ccrr_ltm_alpha"])
-                if np.isfinite(ccrr_val) and np.isfinite(ltm_val):
-                    valid.append((m_val, ccrr_val, ltm_val))
+                ccmr_val = float(r["ccmr"])
+                ltm_val = float(r["ccmr_ltm_alpha"])
+                if np.isfinite(ccmr_val) and np.isfinite(ltm_val):
+                    valid.append((m_val, ccmr_val, ltm_val))
             except Exception:  # noqa: BLE001
                 continue
         if len(valid) < 2:
             continue
         valid.sort(key=lambda x: x[0])
         ms = np.asarray([v[0] for v in valid], dtype=float)
-        ccrr_vals = np.asarray([v[1] for v in valid], dtype=float)
+        ccmr_vals = np.asarray([v[1] for v in valid], dtype=float)
         ltm_vals = np.asarray([v[2] for v in valid], dtype=float)
-        ccrr_slope = float(np.polyfit(ms, ccrr_vals, 1)[0])
+        ccmr_slope = float(np.polyfit(ms, ccmr_vals, 1)[0])
         ltm_slope = float(np.polyfit(ms, ltm_vals, 1)[0])
-        model_slopes.append({"model": model, "ccrr_slope": ccrr_slope, "ltm_slope": ltm_slope})
+        model_slopes.append({"model": model, "ccmr_slope": ccmr_slope, "ltm_slope": ltm_slope})
 
     fig, ax = plt.subplots(figsize=(8.0, 7.0))
 
@@ -440,11 +440,11 @@ def plot_ccrr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
     ax.axvline(0, linestyle="--", linewidth=1.0, color="#9ca3af", zorder=1)
     ax.axhline(0, linestyle="--", linewidth=1.0, color="#9ca3af", zorder=1)
 
-    xs = np.asarray([d["ccrr_slope"] for d in model_slopes], dtype=float)
+    xs = np.asarray([d["ccmr_slope"] for d in model_slopes], dtype=float)
     ys = np.asarray([d["ltm_slope"] for d in model_slopes], dtype=float)
 
     for d in model_slopes:
-        x = float(d["ccrr_slope"])
+        x = float(d["ccmr_slope"])
         y = float(d["ltm_slope"])
         color = _color_for_model(d["model"])
         ax.scatter([x], [y], s=100, color=color, edgecolors="white", linewidths=1.0, zorder=3)
@@ -463,9 +463,9 @@ def plot_ccrr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
     ax.text( lim * 0.65, -lim * 0.75, "Rising / Falling\nmedian improves, tail stuck", **_q_props)
     ax.text(-lim * 0.65, -lim * 0.75, "Falling / Falling\neroding at scale", **_q_props)
 
-    ax.set_xlabel("CCRR(m) slope", fontsize=11)
+    ax.set_xlabel("CCMR(m) slope", fontsize=11)
     ax.set_ylabel("LTM(m) slope", fontsize=11)
-    ax.set_title("CCRR vs LTM trend quadrants", fontsize=14, weight="bold")
+    ax.set_title("CCMR vs LTM trend quadrants", fontsize=14, weight="bold")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
@@ -473,28 +473,28 @@ def plot_ccrr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _valid_ccrr_ltm_rows(rows: list[dict]) -> list[dict]:
+def _valid_ccmr_ltm_rows(rows: list[dict]) -> list[dict]:
     valid: list[dict] = []
     for row in rows:
-        if "ccrr" not in row or "ccrr_ltm_alpha" not in row:
+        if "ccmr" not in row or "ccmr_ltm_alpha" not in row:
             continue
         try:
-            ccrr_value = float(row["ccrr"])
-            ltm_value = float(row["ccrr_ltm_alpha"])
+            ccmr_value = float(row["ccmr"])
+            ltm_value = float(row["ccmr_ltm_alpha"])
         except Exception:  # noqa: BLE001
             continue
-        if not np.isfinite(ccrr_value) or not np.isfinite(ltm_value):
+        if not np.isfinite(ccmr_value) or not np.isfinite(ltm_value):
             continue
 
         try:
-            alpha_value = float(row.get("ccrr_alpha", float("nan")))
+            alpha_value = float(row.get("ccmr_alpha", float("nan")))
         except Exception:  # noqa: BLE001
             alpha_value = float("nan")
 
         valid.append(
             {
                 "model": str(row.get("model", "")),
-                "ccrr": ccrr_value,
+                "ccmr": ccmr_value,
                 "ltm": ltm_value,
                 "alpha": alpha_value if np.isfinite(alpha_value) else float("nan"),
             }
@@ -507,7 +507,7 @@ def _ltm_label(valid_rows: list[dict]) -> str:
     if len(alpha_values) == 1:
         alpha_pct = int(round(alpha_values[0] * 100))
         return f"LTM@{alpha_pct}%"
-    return "LTM(CCRR)"
+    return "LTM(CCMR)"
 
 
 def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
@@ -529,10 +529,10 @@ def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
     return float(lo), float(hi)
 
 
-def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
+def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.8))
     scatter_ax, bar_ax = axes
-    valid_rows = _valid_ccrr_ltm_rows(rows)
+    valid_rows = _valid_ccmr_ltm_rows(rows)
 
     if not valid_rows:
         scatter_ax.set_visible(False)
@@ -545,8 +545,8 @@ def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
 
     label_ltm = _ltm_label(valid_rows)
 
-    # Left: CCRR vs LTM scatter.
-    xs = np.asarray([float(r["ccrr"]) for r in valid_rows], dtype=float)
+    # Left: CCMR vs LTM scatter.
+    xs = np.asarray([float(r["ccmr"]) for r in valid_rows], dtype=float)
     ys = np.asarray([float(r["ltm"]) for r in valid_rows], dtype=float)
     lim_lo, lim_hi = _padded_positive_limits(np.concatenate([xs, ys]))
 
@@ -556,7 +556,7 @@ def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     for row in sorted(valid_rows, key=lambda r: str(r["model"])):
         model = str(row["model"])
         scatter_ax.scatter(
-            [float(row["ccrr"])],
+            [float(row["ccmr"])],
             [float(row["ltm"])],
             s=90,
             color=_color_for_model(model),
@@ -566,14 +566,14 @@ def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
         )
     scatter_ax.set_xlim(lim_lo, lim_hi)
     scatter_ax.set_ylim(lim_lo, lim_hi)
-    scatter_ax.set_xlabel("CCRR", fontsize=11)
+    scatter_ax.set_xlabel("CCMR", fontsize=11)
     scatter_ax.set_ylabel(label_ltm, fontsize=11)
-    scatter_ax.set_title(f"CCRR vs {label_ltm}", fontsize=13, weight="bold")
+    scatter_ax.set_title(f"CCMR vs {label_ltm}", fontsize=13, weight="bold")
 
-    # Right: sorted CCRR/LTM bars to compare rank and tail-gap by model.
+    # Right: sorted CCMR/LTM bars to compare rank and tail-gap by model.
     ranked_rows = sorted(valid_rows, key=lambda r: (float(r["ltm"]), str(r["model"])), reverse=True)
     model_names = [str(r["model"]) for r in ranked_rows]
-    ccrr_vals = np.asarray([float(r["ccrr"]) for r in ranked_rows], dtype=float)
+    ccmr_vals = np.asarray([float(r["ccmr"]) for r in ranked_rows], dtype=float)
     ltm_vals = np.asarray([float(r["ltm"]) for r in ranked_rows], dtype=float)
     colors = [_color_for_model(model) for model in model_names]
     x = np.arange(len(ranked_rows), dtype=float)
@@ -584,13 +584,13 @@ def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     bar_ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.75)
     bar_ax.bar(
         x - width / 2.0,
-        ccrr_vals,
+        ccmr_vals,
         width=width,
         color=colors,
         alpha=0.85,
         edgecolor="white",
         linewidth=0.6,
-        label="CCRR",
+        label="CCMR",
         zorder=3,
     )
     bar_ax.bar(
@@ -609,7 +609,7 @@ def plot_ccrr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     bar_ax.set_ylabel("score", fontsize=11)
     bar_ax.set_title(f"Sorted by {label_ltm}", fontsize=13, weight="bold")
     bar_ax.legend(frameon=False, loc="best")
-    y_lo, y_hi = _padded_positive_limits(np.concatenate([ccrr_vals, ltm_vals]))
+    y_lo, y_hi = _padded_positive_limits(np.concatenate([ccmr_vals, ltm_vals]))
     bar_ax.set_ylim(y_lo, y_hi)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -636,23 +636,23 @@ def plot_mari_vs_ri_scatter(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _draw_ccrr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legend_outside: bool) -> None:
-    ccrr_rows = [r for r in rows if "ccrr" in r and np.isfinite(float(r["ccrr"]))]
-    if not ccrr_rows:
+def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legend_outside: bool) -> None:
+    ccmr_rows = [r for r in rows if "ccmr" in r and np.isfinite(float(r["ccmr"]))]
+    if not ccmr_rows:
         ax.set_visible(False)
         return
 
-    xs = np.asarray([float(r["mari"]) for r in ccrr_rows], dtype=float)
-    ys = np.asarray([float(r["ccrr"]) for r in ccrr_rows], dtype=float)
+    xs = np.asarray([float(r["mari"]) for r in ccmr_rows], dtype=float)
+    ys = np.asarray([float(r["ccmr"]) for r in ccmr_rows], dtype=float)
 
     ax.set_facecolor("#fbfcfd")
     ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
     ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1)
 
-    for row in sorted(ccrr_rows, key=lambda r: str(r["model"])):
+    for row in sorted(ccmr_rows, key=lambda r: str(r["model"])):
         model = str(row["model"])
         x = float(row["mari"])
-        y = float(row["ccrr"])
+        y = float(row["ccmr"])
         ax.scatter(
             [x],
             [y],
@@ -668,8 +668,8 @@ def _draw_ccrr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legen
     y_pad = max(0.1, (ys.max() - ys.min()) * 0.10) if ys.size > 0 else 0.5
     ax.set_ylim(max(0.0, float(ys.min()) - y_pad), float(ys.max()) + y_pad)
     ax.set_xlabel("MaRI", fontsize=11)
-    ax.set_ylabel("CCRR", fontsize=11)
-    ax.set_title("CCRR vs MaRI", fontsize=14, weight="bold")
+    ax.set_ylabel("CCMR", fontsize=11)
+    ax.set_title("CCMR vs MaRI", fontsize=14, weight="bold")
 
     if show_legend:
         if legend_outside:
@@ -679,19 +679,19 @@ def _draw_ccrr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legen
             ax.legend(frameon=False, loc="best")
 
 
-def _draw_ccrr_sample_distributions(ax, rows: list[dict]) -> None:
+def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
 
-    ccrr_rows = [
+    ccmr_rows = [
         r for r in rows
-        if "ccrr_samples_path" in r and "ccrr_q_alpha" in r and np.isfinite(float(r.get("ccrr", float("nan"))))
+        if "ccmr_samples_path" in r and "ccmr_q_alpha" in r and np.isfinite(float(r.get("ccmr", float("nan"))))
     ]
-    if not ccrr_rows:
+    if not ccmr_rows:
         ax.set_visible(False)
         return
 
     model_data = []
-    for row in sorted(ccrr_rows, key=lambda r: str(r["model"])):
-        path = Path(str(row["ccrr_samples_path"]))
+    for row in sorted(ccmr_rows, key=lambda r: str(r["model"])):
+        path = Path(str(row["ccmr_samples_path"]))
         if not path.exists():
             continue
         values = np.load(path)
@@ -701,9 +701,9 @@ def _draw_ccrr_sample_distributions(ax, rows: list[dict]) -> None:
         model_data.append({
             "model": str(row["model"]),
             "values": values,
-            "q_alpha": float(row["ccrr_q_alpha"]),
-            "alpha": float(row["ccrr_alpha"]),
-            "ccrr": float(row["ccrr"]),
+            "q_alpha": float(row["ccmr_q_alpha"]),
+            "alpha": float(row["ccmr_alpha"]),
+            "ccmr": float(row["ccmr"]),
         })
 
     if not model_data:
@@ -718,7 +718,7 @@ def _draw_ccrr_sample_distributions(ax, rows: list[dict]) -> None:
     ax.set_facecolor("#fbfcfd")
     ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9, zorder=0)
 
-    # Shade the fragile region (CCRR < 1.0)
+    # Shade the fragile region (CCMR < 1.0)
     shade_right = min(1.0, x_max)
     if shade_right > x_min:
         ax.axvspan(x_min, shade_right, color="#f5e6d3", alpha=0.55, zorder=1)
@@ -740,10 +740,10 @@ def _draw_ccrr_sample_distributions(ax, rows: list[dict]) -> None:
             counts, edges = np.histogram(values, bins=40, density=True)
             centers = 0.5 * (edges[:-1] + edges[1:])
             ax.step(centers, counts, color=color, linewidth=1.5, alpha=0.85,
-                    label=f"{d['model']}  CCRR={d['ccrr']:.3f}")
+                    label=f"{d['model']}  CCMR={d['ccmr']:.3f}")
         else:
             ax.plot(x_grid, density, color=color, linewidth=1.6, alpha=0.9,
-                    label=f"{d['model']}  CCRR={d['ccrr']:.3f}")
+                    label=f"{d['model']}  CCMR={d['ccmr']:.3f}")
 
         q = d["q_alpha"]
         if np.isfinite(q) and x_min <= q <= x_max:
@@ -752,17 +752,17 @@ def _draw_ccrr_sample_distributions(ax, rows: list[dict]) -> None:
     alpha_pct = int(round(model_data[0]["alpha"] * 100))
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(bottom=0.0)
-    ax.set_xlabel("per-sample CCRR", fontsize=11)
+    ax.set_xlabel("per-sample CCMR", fontsize=11)
     ax.set_ylabel("density", fontsize=11)
     ax.set_title(
-        f"Per-sample CCRR distributions  (dotted: $Q_{{{alpha_pct}}}$,  shaded: CCRR < 1)",
+        f"Per-sample CCMR distributions  (dotted: $Q_{{{alpha_pct}}}$,  shaded: CCMR < 1)",
         fontsize=13, weight="bold",
     )
 
 
-def plot_ccrr_sample_distributions(rows: list[dict], out_path: Path) -> None:
+def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(11.0, 5.8))
-    _draw_ccrr_sample_distributions(ax, rows)
+    _draw_ccmr_sample_distributions(ax, rows)
     handles, labels = ax.get_legend_handles_labels()
     if handles:
         fig.legend(handles, labels, loc="center left", bbox_to_anchor=(0.98, 0.5), frameon=False, fontsize=9)
@@ -772,9 +772,9 @@ def plot_ccrr_sample_distributions(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccrr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
+def plot_ccmr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
-    _draw_ccrr_vs_mari_scatter(ax, rows, show_legend=True, legend_outside=False)
+    _draw_ccmr_vs_mari_scatter(ax, rows, show_legend=True, legend_outside=False)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")

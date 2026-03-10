@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mari import MaRI, RI
+from croma import MaRI, RI
 
 
 def _paired_manifest() -> pd.DataFrame:

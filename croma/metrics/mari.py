@@ -2,8 +2,8 @@
 import numpy as np
 import pandas as pd
 
-from mari.metrics.base import BaseRobustnessIndex
-from mari.types import RobustnessResult
+from croma.metrics.base import BaseRobustnessIndex
+from croma.types import RobustnessResult
 
 
 class MarginAwareRobustnessIndex(BaseRobustnessIndex):

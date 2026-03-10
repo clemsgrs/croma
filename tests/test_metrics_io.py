@@ -21,8 +21,8 @@ def test_excluded_centers_signature_is_sorted_and_unique() -> None:
     assert mio.excluded_centers_signature([" C2 ", "C1", "C2"]) == "C1,C2"
 
 
-def test_ccrr_search_signature_is_stable() -> None:
-    sig = mio.ccrr_search_signature(
+def test_ccmr_search_signature_is_stable() -> None:
+    sig = mio.ccmr_search_signature(
         start_k=200,
         k_growth_factor=1.5,
         alpha=0.10,
@@ -30,8 +30,8 @@ def test_ccrr_search_signature_is_stable() -> None:
     assert sig == "start=200;growth=1.5;alpha=0.1"
 
 
-def test_ccrr_search_signature_alpha_format_is_deterministic() -> None:
-    sig = mio.ccrr_search_signature(
+def test_ccmr_search_signature_alpha_format_is_deterministic() -> None:
+    sig = mio.ccmr_search_signature(
         start_k=320,
         k_growth_factor=1.75,
         alpha=0.125,

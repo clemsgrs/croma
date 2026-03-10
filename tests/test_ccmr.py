@@ -5,11 +5,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from mari import CCRR
-import mari.metrics.ccrr as ccrr_mod
-from mari.metrics.ccrr import (
-    CrossConfounderRetrievalRatio,
-    _compute_sample_ccrr,
+from croma import CCMR
+import croma.metrics.ccmr as ccmr_mod
+from croma.metrics.ccmr import (
+    CrossConfounderMarginRatio,
+    _compute_sample_ccmr,
 )
 
 
@@ -59,36 +59,36 @@ def _toy_features_so_closer() -> tuple[np.ndarray, pd.DataFrame]:
     return features, manifest
 
 
-class TestComputeSampleCCRR:
+class TestComputeSampleCCMR:
 
     def test_basic_ratio(self) -> None:
         so_dists = np.array([[0.1], [0.3]])
         os_dists = np.array([[0.3], [0.1]])
 
-        ccrr = _compute_sample_ccrr(so_dists, os_dists)
+        ccmr = _compute_sample_ccmr(so_dists, os_dists)
 
-        assert ccrr[0] == pytest.approx(3.0)
-        assert ccrr[1] == pytest.approx(1.0 / 3.0)
+        assert ccmr[0] == pytest.approx(3.0)
+        assert ccmr[1] == pytest.approx(1.0 / 3.0)
 
     def test_inf_produces_nan(self) -> None:
         so_dists = np.array([[0.1], [np.inf]])
         os_dists = np.array([[0.3], [0.2]])
 
-        ccrr = _compute_sample_ccrr(so_dists, os_dists)
+        ccmr = _compute_sample_ccmr(so_dists, os_dists)
 
-        assert np.isfinite(ccrr[0])
-        assert np.isnan(ccrr[1])
+        assert np.isfinite(ccmr[0])
+        assert np.isnan(ccmr[1])
 
 
-class TestCCRRCompute:
+class TestCCMRCompute:
 
     def test_default_k_growth_factor_is_two(self) -> None:
-        sig = inspect.signature(CrossConfounderRetrievalRatio.compute)
+        sig = inspect.signature(CrossConfounderMarginRatio.compute)
         assert sig.parameters["k_growth_factor"].default == 2.0
 
     def test_compute_list_m_matches_individual_compute(self) -> None:
         features, manifest = _toy_features_so_closer()
-        by_m = CCRR.compute(
+        by_m = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -96,8 +96,8 @@ class TestCCRRCompute:
         )
         assert isinstance(by_m, dict)
 
-        single_m1 = CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
-        single_m2 = CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=2)
+        single_m1 = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        single_m2 = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=2)
 
         assert by_m[1].value == pytest.approx(single_m1.value)
         assert by_m[1].std == pytest.approx(single_m1.std)
@@ -114,14 +114,14 @@ class TestCCRRCompute:
     def test_compute_list_m_uses_single_neighbor_search_for_multiple_m(self, monkeypatch: pytest.MonkeyPatch) -> None:
         features, manifest = _toy_features_so_closer()
         calls = {"n": 0}
-        original = ccrr_mod._iterative_typed_neighbor_search
+        original = ccmr_mod._iterative_typed_neighbor_search
 
         def wrapped(**kwargs):
             calls["n"] += 1
             return original(**kwargs)
 
-        monkeypatch.setattr(ccrr_mod, "_iterative_typed_neighbor_search", wrapped)
-        by_m = CCRR.compute(
+        monkeypatch.setattr(ccmr_mod, "_iterative_typed_neighbor_search", wrapped)
+        by_m = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -138,7 +138,7 @@ class TestCCRRCompute:
         if evaluation_design == "paired_2x2":
             manifest = manifest.copy()
             manifest["subset"] = "pair0"
-        result = CCRR.compute(
+        result = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design=evaluation_design,
@@ -154,12 +154,12 @@ class TestCCRRCompute:
         assert result.acceptance_met
         assert result.undefined_frac == pytest.approx(0.0)
 
-    def test_so_closer_yields_ccrr_above_one_dataset_wide(self) -> None:
+    def test_so_closer_yields_ccmr_above_one_dataset_wide(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
         assert result.value > 1.0
 
-    def test_os_closer_yields_ccrr_below_one(self) -> None:
+    def test_os_closer_yields_ccmr_below_one(self) -> None:
         manifest = _make_manifest(
             n=8,
             labels=["A", "A", "B", "B", "A", "A", "B", "B"],
@@ -178,7 +178,7 @@ class TestCCRRCompute:
             ],
             dtype=float,
         )
-        result = CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
         assert result.value < 1.0
 
     def test_all_same_label_and_center_are_undefined(self) -> None:
@@ -189,7 +189,7 @@ class TestCCRRCompute:
         )
         features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
 
-        result = CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
 
         assert result.undefined_frac == pytest.approx(1.0)
         assert result.sample_values.shape[0] == 0
@@ -199,7 +199,7 @@ class TestCCRRCompute:
     def test_relaxed_acceptance_threshold_stops_earlier(self) -> None:
         features, manifest = _toy_features_so_closer()
 
-        strict = CCRR.compute(
+        strict = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -208,7 +208,7 @@ class TestCCRRCompute:
             acceptance_threshold=0.0,
             k_growth_factor=1.5,
         )
-        relaxed = CCRR.compute(
+        relaxed = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -238,7 +238,7 @@ class TestCCRRCompute:
             dtype=float,
         )
 
-        result = CCRR.compute(
+        result = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -255,7 +255,7 @@ class TestCCRRCompute:
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=200)
+        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=200)
         assert result.k_start == len(manifest) - 1
 
     def test_growth_schedule_follows_factor(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -286,10 +286,10 @@ class TestCCRRCompute:
             query_indices = kwargs["query_indices"]
             return np.zeros((len(query_indices),), dtype=bool)
 
-        monkeypatch.setattr(ccrr_mod, "NearestNeighbors", _FakeNN)
-        monkeypatch.setattr(ccrr_mod, "_scan_typed_neighbors_for_query_rows", _never_define)
+        monkeypatch.setattr(ccmr_mod, "NearestNeighbors", _FakeNN)
+        monkeypatch.setattr(ccmr_mod, "_scan_typed_neighbors_for_query_rows", _never_define)
 
-        result = CCRR.compute(
+        result = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -344,10 +344,10 @@ class TestCCRRCompute:
                 out[:] = True
             return out
 
-        monkeypatch.setattr(ccrr_mod, "NearestNeighbors", _FakeNN)
-        monkeypatch.setattr(ccrr_mod, "_scan_typed_neighbors_for_query_rows", _define_half_then_all)
+        monkeypatch.setattr(ccmr_mod, "NearestNeighbors", _FakeNN)
+        monkeypatch.setattr(ccmr_mod, "_scan_typed_neighbors_for_query_rows", _define_half_then_all)
 
-        result = CCRR.compute(
+        result = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -364,34 +364,34 @@ class TestCCRRCompute:
     def test_invalid_evaluation_design_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="evaluation_design"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="auto", m=1)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="auto", m=1)
 
     def test_paired_requires_subset_metadata(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="subset"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="paired_2x2", m=1)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="paired_2x2", m=1)
 
     def test_m_zero_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="m must be >= 1"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=0)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=0)
 
     def test_acceptance_threshold_bounds_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="acceptance_threshold"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, acceptance_threshold=-0.1)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, acceptance_threshold=-0.1)
         with pytest.raises(ValueError, match="acceptance_threshold"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, acceptance_threshold=1.1)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, acceptance_threshold=1.1)
 
     def test_growth_factor_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="k_growth_factor"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, k_growth_factor=1.0)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, k_growth_factor=1.0)
 
     def test_start_k_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="start_k"):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=0)
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=0)
 
     def test_exclude_centers(self) -> None:
         manifest = _make_manifest(
@@ -417,14 +417,14 @@ class TestCCRRCompute:
             dtype=float,
         )
         mask = manifest["medical_center"] != "C3"
-        result_excluded = CCRR.compute(
+        result_excluded = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
             m=1,
             exclude_centers=["C3"],
         )
-        result_manual = CCRR.compute(
+        result_manual = CCMR.compute(
             features=features[mask.to_numpy()],
             manifest=manifest.loc[mask].reset_index(drop=True),
             evaluation_design="dataset_wide",
@@ -433,9 +433,9 @@ class TestCCRRCompute:
         assert result_excluded.value == pytest.approx(result_manual.value)
 
     def test_api_alias(self) -> None:
-        assert CCRR is CrossConfounderRetrievalRatio
+        assert CCMR is CrossConfounderMarginRatio
 
     def test_manual_kmax_not_supported(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(TypeError):
-            CCRR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]
+            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]

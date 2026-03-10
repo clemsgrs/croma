@@ -26,7 +26,7 @@ class RobustnessResult:
 
 
 @dataclass(frozen=True)
-class CCRRResult:
+class CCMRResult:
     dataset: str
     m: int
     value: float

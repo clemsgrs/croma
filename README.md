@@ -1,14 +1,14 @@
-# MaRI
+# cross-margin
 
 Lightweight Python package for:
 - RI (Robustness Index)
 - MaRI (Margin-aware Robustness Index)
-- CCRR (Cross-Confounder Retrieval Ratio)
+- CCMR (Cross-Confounder Margin Ratio)
 
 ## Install
 
 ```bash
-pip install mari
+pip install cross-margin
 ```
 
 ## Quickstart
@@ -16,14 +16,14 @@ pip install mari
 ```python
 import numpy as np
 import pandas as pd
-from mari import CCRR, RI, MaRI
+from croma import CCMR, RI, MaRI
 
 manifest = pd.read_csv("data/prostate-shift-binary.csv")
 features = np.load("embeddings.npy")  # shape: (N, D)
 
 ri = RI.compute(features, manifest, evaluation_design="paired_2x2", k_candidates=[5, 11, 21])
 mari = MaRI.compute(features, manifest, evaluation_design="paired_2x2", k_candidates=[5, 11, 21], tau=0.2)
-ccrr = CCRR.compute(
+ccmr = CCMR.compute(
     features,
     manifest,
     evaluation_design="paired_2x2",
@@ -46,7 +46,7 @@ mari_no_center_x = MaRI.compute(
 - `paired_2x2` is occurrence-level and faithful to the manifest-defined PathoROB subsets
 - `dataset_wide` is sample-level and evaluates the retained dataset once
 
-CCRR neighbor search is fully automatic:
+CCMR neighbor search is fully automatic:
 - expands neighborhood size and retries unresolved samples automatically
 - targets fully defined samples by default and returns `undefined_frac`
 
@@ -63,7 +63,7 @@ Required manifest columns:
 
 ## Why use 2x2 pairs
 
-RI/MaRI/CCRR compare two competing neighbor signals:
+RI/MaRI/CCMR compare two competing neighbor signals:
 - `SO`: same class, opposite center (desired)
 - `OS`: opposite class, same center (undesired)
 
@@ -86,10 +86,10 @@ python scripts/benchmark.py \
 
 ## Prepare PathoROB Data
 
-To prepare TCGA and Tolkach ESCA from Hugging Face into local PNG tiles plus MaRI manifests:
+To prepare TCGA and Tolkach ESCA from Hugging Face into local PNG tiles plus cross-margin manifests:
 
 ```bash
-pip install "mari[bench]"
+pip install "cross-margin[bench]"
 python scripts/prepare_pathorob.py \
   --output-dir /data/pathology/projects/clement/discern/data/eval/pathorob \
   --datasets tcga,tolkach_esca \
@@ -130,15 +130,15 @@ Defaults:
 Benchmark extraction note:
 - when the evaluation manifest repeats the same physical sample across multiple paired subsets, embeddings are extracted once per unique `(sample_id, image_path, label, medical_center, slide_id)` source row and then reused for the repeated occurrence-level metric rows
 - `--tau 0.2`
-- `--ccrr-m-max 20`
-- `--ccrr-alpha 0.10`
+- `--ccmr-m-max 20`
+- `--ccmr-alpha 0.10`
 - `--progress auto` (show tqdm bars on TTY; plain logs otherwise)
 
 Optional:
 - `--continuous-k-sweep-max 100` to evaluate every integer `k` from 1 to 100 for k-sweep outputs and k-selection.
 - `--exclude-center CENTER_X` (repeatable) to exclude one or more centers from evaluation.
 - `--evaluation-design dataset_wide` to run one full-dataset evaluation instead of subset-defined paired evaluation.
-- `--ccrr-alpha ...` to choose the CCRR tail percentile used for `Q_alpha` and `LTM_alpha`.
+- `--ccmr-alpha ...` to choose the CCMR tail percentile used for `Q_alpha` and `LTM_alpha`.
 - `--recompute-metrics` to bypass metric cache reads and force full metric recomputation.
 - `--progress off` to force log-only output (recommended for CI/log redirects).
 
@@ -150,11 +150,11 @@ Outputs:
   - `<output-dir>/<manifest_stem>/results/metrics.json`
   - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.csv`
   - `<output-dir>/<manifest_stem>/results/k_sweep_metrics.json`
-  - `<output-dir>/<manifest_stem>/results/ccrr_m_sweep_metrics.csv`
-  - `<output-dir>/<manifest_stem>/results/ccrr_m_sweep_metrics.json`
+  - `<output-dir>/<manifest_stem>/results/ccmr_m_sweep_metrics.csv`
+  - `<output-dir>/<manifest_stem>/results/ccmr_m_sweep_metrics.json`
   - `<output-dir>/<manifest_stem>/results/sample_distributions/ri.<model>.npy` (+ `.json`)
   - `<output-dir>/<manifest_stem>/results/sample_distributions/mari.<model>.npy` (+ `.json`)
-  - `<output-dir>/<manifest_stem>/results/sample_distributions/ccrr.<model>.npy`
+  - `<output-dir>/<manifest_stem>/results/sample_distributions/ccmr.<model>.npy`
   - `<output-dir>/<manifest_stem>/results/cache/index.jsonl`
   - `<output-dir>/<manifest_stem>/results/cache/artifacts/<artifact>/<model>/<key_hash>.json|.npy`
 - plots:
@@ -162,12 +162,12 @@ Outputs:
   - `<output-dir>/<manifest_stem>/plots/knn_center_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/ri_k_sweep.png`
   - `<output-dir>/<manifest_stem>/plots/mari_k_sweep.png`
-  - `<output-dir>/<manifest_stem>/plots/ccrr_m_sweep.png`
-  - `<output-dir>/<manifest_stem>/plots/ccrr_ltm_comparison.png`
+  - `<output-dir>/<manifest_stem>/plots/ccmr_m_sweep.png`
+  - `<output-dir>/<manifest_stem>/plots/ccmr_ltm_comparison.png`
   - `<output-dir>/<manifest_stem>/plots/bio_vs_center_scatter.png`
   - `<output-dir>/<manifest_stem>/plots/mari_vs_ri_scatter.png`
-  - `<output-dir>/<manifest_stem>/plots/ccrr_vs_mari_scatter.png`
-  - `<output-dir>/<manifest_stem>/plots/ccrr_sample_distributions.png`
+  - `<output-dir>/<manifest_stem>/plots/ccmr_vs_mari_scatter.png`
+  - `<output-dir>/<manifest_stem>/plots/ccmr_sample_distributions.png`
   - `<output-dir>/<manifest_stem>/plots/benchmark_6panel_summary.png`
 
 `k_sweep_metrics.*` stores one row per `(model, k)` with:
@@ -186,28 +186,28 @@ Outputs:
 - `center_knn_bacc`: center balanced accuracy at `selected_k_center`
 - `selected_k_center`: center task selected `k`
 - `excluded_centers`: excluded center signature used for this run
-- `ccrr`, `ccrr_std`, `ccrr_m`: CCRR summary (for `m=1`)
-- `ccrr_undefined_frac`: undefined sample fraction for CCRR
-- `ccrr_alpha`, `ccrr_q_alpha`, `ccrr_ltm_alpha`: CCRR tail statistics
-- `ccrr_search`: includes CCRR search settings and alpha (`thr=...;start=...;growth=...;alpha=...`)
+- `ccmr`, `ccmr_std`, `ccmr_m`: CCMR summary (for `m=1`)
+- `ccmr_undefined_frac`: undefined sample fraction for CCMR
+- `ccmr_alpha`, `ccmr_q_alpha`, `ccmr_ltm_alpha`: CCMR tail statistics
+- `ccmr_search`: includes CCMR search settings and alpha (`thr=...;start=...;growth=...;alpha=...`)
 
-`ccrr_m_sweep_metrics.*` stores one row per `(model, m)` with:
+`ccmr_m_sweep_metrics.*` stores one row per `(model, m)` with:
 - `evaluation_design`, `evaluation_unit`
-- `ccrr`, `ccrr_std`
-- `ccrr_undefined_frac`
+- `ccmr`, `ccmr_std`
+- `ccmr_undefined_frac`
 
 `per_sample_metrics.*` stores one row per aligned evaluation unit:
 - `dataset_wide`: one row per retained sample (`evaluation_unit="sample"`, `subset="dataset"`)
 - `paired_2x2`: one row per retained subset occurrence (`evaluation_unit="occurrence"`, explicit `subset`)
 
-`sample_distributions/` stores raw informative RI/MaRI/CCRR values for each model.
+`sample_distributions/` stores raw informative RI/MaRI/CCMR values for each model.
 
 `metrics.csv`/`.json` also include:
 - `ri_undefined_frac`, `mari_undefined_frac`: fraction of samples with undefined per-sample score (`SO_i + OS_i = 0`)
 
 ### Analyze Saved Metrics
 
-You can compute correlations, rank tables, rank-shift summaries, and model-specific CCRR subgroup summaries from a `metrics.csv` file:
+You can compute correlations, rank tables, rank-shift summaries, and model-specific CCMR subgroup summaries from a `metrics.csv` file:
 
 ```bash
 python scripts/analyze_results.py \
@@ -222,30 +222,30 @@ Outputs are written to `/path/to/results/analysis/` by default:
 - `top_models_by_metric.csv`
 - `model_action_flags.csv` (threshold-based per-model action flags)
 - `k_sweep_sensitivity.csv` (when `k_sweep_metrics.csv` is available)
-- `ccrr_m_sweep_sensitivity.csv` (when `ccrr_m_sweep_metrics.csv` is available)
+- `ccmr_m_sweep_sensitivity.csv` (when `ccmr_m_sweep_metrics.csv` is available)
 - `analysis_report.md`
-- `model_specific_ccrr_subgroups.csv` (when `per_sample_metrics.csv` is available)
-- `model_specific_ccrr_subgroups.md` (when `per_sample_metrics.csv` is available)
+- `model_specific_ccmr_subgroups.csv` (when `per_sample_metrics.csv` is available)
+- `model_specific_ccmr_subgroups.md` (when `per_sample_metrics.csv` is available)
 
 `scripts/analyze_results.py` no longer writes correlation PNG heatmaps; the CSVs are the canonical correlation artifacts.
 
 `scripts/analyze_results.py` auto-detects sibling sweep files next to `metrics.csv` by default:
 - `k_sweep_metrics.csv`
-- `ccrr_m_sweep_metrics.csv`
+- `ccmr_m_sweep_metrics.csv`
 - `per_sample_metrics.csv`
 
 `model_action_flags.csv` is intentionally narrow now. It keeps only:
 - rank-shift flags for meaningful rank disagreements
 - `coverage_risk` when undefined coverage is high
 - `poor_embedding` for OO-dominated undefined mass
-- `tail_gap_ltm_high` for large CCRR vs lower-tail-mean gaps
+- `tail_gap_ltm_high` for large CCMR vs lower-tail-mean gaps
 
 `analysis_report.md` now renders:
 - a dedicated `Rank Shift Analysis (Pairwise)` section
 - a dedicated `Coverage Risk` section with one row per model
 - an `Additional Insights and Action Flags` section that excludes repeated `coverage_risk` and `rank_shift_*` entries
 
-The subgroup analysis uses `ccrr_m1` and treats each analysis context as either:
+The subgroup analysis uses `ccmr_m1` and treats each analysis context as either:
 - one binary `dataset_wide` sample universe, or
 - one explicit `paired_2x2` subset
 
@@ -256,13 +256,13 @@ For each `(model, context)`, it reports three subgroup scopes:
 
 Each subgroup row carries descriptive evidence:
 - `n_samples`, `group_frac`
-- `mean_ccrr`, `rest_mean_ccrr`, `mean_ccrr_delta_vs_rest`
-- `median_ccrr`, `rest_median_ccrr`, `median_ccrr_delta_vs_rest`
-- `ccrr_lt1_frac`, `ccrr_lt1_count`, `rest_ccrr_lt1_frac`, `ccrr_lt1_frac_delta_vs_rest`
+- `mean_ccmr`, `rest_mean_ccmr`, `mean_ccmr_delta_vs_rest`
+- `median_ccmr`, `rest_median_ccmr`, `median_ccmr_delta_vs_rest`
+- `ccmr_lt1_frac`, `ccmr_lt1_count`, `rest_ccmr_lt1_frac`, `ccmr_lt1_frac_delta_vs_rest`
 - `subgroup_q_alpha`, `subgroup_ltm_alpha`, `internal_tail_drop`
 - `tier1_status`, `tier2_status`
 - `tail_count`, `tail_prevalence`, `context_tail_prevalence`, `tail_prevalence_delta`, `tail_prevalence_ratio`, `tail_share`
-- `tail_mean_ccrr`, `rest_tail_mean_ccrr`, `tail_mean_ccrr_delta_vs_rest`
+- `tail_mean_ccmr`, `rest_tail_mean_ccmr`, `tail_mean_ccmr_delta_vs_rest`
 - `tail_severity_label`, `tier3_status`
 
 The markdown report is now split into three tiered tables per `(model, context)`:
@@ -270,46 +270,46 @@ The markdown report is now split into three tiered tables per `(model, context)`
 1. `Broad Subgroup Weakness`
    - complement-based comparison
    - columns:
-     - `median_ccrr`, `rest_median_ccrr`, `median_ccrr_delta_vs_rest`
-     - `ccrr_lt1_frac`, `rest_ccrr_lt1_frac`, `ccrr_lt1_frac_delta_vs_rest`
+     - `median_ccmr`, `rest_median_ccmr`, `median_ccmr_delta_vs_rest`
+     - `ccmr_lt1_frac`, `rest_ccmr_lt1_frac`, `ccmr_lt1_frac_delta_vs_rest`
      - `tier1_status`
    - `tier1_status` uses three non-neutral labels when:
-     - `median_ccrr_delta_vs_rest <= -0.05`
-     - `ccrr_lt1_frac_delta_vs_rest >= 0.05`
+     - `median_ccmr_delta_vs_rest <= -0.05`
+     - `ccmr_lt1_frac_delta_vs_rest >= 0.05`
    - `broad_weakness` when:
-     - `median_ccrr < 1.0`
-     - `rest_median_ccrr >= 1.0`
+     - `median_ccmr < 1.0`
+     - `rest_median_ccmr >= 1.0`
    - `relative_weakness` when:
-     - `median_ccrr >= 1.0`
-     - `rest_median_ccrr >= 1.0`
+     - `median_ccmr >= 1.0`
+     - `rest_median_ccmr >= 1.0`
    - `aggravated_weakness` when:
-     - `median_ccrr < 1.0`
-     - `rest_median_ccrr < 1.0`
+     - `median_ccmr < 1.0`
+     - `rest_median_ccmr < 1.0`
    - if the subgroup median stays `>= 1.0` while the rest median is already `< 1.0`, Tier 1 stays `neutral`
 
 2. `Hidden Subgroup Pockets`
    - subgroup-internal comparison
    - markdown columns:
      - `n_samples`
-     - `ccrr_lt1_frac`
-     - `ccrr_lt1_count`
-     - `median_ccrr`
+     - `ccmr_lt1_frac`
+     - `ccmr_lt1_count`
+     - `median_ccmr`
      - `subgroup_ltm_alpha`
-     - `internal_tail_drop = median_ccrr - subgroup_ltm_alpha`
+     - `internal_tail_drop = median_ccmr - subgroup_ltm_alpha`
      - `tier2_status`
    - Tier 2 now uses a stricter internal-pocket gate so a few extreme samples do not drive the label by themselves:
      - `n_samples >= 10`
      - `subgroup_ltm_alpha <= 0.90`
      - `internal_tail_drop >= 0.25`
-     - `ccrr_lt1_frac >= 0.15`
-     - `ccrr_lt1_count >= 3`
+     - `ccmr_lt1_frac >= 0.15`
+     - `ccmr_lt1_count >= 3`
    - `tier2_status = hidden_pocket` when that gate is met and:
-     - `median_ccrr >= 1.15`
+     - `median_ccmr >= 1.15`
    - `tier2_status = aggravated_weakness` when that gate is met and:
-     - `median_ccrr < 1.0`
+     - `median_ccmr < 1.0`
    - `tier2_status = internal_spread` when:
      - `n_samples >= 10`
-     - `median_ccrr >= 1.15`
+     - `median_ccmr >= 1.15`
      - `subgroup_ltm_alpha >= 1.0`
      - `internal_tail_drop >= 0.25`
    - `subgroup_q_alpha` is kept in the CSV evidence table but not headlined in markdown
@@ -318,25 +318,25 @@ The markdown report is now split into three tiered tables per `(model, context)`
    - global-tail enrichment plus rest-of-tail severity
    - columns:
      - `tail_prevalence`, `context_tail_prevalence`, `tail_prevalence_ratio`
-     - `tail_mean_ccrr`, `rest_tail_mean_ccrr`
+     - `tail_mean_ccmr`, `rest_tail_mean_ccmr`
      - `tail_severity_label`
      - `tier3_status`
    - `tier3_status` is derived independently from:
      - enrichment: `tail_prevalence_ratio >= 2.0`
      - severity label:
-       - `more severe` when `tail_mean_ccrr_delta_vs_rest <= -0.05`
-       - `similar` when `|tail_mean_ccrr_delta_vs_rest| < 0.05`
-       - `not more severe` when `tail_mean_ccrr_delta_vs_rest >= 0.05`
+       - `more severe` when `tail_mean_ccmr_delta_vs_rest <= -0.05`
+       - `similar` when `|tail_mean_ccmr_delta_vs_rest| < 0.05`
+       - `not more severe` when `tail_mean_ccmr_delta_vs_rest >= 0.05`
 
 All subgroup rows are shown in markdown now. Low-support rows are retained with `insufficient_support` status instead of being dropped from the report.
 
-The full tier semantics and thresholds are documented in [`docs/ccrr-breakdown.md`](docs/ccrr-breakdown.md).
+The full tier semantics and thresholds are documented in [`docs/ccmr-breakdown.md`](docs/ccmr-breakdown.md).
 
 `dataset_wide` subgroup interpretation is intentionally skipped for multi-class datasets, because pooled class boundaries are heterogeneous and the resulting subgroup conclusions are clinically weak. Use paired runs for clinically meaningful subgroup analysis there.
 
 You can also override with:
 - `--k-sweep-csv /path/to/k_sweep_metrics.csv`
-- `--ccrr-m-sweep-csv /path/to/ccrr_m_sweep_metrics.csv`
+- `--ccmr-m-sweep-csv /path/to/ccmr_m_sweep_metrics.csv`
 
 ### Metric Cache Behavior
 
@@ -346,8 +346,8 @@ You can also override with:
   - cache schema/code fingerprint
 - Cache invalidation is dependency-specific:
   - changing `tau` recomputes only MaRI artifacts
-  - changing CCRR search parameters recomputes only CCRR artifacts
+  - changing CCMR search parameters recomputes only CCMR artifacts
   - changing `k` candidates recomputes kNN/RI/MaRI artifacts only
-  - changing `evaluation_design` recomputes kNN/RI/MaRI/CCRR artifacts
-- Report files (`metrics.csv`, `k_sweep_metrics.csv`, `ccrr_m_sweep_metrics.csv`) are rewritten every run from current artifacts.
+  - changing `evaluation_design` recomputes kNN/RI/MaRI/CCMR artifacts
+- Report files (`metrics.csv`, `k_sweep_metrics.csv`, `ccmr_m_sweep_metrics.csv`) are rewritten every run from current artifacts.
 - `--recompute-metrics` bypasses cache reads but still refreshes cache artifacts.
