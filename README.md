@@ -1,4 +1,4 @@
-# Margin-Aware Robustness Metrics for Pathology Foundation Models
+# croma
 
 <p align="center">
   <a href="https://pypi.org/project/cross-margin/"><img src="https://img.shields.io/pypi/v/cross-margin.svg" alt="PyPI version"></a>
@@ -6,7 +6,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/github/license/clemsgrs/croma.svg" alt="License"></a>
 </p>
 
-`cross-margin` is a Python package for evaluating pathology foundation model robustness to non-biological confounders.
+`croma` is a Python package for evaluating pathology foundation model robustness to non-biological confounders.
 
 It implements three complementary metrics:
 
@@ -14,7 +14,7 @@ It implements three complementary metrics:
 - `MaRI`: Margin-aware Robustness Index
 - `CCMR`: Cross-Confounder Margin Ratio
 
-`cross-margin` provides a clean implementation of RI together with MaRI -- its margin-aware extension -- as well as a new robustness metric, CCMR -- which overcomes some of the limitations of RI/MaRI and enables tail-aware analysis for more detailed robustness characterization. RI was originally introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study.
+`croma` provides a clean implementation of RI together with MaRI -- its margin-aware extension -- as well as a new robustness metric, CCMR -- which overcomes some of the limitations of RI/MaRI and enables tail-aware analysis for more detailed robustness characterization. RI was originally introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study.
 
 
 The package also comes with optional benchmarking utilities for multi-model evaluation.
