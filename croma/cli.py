@@ -6,7 +6,11 @@ from pathlib import Path
 import numpy as np
 
 from croma import CCMR, MaRI, RI
-from croma.metrics.pairs import load_manifest, normalize_center_values
+from croma.alignment import (
+    build_embedding_source_manifest,
+    expand_features_to_manifest,
+)
+from croma.metrics.pairs import load_manifest
 
 
 def _parse_k_candidates(s: str) -> list[int]:
@@ -30,14 +34,28 @@ def _result_payload(result) -> dict:
     return payload
 
 
+def _load_eval_features(*, manifest_path: Path, embeddings_path: Path) -> tuple[np.ndarray, object]:
+    manifest = load_manifest(str(manifest_path))
+    features = np.load(embeddings_path)
+    if int(features.shape[0]) != int(len(manifest)):
+        raise ValueError(
+            "embeddings rows must match manifest rows. "
+            "Metric commands require manifest-aligned embeddings. "
+            "If you started from deduplicated embeddings, run "
+            "`croma build-embedding-manifest` and `croma expand-embeddings` first."
+        )
+    return features, manifest
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute RI/MaRI metrics.")
+    parser = argparse.ArgumentParser(
+        description="Compute RI, MaRI, and CCMR metrics, or prepare aligned embedding inputs."
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     shared = argparse.ArgumentParser(add_help=False)
     shared.add_argument("--manifest", required=True, help="Path to manifest CSV.")
     shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
-    shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
     shared.add_argument(
         "--evaluation-design",
         required=True,
@@ -45,42 +63,24 @@ def main() -> None:
         help="Evaluation design: paired_2x2=explicit manifest-defined 2x2 subsets, dataset_wide=one full-dataset evaluation.",
     )
     shared.add_argument("--k-candidates", type=_parse_k_candidates, default=[5, 11, 21])
-    shared.add_argument(
-        "--exclude-center",
-        action="append",
-        default=[],
-        help="Medical center to exclude from computation. Repeat flag to exclude multiple centers.",
-    )
 
     ri_parser = sub.add_parser("ri", parents=[shared], help="Compute RI.")
     mari_parser = sub.add_parser("mari", parents=[shared], help="Compute MaRI.")
     mari_parser.add_argument("--tau", type=float, default=0.2, help="Distance-decay temperature (>0).")
 
-    ccmr_shared = argparse.ArgumentParser(add_help=False)
-    ccmr_shared.add_argument("--manifest", required=True, help="Path to manifest CSV.")
-    ccmr_shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
-    ccmr_shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
-    ccmr_shared.add_argument(
-        "--evaluation-design",
-        required=True,
-        choices=["paired_2x2", "dataset_wide"],
-        help="Evaluation design: paired_2x2=explicit manifest-defined 2x2 subsets, dataset_wide=one full-dataset evaluation.",
-    )
-    ccmr_shared.add_argument(
-        "--exclude-center",
-        action="append",
-        default=[],
-        help="Medical center to exclude from computation. Repeat flag to exclude multiple centers.",
-    )
-    ccmr_parser = sub.add_parser("ccmr", parents=[ccmr_shared], help="Compute CCMR.")
+    build_parser = sub.add_parser("build-embedding-manifest", help="Build a deduplicated embedding manifest.")
+    build_parser.add_argument("--manifest", required=True, help="Path to evaluation manifest CSV.")
+    build_parser.add_argument("--out", required=True, help="Path to output CSV for the deduplicated embedding manifest.")
+
+    expand_parser = sub.add_parser("expand-embeddings", help="Expand deduplicated embeddings back to manifest-row order.")
+    expand_parser.add_argument("--manifest", required=True, help="Path to evaluation manifest CSV.")
+    expand_parser.add_argument("--embedding-manifest", required=True, help="Path to deduplicated embedding manifest CSV.")
+    expand_parser.add_argument("--embeddings", required=True, help="Path to deduplicated NPY embeddings.")
+    expand_parser.add_argument("--out", required=True, help="Path to output manifest-aligned NPY embeddings.")
+
+    ccmr_parser = sub.add_parser("ccmr", parents=[shared], help="Compute CCMR.")
     ccmr_parser.add_argument("--m", type=int, default=1, help="Number of SO/OS neighbors to average (>=1).")
     ccmr_parser.add_argument("--alpha", type=float, default=0.10, help="Tail percentile for Q_alpha and LTM_alpha (default 0.10).")
-    ccmr_parser.add_argument(
-        "--acceptance-threshold",
-        type=float,
-        default=0.0,
-        help="Stop CCMR search once undefined fraction is <= threshold (default 0.0).",
-    )
     ccmr_parser.add_argument(
         "--start-k",
         type=int,
@@ -95,9 +95,49 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-    manifest = load_manifest(str(args.manifest), dataset_name=str(args.dataset_name))
-    features = np.load(Path(args.embeddings))
-    excluded_centers = normalize_center_values(args.exclude_center)
+    if args.command == "build-embedding-manifest":
+        manifest = load_manifest(str(args.manifest))
+        embedding_manifest, _ = build_embedding_source_manifest(manifest)
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        embedding_manifest.to_csv(out_path, index=False)
+        payload = {
+            "manifest": str(Path(args.manifest)),
+            "manifest_rows": int(len(manifest)),
+            "embedding_manifest": str(out_path),
+            "embedding_manifest_rows": int(len(embedding_manifest)),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    if args.command == "expand-embeddings":
+        manifest = load_manifest(str(args.manifest))
+        embedding_manifest = load_manifest(str(args.embedding_manifest))
+        features = np.load(Path(args.embeddings))
+        expanded = expand_features_to_manifest(
+            features=features,
+            manifest=manifest,
+            embedding_manifest=embedding_manifest,
+        )
+        out_path = Path(args.out)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(out_path, expanded)
+        payload = {
+            "manifest": str(Path(args.manifest)),
+            "manifest_rows": int(len(manifest)),
+            "embedding_manifest": str(Path(args.embedding_manifest)),
+            "embedding_manifest_rows": int(len(embedding_manifest)),
+            "embeddings": str(Path(args.embeddings)),
+            "expanded_embeddings": str(out_path),
+            "expanded_shape": [int(v) for v in expanded.shape],
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    features, manifest = _load_eval_features(
+        manifest_path=Path(args.manifest),
+        embeddings_path=Path(args.embeddings),
+    )
 
     if args.command == "ccmr":
         result = CCMR.compute(
@@ -106,8 +146,6 @@ def main() -> None:
             evaluation_design=str(args.evaluation_design),
             m=int(args.m),
             alpha=float(args.alpha),
-            exclude_centers=excluded_centers,
-            acceptance_threshold=float(args.acceptance_threshold),
             start_k=int(args.start_k),
             k_growth_factor=float(args.k_growth_factor),
         )
@@ -116,8 +154,6 @@ def main() -> None:
             "m": result.m,
             "value": result.value,
             "undefined_frac": result.undefined_frac,
-            "acceptance_threshold": result.acceptance_threshold,
-            "acceptance_met": result.acceptance_met,
             "k_start": result.k_start,
             "k_final": result.k_final,
             "retries": result.retries,
@@ -126,7 +162,6 @@ def main() -> None:
             "ltm_alpha": result.ltm_alpha,
             "evaluation_design": result.evaluation_design,
             "evaluation_unit": result.evaluation_unit,
-            "excluded_centers": list(excluded_centers),
         }
         print(json.dumps(payload, indent=2, sort_keys=True))
         return
@@ -137,7 +172,6 @@ def main() -> None:
             manifest=manifest,
             evaluation_design=str(args.evaluation_design),
             k_candidates=args.k_candidates,
-            exclude_centers=excluded_centers,
         )
     else:
         result = MaRI.compute(
@@ -146,10 +180,8 @@ def main() -> None:
             evaluation_design=str(args.evaluation_design),
             k_candidates=args.k_candidates,
             tau=float(args.tau),
-            exclude_centers=excluded_centers,
         )
     payload = _result_payload(result)
-    payload["excluded_centers"] = list(excluded_centers)
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 

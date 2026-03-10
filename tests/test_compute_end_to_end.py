@@ -85,7 +85,6 @@ def test_paired_compute_returns_occurrence_aligned_outputs(metric_cls) -> None:
         manifest=manifest,
         evaluation_design="paired_2x2",
         k_candidates=[1, 3],
-        random_state=0,
         **_metric_kwargs(metric_cls),
     )
 
@@ -109,7 +108,6 @@ def test_paired_keeps_repeated_subset_memberships_as_distinct_occurrences(metric
         manifest=manifest,
         evaluation_design="paired_2x2",
         k_candidates=[1],
-        random_state=0,
         **_metric_kwargs(metric_cls),
     )
 
@@ -159,7 +157,6 @@ def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: s
         manifest=manifest,
         evaluation_design=evaluation_design,
         k_values=[1],
-        random_state=0,
         **curve_kwargs,
     )
 
@@ -168,7 +165,6 @@ def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: s
         manifest=manifest,
         evaluation_design=evaluation_design,
         k_candidates=[1],
-        random_state=0,
         **_metric_kwargs(metric_cls),
     )
 
@@ -198,71 +194,11 @@ def test_paired_requires_subset_metadata(metric_cls) -> None:
 
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
-def test_exclude_centers_matches_manual_manifest_filter_for_dataset_wide(metric_cls) -> None:
-    manifest = pd.DataFrame(
-        {
-            "sample_id": [f"s{i}" for i in range(8)],
-            "image_path": [f"/tmp/{i}.png" for i in range(8)],
-            "label": ["A"] * 4 + ["B"] * 4,
-            "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
-            "slide_id": [f"slide-{i}" for i in range(8)],
-            "dataset": ["toy"] * 8,
-        }
-    )
-    features = np.array(
-        [
-            [1.00, 0.00],
-            [0.99, 0.01],
-            [0.98, 0.02],
-            [0.97, 0.03],
-            [0.00, 1.00],
-            [0.01, 0.99],
-            [0.02, 0.98],
-            [0.03, 0.97],
-        ],
-        dtype=float,
-    )
-    keep_mask = manifest["medical_center"] != "C2"
-
-    expected = metric_cls.compute(
-        features=features[keep_mask.to_numpy()],
-        manifest=manifest.loc[keep_mask].reset_index(drop=True),
-        evaluation_design="dataset_wide",
-        k_candidates=[1],
-        **_metric_kwargs(metric_cls),
-    )
-    result = metric_cls.compute(
-        features=features,
-        manifest=manifest,
-        evaluation_design="dataset_wide",
-        k_candidates=[1],
-        exclude_centers=["C2"],
-        **_metric_kwargs(metric_cls),
-    )
-
-    assert result.value == pytest.approx(expected.value)
-    assert result.undefined_frac == pytest.approx(expected.undefined_frac)
-    np.testing.assert_allclose(result.sample_values_aligned, expected.sample_values_aligned, atol=1e-12, rtol=0.0)
-
-
-@pytest.mark.parametrize("metric_cls", [RI, MaRI])
-def test_exclude_centers_raises_when_all_rows_removed(metric_cls) -> None:
-    manifest = pd.DataFrame(
-        {
-            "sample_id": ["s0", "s1"],
-            "image_path": ["/tmp/0.png", "/tmp/1.png"],
-            "label": ["A", "B"],
-            "medical_center": ["C1", "C1"],
-            "slide_id": ["slide-0", "slide-1"],
-            "dataset": ["toy"] * 2,
-        }
-    )
-    features = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=float)
-
-    with pytest.raises(ValueError, match="No samples remain"):
+def test_exclude_centers_is_not_supported(metric_cls) -> None:
+    with pytest.raises(TypeError, match="exclude_centers"):
         metric_cls.compute(
-            features=features,
-            manifest=manifest,
+            features=_dataset_wide_features(),
+            manifest=_dataset_wide_manifest(),
             evaluation_design="dataset_wide",
             k_candidates=[1],
             exclude_centers=["C1"],

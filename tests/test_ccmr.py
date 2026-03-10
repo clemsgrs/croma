@@ -151,8 +151,9 @@ class TestCCMRCompute:
         assert result.n_pairs >= 1
         assert result.sample_values.shape[0] <= 8
         assert result.sample_values_aligned.shape == (len(manifest),)
-        assert result.acceptance_met
+        assert result.occurrence_defined_mask.shape == (len(manifest),)
         assert result.undefined_frac == pytest.approx(0.0)
+        assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
 
     def test_so_closer_yields_ccmr_above_one_dataset_wide(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -194,36 +195,11 @@ class TestCCMRCompute:
         assert result.undefined_frac == pytest.approx(1.0)
         assert result.sample_values.shape[0] == 0
         assert result.sample_values_aligned.shape == (len(manifest),)
+        assert result.occurrence_defined_mask.shape == (len(manifest),)
+        assert result.occurrence_defined_mask.tolist() == [False] * len(manifest)
         assert np.isnan(result.sample_values_aligned).all()
 
-    def test_relaxed_acceptance_threshold_stops_earlier(self) -> None:
-        features, manifest = _toy_features_so_closer()
-
-        strict = CCMR.compute(
-            features=features,
-            manifest=manifest,
-            evaluation_design="dataset_wide",
-            m=1,
-            start_k=1,
-            acceptance_threshold=0.0,
-            k_growth_factor=1.5,
-        )
-        relaxed = CCMR.compute(
-            features=features,
-            manifest=manifest,
-            evaluation_design="dataset_wide",
-            m=1,
-            start_k=1,
-            acceptance_threshold=1.0,
-            k_growth_factor=1.5,
-        )
-
-        assert relaxed.k_final == 1
-        assert relaxed.retries == 0
-        assert strict.k_final >= relaxed.k_final
-        assert strict.retries >= relaxed.retries
-
-    def test_unmet_acceptance_threshold_at_cap_warns(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_unresolved_rows_at_cap_warn(self, caplog: pytest.LogCaptureFixture) -> None:
         labels = ["A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2"]
         slides = ["s1", "s1", "s2", "s2"]
@@ -244,14 +220,13 @@ class TestCCMRCompute:
             evaluation_design="dataset_wide",
             m=1,
             start_k=1,
-            acceptance_threshold=0.0,
             k_growth_factor=1.5,
         )
 
-        assert not result.acceptance_met
         assert result.k_final == 3
         assert result.undefined_frac > 0.0
-        assert any("undefined threshold unmet" in rec.message for rec in caplog.records)
+        assert any("could not find" in rec.message for rec in caplog.records)
+        assert any("dataset 'toy' (dataset_wide)" in rec.message for rec in caplog.records)
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -295,14 +270,12 @@ class TestCCMRCompute:
             evaluation_design="dataset_wide",
             m=1,
             start_k=2,
-            acceptance_threshold=0.0,
             k_growth_factor=1.5,
         )
 
         assert result.k_start == 2
         assert result.k_final == 9
         assert result.retries == 4
-        assert not result.acceptance_met
 
     def test_queries_only_unresolved_samples_over_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
         labels = ["A", "A", "A", "A", "B", "B", "B", "B"]
@@ -353,13 +326,11 @@ class TestCCMRCompute:
             evaluation_design="dataset_wide",
             m=1,
             start_k=1,
-            acceptance_threshold=0.0,
             k_growth_factor=1.5,
         )
 
         assert len(query_sizes) >= 2
         assert query_sizes[1] < query_sizes[0]
-        assert result.acceptance_met
 
     def test_invalid_evaluation_design_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -376,13 +347,6 @@ class TestCCMRCompute:
         with pytest.raises(ValueError, match="m must be >= 1"):
             CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=0)
 
-    def test_acceptance_threshold_bounds_rejected(self) -> None:
-        features, manifest = _toy_features_so_closer()
-        with pytest.raises(ValueError, match="acceptance_threshold"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, acceptance_threshold=-0.1)
-        with pytest.raises(ValueError, match="acceptance_threshold"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, acceptance_threshold=1.1)
-
     def test_growth_factor_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="k_growth_factor"):
@@ -392,45 +356,6 @@ class TestCCMRCompute:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="start_k"):
             CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=0)
-
-    def test_exclude_centers(self) -> None:
-        manifest = _make_manifest(
-            n=12,
-            labels=["A"] * 6 + ["B"] * 6,
-            centers=["C1", "C1", "C2", "C2", "C3", "C3", "C1", "C1", "C2", "C2", "C3", "C3"],
-        )
-        features = np.array(
-            [
-                [1.00, 0.00],
-                [0.99, 0.01],
-                [0.98, 0.02],
-                [0.97, 0.03],
-                [0.96, 0.04],
-                [0.95, 0.05],
-                [0.00, 1.00],
-                [0.01, 0.99],
-                [0.02, 0.98],
-                [0.03, 0.97],
-                [0.04, 0.96],
-                [0.05, 0.95],
-            ],
-            dtype=float,
-        )
-        mask = manifest["medical_center"] != "C3"
-        result_excluded = CCMR.compute(
-            features=features,
-            manifest=manifest,
-            evaluation_design="dataset_wide",
-            m=1,
-            exclude_centers=["C3"],
-        )
-        result_manual = CCMR.compute(
-            features=features[mask.to_numpy()],
-            manifest=manifest.loc[mask].reset_index(drop=True),
-            evaluation_design="dataset_wide",
-            m=1,
-        )
-        assert result_excluded.value == pytest.approx(result_manual.value)
 
     def test_api_alias(self) -> None:
         assert CCMR is CrossConfounderMarginRatio

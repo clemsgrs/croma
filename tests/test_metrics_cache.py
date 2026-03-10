@@ -21,7 +21,6 @@ def test_cache_key_is_stable_for_semantically_equivalent_inputs() -> None:
         input_fingerprint={
             "manifest_fingerprint": "m",
             "embedding_fingerprint": "e",
-            "excluded_centers_signature": "C1,C2",
         },
         params={
             "evaluation_design": "dataset_wide",
@@ -34,7 +33,6 @@ def test_cache_key_is_stable_for_semantically_equivalent_inputs() -> None:
         model="M1",
         input_fingerprint={
             "embedding_fingerprint": "e",
-            "excluded_centers_signature": "C1,C2",
             "manifest_fingerprint": "m",
         },
         params={
@@ -53,7 +51,6 @@ def test_cache_key_changes_when_dependent_parameter_changes() -> None:
         input_fingerprint={
             "manifest_fingerprint": "m",
             "embedding_fingerprint": "e",
-            "excluded_centers_signature": "",
         },
         params={"evaluation_design": "dataset_wide", "k_values": [1, 3], "tau": 0.2},
     )
@@ -63,7 +60,6 @@ def test_cache_key_changes_when_dependent_parameter_changes() -> None:
         input_fingerprint={
             "manifest_fingerprint": "m",
             "embedding_fingerprint": "e",
-            "excluded_centers_signature": "",
         },
         params={"evaluation_design": "dataset_wide", "k_values": [1, 3], "tau": 0.25},
     )

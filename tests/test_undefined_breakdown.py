@@ -174,7 +174,6 @@ def test_paired_breakdown_sums_to_occurrence_weighted_undefined_fraction() -> No
         manifest=_paired_manifest(),
         evaluation_design="paired_2x2",
         k_candidates=[1, 3],
-        random_state=0,
     )
 
     assert result.evaluation_design == "paired_2x2"

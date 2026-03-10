@@ -17,10 +17,6 @@ def test_k_candidates_signature_is_sorted_and_unique() -> None:
     assert mio.k_candidates_signature([7, 3, 7, 5]) == "3,5,7"
 
 
-def test_excluded_centers_signature_is_sorted_and_unique() -> None:
-    assert mio.excluded_centers_signature([" C2 ", "C1", "C2"]) == "C1,C2"
-
-
 def test_ccmr_search_signature_is_stable() -> None:
     sig = mio.ccmr_search_signature(
         start_k=200,

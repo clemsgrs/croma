@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -125,6 +126,52 @@ def _run_benchmark(
         argv.extend(extra_args)
     monkeypatch.setattr(sys, "argv", argv)
     return bm.main()
+
+
+@pytest.mark.parametrize(
+    "argv_tail",
+    [
+        ["--dataset-name", "override"],
+        ["--exclude-center", "C1"],
+    ],
+)
+def test_benchmark_rejects_removed_flags(monkeypatch, tmp_path: Path, argv_tail: list[str]) -> None:
+    manifest_path = tmp_path / "toy.csv"
+    _toy_manifest().to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+
+    argv = [
+        "benchmark.py",
+        "--manifest",
+        str(manifest_path),
+        "--output-dir",
+        str(output_dir),
+    ]
+    argv.extend(argv_tail)
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit) as excinfo:
+        bm._parse_args()
+    assert excinfo.value.code == 2
+
+
+def test_benchmark_uses_manifest_stem_for_dataset_output(monkeypatch, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "release-ready.csv"
+    manifest = _toy_manifest()
+    manifest["dataset"] = "wrong_name"
+    manifest.to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+    _install_fake_registry_and_embed(monkeypatch, models=["M1"])
+    _install_noop_plots(monkeypatch)
+
+    assert _run_benchmark(
+        monkeypatch,
+        manifest_path=manifest_path,
+        output_dir=output_dir,
+        models=["M1"],
+    ) == 0
+
+    metrics_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "metrics.csv")
+    assert set(metrics_df["dataset"]) == {"release-ready"}
 
 
 def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path: Path) -> None:
@@ -253,8 +300,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
             self.undefined_frac = float((~informative).mean())
             self.evaluation_design = "dataset_wide"
             self.evaluation_unit = "sample"
-            self.acceptance_threshold = 0.0
-            self.acceptance_met = True
             self.k_start = 200
             self.k_final = 200
             self.retries = 0

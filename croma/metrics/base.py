@@ -15,7 +15,6 @@ from croma.metrics.neighbors import (
 from croma.metrics.pairs import (
     EvaluationSubset,
     ensure_required_columns,
-    normalize_center_values,
     resolve_manifest_subsets,
     validate_subset_manifest,
 )
@@ -98,31 +97,6 @@ class BaseRobustnessIndex(ABC):
         if len(features) != len(manifest):
             raise ValueError("features row count must match manifest row count")
         ensure_required_columns(manifest, "manifest")
-
-    @classmethod
-    def _apply_center_exclusion(
-        cls,
-        *,
-        features: np.ndarray,
-        manifest: pd.DataFrame,
-        dataset_name: str,
-        exclude_centers: object | None,
-    ) -> tuple[np.ndarray, pd.DataFrame]:
-        excluded = normalize_center_values(exclude_centers)
-        if not excluded:
-            return features, manifest
-
-        center_series = manifest["medical_center"].map(lambda v: str(v).strip())
-        keep_mask = ~center_series.isin(excluded)
-        if not bool(keep_mask.any()):
-            excluded_txt = ", ".join(excluded)
-            raise ValueError(
-                f"No samples remain after excluding centers [{excluded_txt}] from dataset '{dataset_name}'"
-            )
-
-        kept_features = features[keep_mask.to_numpy()]
-        kept_manifest = manifest.loc[keep_mask].reset_index(drop=True)
-        return kept_features, kept_manifest
 
     @classmethod
     @abstractmethod
@@ -505,9 +479,6 @@ class BaseRobustnessIndex(ABC):
         *,
         k_candidates: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        exclude_centers: object | None = None,
-        max_pairs: int | None = None,
-        random_state: int = 0,
         **kwargs: float,
     ) -> RobustnessResult:
         artifacts = cls._compute_artifacts(
@@ -515,9 +486,6 @@ class BaseRobustnessIndex(ABC):
             manifest=manifest,
             k_values=k_candidates,
             evaluation_design=evaluation_design,
-            exclude_centers=exclude_centers,
-            max_pairs=max_pairs,
-            random_state=random_state,
             include_selected_result=True,
             warn_selected_result=True,
             **kwargs,
@@ -534,9 +502,6 @@ class BaseRobustnessIndex(ABC):
         *,
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        exclude_centers: object | None = None,
-        max_pairs: int | None = None,
-        random_state: int = 0,
         **kwargs: float,
     ) -> dict[int, float]:
         artifacts = cls._compute_artifacts(
@@ -544,9 +509,6 @@ class BaseRobustnessIndex(ABC):
             manifest=manifest,
             k_values=k_values,
             evaluation_design=evaluation_design,
-            exclude_centers=exclude_centers,
-            max_pairs=max_pairs,
-            random_state=random_state,
             include_selected_result=False,
             warn_selected_result=False,
             **kwargs,
@@ -619,9 +581,6 @@ class BaseRobustnessIndex(ABC):
         *,
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        exclude_centers: object | None = None,
-        max_pairs: int | None = None,
-        random_state: int = 0,
         selected_k: int | None = None,
         include_selected_result: bool = True,
         warn_selected_result: bool = False,
@@ -634,12 +593,6 @@ class BaseRobustnessIndex(ABC):
         evaluation_design = _normalize_evaluation_design(evaluation_design)
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
             validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
-        features, df = cls._apply_center_exclusion(
-            features=features,
-            manifest=df,
-            dataset_name=dataset_name,
-            exclude_centers=exclude_centers,
-        )
         candidates = _normalize_k_values(k_values)
 
         if evaluation_design == EVALUATION_DESIGN_DATASET_WIDE:
@@ -661,8 +614,6 @@ class BaseRobustnessIndex(ABC):
             subsets = cls._build_subsets(
                 df=df,
                 dataset_name=dataset_name,
-                max_pairs=max_pairs,
-                random_state=random_state,
             )
             by_k = cls._score_subsets_by_k(
                 features=features,
@@ -806,10 +757,7 @@ class BaseRobustnessIndex(ABC):
         *,
         df: pd.DataFrame,
         dataset_name: str,
-        max_pairs: int | None,
-        random_state: int,
     ) -> list[EvaluationSubset]:
-        del max_pairs, random_state
         subsets = resolve_manifest_subsets(df)
         if not subsets:
             raise RuntimeError(f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for RI/MaRI")
