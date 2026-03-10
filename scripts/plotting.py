@@ -2,12 +2,14 @@ from pathlib import Path
 
 import numpy as np
 import matplotlib
+
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 
 from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
+from croma.confounders import infer_confounder_display_name
 
 MODEL_COLOR_MAP: dict[str, str] = {
     "Virchow2": "#ff7f0e",
@@ -70,6 +72,19 @@ def _group_k_rows(rows: list[dict]) -> dict[str, list[dict]]:
     return by_model
 
 
+def _confounder_display_name(rows: list[dict]) -> str:
+    if not rows:
+        return "Confounder"
+    for row in rows:
+        display = str(row.get("confounder_display_name", "")).strip()
+        if display:
+            return display
+        column = str(row.get("confounder_column", "")).strip()
+        if column:
+            return infer_confounder_display_name(column)
+    return "Confounder"
+
+
 def _set_k_axis(ax, k_ticks: list[int]) -> None:
     ax.set_facecolor("#fbfcfd")
     ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
@@ -89,7 +104,9 @@ def _set_k_axis(ax, k_ticks: list[int]) -> None:
         ax.set_xlim(float(k_ticks[0]) - 0.5, float(k_ticks[0]) + 0.5)
 
 
-def _highlight_selected(ax, *, ks: np.ndarray, ys: np.ndarray, selected_k: int, color: str, marker: str) -> None:
+def _highlight_selected(
+    ax, *, ks: np.ndarray, ys: np.ndarray, selected_k: int, color: str, marker: str
+) -> None:
     idx_arr = np.where(ks == int(selected_k))[0]
     if int(idx_arr.size) == 0:
         return
@@ -145,7 +162,11 @@ def _draw_k_curve(
             label=model,
         )
         for selected_key, marker in highlight_rules:
-            selected_k = int(model_rows[0].get(selected_key, model_rows[0].get("selected_k", model_rows[0]["k"])))
+            selected_k = int(
+                model_rows[0].get(
+                    selected_key, model_rows[0].get("selected_k", model_rows[0]["k"])
+                )
+            )
             _highlight_selected(
                 ax,
                 ks=ks,
@@ -158,27 +179,38 @@ def _draw_k_curve(
     if show_legend:
         if legend_outside:
             handles, labels = ax.get_legend_handles_labels()
-            ax.figure.legend(handles, labels, loc="center left", bbox_to_anchor=(0.98, 0.5), frameon=False)
+            ax.figure.legend(
+                handles,
+                labels,
+                loc="center left",
+                bbox_to_anchor=(0.98, 0.5),
+                frameon=False,
+            )
         else:
             ax.legend(frameon=False, loc="best")
 
 
-def _draw_bio_vs_center_scatter(ax, rows: list[dict], *, show_legend: bool, legend_outside: bool) -> None:
+def _draw_bio_vs_confounder_scatter(
+    ax, rows: list[dict], *, show_legend: bool, legend_outside: bool
+) -> None:
     if not rows:
         return
 
-    xs = np.asarray([float(r["center_knn_bacc"]) for r in rows], dtype=float)
+    confounder_display_name = _confounder_display_name(rows)
+    xs = np.asarray([float(r["confounder_knn_bacc"]) for r in rows], dtype=float)
     ys = np.asarray([float(r["bio_knn_bacc"]) for r in rows], dtype=float)
     combined = np.concatenate([xs, ys]) if xs.size > 0 else xs
     lim = _padded_unit_interval_limits(combined)
 
     ax.set_facecolor("#fbfcfd")
     ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
-    ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", linewidth=1.1, color="#6b7280", zorder=1)
+    ax.plot(
+        [0.0, 1.0], [0.0, 1.0], linestyle="--", linewidth=1.1, color="#6b7280", zorder=1
+    )
 
     for row in sorted(rows, key=lambda r: str(r["model"])):
         model = str(row["model"])
-        x = float(row["center_knn_bacc"])
+        x = float(row["confounder_knn_bacc"])
         y = float(row["bio_knn_bacc"])
         ax.scatter(
             [x],
@@ -193,19 +225,29 @@ def _draw_bio_vs_center_scatter(ax, rows: list[dict], *, show_legend: bool, lege
 
     ax.set_xlim(*lim)
     ax.set_ylim(*lim)
-    ax.set_xlabel("Medical Center Accuracy", fontsize=11)
+    ax.set_xlabel(f"{confounder_display_name} Accuracy", fontsize=11)
     ax.set_ylabel("Biological Accuracy", fontsize=11)
-    ax.set_title("Biological vs Medical Center Accuracy", fontsize=14, weight="bold")
+    ax.set_title(
+        f"Biological vs {confounder_display_name} Accuracy", fontsize=14, weight="bold"
+    )
 
     if show_legend:
         if legend_outside:
             handles, labels = ax.get_legend_handles_labels()
-            ax.figure.legend(handles, labels, loc="center left", bbox_to_anchor=(0.98, 0.5), frameon=False)
+            ax.figure.legend(
+                handles,
+                labels,
+                loc="center left",
+                bbox_to_anchor=(0.98, 0.5),
+                frameon=False,
+            )
         else:
             ax.legend(frameon=False, loc="best")
 
 
-def _draw_mari_vs_ri_scatter(ax, rows: list[dict], *, show_legend: bool, legend_outside: bool) -> None:
+def _draw_mari_vs_ri_scatter(
+    ax, rows: list[dict], *, show_legend: bool, legend_outside: bool
+) -> None:
     if not rows:
         return
 
@@ -216,7 +258,9 @@ def _draw_mari_vs_ri_scatter(ax, rows: list[dict], *, show_legend: bool, legend_
 
     ax.set_facecolor("#fbfcfd")
     ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
-    ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", linewidth=1.1, color="#6b7280", zorder=1)
+    ax.plot(
+        [0.0, 1.0], [0.0, 1.0], linestyle="--", linewidth=1.1, color="#6b7280", zorder=1
+    )
 
     for row in sorted(rows, key=lambda r: str(r["model"])):
         model = str(row["model"])
@@ -242,7 +286,13 @@ def _draw_mari_vs_ri_scatter(ax, rows: list[dict], *, show_legend: bool, legend_
     if show_legend:
         if legend_outside:
             handles, labels = ax.get_legend_handles_labels()
-            ax.figure.legend(handles, labels, loc="center left", bbox_to_anchor=(0.98, 0.5), frameon=False)
+            ax.figure.legend(
+                handles,
+                labels,
+                loc="center left",
+                bbox_to_anchor=(0.98, 0.5),
+                frameon=False,
+            )
         else:
             ax.legend(frameon=False, loc="best")
 
@@ -265,15 +315,16 @@ def plot_knn_bio_k_sweep(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_knn_center_k_sweep(rows: list[dict], out_path: Path) -> None:
+def plot_knn_confounder_k_sweep(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(9.0, 5.8))
+    confounder_display_name = _confounder_display_name(rows)
     _draw_k_curve(
         ax,
         rows=rows,
-        value_key="knn_center_bacc",
+        value_key="knn_confounder_bacc",
         ylabel="Balanced accuracy",
-        title="Medical Center Accuracy over k",
-        highlight_rules=[("selected_k_center", "X"), ("selected_k", "*")],
+        title=f"{confounder_display_name} Accuracy over k",
+        highlight_rules=[("selected_k_confounder", "X"), ("selected_k", "*")],
         show_legend=True,
         legend_outside=True,
     )
@@ -322,8 +373,12 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
 def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     fig, (ax_ccmr, ax_ltm) = plt.subplots(2, 1, figsize=(9.0, 8.0), sharex=True)
     ccmr_rows = [
-        r for r in rows
-        if "m" in r and "ccmr" in r and np.isfinite(float(r["m"])) and np.isfinite(float(r["ccmr"]))
+        r
+        for r in rows
+        if "m" in r
+        and "ccmr" in r
+        and np.isfinite(float(r["m"]))
+        and np.isfinite(float(r["ccmr"]))
     ]
     if not ccmr_rows:
         for ax in (ax_ccmr, ax_ltm):
@@ -344,10 +399,14 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     m_all = sorted({int(row["m"]) for row in ccmr_rows})
     m_min, m_max = m_all[0], m_all[-1]
 
-    def _configure_ax(ax: plt.Axes, ylabel: str, title: str, values: np.ndarray) -> None:
+    def _configure_ax(
+        ax: plt.Axes, ylabel: str, title: str, values: np.ndarray
+    ) -> None:
         ax.set_facecolor("#fbfcfd")
         ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
-        ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.8)
+        ax.axhline(
+            y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.8
+        )
         ax.set_ylabel(ylabel, fontsize=11)
         ax.set_title(title, fontsize=12, weight="bold")
         finite = values[np.isfinite(values)]
@@ -373,7 +432,9 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
         vals = np.asarray([float(r["ccmr"]) for r in model_rows], dtype=float)
         ax_ccmr.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, label=model)
         if "ccmr_ltm_alpha" in model_rows[0]:
-            ltms = np.asarray([float(r["ccmr_ltm_alpha"]) for r in model_rows], dtype=float)
+            ltms = np.asarray(
+                [float(r["ccmr_ltm_alpha"]) for r in model_rows], dtype=float
+            )
             ax_ltm.plot(ms, ltms, color=color, linewidth=1.8, alpha=0.95, label=model)
 
     # x-axis: integer ticks spanning the full sweep range
@@ -423,7 +484,9 @@ def plot_ccmr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
         ltm_vals = np.asarray([v[2] for v in valid], dtype=float)
         ccmr_slope = float(np.polyfit(ms, ccmr_vals, 1)[0])
         ltm_slope = float(np.polyfit(ms, ltm_vals, 1)[0])
-        model_slopes.append({"model": model, "ccmr_slope": ccmr_slope, "ltm_slope": ltm_slope})
+        model_slopes.append(
+            {"model": model, "ccmr_slope": ccmr_slope, "ltm_slope": ltm_slope}
+        )
 
     fig, ax = plt.subplots(figsize=(8.0, 7.0))
 
@@ -447,20 +510,44 @@ def plot_ccmr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
         x = float(d["ccmr_slope"])
         y = float(d["ltm_slope"])
         color = _color_for_model(d["model"])
-        ax.scatter([x], [y], s=100, color=color, edgecolors="white", linewidths=1.0, zorder=3)
-        ax.annotate(d["model"], xy=(x, y), xytext=(4, 4), textcoords="offset points", fontsize=7, zorder=4)
+        ax.scatter(
+            [x], [y], s=100, color=color, edgecolors="white", linewidths=1.0, zorder=3
+        )
+        ax.annotate(
+            d["model"],
+            xy=(x, y),
+            xytext=(4, 4),
+            textcoords="offset points",
+            fontsize=7,
+            zorder=4,
+        )
 
-    max_abs = max(float(np.max(np.abs(xs))) if xs.size > 0 else 0.0,
-                  float(np.max(np.abs(ys))) if ys.size > 0 else 0.0,
-                  1e-9)
+    max_abs = max(
+        float(np.max(np.abs(xs))) if xs.size > 0 else 0.0,
+        float(np.max(np.abs(ys))) if ys.size > 0 else 0.0,
+        1e-9,
+    )
     lim = max_abs * 1.3
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
 
-    _q_props = {"fontsize": 7, "style": "italic", "color": "#6b7280", "ha": "center", "va": "center"}
-    ax.text( lim * 0.65,  lim * 0.75, "Rising / Rising\ntail rescued at scale", **_q_props)
-    ax.text(-lim * 0.65,  lim * 0.75, "Falling / Rising\ntail idiosyncratic", **_q_props)
-    ax.text( lim * 0.65, -lim * 0.75, "Rising / Falling\nmedian improves, tail stuck", **_q_props)
+    _q_props = {
+        "fontsize": 7,
+        "style": "italic",
+        "color": "#6b7280",
+        "ha": "center",
+        "va": "center",
+    }
+    ax.text(
+        lim * 0.65, lim * 0.75, "Rising / Rising\ntail rescued at scale", **_q_props
+    )
+    ax.text(-lim * 0.65, lim * 0.75, "Falling / Rising\ntail idiosyncratic", **_q_props)
+    ax.text(
+        lim * 0.65,
+        -lim * 0.75,
+        "Rising / Falling\nmedian improves, tail stuck",
+        **_q_props,
+    )
     ax.text(-lim * 0.65, -lim * 0.75, "Falling / Falling\neroding at scale", **_q_props)
 
     ax.set_xlabel("CCMR(m) slope", fontsize=11)
@@ -503,7 +590,9 @@ def _valid_ccmr_ltm_rows(rows: list[dict]) -> list[dict]:
 
 
 def _ltm_label(valid_rows: list[dict]) -> str:
-    alpha_values = sorted({float(r["alpha"]) for r in valid_rows if np.isfinite(float(r["alpha"]))})
+    alpha_values = sorted(
+        {float(r["alpha"]) for r in valid_rows if np.isfinite(float(r["alpha"]))}
+    )
     if len(alpha_values) == 1:
         alpha_pct = int(round(alpha_values[0] * 100))
         return f"LTM@{alpha_pct}%"
@@ -552,7 +641,14 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
 
     scatter_ax.set_facecolor("#fbfcfd")
     scatter_ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
-    scatter_ax.plot([lim_lo, lim_hi], [lim_lo, lim_hi], linestyle="--", linewidth=1.1, color="#6b7280", zorder=1)
+    scatter_ax.plot(
+        [lim_lo, lim_hi],
+        [lim_lo, lim_hi],
+        linestyle="--",
+        linewidth=1.1,
+        color="#6b7280",
+        zorder=1,
+    )
     for row in sorted(valid_rows, key=lambda r: str(r["model"])):
         model = str(row["model"])
         scatter_ax.scatter(
@@ -571,7 +667,9 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     scatter_ax.set_title(f"CCMR vs {label_ltm}", fontsize=13, weight="bold")
 
     # Right: sorted CCMR/LTM bars to compare rank and tail-gap by model.
-    ranked_rows = sorted(valid_rows, key=lambda r: (float(r["ltm"]), str(r["model"])), reverse=True)
+    ranked_rows = sorted(
+        valid_rows, key=lambda r: (float(r["ltm"]), str(r["model"])), reverse=True
+    )
     model_names = [str(r["model"]) for r in ranked_rows]
     ccmr_vals = np.asarray([float(r["ccmr"]) for r in ranked_rows], dtype=float)
     ltm_vals = np.asarray([float(r["ltm"]) for r in ranked_rows], dtype=float)
@@ -581,7 +679,9 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
 
     bar_ax.set_facecolor("#fbfcfd")
     bar_ax.grid(axis="y", color="#d9dee5", linewidth=0.8, alpha=0.9, zorder=0)
-    bar_ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.75)
+    bar_ax.axhline(
+        y=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=1, alpha=0.75
+    )
     bar_ax.bar(
         x - width / 2.0,
         ccmr_vals,
@@ -618,9 +718,9 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_bio_vs_center_scatter(rows: list[dict], out_path: Path) -> None:
+def plot_bio_vs_confounder_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
-    _draw_bio_vs_center_scatter(ax, rows, show_legend=True, legend_outside=False)
+    _draw_bio_vs_confounder_scatter(ax, rows, show_legend=True, legend_outside=False)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -636,7 +736,9 @@ def plot_mari_vs_ri_scatter(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legend_outside: bool) -> None:
+def _draw_ccmr_vs_mari_scatter(
+    ax, rows: list[dict], *, show_legend: bool, legend_outside: bool
+) -> None:
     ccmr_rows = [r for r in rows if "ccmr" in r and np.isfinite(float(r["ccmr"]))]
     if not ccmr_rows:
         ax.set_visible(False)
@@ -674,7 +776,13 @@ def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legen
     if show_legend:
         if legend_outside:
             handles, labels = ax.get_legend_handles_labels()
-            ax.figure.legend(handles, labels, loc="center left", bbox_to_anchor=(0.98, 0.5), frameon=False)
+            ax.figure.legend(
+                handles,
+                labels,
+                loc="center left",
+                bbox_to_anchor=(0.98, 0.5),
+                frameon=False,
+            )
         else:
             ax.legend(frameon=False, loc="best")
 
@@ -682,8 +790,11 @@ def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict], *, show_legend: bool, legen
 def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
 
     ccmr_rows = [
-        r for r in rows
-        if "ccmr_samples_path" in r and "ccmr_q_alpha" in r and np.isfinite(float(r.get("ccmr", float("nan"))))
+        r
+        for r in rows
+        if "ccmr_samples_path" in r
+        and "ccmr_q_alpha" in r
+        and np.isfinite(float(r.get("ccmr", float("nan"))))
     ]
     if not ccmr_rows:
         ax.set_visible(False)
@@ -698,13 +809,15 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
         values = values[np.isfinite(values)]
         if len(values) < 2:
             continue
-        model_data.append({
-            "model": str(row["model"]),
-            "values": values,
-            "q_alpha": float(row["ccmr_q_alpha"]),
-            "alpha": float(row["ccmr_alpha"]),
-            "ccmr": float(row["ccmr"]),
-        })
+        model_data.append(
+            {
+                "model": str(row["model"]),
+                "values": values,
+                "q_alpha": float(row["ccmr_q_alpha"]),
+                "alpha": float(row["ccmr_alpha"]),
+                "ccmr": float(row["ccmr"]),
+            }
+        )
 
     if not model_data:
         ax.set_visible(False)
@@ -722,7 +835,9 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
     shade_right = min(1.0, x_max)
     if shade_right > x_min:
         ax.axvspan(x_min, shade_right, color="#f5e6d3", alpha=0.55, zorder=1)
-    ax.axvline(x=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=2, alpha=0.75)
+    ax.axvline(
+        x=1.0, linestyle="--", linewidth=1.1, color="#6b7280", zorder=2, alpha=0.75
+    )
 
     for d in model_data:
         values = d["values"]
@@ -739,15 +854,29 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
         if density is None:
             counts, edges = np.histogram(values, bins=40, density=True)
             centers = 0.5 * (edges[:-1] + edges[1:])
-            ax.step(centers, counts, color=color, linewidth=1.5, alpha=0.85,
-                    label=f"{d['model']}  CCMR={d['ccmr']:.3f}")
+            ax.step(
+                centers,
+                counts,
+                color=color,
+                linewidth=1.5,
+                alpha=0.85,
+                label=f"{d['model']}  CCMR={d['ccmr']:.3f}",
+            )
         else:
-            ax.plot(x_grid, density, color=color, linewidth=1.6, alpha=0.9,
-                    label=f"{d['model']}  CCMR={d['ccmr']:.3f}")
+            ax.plot(
+                x_grid,
+                density,
+                color=color,
+                linewidth=1.6,
+                alpha=0.9,
+                label=f"{d['model']}  CCMR={d['ccmr']:.3f}",
+            )
 
         q = d["q_alpha"]
         if np.isfinite(q) and x_min <= q <= x_max:
-            ax.axvline(x=q, color=color, linestyle=":", linewidth=1.0, alpha=0.85, zorder=3)
+            ax.axvline(
+                x=q, color=color, linestyle=":", linewidth=1.0, alpha=0.85, zorder=3
+            )
 
     alpha_pct = int(round(model_data[0]["alpha"] * 100))
     ax.set_xlim(x_min, x_max)
@@ -756,7 +885,8 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
     ax.set_ylabel("density", fontsize=11)
     ax.set_title(
         f"Per-sample CCMR distributions  (dotted: $Q_{{{alpha_pct}}}$,  shaded: CCMR < 1)",
-        fontsize=13, weight="bold",
+        fontsize=13,
+        weight="bold",
     )
 
 
@@ -765,7 +895,14 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
     _draw_ccmr_sample_distributions(ax, rows)
     handles, labels = ax.get_legend_handles_labels()
     if handles:
-        fig.legend(handles, labels, loc="center left", bbox_to_anchor=(0.98, 0.5), frameon=False, fontsize=9)
+        fig.legend(
+            handles,
+            labels,
+            loc="center left",
+            bbox_to_anchor=(0.98, 0.5),
+            frameon=False,
+            fontsize=9,
+        )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0.0, 0.0, 0.96, 1.0))
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
@@ -781,7 +918,9 @@ def plot_ccmr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_benchmark_6panel_summary(*, rows: list[dict], k_sweep_rows: list[dict], out_path: Path) -> None:
+def plot_benchmark_6panel_summary(
+    *, rows: list[dict], k_sweep_rows: list[dict], out_path: Path
+) -> None:
     fig, axes = plt.subplots(3, 2, figsize=(15.0, 16.0))
 
     _draw_k_curve(
@@ -797,10 +936,10 @@ def plot_benchmark_6panel_summary(*, rows: list[dict], k_sweep_rows: list[dict],
     _draw_k_curve(
         axes[0, 1],
         rows=k_sweep_rows,
-        value_key="knn_center_bacc",
+        value_key="knn_confounder_bacc",
         ylabel="Balanced accuracy",
-        title="Medical Center Accuracy over k",
-        highlight_rules=[("selected_k_center", "X"), ("selected_k", "*")],
+        title=f"{_confounder_display_name(k_sweep_rows)} Accuracy over k",
+        highlight_rules=[("selected_k_confounder", "X"), ("selected_k", "*")],
         show_legend=False,
         legend_outside=False,
     )
@@ -824,16 +963,26 @@ def plot_benchmark_6panel_summary(*, rows: list[dict], k_sweep_rows: list[dict],
         show_legend=False,
         legend_outside=False,
     )
-    _draw_bio_vs_center_scatter(axes[2, 0], rows, show_legend=False, legend_outside=False)
+    _draw_bio_vs_confounder_scatter(
+        axes[2, 0], rows, show_legend=False, legend_outside=False
+    )
     _draw_mari_vs_ri_scatter(axes[2, 1], rows, show_legend=False, legend_outside=False)
 
-    model_names = sorted({str(r["model"]) for r in k_sweep_rows} | {str(r["model"]) for r in rows})
+    model_names = sorted(
+        {str(r["model"]) for r in k_sweep_rows} | {str(r["model"]) for r in rows}
+    )
     handles = [
         Line2D([0], [0], color=_color_for_model(model), lw=2.0, label=model)
         for model in model_names
     ]
     if handles:
-        fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.995), ncol=min(4, len(handles)), frameon=False)
+        fig.legend(
+            handles=handles,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.995),
+            ncol=min(4, len(handles)),
+            frameon=False,
+        )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))

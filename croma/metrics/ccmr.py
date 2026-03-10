@@ -11,10 +11,14 @@ from croma.metrics.base import (
     EVALUATION_DESIGN_PAIRED_2X2,
     _normalize_evaluation_design,
 )
-from croma.metrics.neighbors import _filter_query_neighbors_excluding_same_slide, _initial_n_neighbors
+from croma.metrics.neighbors import (
+    _filter_query_neighbors_excluding_same_slide,
+    _initial_n_neighbors,
+)
 from croma.metrics.pairs import (
     EvaluationSubset,
-    ensure_required_columns,
+    ensure_canonical_manifest_columns,
+    normalize_manifest,
     resolve_manifest_subsets,
     validate_subset_manifest,
 )
@@ -138,15 +142,21 @@ def _iterative_typed_neighbor_search(
                 ),
             )
 
-        fetch_neighbors = _initial_n_neighbors(kmax=int(k_current), slide_ids=slide_ids, n_samples=n_samples)
-        distances, raw_neighbors = model.kneighbors(features[query_indices], n_neighbors=fetch_neighbors)
+        fetch_neighbors = _initial_n_neighbors(
+            kmax=int(k_current), slide_ids=slide_ids, n_samples=n_samples
+        )
+        distances, raw_neighbors = model.kneighbors(
+            features[query_indices], n_neighbors=fetch_neighbors
+        )
 
-        neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_slide(
-            raw_neighbors=raw_neighbors,
-            raw_distances=distances,
-            query_indices=query_indices,
-            slide_ids=slide_ids,
-            kmax=int(k_current),
+        neigh_idx, neigh_dist, valid_counts = (
+            _filter_query_neighbors_excluding_same_slide(
+                raw_neighbors=raw_neighbors,
+                raw_distances=distances,
+                query_indices=query_indices,
+                slide_ids=slide_ids,
+                kmax=int(k_current),
+            )
         )
 
         newly_defined = _scan_typed_neighbors_for_query_rows(
@@ -195,6 +205,7 @@ class CrossConfounderMarginRatio:
         features: np.ndarray,
         manifest: pd.DataFrame,
         *,
+        confounder_column: str,
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
         m: int | list[int] | tuple[int, ...] = 1,
         alpha: float = 0.10,
@@ -227,9 +238,11 @@ class CrossConfounderMarginRatio:
             raise ValueError("features must be a 2-D array of shape (N, D)")
         if len(features) != len(manifest):
             raise ValueError("features row count must match manifest row count")
-        ensure_required_columns(manifest, "manifest")
 
-        df = manifest.reset_index(drop=True).copy()
+        df = normalize_manifest(
+            manifest, confounder_column=confounder_column, source="manifest"
+        )
+        ensure_canonical_manifest_columns(df, "manifest")
         dataset_name = cls._infer_dataset_name(df)
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
             validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
@@ -237,16 +250,24 @@ class CrossConfounderMarginRatio:
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
             subsets = resolve_manifest_subsets(df)
             if not subsets:
-                raise RuntimeError(f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for CCMR")
+                raise RuntimeError(
+                    f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for CCMR"
+                )
             evaluation_unit = "occurrence"
         else:
             subsets = [_dataset_subset(df)]
             evaluation_unit = "sample"
 
         pair_medians: dict[int, list[float]] = {int(mm): [] for mm in unique_m_values}
-        occurrence_values_by_m: dict[int, list[np.ndarray]] = {int(mm): [] for mm in unique_m_values}
-        occurrence_subsets_by_m: dict[int, list[np.ndarray]] = {int(mm): [] for mm in unique_m_values}
-        occurrence_sources_by_m: dict[int, list[np.ndarray]] = {int(mm): [] for mm in unique_m_values}
+        occurrence_values_by_m: dict[int, list[np.ndarray]] = {
+            int(mm): [] for mm in unique_m_values
+        }
+        occurrence_subsets_by_m: dict[int, list[np.ndarray]] = {
+            int(mm): [] for mm in unique_m_values
+        }
+        occurrence_sources_by_m: dict[int, list[np.ndarray]] = {
+            int(mm): [] for mm in unique_m_values
+        }
         occurrence_total = 0
         total_undefined: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
 
@@ -262,10 +283,12 @@ class CrossConfounderMarginRatio:
 
             idx = sub["source_sample_index"].to_numpy(dtype=int)
             subset_features = features[idx]
-            subset_features = subset_features / (np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12)
+            subset_features = subset_features / (
+                np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12
+            )
 
             labels = pd.factorize(sub["label"])[0].astype(int)
-            centers = pd.factorize(sub["medical_center"])[0].astype(int)
+            centers = pd.factorize(sub["confounder"])[0].astype(int)
             slide_ids = sub["slide_id"].astype(str).to_numpy()
 
             so_dists, os_dists, search_meta = _iterative_typed_neighbor_search(
@@ -285,18 +308,26 @@ class CrossConfounderMarginRatio:
             retries_values.append(int(search_meta.retries))
 
             for mm in unique_m_values:
-                sample_ccmr = _compute_sample_ccmr(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
+                sample_ccmr = _compute_sample_ccmr(
+                    so_dists[:, : int(mm)], os_dists[:, : int(mm)]
+                )
                 informative = np.isfinite(sample_ccmr)
                 n_informative = int(informative.sum())
                 n_undefined = int(n_sub - n_informative)
                 total_undefined[int(mm)] += n_undefined
 
-                occurrence_values_by_m[int(mm)].append(np.asarray(sample_ccmr, dtype=float))
-                occurrence_subsets_by_m[int(mm)].append(np.full(n_sub, str(subset.subset_id), dtype=object))
+                occurrence_values_by_m[int(mm)].append(
+                    np.asarray(sample_ccmr, dtype=float)
+                )
+                occurrence_subsets_by_m[int(mm)].append(
+                    np.full(n_sub, str(subset.subset_id), dtype=object)
+                )
                 occurrence_sources_by_m[int(mm)].append(idx.astype(int))
 
                 if n_informative > 0:
-                    pair_medians[int(mm)].append(float(np.median(sample_ccmr[informative])))
+                    pair_medians[int(mm)].append(
+                        float(np.median(sample_ccmr[informative]))
+                    )
                 else:
                     pair_medians[int(mm)].append(float("nan"))
 
@@ -310,7 +341,11 @@ class CrossConfounderMarginRatio:
             finite_mask = np.isfinite(finite_pair)
             if finite_mask.any():
                 value = float(np.median(finite_pair[finite_mask]))
-                std = float(finite_pair[finite_mask].std(ddof=0)) if finite_mask.sum() > 1 else 0.0
+                std = (
+                    float(finite_pair[finite_mask].std(ddof=0))
+                    if finite_mask.sum() > 1
+                    else 0.0
+                )
             else:
                 value = float("nan")
                 std = 0.0
@@ -331,8 +366,14 @@ class CrossConfounderMarginRatio:
                 else np.empty((0,), dtype=int)
             )
             occurrence_defined_mask = np.isfinite(occurrence_values)
-            sample_values = occurrence_values[np.isfinite(occurrence_values)].astype(float)
-            undefined_frac = float(total_undefined[int(mm)] / occurrence_total) if occurrence_total > 0 else 0.0
+            sample_values = occurrence_values[np.isfinite(occurrence_values)].astype(
+                float
+            )
+            undefined_frac = (
+                float(total_undefined[int(mm)] / occurrence_total)
+                if occurrence_total > 0
+                else 0.0
+            )
 
             if total_undefined[int(mm)] > 0:
                 logger.warning(

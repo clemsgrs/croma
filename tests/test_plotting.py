@@ -10,10 +10,10 @@ if str(SCRIPTS) not in sys.path:
 
 from plotting import (
     plot_benchmark_6panel_summary,
-    plot_bio_vs_center_scatter,
+    plot_bio_vs_confounder_scatter,
     plot_ccmr_ltm_comparison,
     plot_ccmr_m_sweep_with_ltm,
-    plot_knn_center_k_sweep,
+    plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_ri_k_sweep,
 )
@@ -25,41 +25,45 @@ def _sample_k_rows() -> list[dict]:
             "model": "Virchow2",
             "k": 1,
             "knn_bacc": 0.60,
-            "knn_center_bacc": 0.66,
+            "knn_confounder_bacc": 0.66,
             "ri": 0.40,
             "mari": 0.45,
             "selected_k": 3,
-            "selected_k_center": 1,
+            "selected_k_confounder": 1,
+            "confounder_display_name": "Medical Center",
         },
         {
             "model": "Virchow2",
             "k": 3,
             "knn_bacc": 0.72,
-            "knn_center_bacc": 0.63,
+            "knn_confounder_bacc": 0.63,
             "ri": 0.55,
             "mari": 0.59,
             "selected_k": 3,
-            "selected_k_center": 1,
+            "selected_k_confounder": 1,
+            "confounder_display_name": "Medical Center",
         },
         {
             "model": "UNI",
             "k": 1,
             "knn_bacc": 0.58,
-            "knn_center_bacc": 0.69,
+            "knn_confounder_bacc": 0.69,
             "ri": 0.30,
             "mari": 0.28,
             "selected_k": 1,
-            "selected_k_center": 3,
+            "selected_k_confounder": 3,
+            "confounder_display_name": "Medical Center",
         },
         {
             "model": "UNI",
             "k": 3,
             "knn_bacc": 0.57,
-            "knn_center_bacc": 0.74,
+            "knn_confounder_bacc": 0.74,
             "ri": 0.35,
             "mari": 0.33,
             "selected_k": 1,
-            "selected_k_center": 3,
+            "selected_k_confounder": 3,
+            "confounder_display_name": "Medical Center",
         },
     ]
 
@@ -69,16 +73,18 @@ def _sample_summary_rows() -> list[dict]:
         {
             "model": "Virchow2",
             "bio_knn_bacc": 0.72,
-            "center_knn_bacc": 0.66,
+            "confounder_knn_bacc": 0.66,
             "ri": 0.55,
             "mari": 0.59,
+            "confounder_display_name": "Medical Center",
         },
         {
             "model": "UNI",
             "bio_knn_bacc": 0.58,
-            "center_knn_bacc": 0.74,
+            "confounder_knn_bacc": 0.74,
             "ri": 0.35,
             "mari": 0.33,
+            "confounder_display_name": "Medical Center",
         },
     ]
 
@@ -100,10 +106,20 @@ def _sample_ccmr_ltm_rows() -> list[dict]:
         {"model": "UNI", "ccmr": 1.05, "ccmr_ltm_alpha": 0.82, "ccmr_alpha": 0.10},
         {"model": "CONCH", "ccmr": 0.96, "ccmr_ltm_alpha": 0.61, "ccmr_alpha": 0.10},
     ]
+
+
 def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
     cases = [
-        (plot_bio_vs_center_scatter, {"rows": _sample_summary_rows()}, "bio_vs_center_scatter.png"),
-        (plot_ccmr_m_sweep_with_ltm, {"rows": _sample_ccmr_m_rows()}, "ccmr_m_sweep.png"),
+        (
+            plot_bio_vs_confounder_scatter,
+            {"rows": _sample_summary_rows()},
+            "bio_vs_confounder_scatter.png",
+        ),
+        (
+            plot_ccmr_m_sweep_with_ltm,
+            {"rows": _sample_ccmr_m_rows()},
+            "ccmr_m_sweep.png",
+        ),
         (
             plot_benchmark_6panel_summary,
             {"rows": _sample_summary_rows(), "k_sweep_rows": _sample_k_rows()},
@@ -118,7 +134,9 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
         assert out_path.stat().st_size > 0
 
 
-def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(monkeypatch, tmp_path: Path) -> None:
+def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(
+    monkeypatch, tmp_path: Path
+) -> None:
     import matplotlib.axes
 
     points: list[tuple[float, float]] = []
@@ -135,13 +153,17 @@ def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(monk
 
     def spy_bar(self, x, height, *args, **kwargs):
         if "LTM@" in str(kwargs.get("label", "")):
-            ltm_heights.extend(float(v) for v in np.asarray(height, dtype=float).tolist())
+            ltm_heights.extend(
+                float(v) for v in np.asarray(height, dtype=float).tolist()
+            )
         return original_bar(self, x, height, *args, **kwargs)
 
     monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
     monkeypatch.setattr(matplotlib.axes.Axes, "bar", spy_bar)
 
-    rows = _sample_ccmr_ltm_rows() + [{"model": "Bad", "ccmr": float("nan"), "ccmr_ltm_alpha": 0.5, "ccmr_alpha": 0.1}]
+    rows = _sample_ccmr_ltm_rows() + [
+        {"model": "Bad", "ccmr": float("nan"), "ccmr_ltm_alpha": 0.5, "ccmr_alpha": 0.1}
+    ]
     out_path = tmp_path / "ccmr_ltm_comparison.png"
     plot_ccmr_ltm_comparison(rows=rows, out_path=out_path)
 
@@ -169,10 +191,28 @@ def test_selected_k_markers_are_highlighted(monkeypatch, tmp_path: Path) -> None
     monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
 
     rows = _sample_k_rows()
-    plot_knn_center_k_sweep(rows=rows, out_path=tmp_path / "center_markers.png")
+    plot_knn_confounder_k_sweep(rows=rows, out_path=tmp_path / "confounder_markers.png")
     plot_ri_k_sweep(rows=rows, out_path=tmp_path / "ri_star.png")
     plot_mari_k_sweep(rows=rows, out_path=tmp_path / "mari_star.png")
 
     assert "X" in markers
     assert "*" in markers
     assert 3 in star_x_values
+
+
+def test_confounder_plot_uses_display_name(tmp_path: Path) -> None:
+    rows = [
+        {
+            "model": "Virchow2",
+            "bio_knn_bacc": 0.72,
+            "confounder_knn_bacc": 0.66,
+            "ri": 0.55,
+            "mari": 0.59,
+            "confounder_display_name": "Scanner Vendor",
+        }
+    ]
+
+    out_path = tmp_path / "bio_vs_confounder_scatter.png"
+    plot_bio_vs_confounder_scatter(rows=rows, out_path=out_path)
+
+    assert out_path.exists()

@@ -3,7 +3,15 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-EMBEDDING_SOURCE_COLUMNS = ("sample_id", "image_path", "label", "medical_center", "slide_id")
+from croma.confounders import CANONICAL_CONFOUNDER_COLUMN
+
+EMBEDDING_SOURCE_COLUMNS = (
+    "sample_id",
+    "image_path",
+    "label",
+    CANONICAL_CONFOUNDER_COLUMN,
+    "slide_id",
+)
 
 
 def _normalize_key_value(value: object) -> str:
@@ -13,16 +21,22 @@ def _normalize_key_value(value: object) -> str:
 def ensure_embedding_source_columns(df: pd.DataFrame, source: str) -> None:
     missing = [col for col in EMBEDDING_SOURCE_COLUMNS if col not in df.columns]
     if missing:
-        raise ValueError(f"{source} is missing required columns for embedding alignment: {missing}")
+        raise ValueError(
+            f"{source} is missing required columns for embedding alignment: {missing}"
+        )
 
 
-def build_embedding_source_manifest(manifest_df: pd.DataFrame) -> tuple[pd.DataFrame, np.ndarray]:
+def build_embedding_source_manifest(
+    manifest_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, np.ndarray]:
     ensure_embedding_source_columns(manifest_df, "manifest")
 
     unique_rows: list[tuple[str, ...]] = []
     key_to_index: dict[tuple[str, ...], int] = {}
     row_to_source: list[int] = []
-    for row in manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(index=False, name=None):
+    for row in manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(
+        index=False, name=None
+    ):
         key = tuple(_normalize_key_value(value) for value in row)
         idx = key_to_index.get(key)
         if idx is None:
@@ -44,7 +58,9 @@ def build_manifest_row_to_embedding_index(
 
     key_to_index: dict[tuple[str, ...], int] = {}
     for idx, row in enumerate(
-        embedding_manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(index=False, name=None)
+        embedding_manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(
+            index=False, name=None
+        )
     ):
         key = tuple(_normalize_key_value(value) for value in row)
         if key in key_to_index:
@@ -52,11 +68,17 @@ def build_manifest_row_to_embedding_index(
         key_to_index[key] = int(idx)
 
     row_to_embedding: list[int] = []
-    for row_idx, row in enumerate(manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(index=False, name=None)):
+    for row_idx, row in enumerate(
+        manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(
+            index=False, name=None
+        )
+    ):
         key = tuple(_normalize_key_value(value) for value in row)
         idx = key_to_index.get(key)
         if idx is None:
-            raise ValueError(f"evaluation manifest row {row_idx} is missing from embedding manifest")
+            raise ValueError(
+                f"evaluation manifest row {row_idx} is missing from embedding manifest"
+            )
         row_to_embedding.append(int(idx))
 
     return np.asarray(row_to_embedding, dtype=int)
@@ -71,5 +93,7 @@ def expand_features_to_manifest(
     feature_array = np.asarray(features)
     if int(feature_array.shape[0]) != int(len(embedding_manifest)):
         raise ValueError("embeddings rows must match embedding manifest rows")
-    row_to_embedding = build_manifest_row_to_embedding_index(manifest, embedding_manifest)
+    row_to_embedding = build_manifest_row_to_embedding_index(
+        manifest, embedding_manifest
+    )
     return feature_array[row_to_embedding]

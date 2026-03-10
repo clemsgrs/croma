@@ -1,4 +1,3 @@
-
 import sys
 from pathlib import Path
 
@@ -72,14 +71,35 @@ def test_manifest_fingerprint_changes_with_content(tmp_path: Path) -> None:
             "sample_id": ["s0", "s1"],
             "image_path": ["/tmp/0.png", "/tmp/1.png"],
             "label": ["A", "B"],
-            "medical_center": ["C1", "C2"],
+            "confounder": ["VendorA", "VendorB"],
             "slide_id": ["sl0", "sl1"],
         }
     )
+    df.attrs["confounder_column"] = "scanner_vendor"
     a = ifp.manifest_fingerprint(df)
     df2 = df.copy()
     df2.loc[1, "label"] = "A"
+    df2.attrs["confounder_column"] = "scanner_vendor"
     b = ifp.manifest_fingerprint(df2)
+    assert a != b
+
+
+def test_manifest_fingerprint_changes_with_selected_confounder_column(
+    tmp_path: Path,
+) -> None:
+    df = pd.DataFrame(
+        {
+            "sample_id": ["s0", "s1"],
+            "image_path": ["/tmp/0.png", "/tmp/1.png"],
+            "label": ["A", "B"],
+            "confounder": ["VendorA", "VendorB"],
+            "slide_id": ["sl0", "sl1"],
+        }
+    )
+    df.attrs["confounder_column"] = "scanner_vendor"
+    a = ifp.manifest_fingerprint(df)
+    df.attrs["confounder_column"] = "scanner_batch"
+    b = ifp.manifest_fingerprint(df)
     assert a != b
 
 

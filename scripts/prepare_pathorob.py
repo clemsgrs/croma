@@ -56,7 +56,7 @@ class DatasetSpec:
     output_slug: str
     sample_candidates: tuple[str, ...] = ("patch_id", "sample_id", "id")
     label_candidates: tuple[str, ...] = ("biological_class", "label", "class_label")
-    center_candidates: tuple[str, ...] = ("medical_center", "center")
+    confounder_candidates: tuple[str, ...] = ("confounder", "medical_center", "center")
     slide_candidates: tuple[str, ...] = ("slide_id", "case_id", "wsi_id")
     image_candidates: tuple[str, ...] = ("image", "tile", "patch", "img")
 
@@ -91,7 +91,9 @@ class AlignmentSpec:
 
 
 ALIGNMENTS: list[AlignmentSpec] = [
-    AlignmentSpec("camelyon.csv", "camelyon", "pathorob-camelyon", subset_mode="id_ood"),
+    AlignmentSpec(
+        "camelyon.csv", "camelyon", "pathorob-camelyon", subset_mode="id_ood"
+    ),
     AlignmentSpec(
         "camelyon_reduced.csv",
         "camelyon",
@@ -99,8 +101,15 @@ ALIGNMENTS: list[AlignmentSpec] = [
         subset_mode="paired_expand_grid",
     ),
     AlignmentSpec("tcga_4x4.csv", "tcga", "pathorob-tcga-4x4", subset_mode="id_ood"),
-    AlignmentSpec("tcga_2x2.csv", "tcga", "pathorob-tcga-2x2", subset_mode="paired_passthrough"),
-    AlignmentSpec("tolkach_esca.csv", "tolkach_esca", "pathorob-tolkach-esca", subset_mode="id_ood"),
+    AlignmentSpec(
+        "tcga_2x2.csv", "tcga", "pathorob-tcga-2x2", subset_mode="paired_passthrough"
+    ),
+    AlignmentSpec(
+        "tolkach_esca.csv",
+        "tolkach_esca",
+        "pathorob-tolkach-esca",
+        subset_mode="id_ood",
+    ),
     AlignmentSpec(
         "tolkach_esca_reduced.csv",
         "tolkach_esca",
@@ -120,7 +129,9 @@ def _sanitize_token(value: str) -> str:
     return token.strip("_") or "part"
 
 
-def _resolve_column(columns: list[str], candidates: tuple[str, ...], kind: str, source: Path) -> str:
+def _resolve_column(
+    columns: list[str], candidates: tuple[str, ...], kind: str, source: Path
+) -> str:
     for cand in candidates:
         if cand in columns:
             return cand
@@ -163,7 +174,10 @@ def _looks_like_image_path(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     text = value.strip().lower()
-    return text.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp")) or "/" in text
+    return (
+        text.endswith((".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp"))
+        or "/" in text
+    )
 
 
 def _infer_image_source_in_batch(
@@ -294,14 +308,21 @@ def _normalize_string(value: Any) -> str:
     return str(value).strip()
 
 
-def _is_complete_2x2_block(df: pd.DataFrame, *, label_col: str, center_col: str) -> bool:
+def _is_complete_2x2_block(
+    df: pd.DataFrame, *, label_col: str, confounder_col: str
+) -> bool:
     labels = sorted(df[label_col].astype(str).unique().tolist())
-    centers = sorted(df[center_col].astype(str).unique().tolist())
-    if len(labels) != 2 or len(centers) != 2:
+    confounders = sorted(df[confounder_col].astype(str).unique().tolist())
+    if len(labels) != 2 or len(confounders) != 2:
         return False
     for label in labels:
-        for center in centers:
-            cell_n = int(((df[label_col].astype(str) == label) & (df[center_col].astype(str) == center)).sum())
+        for confounder in confounders:
+            cell_n = int(
+                (
+                    (df[label_col].astype(str) == label)
+                    & (df[confounder_col].astype(str) == confounder)
+                ).sum()
+            )
             if cell_n <= 0:
                 return False
     return True
@@ -309,40 +330,49 @@ def _is_complete_2x2_block(df: pd.DataFrame, *, label_col: str, center_col: str)
 
 def _paired_subset_id(
     label_pair: tuple[str, str],
-    center_pair: tuple[str, str],
+    confounder_pair: tuple[str, str],
     *,
     total_label_count: int,
 ) -> str:
-    center_token = "_".join(_sanitize_token(part) for part in center_pair)
+    confounder_token = "_".join(_sanitize_token(part) for part in confounder_pair)
     if int(total_label_count) == 2:
-        return center_token
+        return confounder_token
     label_token = "+".join(_sanitize_token(part) for part in label_pair)
-    return f"{label_token}__{center_token}"
+    return f"{label_token}__{confounder_token}"
 
 
-def _expand_grid_paired_subsets(df: pd.DataFrame, *, label_col: str, center_col: str) -> pd.DataFrame:
+def _expand_grid_paired_subsets(
+    df: pd.DataFrame, *, label_col: str, confounder_col: str
+) -> pd.DataFrame:
     labels = sorted(df[label_col].astype(str).unique().tolist())
-    centers = sorted(df[center_col].astype(str).unique().tolist())
-    if len(labels) < 2 or len(centers) < 2:
-        raise ValueError("paired_expand_grid requires at least 2 labels and 2 medical centers")
+    confounders = sorted(df[confounder_col].astype(str).unique().tolist())
+    if len(labels) < 2 or len(confounders) < 2:
+        raise ValueError(
+            "paired_expand_grid requires at least 2 labels and 2 confounder values"
+        )
 
     expanded_frames: list[pd.DataFrame] = []
     for label_pair in combinations(labels, 2):
-        for center_pair in combinations(centers, 2):
+        for confounder_pair in combinations(confounders, 2):
             subset_df = df.loc[
-                df[label_col].astype(str).isin(label_pair) & df[center_col].astype(str).isin(center_pair)
+                df[label_col].astype(str).isin(label_pair)
+                & df[confounder_col].astype(str).isin(confounder_pair)
             ].copy()
-            if not _is_complete_2x2_block(subset_df, label_col=label_col, center_col=center_col):
+            if not _is_complete_2x2_block(
+                subset_df, label_col=label_col, confounder_col=confounder_col
+            ):
                 continue
             subset_df["subset"] = _paired_subset_id(
                 label_pair,
-                center_pair,
+                confounder_pair,
                 total_label_count=len(labels),
             )
             expanded_frames.append(subset_df)
 
     if not expanded_frames:
-        raise ValueError("paired_expand_grid could not construct any complete 2x2 subsets")
+        raise ValueError(
+            "paired_expand_grid could not construct any complete 2x2 subsets"
+        )
 
     return pd.concat(expanded_frames, ignore_index=True)
 
@@ -367,10 +397,18 @@ def _convert_parquet_to_rows(
     parquet_file = parquet_module.ParquetFile(parquet_path)
     columns = list(parquet_file.schema.names)
 
-    sample_col = _resolve_column(columns, dataset.sample_candidates, "sample_id", parquet_path)
-    label_col = _resolve_column(columns, dataset.label_candidates, "label", parquet_path)
-    center_col = _resolve_column(columns, dataset.center_candidates, "medical_center", parquet_path)
-    slide_col = _resolve_column(columns, dataset.slide_candidates, "slide_id", parquet_path)
+    sample_col = _resolve_column(
+        columns, dataset.sample_candidates, "sample_id", parquet_path
+    )
+    label_col = _resolve_column(
+        columns, dataset.label_candidates, "label", parquet_path
+    )
+    confounder_col = _resolve_column(
+        columns, dataset.confounder_candidates, "confounder", parquet_path
+    )
+    slide_col = _resolve_column(
+        columns, dataset.slide_candidates, "slide_id", parquet_path
+    )
     preferred_image_col = None
     for cand in dataset.image_candidates:
         if cand in columns:
@@ -381,43 +419,77 @@ def _convert_parquet_to_rows(
 
     rows: list[dict[str, str]] = []
 
-    total_rows = int(parquet_file.metadata.num_rows) if parquet_file.metadata is not None else 0
+    total_rows = (
+        int(parquet_file.metadata.num_rows) if parquet_file.metadata is not None else 0
+    )
     batch_iter = parquet_file.iter_batches(batch_size=int(batch_size))
-    with progress_bar(total=total_rows, desc=f"convert:{parquet_path.name}", enabled=progress_on, unit="img") as bar:
+    with progress_bar(
+        total=total_rows,
+        desc=f"convert:{parquet_path.name}",
+        enabled=progress_on,
+        unit="img",
+    ) as bar:
         global_idx = 0
         for batch in batch_iter:
-            sample_values = _batch_column_values(batch, sample_col, source=parquet_path, required=True)
-            label_values = _batch_column_values(batch, label_col, source=parquet_path, required=True)
-            center_values = _batch_column_values(batch, center_col, source=parquet_path, required=True)
-            slide_values = _batch_column_values(batch, slide_col, source=parquet_path, required=True)
-            if sample_values is None or label_values is None or center_values is None or slide_values is None:
-                raise RuntimeError(f"{parquet_path}: unexpected missing required batch columns")
+            sample_values = _batch_column_values(
+                batch, sample_col, source=parquet_path, required=True
+            )
+            label_values = _batch_column_values(
+                batch, label_col, source=parquet_path, required=True
+            )
+            confounder_values = _batch_column_values(
+                batch, confounder_col, source=parquet_path, required=True
+            )
+            slide_values = _batch_column_values(
+                batch, slide_col, source=parquet_path, required=True
+            )
+            if (
+                sample_values is None
+                or label_values is None
+                or confounder_values is None
+                or slide_values is None
+            ):
+                raise RuntimeError(
+                    f"{parquet_path}: unexpected missing required batch columns"
+                )
 
-            required_cols = {sample_col, label_col, center_col, slide_col}
-            batch_image_col, batch_bytes_col, batch_path_col = _infer_image_source_in_batch(
-                batch=batch,
-                dataset=dataset,
-                required_columns=required_cols,
-                preferred_image_col=preferred_image_col,
+            required_cols = {sample_col, label_col, confounder_col, slide_col}
+            batch_image_col, batch_bytes_col, batch_path_col = (
+                _infer_image_source_in_batch(
+                    batch=batch,
+                    dataset=dataset,
+                    required_columns=required_cols,
+                    preferred_image_col=preferred_image_col,
+                )
             )
 
             image_values = (
-                _batch_column_values(batch, batch_image_col, source=parquet_path, required=True)
+                _batch_column_values(
+                    batch, batch_image_col, source=parquet_path, required=True
+                )
                 if batch_image_col is not None
                 else None
             )
             image_bytes_values = (
-                _batch_column_values(batch, batch_bytes_col, source=parquet_path, required=False)
+                _batch_column_values(
+                    batch, batch_bytes_col, source=parquet_path, required=False
+                )
                 if batch_bytes_col is not None
                 else None
             )
             image_path_values = (
-                _batch_column_values(batch, batch_path_col, source=parquet_path, required=False)
+                _batch_column_values(
+                    batch, batch_path_col, source=parquet_path, required=False
+                )
                 if batch_path_col is not None
                 else None
             )
 
-            if image_values is None and image_bytes_values is None and image_path_values is None:
+            if (
+                image_values is None
+                and image_bytes_values is None
+                and image_path_values is None
+            ):
                 raise ValueError(
                     f"{parquet_path}: no image source columns found in batch. "
                     f"Batch columns: {list(batch.schema.names)}"
@@ -451,18 +523,24 @@ def _convert_parquet_to_rows(
                 seen_file_tokens.add(file_token)
 
                 label = _normalize_string(label_values[i])
-                center = _normalize_string(center_values[i])
-                if not label or not center or not slide:
+                confounder = _normalize_string(confounder_values[i])
+                if not label or not confounder or not slide:
                     raise ValueError(
                         f"{parquet_path}: empty value at row {global_idx} "
-                        f"(label='{label}', center='{center}', slide='{slide}')"
+                        f"(label='{label}', confounder='{confounder}', slide='{slide}')"
                     )
 
                 if image_values is not None:
                     image_payload = image_values[i]
                 else:
-                    bytes_value = image_bytes_values[i] if image_bytes_values is not None else None
-                    path_value = image_path_values[i] if image_path_values is not None else None
+                    bytes_value = (
+                        image_bytes_values[i]
+                        if image_bytes_values is not None
+                        else None
+                    )
+                    path_value = (
+                        image_path_values[i] if image_path_values is not None else None
+                    )
                     image_payload = {
                         "bytes": bytes_value,
                         "path": path_value,
@@ -476,7 +554,7 @@ def _convert_parquet_to_rows(
                         "sample_id": sample_id,
                         "image_path": str(abs_image),
                         "label": label,
-                        "medical_center": center,
+                        "confounder": confounder,
                         "slide_id": slide,
                         "patch_id": patch_id_raw,
                     }
@@ -484,14 +562,23 @@ def _convert_parquet_to_rows(
                 global_idx += 1
                 bar.update(1)
 
-    source_columns = ["sample_id", "image_path", "label", "medical_center", "slide_id", "patch_id"]
+    source_columns = [
+        "sample_id",
+        "image_path",
+        "label",
+        "confounder",
+        "slide_id",
+        "patch_id",
+    ]
     out_df = pd.DataFrame(rows, columns=source_columns)
     if out_df.empty:
         raise ValueError(f"{parquet_path}: conversion produced an empty manifest")
 
     missing_paths = [p for p in out_df["image_path"].tolist() if not Path(p).exists()]
     if missing_paths:
-        raise FileNotFoundError(f"{parquet_path}: {len(missing_paths)} converted image files are missing")
+        raise FileNotFoundError(
+            f"{parquet_path}: {len(missing_paths)} converted image files are missing"
+        )
 
     return rows, {
         "parquet_path": str(parquet_path),
@@ -499,7 +586,7 @@ def _convert_parquet_to_rows(
         "images_dir": str(images_dir),
         "rows": int(len(out_df)),
         "labels": sorted(out_df["label"].unique().tolist()),
-        "centers": sorted(out_df["medical_center"].unique().tolist()),
+        "confounders": sorted(out_df["confounder"].unique().tolist()),
     }
 
 
@@ -559,7 +646,14 @@ def _download_dataset_to_temp(
     return str(info.sha)
 
 
-SOURCE_COLUMNS = ["sample_id", "image_path", "label", "medical_center", "slide_id", "patch_id"]
+SOURCE_COLUMNS = [
+    "sample_id",
+    "image_path",
+    "label",
+    "confounder",
+    "slide_id",
+    "patch_id",
+]
 
 
 def extract_dataset(
@@ -585,7 +679,9 @@ def extract_dataset(
         shutil.rmtree(images_root)
     images_root.mkdir(parents=True, exist_ok=True)
 
-    progress_write(f"[extract] dataset={spec.key} repo={spec.repo_id}", enabled=progress_on)
+    progress_write(
+        f"[extract] dataset={spec.key} repo={spec.repo_id}", enabled=progress_on
+    )
     conversions: list[dict[str, Any]] = []
     dataset_rows: list[dict[str, str]] = []
     seen_sample_ids: set[str] = set()
@@ -602,7 +698,9 @@ def extract_dataset(
         )
         parquet_paths = sorted(tmp_download.rglob("*.parquet"))
         if not parquet_paths:
-            raise FileNotFoundError(f"{spec.repo_id}: no parquet files found under {tmp_download}")
+            raise FileNotFoundError(
+                f"{spec.repo_id}: no parquet files found under {tmp_download}"
+            )
 
         progress_write(
             f"[extract] {spec.key}: found {len(parquet_paths)} parquet file(s) at revision {resolved_sha}",
@@ -611,7 +709,9 @@ def extract_dataset(
 
         multi_part = len(parquet_paths) > 1
         for parquet_path in parquet_paths:
-            part_token = _sanitize_token(parquet_path.relative_to(tmp_download).with_suffix("").as_posix())
+            part_token = _sanitize_token(
+                parquet_path.relative_to(tmp_download).with_suffix("").as_posix()
+            )
             progress_write(
                 f"[extract] convert parquet={parquet_path.relative_to(tmp_download)}",
                 enabled=progress_on,
@@ -638,7 +738,9 @@ def extract_dataset(
             raise ValueError(
                 f"{spec.repo_id}: merged dataset has duplicate sample_id values after conversion ({dup})"
             )
-        missing_paths = [p for p in dataset_df["image_path"].tolist() if not Path(p).exists()]
+        missing_paths = [
+            p for p in dataset_df["image_path"].tolist() if not Path(p).exists()
+        ]
         if missing_paths:
             raise FileNotFoundError(
                 f"{spec.repo_id}: {len(missing_paths)} merged image paths are missing on disk"
@@ -736,16 +838,21 @@ def align_dataset(
             f"for {alignment.output_name}."
         )
 
-    # Use label/center from metadata (ground truth), image_path/sample_id from source
+    # Use label/confounder from metadata (ground truth), image_path/sample_id from source.
     label_col = "biological_class" if "biological_class" in joined.columns else "label"
-    center_col = "medical_center"
+    confounder_col = _resolve_column(
+        list(joined.columns),
+        ("confounder", "medical_center", "center"),
+        "confounder",
+        metadata_path,
+    )
 
     out_df = pd.DataFrame(
         {
             "sample_id": joined["sample_id"],
             "image_path": joined["image_path"],
             "label": joined[label_col],
-            "medical_center": joined[center_col],
+            "confounder": joined[confounder_col],
             "slide_id": joined["slide_id"],
         }
     )
@@ -753,11 +860,15 @@ def align_dataset(
     if alignment.subset_mode == "paired_passthrough":
         out_df["subset"] = joined["subset"].astype(str)
     elif alignment.subset_mode == "paired_expand_grid":
-        out_df = _expand_grid_paired_subsets(out_df, label_col="label", center_col="medical_center")
+        out_df = _expand_grid_paired_subsets(
+            out_df, label_col="label", confounder_col="confounder"
+        )
     elif alignment.subset_mode == "id_ood":
         out_df["id_ood"] = joined["subset"].astype(str)
     else:
-        raise ValueError(f"Unknown subset_mode for {alignment.output_name}: {alignment.subset_mode}")
+        raise ValueError(
+            f"Unknown subset_mode for {alignment.output_name}: {alignment.subset_mode}"
+        )
 
     output_path = manifest_dir / f"{alignment.output_name}.csv"
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -767,7 +878,6 @@ def align_dataset(
         f"[align] wrote {output_path} ({len(out_df)} rows)",
         enabled=progress_on,
     )
-
 
     return output_path
 
@@ -839,13 +949,17 @@ def main() -> int:
     args = parse_args()
     progress_on = resolve_progress_mode(str(args.progress))
 
-    requested_keys = [part.strip() for part in str(args.datasets).split(",") if part.strip()]
+    requested_keys = [
+        part.strip() for part in str(args.datasets).split(",") if part.strip()
+    ]
     if not requested_keys:
         raise ValueError("--datasets must include at least one key")
 
     unknown = [k for k in requested_keys if k not in DATASETS]
     if unknown:
-        raise ValueError(f"Unknown dataset key(s): {unknown}. Known: {sorted(DATASETS.keys())}")
+        raise ValueError(
+            f"Unknown dataset key(s): {unknown}. Known: {sorted(DATASETS.keys())}"
+        )
 
     pathorob_root = Path(args.output_dir).expanduser().resolve()
     manifest_dir = Path(args.manifest_dir).expanduser().resolve()

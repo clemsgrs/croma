@@ -14,7 +14,10 @@ CACHE_CODE_FINGERPRINT = "explicit-alignment-contract-v1"
 
 def _normalize_for_key(value: object) -> object:
     if isinstance(value, dict):
-        return {str(k): _normalize_for_key(v) for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))}
+        return {
+            str(k): _normalize_for_key(v)
+            for k, v in sorted(value.items(), key=lambda kv: str(kv[0]))
+        }
     if isinstance(value, (list, tuple, set)):
         normalized = [_normalize_for_key(v) for v in value]
         by_serialized = {
@@ -31,7 +34,9 @@ def _normalize_for_key(value: object) -> object:
 
 def _canonical_json(payload: dict) -> str:
     normalized = _normalize_for_key(payload)
-    return json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return json.dumps(
+        normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
 
 
 def build_cache_key(
@@ -51,14 +56,19 @@ def build_cache_key(
         "params": _normalize_for_key(params),
         "code_fingerprint": str(code_fingerprint),
     }
-    key_hash = hashlib.sha256(_canonical_json(canonical_payload).encode("utf-8")).hexdigest()
+    key_hash = hashlib.sha256(
+        _canonical_json(canonical_payload).encode("utf-8")
+    ).hexdigest()
     key = dict(canonical_payload)
     key["key_hash"] = key_hash
     return key
 
+
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as tmp:
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=path.parent, delete=False
+    ) as tmp:
         tmp.write(text)
         tmp.flush()
         os.fsync(tmp.fileno())
@@ -68,7 +78,9 @@ def _atomic_write_text(path: Path, text: str) -> None:
 
 def _atomic_write_npy(path: Path, values: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("wb", dir=path.parent, delete=False, suffix=".npy") as tmp:
+    with tempfile.NamedTemporaryFile(
+        "wb", dir=path.parent, delete=False, suffix=".npy"
+    ) as tmp:
         np.save(tmp, np.asarray(values))
         tmp.flush()
         os.fsync(tmp.fileno())
@@ -83,8 +95,15 @@ class MetricsArtifactCache:
         self.artifacts_dir = self.cache_dir / "artifacts"
         self.index_path = self.cache_dir / "index.jsonl"
 
-    def _artifact_path(self, *, artifact_name: str, model: str, key_hash: str, suffix: str) -> Path:
-        return self.artifacts_dir / str(artifact_name) / safe_model_name(model) / f"{key_hash}{suffix}"
+    def _artifact_path(
+        self, *, artifact_name: str, model: str, key_hash: str, suffix: str
+    ) -> Path:
+        return (
+            self.artifacts_dir
+            / str(artifact_name)
+            / safe_model_name(model)
+            / f"{key_hash}{suffix}"
+        )
 
     def _load_index(self) -> dict[str, dict]:
         if not self.index_path.exists():
@@ -113,7 +132,9 @@ class MetricsArtifactCache:
         payload = ("\n".join(serialized_rows) + "\n") if serialized_rows else ""
         _atomic_write_text(self.index_path, payload)
 
-    def _upsert_index_row(self, *, key: dict, payload_kind: str, payload_path: Path) -> None:
+    def _upsert_index_row(
+        self, *, key: dict, payload_kind: str, payload_path: Path
+    ) -> None:
         rows = self._load_index()
         rows[str(key["key_hash"])] = {
             "created_at_utc": datetime.now(timezone.utc).isoformat(),

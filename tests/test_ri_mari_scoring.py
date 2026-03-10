@@ -1,4 +1,3 @@
-
 import numpy as np
 
 from croma import MaRI, RI
@@ -41,23 +40,27 @@ def test_mari_weights_change_score_when_distances_swap() -> None:
     close_so = np.array([[0.1, 1.0], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
     close_os = np.array([[1.0, 0.1], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
 
-    mari_close_so, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=close_so,
-        valid_counts=valid_counts,
-        k=2,
-        tau=0.2,
+    mari_close_so, _sample_scores, _informative_mask, _undef_type = (
+        MaRI._score_from_neighbors(
+            labels=labels,
+            centers=centers,
+            neigh_idx=neigh_idx,
+            neigh_dist=close_so,
+            valid_counts=valid_counts,
+            k=2,
+            tau=0.2,
+        )
     )
-    mari_close_os, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=close_os,
-        valid_counts=valid_counts,
-        k=2,
-        tau=0.2,
+    mari_close_os, _sample_scores, _informative_mask, _undef_type = (
+        MaRI._score_from_neighbors(
+            labels=labels,
+            centers=centers,
+            neigh_idx=neigh_idx,
+            neigh_dist=close_os,
+            valid_counts=valid_counts,
+            k=2,
+            tau=0.2,
+        )
     )
 
     assert mari_close_so > mari_close_os
@@ -77,23 +80,27 @@ def test_mari_tau_controls_locality_strength() -> None:
     neigh_dist = np.array([[0.1, 1.0], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
     valid_counts = np.array([2, 0, 0], dtype=int)
 
-    small_tau, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=neigh_dist,
-        valid_counts=valid_counts,
-        k=2,
-        tau=0.1,
+    small_tau, _sample_scores, _informative_mask, _undef_type = (
+        MaRI._score_from_neighbors(
+            labels=labels,
+            centers=centers,
+            neigh_idx=neigh_idx,
+            neigh_dist=neigh_dist,
+            valid_counts=valid_counts,
+            k=2,
+            tau=0.1,
+        )
     )
-    large_tau, _sample_scores, _informative_mask, _undef_type = MaRI._score_from_neighbors(
-        labels=labels,
-        centers=centers,
-        neigh_idx=neigh_idx,
-        neigh_dist=neigh_dist,
-        valid_counts=valid_counts,
-        k=2,
-        tau=10.0,
+    large_tau, _sample_scores, _informative_mask, _undef_type = (
+        MaRI._score_from_neighbors(
+            labels=labels,
+            centers=centers,
+            neigh_idx=neigh_idx,
+            neigh_dist=neigh_dist,
+            valid_counts=valid_counts,
+            k=2,
+            tau=10.0,
+        )
     )
 
     assert small_tau > large_tau

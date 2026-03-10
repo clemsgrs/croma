@@ -96,11 +96,15 @@ class StreamingMetricsWriter:
         self._fieldnames = list(row.keys())
         self._csv_file = self.csv_path.open("w", encoding="utf-8", newline="")
         self._json_file = self.json_path.open("w", encoding="utf-8")
-        self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=self._fieldnames, extrasaction="ignore")
+        self._csv_writer = csv.DictWriter(
+            self._csv_file, fieldnames=self._fieldnames, extrasaction="ignore"
+        )
         self._csv_writer.writeheader()
 
 
-def save_metrics(rows: Iterable[Mapping[str, object]], csv_path: Path, json_path: Path) -> None:
+def save_metrics(
+    rows: Iterable[Mapping[str, object]], csv_path: Path, json_path: Path
+) -> None:
     writer = StreamingMetricsWriter(csv_path=csv_path, json_path=json_path)
     writer.write_rows(rows)
     writer.close()

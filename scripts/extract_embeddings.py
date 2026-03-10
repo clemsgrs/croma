@@ -98,7 +98,9 @@ def _load_model_and_transform(spec: ModelSpec, device):
 
         model = timm.create_model(spec.model_id, pretrained=True, **timm_kwargs)
         model.eval().to(device)
-        transform = create_transform(**resolve_data_config(model.pretrained_cfg, model=model))
+        transform = create_transform(
+            **resolve_data_config(model.pretrained_cfg, model=model)
+        )
 
         def embed_fn(batch):
             out = model.forward_features(batch)
@@ -107,10 +109,14 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "hf_auto":
-        processor = AutoImageProcessor.from_pretrained(spec.model_id, trust_remote_code=True)
+        processor = AutoImageProcessor.from_pretrained(
+            spec.model_id, trust_remote_code=True
+        )
         model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
         model.eval().to(device)
-        transform = lambda img: processor(img, return_tensors="pt")["pixel_values"].squeeze(0)
+        transform = lambda img: processor(img, return_tensors="pt")[
+            "pixel_values"
+        ].squeeze(0)
 
         def embed_fn(batch):
             out = model(pixel_values=batch).last_hidden_state
@@ -118,7 +124,9 @@ def _load_model_and_transform(spec: ModelSpec, device):
                 return out[:, 0, :]
             if spec.extract == "cls_and_patch":
                 return torch.cat([out[:, 0], out[:, 1:].mean(1)], dim=-1)
-            raise ValueError(f"Unsupported extract mode for hf_auto backend: {spec.extract}")
+            raise ValueError(
+                f"Unsupported extract mode for hf_auto backend: {spec.extract}"
+            )
 
         return model, transform, embed_fn
 
@@ -142,14 +150,18 @@ def _load_model_and_transform(spec: ModelSpec, device):
                 return torch.cat([out[:, 0], out[:, 1:].mean(1)], dim=-1)
             if spec.extract == "cls":
                 return out[:, 0, :]
-            raise ValueError(f"Unsupported extract mode for midnight backend: {spec.extract}")
+            raise ValueError(
+                f"Unsupported extract mode for midnight backend: {spec.extract}"
+            )
 
         return model, transform, embed_fn
 
     if spec.backend == "conch_v1":
         from conch.open_clip_custom import create_model_from_pretrained
 
-        model, transform = create_model_from_pretrained("conch_ViT-B-16", "hf_hub:MahmoodLab/conch")
+        model, transform = create_model_from_pretrained(
+            "conch_ViT-B-16", "hf_hub:MahmoodLab/conch"
+        )
         model.eval().to(device)
 
         def embed_fn(batch):
@@ -193,7 +205,9 @@ def embed_manifest(
 
     progress_write(f"[embed] manifest: {manifest_path}", enabled=progress_on)
     progress_write(f"[embed] samples: {len(manifest)}", enabled=progress_on)
-    progress_write(f"[embed] backend/model: {spec.backend} / {spec.model_id}", enabled=progress_on)
+    progress_write(
+        f"[embed] backend/model: {spec.backend} / {spec.model_id}", enabled=progress_on
+    )
     progress_write(f"[embed] device: {device}", enabled=progress_on)
 
     _model, transform, embed_fn = _load_model_and_transform(spec, device)
@@ -248,7 +262,10 @@ def embed_manifest(
         + "\n",
         encoding="utf-8",
     )
-    progress_write(f"[embed] saved embeddings: {output_path} shape={arr.shape}", enabled=progress_on)
+    progress_write(
+        f"[embed] saved embeddings: {output_path} shape={arr.shape}",
+        enabled=progress_on,
+    )
     progress_write(f"[embed] saved metadata  : {sidecar}", enabled=progress_on)
     return output_path, (int(arr.shape[0]), int(arr.shape[1]))
 
@@ -257,7 +274,9 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Extract tile embeddings from a manifest CSV (image_path column)."
     )
-    parser.add_argument("--manifest", required=True, type=Path, help="Path to manifest CSV.")
+    parser.add_argument(
+        "--manifest", required=True, type=Path, help="Path to manifest CSV."
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -272,7 +291,9 @@ def parse_args():
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="auto", help="auto|cpu|cuda|cuda:0")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing output file.")
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing output file."
+    )
     parser.add_argument(
         "--progress",
         choices=["auto", "on", "off"],
@@ -280,8 +301,6 @@ def parse_args():
         help="Progress display mode: auto=TTY only, on=always, off=never.",
     )
     return parser.parse_args()
-
-
 
 
 def _resolve_specs(model_names: list[str]) -> list[tuple[str, ModelSpec]]:
@@ -302,7 +321,9 @@ def main():
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    progress_write(f"[embed] models: {', '.join(model_names)}", enabled=progress_enabled)
+    progress_write(
+        f"[embed] models: {', '.join(model_names)}", enabled=progress_enabled
+    )
     progress_write(f"[embed] output_dir: {output_dir}", enabled=progress_enabled)
 
     statuses: list[dict] = []
@@ -314,11 +335,18 @@ def main():
     ) as model_bar:
         for model_name, spec in model_specs:
             model_bar.set_postfix_str(f"{model_name}:prepare")
-            progress_write(f"\n[embed] === model: {model_name} ===", enabled=progress_enabled)
+            progress_write(
+                f"\n[embed] === model: {model_name} ===", enabled=progress_enabled
+            )
             output = _output_path_in_dir(args.manifest, output_dir, model_name)
             if output.exists() and not args.force:
-                progress_write(f"[embed] output exists, skipping: {output}", enabled=progress_enabled)
-                statuses.append({"model": model_name, "status": "skipped", "output": str(output)})
+                progress_write(
+                    f"[embed] output exists, skipping: {output}",
+                    enabled=progress_enabled,
+                )
+                statuses.append(
+                    {"model": model_name, "status": "skipped", "output": str(output)}
+                )
                 model_bar.update(1)
                 continue
 
@@ -334,9 +362,14 @@ def main():
                     progress_enabled=progress_enabled,
                     tile_progress_leave=False,
                 )
-                statuses.append({"model": model_name, "status": "ok", "output": str(output)})
+                statuses.append(
+                    {"model": model_name, "status": "ok", "output": str(output)}
+                )
             except Exception as exc:  # noqa: BLE001
-                progress_write(f"[embed] failed for model '{model_name}': {exc}", enabled=progress_enabled)
+                progress_write(
+                    f"[embed] failed for model '{model_name}': {exc}",
+                    enabled=progress_enabled,
+                )
                 statuses.append(
                     {
                         "model": model_name,
@@ -352,10 +385,15 @@ def main():
     n_skip = sum(1 for s in statuses if s["status"] == "skipped")
     n_fail = sum(1 for s in statuses if s["status"] == "failed")
     progress_write("\n[embed] === summary ===", enabled=progress_enabled)
-    progress_write(f"[embed] ok={n_ok} skipped={n_skip} failed={n_fail}", enabled=progress_enabled)
+    progress_write(
+        f"[embed] ok={n_ok} skipped={n_skip} failed={n_fail}", enabled=progress_enabled
+    )
     for s in statuses:
         error_suffix = f" | error={s['error']}" if s["status"] == "failed" else ""
-        progress_write(f"[embed] {s['model']}: {s['status']} -> {s['output']}{error_suffix}", enabled=progress_enabled)
+        progress_write(
+            f"[embed] {s['model']}: {s['status']} -> {s['output']}{error_suffix}",
+            enabled=progress_enabled,
+        )
 
     if n_fail > 0:
         raise SystemExit(1)

@@ -11,7 +11,7 @@ def _dataset_wide_manifest() -> pd.DataFrame:
             "sample_id": ["a_c1", "a_c2", "b_c1", "b_c2"],
             "image_path": [f"/tmp/{i}.png" for i in range(4)],
             "label": ["A", "A", "B", "B"],
-            "medical_center": ["C1", "C2", "C1", "C2"],
+            "scanner_vendor": ["V1", "V2", "V1", "V2"],
             "slide_id": [f"slide-{i}" for i in range(4)],
             "dataset": ["toy"] * 4,
         }
@@ -36,7 +36,7 @@ def _paired_manifest_single_subset() -> pd.DataFrame:
             "sample_id": [f"s{i}" for i in range(8)],
             "image_path": [f"/tmp/{i}.png" for i in range(8)],
             "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
-            "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
+            "scanner_vendor": ["V1", "V1", "V2", "V2", "V1", "V1", "V2", "V2"],
             "slide_id": [f"slide-{i}" for i in range(8)],
             "dataset": ["toy"] * 8,
             "subset": ["pair0"] * 8,
@@ -74,7 +74,10 @@ def _paired_features_repeated_subset_memberships() -> np.ndarray:
 
 
 def _metric_kwargs(metric_cls) -> dict:
-    return {"tau": 0.2} if metric_cls is MaRI else {}
+    kwargs = {"confounder_column": "scanner_vendor"}
+    if metric_cls is MaRI:
+        kwargs["tau"] = 0.2
+    return kwargs
 
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
@@ -101,7 +104,9 @@ def test_paired_compute_returns_occurrence_aligned_outputs(metric_cls) -> None:
 
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
-def test_paired_keeps_repeated_subset_memberships_as_distinct_occurrences(metric_cls) -> None:
+def test_paired_keeps_repeated_subset_memberships_as_distinct_occurrences(
+    metric_cls,
+) -> None:
     manifest = _paired_manifest_repeated_subset_memberships()
     result = metric_cls.compute(
         features=_paired_features_repeated_subset_memberships(),
@@ -143,7 +148,9 @@ def test_dataset_wide_compute_returns_expected_exact_value(metric_cls) -> None:
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
 @pytest.mark.parametrize("evaluation_design", ["paired_2x2", "dataset_wide"])
-def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: str) -> None:
+def test_compute_curve_matches_single_k_compute(
+    metric_cls, evaluation_design: str
+) -> None:
     if evaluation_design == "paired_2x2":
         manifest = _paired_manifest_single_subset()
         features = _paired_features_single_subset()
@@ -155,6 +162,7 @@ def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: s
     curve = metric_cls.compute_curve(
         features=features,
         manifest=manifest,
+        confounder_column="scanner_vendor",
         evaluation_design=evaluation_design,
         k_values=[1],
         **curve_kwargs,
@@ -176,6 +184,7 @@ def test_compute_rejects_unknown_evaluation_design() -> None:
         RI.compute(
             features=_dataset_wide_features(),
             manifest=_dataset_wide_manifest(),
+            confounder_column="scanner_vendor",
             evaluation_design="auto",
             k_candidates=[1],
         )
@@ -195,12 +204,24 @@ def test_paired_requires_subset_metadata(metric_cls) -> None:
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
 def test_exclude_centers_is_not_supported(metric_cls) -> None:
-    with pytest.raises(TypeError, match="exclude_centers"):
+    with pytest.raises(TypeError, match="exclude_confounders"):
         metric_cls.compute(
             features=_dataset_wide_features(),
             manifest=_dataset_wide_manifest(),
             evaluation_design="dataset_wide",
             k_candidates=[1],
-            exclude_centers=["C1"],
+            exclude_confounders=["V1"],
             **_metric_kwargs(metric_cls),
+        )
+
+
+@pytest.mark.parametrize("metric_cls", [RI, MaRI])
+def test_compute_requires_explicit_confounder_column(metric_cls) -> None:
+    with pytest.raises(TypeError, match="confounder_column"):
+        metric_cls.compute(
+            features=_dataset_wide_features(),
+            manifest=_dataset_wide_manifest(),
+            evaluation_design="dataset_wide",
+            k_candidates=[1],
+            **({"tau": 0.2} if metric_cls is MaRI else {}),
         )

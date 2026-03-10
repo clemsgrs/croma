@@ -13,25 +13,25 @@ if str(SCRIPTS) not in sys.path:
 import benchmark as bm
 import croma.metrics.neighbors as nb
 from croma import MaRI, RI
-from croma.metrics.pairs import resolve_manifest_subsets
+from croma.metrics.pairs import normalize_manifest, resolve_manifest_subsets
 
 
 def _paired_manifest() -> pd.DataFrame:
     base_rows = [
-        ("s0", "/tmp/s0.png", "A", "C1", "sl0"),
-        ("s1", "/tmp/s1.png", "A", "C2", "sl1"),
-        ("s2", "/tmp/s2.png", "B", "C1", "sl2"),
-        ("s3", "/tmp/s3.png", "B", "C2", "sl3"),
+        ("s0", "/tmp/s0.png", "A", "V1", "sl0"),
+        ("s1", "/tmp/s1.png", "A", "V2", "sl1"),
+        ("s2", "/tmp/s2.png", "B", "V1", "sl2"),
+        ("s3", "/tmp/s3.png", "B", "V2", "sl3"),
     ]
     rows: list[dict[str, str]] = []
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, center, slide_id in base_rows:
+        for sample_id, image_path, label, confounder, slide_id in base_rows:
             rows.append(
                 {
                     "sample_id": sample_id,
                     "image_path": image_path,
                     "label": label,
-                    "medical_center": center,
+                    "scanner_vendor": confounder,
                     "slide_id": slide_id,
                     "subset": subset,
                     "dataset": "toy",
@@ -63,14 +63,14 @@ def _install_noop_plots(monkeypatch) -> None:
 
     for name in (
         "plot_benchmark_6panel_summary",
-        "plot_bio_vs_center_scatter",
+        "plot_bio_vs_confounder_scatter",
         "plot_ccmr_ltm_comparison",
         "plot_ccmr_m_sweep_with_ltm",
         "plot_ccmr_sample_distributions",
         "plot_ccmr_trend_quadrants",
         "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
-        "plot_knn_center_k_sweep",
+        "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
         "plot_mari_vs_ri_scatter",
         "plot_ri_k_sweep",
@@ -84,12 +84,16 @@ def test_paired_cached_artifacts_match_uncached_metric_outputs() -> None:
     k_values = [1, 3]
     selected_k = 1
     normalized = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-12)
-    subsets = resolve_manifest_subsets(manifest)
+    canonical_manifest = normalize_manifest(
+        manifest, confounder_column="scanner_vendor", source="manifest"
+    )
+    subsets = resolve_manifest_subsets(canonical_manifest)
 
     for metric_cls, extra_kwargs in ((RI, {}), (MaRI, {"tau": 0.2})):
         uncached = metric_cls._compute_artifacts(
             features=features,
             manifest=manifest,
+            confounder_column="scanner_vendor",
             k_values=k_values,
             evaluation_design="paired_2x2",
             selected_k=selected_k,
@@ -119,8 +123,15 @@ def test_paired_cached_artifacts_match_uncached_metric_outputs() -> None:
         assert cached.result.k == uncached.result.k
         assert cached.result.value == uncached.result.value
         assert cached.result.std == uncached.result.std
-        np.testing.assert_array_equal(cached.result.pair_values, uncached.result.pair_values)
-        np.testing.assert_allclose(cached.result.sample_values, uncached.result.sample_values, atol=0.0, rtol=0.0)
+        np.testing.assert_array_equal(
+            cached.result.pair_values, uncached.result.pair_values
+        )
+        np.testing.assert_allclose(
+            cached.result.sample_values,
+            uncached.result.sample_values,
+            atol=0.0,
+            rtol=0.0,
+        )
         np.testing.assert_allclose(
             cached.result.sample_values_aligned,
             uncached.result.sample_values_aligned,
@@ -132,15 +143,21 @@ def test_paired_cached_artifacts_match_uncached_metric_outputs() -> None:
             cached.result.occurrence_defined_mask,
             uncached.result.occurrence_defined_mask,
         )
-        np.testing.assert_array_equal(cached.result.sample_undefined_types, uncached.result.sample_undefined_types)
-        np.testing.assert_array_equal(cached.result.occurrence_subsets, uncached.result.occurrence_subsets)
+        np.testing.assert_array_equal(
+            cached.result.sample_undefined_types, uncached.result.sample_undefined_types
+        )
+        np.testing.assert_array_equal(
+            cached.result.occurrence_subsets, uncached.result.occurrence_subsets
+        )
         np.testing.assert_array_equal(
             cached.result.occurrence_source_indices,
             uncached.result.occurrence_source_indices,
         )
 
 
-def test_benchmark_paired_prepares_neighbors_once_per_subset(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_paired_prepares_neighbors_once_per_subset(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     _paired_manifest().to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
@@ -208,6 +225,8 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(monkeypatch, tmp_pa
             "M1",
             "--output-dir",
             str(output_dir),
+            "--confounder-column",
+            "scanner_vendor",
             "--evaluation-design",
             "paired_2x2",
             "--k-candidates",
@@ -220,8 +239,12 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(monkeypatch, tmp_pa
     assert bm.main() == 0
     assert neighbor_prepare_calls["count"] == 2
 
-    per_sample_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv")
-    metrics_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "metrics.csv")
+    per_sample_df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv"
+    )
+    metrics_df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "metrics.csv"
+    )
     assert len(per_sample_df) == 8
     assert per_sample_df["occurrence_index"].tolist() == list(range(8))
     assert set(per_sample_df["subset"]) == {"pair1", "pair2"}

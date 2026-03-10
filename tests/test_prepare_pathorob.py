@@ -18,12 +18,12 @@ def _write_csv(path: Path, rows: list[dict[str, str]]) -> None:
 
 def _is_complete_2x2_subset(df: pd.DataFrame) -> bool:
     labels = sorted(df["label"].astype(str).unique().tolist())
-    centers = sorted(df["medical_center"].astype(str).unique().tolist())
+    centers = sorted(df["confounder"].astype(str).unique().tolist())
     if len(labels) != 2 or len(centers) != 2:
         return False
     for label in labels:
         for center in centers:
-            if int(((df["label"] == label) & (df["medical_center"] == center)).sum()) <= 0:
+            if int(((df["label"] == label) & (df["confounder"] == center)).sum()) <= 0:
                 return False
     return True
 
@@ -56,7 +56,9 @@ import prepare_pathorob  # noqa: F401
     assert completed.returncode == 0, completed.stderr
 
 
-def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(tmp_path: Path) -> None:
+def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(
+    tmp_path: Path,
+) -> None:
     metadata_dir = tmp_path / "metadata"
     manifest_dir = tmp_path / "manifests"
     metadata_dir.mkdir()
@@ -69,7 +71,7 @@ def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(tmp_path: 
                 "sample_id": f"s{i}",
                 "image_path": f"/tmp/{i}.png",
                 "label": label,
-                "medical_center": center,
+                "confounder": center,
                 "slide_id": slide,
                 "patch_id": patch,
             }
@@ -91,7 +93,7 @@ def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(tmp_path: 
                 "slide_id": slide,
                 "patch_id": patch,
                 "biological_class": label,
-                "medical_center": center,
+                "confounder": center,
             }
             for subset, label, center, slide, patch in [
                 ("normal-RUMC", "normal", "RUMC", "slide_n_r", "p0"),
@@ -117,7 +119,9 @@ def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(tmp_path: 
     assert _is_complete_2x2_subset(out_df)
 
 
-def test_align_dataset_tolkach_reduced_expands_cell_buckets_into_quartets(tmp_path: Path) -> None:
+def test_align_dataset_tolkach_reduced_expands_cell_buckets_into_quartets(
+    tmp_path: Path,
+) -> None:
     metadata_dir = tmp_path / "metadata"
     manifest_dir = tmp_path / "manifests"
     metadata_dir.mkdir()
@@ -138,7 +142,7 @@ def test_align_dataset_tolkach_reduced_expands_cell_buckets_into_quartets(tmp_pa
                     "sample_id": sample_id,
                     "image_path": f"/tmp/{sample_id}.png",
                     "label": label,
-                    "medical_center": center,
+                    "confounder": center,
                     "slide_id": slide,
                     "patch_id": patch,
                 }
@@ -149,7 +153,7 @@ def test_align_dataset_tolkach_reduced_expands_cell_buckets_into_quartets(tmp_pa
                     "slide_id": slide,
                     "patch_id": patch,
                     "biological_class": label,
-                    "medical_center": center,
+                    "confounder": center,
                 }
             )
 
@@ -175,7 +179,9 @@ def test_align_dataset_tolkach_reduced_expands_cell_buckets_into_quartets(tmp_pa
         assert _is_complete_2x2_subset(subset_df)
 
 
-def test_align_dataset_tcga_2x2_keeps_explicit_quartet_memberships(tmp_path: Path) -> None:
+def test_align_dataset_tcga_2x2_keeps_explicit_quartet_memberships(
+    tmp_path: Path,
+) -> None:
     metadata_dir = tmp_path / "metadata"
     manifest_dir = tmp_path / "manifests"
     metadata_dir.mkdir()
@@ -193,7 +199,7 @@ def test_align_dataset_tcga_2x2_keeps_explicit_quartet_memberships(tmp_path: Pat
                 "sample_id": f"{slide}__{patch}",
                 "image_path": f"/tmp/{slide}__{patch}.png",
                 "label": label,
-                "medical_center": center,
+                "confounder": center,
                 "slide_id": slide,
                 "patch_id": patch,
             }
@@ -207,7 +213,7 @@ def test_align_dataset_tcga_2x2_keeps_explicit_quartet_memberships(tmp_path: Pat
                 "slide_id": row["slide_id"],
                 "patch_id": row["patch_id"],
                 "biological_class": row["label"],
-                "medical_center": row["medical_center"],
+                "confounder": row["confounder"],
             }
             for row in rows
         ],
