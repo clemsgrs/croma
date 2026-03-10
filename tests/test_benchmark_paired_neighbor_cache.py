@@ -11,9 +11,9 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import benchmark as bm
-import mari.metrics.neighbors as nb
-from mari import MaRI, RI
-from mari.metrics.pairs import resolve_manifest_subsets
+import croma.metrics.neighbors as nb
+from croma import MaRI, RI
+from croma.metrics.pairs import resolve_manifest_subsets
 
 
 def _paired_manifest() -> pd.DataFrame:
@@ -64,11 +64,11 @@ def _install_noop_plots(monkeypatch) -> None:
     for name in (
         "plot_benchmark_6panel_summary",
         "plot_bio_vs_center_scatter",
-        "plot_ccrr_ltm_comparison",
-        "plot_ccrr_m_sweep_with_ltm",
-        "plot_ccrr_sample_distributions",
-        "plot_ccrr_trend_quadrants",
-        "plot_ccrr_vs_mari_scatter",
+        "plot_ccmr_ltm_comparison",
+        "plot_ccmr_m_sweep_with_ltm",
+        "plot_ccmr_sample_distributions",
+        "plot_ccmr_trend_quadrants",
+        "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_center_k_sweep",
         "plot_mari_k_sweep",

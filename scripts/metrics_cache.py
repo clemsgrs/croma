@@ -8,8 +8,8 @@ import hashlib
 import numpy as np
 from metrics_io import safe_model_name
 
-CACHE_SCHEMA_VERSION = 1
-CACHE_CODE_FINGERPRINT = "benchmark-metrics-v1"
+CACHE_SCHEMA_VERSION = 2
+CACHE_CODE_FINGERPRINT = "cross-margin-rename-v1"
 
 
 def _normalize_for_key(value: object) -> object:

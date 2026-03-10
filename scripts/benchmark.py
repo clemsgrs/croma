@@ -14,23 +14,23 @@ if str(ROOT) not in sys.path:
 import extract_embeddings as ee
 from model_registry import ModelSpec, _build_model_registry, _parse_models
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
-from mari import CCRR, MaRI, RI
-from mari.metrics.neighbors import (
+from croma import CCMR, MaRI, RI
+from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
     _normalize_k_values,
     _select_k_from_balanced_accuracy,
 )
-from mari.metrics.pairs import (
+from croma.metrics.pairs import (
     load_manifest,
     normalize_center_values,
     resolve_manifest_subsets,
     retain_complete_subset_memberships,
 )
-from mari.types import CCRRResult
+from croma.types import CCMRResult
 from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
     StreamingMetricsWriter,
-    ccrr_search_signature,
+    ccmr_search_signature,
     excluded_centers_signature,
     k_candidates_signature,
     parse_k_candidates,
@@ -41,11 +41,11 @@ from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
     plot_benchmark_6panel_summary,
     plot_bio_vs_center_scatter,
-    plot_ccrr_ltm_comparison,
-    plot_ccrr_m_sweep_with_ltm,
-    plot_ccrr_sample_distributions,
-    plot_ccrr_trend_quadrants,
-    plot_ccrr_vs_mari_scatter,
+    plot_ccmr_ltm_comparison,
+    plot_ccmr_m_sweep_with_ltm,
+    plot_ccmr_sample_distributions,
+    plot_ccmr_trend_quadrants,
+    plot_ccmr_vs_mari_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_center_k_sweep,
     plot_mari_k_sweep,
@@ -228,7 +228,7 @@ def _parse_args() -> argparse.Namespace:
         "--evaluation-design",
         default="paired_2x2",
         choices=["paired_2x2", "dataset_wide"],
-        help="Evaluation design for RI/MaRI/CCRR.",
+        help="Evaluation design for RI/MaRI/CCMR.",
     )
     parser.add_argument("--k-candidates", default="3,5,7,10,15,20,25", help="Comma-separated k candidates.")
     parser.add_argument(
@@ -239,28 +239,28 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
     parser.add_argument(
-        "--ccrr-m-max",
+        "--ccmr-m-max",
         type=int,
         default=20,
-        help="Maximum m for CCRR sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
+        help="Maximum m for CCMR sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
     )
     parser.add_argument(
-        "--ccrr-start-k",
+        "--ccmr-start-k",
         type=int,
         default=200,
-        help="Initial k for CCRR iterative neighbor search (default 200).",
+        help="Initial k for CCMR iterative neighbor search (default 200).",
     )
     parser.add_argument(
-        "--ccrr-k-growth-factor",
+        "--ccmr-k-growth-factor",
         type=float,
         default=2.0,
-        help="Geometric growth factor for CCRR iterative k search (>1, default 2.0).",
+        help="Geometric growth factor for CCMR iterative k search (>1, default 2.0).",
     )
     parser.add_argument(
-        "--ccrr-alpha",
+        "--ccmr-alpha",
         type=float,
         default=0.10,
-        help="Tail percentile alpha used for CCRR Q_alpha/LTM_alpha reporting (default 0.10).",
+        help="Tail percentile alpha used for CCMR Q_alpha/LTM_alpha reporting (default 0.10).",
     )
     parser.add_argument(
         "--exclude-center",
@@ -362,8 +362,8 @@ def _build_per_sample_rows(
     evaluation_unit: str,
     selected_k: int,
     tau: float,
-    ccrr_alpha: float,
-    ccrr_search_sig: str,
+    ccmr_alpha: float,
+    ccmr_search_sig: str,
     excluded_centers_sig: str,
     ri_samples_aligned: np.ndarray,
     mari_samples_aligned: np.ndarray,
@@ -371,16 +371,16 @@ def _build_per_sample_rows(
     mari_defined_mask: np.ndarray,
     ri_undefined_types: np.ndarray,
     mari_undefined_types: np.ndarray,
-    ccrr_samples_aligned_by_m: np.ndarray,
-    ccrr_m_values: list[int],
+    ccmr_samples_aligned_by_m: np.ndarray,
+    ccmr_m_values: list[int],
 ) -> list[dict]:
     rows: list[dict] = []
     if ri_samples_aligned.shape != mari_samples_aligned.shape:
         raise RuntimeError("RI and MaRI aligned arrays must have the same shape")
     if ri_samples_aligned.shape[0] != len(aligned_manifest):
         raise RuntimeError("Aligned metric arrays must match the aligned evaluation manifest row count")
-    if ccrr_samples_aligned_by_m.shape != (len(aligned_manifest), len(ccrr_m_values)):
-        raise RuntimeError("Aligned CCRR array must match the aligned evaluation manifest row count and m sweep")
+    if ccmr_samples_aligned_by_m.shape != (len(aligned_manifest), len(ccmr_m_values)):
+        raise RuntimeError("Aligned CCMR array must match the aligned evaluation manifest row count and m sweep")
 
     for occurrence_index, sample_row in aligned_manifest.reset_index(drop=True).iterrows():
         source_sample_index = int(sample_row["source_sample_index"])
@@ -399,8 +399,8 @@ def _build_per_sample_rows(
             "medical_center": str(sample_row["medical_center"]),
             "k": int(selected_k),
             "tau": float(tau),
-            "ccrr_alpha": float(ccrr_alpha),
-            "ccrr_search": str(ccrr_search_sig),
+            "ccmr_alpha": float(ccmr_alpha),
+            "ccmr_search": str(ccmr_search_sig),
             "excluded_centers": str(excluded_centers_sig),
             "ri": float(ri_samples_aligned[occurrence_index]),
             "mari": float(mari_samples_aligned[occurrence_index]),
@@ -409,8 +409,8 @@ def _build_per_sample_rows(
             "ri_undefined_type": int(ri_undefined_types[occurrence_index]),
             "mari_undefined_type": int(mari_undefined_types[occurrence_index]),
         }
-        for m_pos, m in enumerate(ccrr_m_values):
-            record[f"ccrr_m{int(m)}"] = float(ccrr_samples_aligned_by_m[occurrence_index, m_pos])
+        for m_pos, m in enumerate(ccmr_m_values):
+            record[f"ccmr_m{int(m)}"] = float(ccmr_samples_aligned_by_m[occurrence_index, m_pos])
         rows.append(record)
     return rows
 
@@ -519,31 +519,31 @@ def _summary_from_payload(payload: dict) -> dict | None:
         return None
 
 
-def _ccrr_result_to_payload(result: CCRRResult, m: int) -> dict:
+def _ccmr_result_to_payload(result: CCMRResult, m: int) -> dict:
     return {
         "m": int(m),
-        "ccrr": float(result.value),
-        "ccrr_std": float(result.std),
-        "ccrr_undefined_frac": float(result.undefined_frac),
-        "ccrr_k_start": int(result.k_start),
-        "ccrr_k_final": int(result.k_final),
-        "ccrr_retries": int(result.retries),
-        "ccrr_alpha": float(result.alpha),
-        "ccrr_q_alpha": float(result.q_alpha),
-        "ccrr_ltm_alpha": float(result.ltm_alpha),
+        "ccmr": float(result.value),
+        "ccmr_std": float(result.std),
+        "ccmr_undefined_frac": float(result.undefined_frac),
+        "ccmr_k_start": int(result.k_start),
+        "ccmr_k_final": int(result.k_final),
+        "ccmr_retries": int(result.retries),
+        "ccmr_alpha": float(result.alpha),
+        "ccmr_q_alpha": float(result.q_alpha),
+        "ccmr_ltm_alpha": float(result.ltm_alpha),
     }
 
 
-def _ccrr_payload_from_results(results: dict[int, CCRRResult]) -> dict:
+def _ccmr_payload_from_results(results: dict[int, CCMRResult]) -> dict:
     return {
         "by_m": {
-            str(int(m)): _ccrr_result_to_payload(result=res, m=int(m))
+            str(int(m)): _ccmr_result_to_payload(result=res, m=int(m))
             for m, res in sorted(results.items(), key=lambda kv: int(kv[0]))
         }
     }
 
 
-def _ccrr_payload_to_by_m(payload: dict, *, expected_m_values: list[int]) -> dict[int, dict] | None:
+def _ccmr_payload_to_by_m(payload: dict, *, expected_m_values: list[int]) -> dict[int, dict] | None:
     if not isinstance(payload, dict):
         return None
     raw_by_m = payload.get("by_m")
@@ -558,26 +558,26 @@ def _ccrr_payload_to_by_m(payload: dict, *, expected_m_values: list[int]) -> dic
     return by_m
 
 
-def _compute_ccrr_by_m(
+def _compute_ccmr_by_m(
     *,
     features: np.ndarray,
     manifest: pd.DataFrame,
     evaluation_design: str,
     m_values: list[int],
-    ccrr_start_k: int,
-    ccrr_k_growth_factor: float,
-    ccrr_alpha: float,
-) -> dict[int, CCRRResult]:
+    ccmr_start_k: int,
+    ccmr_k_growth_factor: float,
+    ccmr_alpha: float,
+) -> dict[int, CCMRResult]:
     return cast(
-        dict[int, CCRRResult],
-        CCRR.compute(
+        dict[int, CCMRResult],
+        CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design=evaluation_design,
             m=[int(m) for m in m_values],
-            alpha=float(ccrr_alpha),
-            start_k=int(ccrr_start_k),
-            k_growth_factor=float(ccrr_k_growth_factor),
+            alpha=float(ccmr_alpha),
+            start_k=int(ccmr_start_k),
+            k_growth_factor=float(ccmr_k_growth_factor),
         ),
     )
 
@@ -586,14 +586,14 @@ def _compute_ccrr_by_m(
 def main() -> int:
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
-    if int(args.ccrr_start_k) < 1:
-        raise ValueError("--ccrr-start-k must be >= 1")
-    if float(args.ccrr_k_growth_factor) <= 1.0:
-        raise ValueError("--ccrr-k-growth-factor must be > 1")
-    if float(args.ccrr_alpha) <= 0.0 or float(args.ccrr_alpha) > 1.0:
-        raise ValueError("--ccrr-alpha must be in (0, 1]")
-    if int(args.ccrr_m_max) < 1:
-        raise ValueError("--ccrr-m-max must be >= 1")
+    if int(args.ccmr_start_k) < 1:
+        raise ValueError("--ccmr-start-k must be >= 1")
+    if float(args.ccmr_k_growth_factor) <= 1.0:
+        raise ValueError("--ccmr-k-growth-factor must be > 1")
+    if float(args.ccmr_alpha) <= 0.0 or float(args.ccmr_alpha) > 1.0:
+        raise ValueError("--ccmr-alpha must be in (0, 1]")
+    if int(args.ccmr_m_max) < 1:
+        raise ValueError("--ccmr-m-max must be >= 1")
 
     registry = _build_model_registry()
     models = _resolve_models(args.models, registry)
@@ -611,8 +611,8 @@ def main() -> int:
     metrics_json = results_dir / "metrics.json"
     k_sweep_csv = results_dir / "k_sweep_metrics.csv"
     k_sweep_json = results_dir / "k_sweep_metrics.json"
-    ccrr_m_sweep_csv = results_dir / "ccrr_m_sweep_metrics.csv"
-    ccrr_m_sweep_json = results_dir / "ccrr_m_sweep_metrics.json"
+    ccmr_m_sweep_csv = results_dir / "ccmr_m_sweep_metrics.csv"
+    ccmr_m_sweep_json = results_dir / "ccmr_m_sweep_metrics.json"
     per_sample_csv = _per_sample_metrics_path(results_dir)
     per_sample_json = _per_sample_metrics_json_path(results_dir)
 
@@ -623,14 +623,14 @@ def main() -> int:
         k_candidates=k_candidates,
         continuous_k_sweep_max=int(args.continuous_k_sweep_max),
     )
-    ccrr_m_values = list(range(1, int(args.ccrr_m_max) + 1))
+    ccmr_m_values = list(range(1, int(args.ccmr_m_max) + 1))
     k_candidates_sig = k_candidates_signature(k_values)
     excluded_centers = normalize_center_values(args.exclude_center)
     excluded_centers_sig = excluded_centers_signature(excluded_centers)
-    ccrr_search_sig = ccrr_search_signature(
-        start_k=int(args.ccrr_start_k),
-        k_growth_factor=float(args.ccrr_k_growth_factor),
-        alpha=float(args.ccrr_alpha),
+    ccmr_search_sig = ccmr_search_signature(
+        start_k=int(args.ccmr_start_k),
+        k_growth_factor=float(args.ccmr_k_growth_factor),
+        alpha=float(args.ccmr_alpha),
     )
 
     extraction_status: dict[str, str] = {}
@@ -639,7 +639,7 @@ def main() -> int:
     evaluation_design = str(args.evaluation_design)
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
-    ccrr_m_sweep_rows: list[dict] = []
+    ccmr_m_sweep_rows: list[dict] = []
     per_sample_writer = StreamingMetricsWriter(csv_path=per_sample_csv, json_path=per_sample_json)
 
     progress_write(f"[benchmark] manifest={args.manifest}", enabled=progress_enabled)
@@ -786,40 +786,40 @@ def main() -> int:
                         input_fingerprint=input_fp,
                         params={"evaluation_design": evaluation_design, "k_values": k_values_param, "tau": tau_value},
                     ),
-                    "ccrr_m_sweep": build_cache_key(
-                        artifact_name="ccrr_m_sweep",
+                    "ccmr_m_sweep": build_cache_key(
+                        artifact_name="ccmr_m_sweep",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
-                            "m_max": int(args.ccrr_m_max),
-                            "start_k": int(args.ccrr_start_k),
-                            "k_growth_factor": float(args.ccrr_k_growth_factor),
-                            "alpha": float(args.ccrr_alpha),
+                            "m_max": int(args.ccmr_m_max),
+                            "start_k": int(args.ccmr_start_k),
+                            "k_growth_factor": float(args.ccmr_k_growth_factor),
+                            "alpha": float(args.ccmr_alpha),
                         },
                     ),
-                    "ccrr_m1_samples": build_cache_key(
-                        artifact_name="ccrr_m1_samples",
+                    "ccmr_m1_samples": build_cache_key(
+                        artifact_name="ccmr_m1_samples",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
-                            "m_max": int(args.ccrr_m_max),
-                            "start_k": int(args.ccrr_start_k),
-                            "k_growth_factor": float(args.ccrr_k_growth_factor),
-                            "alpha": float(args.ccrr_alpha),
+                            "m_max": int(args.ccmr_m_max),
+                            "start_k": int(args.ccmr_start_k),
+                            "k_growth_factor": float(args.ccmr_k_growth_factor),
+                            "alpha": float(args.ccmr_alpha),
                         },
                     ),
-                    "ccrr_samples_aligned_by_m": build_cache_key(
-                        artifact_name="ccrr_samples_aligned_by_m",
+                    "ccmr_samples_aligned_by_m": build_cache_key(
+                        artifact_name="ccmr_samples_aligned_by_m",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
-                            "m_max": int(args.ccrr_m_max),
-                            "start_k": int(args.ccrr_start_k),
-                            "k_growth_factor": float(args.ccrr_k_growth_factor),
-                            "alpha": float(args.ccrr_alpha),
+                            "m_max": int(args.ccmr_m_max),
+                            "start_k": int(args.ccmr_start_k),
+                            "k_growth_factor": float(args.ccmr_k_growth_factor),
+                            "alpha": float(args.ccmr_alpha),
                         },
                     ),
                 }
@@ -836,9 +836,9 @@ def main() -> int:
                 mari_samples: np.ndarray | None = None
                 mari_samples_aligned: np.ndarray | None = None
                 mari_undefined_types: np.ndarray | None = None
-                ccrr_by_m: dict[int, dict] | None = None
-                ccrr_samples: np.ndarray | None = None
-                ccrr_samples_aligned_by_m: np.ndarray | None = None
+                ccmr_by_m: dict[int, dict] | None = None
+                ccmr_samples: np.ndarray | None = None
+                ccmr_samples_aligned_by_m: np.ndarray | None = None
     
                 all_cache_hit = not bool(args.recompute_metrics)
     
@@ -899,18 +899,18 @@ def main() -> int:
                     ):
                         all_cache_hit = False
     
-                    ccrr_by_m = _ccrr_payload_to_by_m(
-                        cache.get_json(key=keys["ccrr_m_sweep"]),
-                        expected_m_values=ccrr_m_values,
+                    ccmr_by_m = _ccmr_payload_to_by_m(
+                        cache.get_json(key=keys["ccmr_m_sweep"]),
+                        expected_m_values=ccmr_m_values,
                     )
-                    ccrr_samples = cache.get_npy(key=keys["ccrr_m1_samples"])
-                    ccrr_samples_aligned_by_m = cache.get_npy(key=keys["ccrr_samples_aligned_by_m"])
+                    ccmr_samples = cache.get_npy(key=keys["ccmr_m1_samples"])
+                    ccmr_samples_aligned_by_m = cache.get_npy(key=keys["ccmr_samples_aligned_by_m"])
                     if (
-                        ccrr_by_m is None
-                        or ccrr_samples is None
+                        ccmr_by_m is None
+                        or ccmr_samples is None
                         or not _npy_matches_shape(
-                            ccrr_samples_aligned_by_m,
-                            (len(aligned_manifest), len(ccrr_m_values)),
+                            ccmr_samples_aligned_by_m,
+                            (len(aligned_manifest), len(ccmr_m_values)),
                         )
                     ):
                         all_cache_hit = False
@@ -1127,49 +1127,49 @@ def main() -> int:
                         mari_undefined_types = np.asarray(mari_undefined_types, dtype=int)
                 ticker.done("MaRI", cached=mari_was_cached)
     
-                ccrr_was_cached = (
-                    ccrr_by_m is not None
-                    and ccrr_samples is not None
-                    and ccrr_samples_aligned_by_m is not None
+                ccmr_was_cached = (
+                    ccmr_by_m is not None
+                    and ccmr_samples is not None
+                    and ccmr_samples_aligned_by_m is not None
                 )
-                ticker.start("CCRR")
-                if ccrr_by_m is None or ccrr_samples is None or ccrr_samples_aligned_by_m is None:
-                    ccrr_results = _compute_ccrr_by_m(
+                ticker.start("CCMR")
+                if ccmr_by_m is None or ccmr_samples is None or ccmr_samples_aligned_by_m is None:
+                    ccmr_results = _compute_ccmr_by_m(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
                         evaluation_design=evaluation_design,
-                        m_values=ccrr_m_values,
-                        ccrr_start_k=int(args.ccrr_start_k),
-                        ccrr_k_growth_factor=float(args.ccrr_k_growth_factor),
-                        ccrr_alpha=float(args.ccrr_alpha),
+                        m_values=ccmr_m_values,
+                        ccmr_start_k=int(args.ccmr_start_k),
+                        ccmr_k_growth_factor=float(args.ccmr_k_growth_factor),
+                        ccmr_alpha=float(args.ccmr_alpha),
                     )
-                    ccrr_by_m = _ccrr_payload_to_by_m(
-                        _ccrr_payload_from_results(ccrr_results),
-                        expected_m_values=ccrr_m_values,
+                    ccmr_by_m = _ccmr_payload_to_by_m(
+                        _ccmr_payload_from_results(ccmr_results),
+                        expected_m_values=ccmr_m_values,
                     )
-                    if ccrr_by_m is None:
-                        raise RuntimeError("Failed to serialize ccrr m-sweep cache payload")
-                    ccrr_samples = np.asarray(ccrr_results[1].sample_values, dtype=float)
-                    ccrr_samples_aligned_by_m = np.column_stack(
+                    if ccmr_by_m is None:
+                        raise RuntimeError("Failed to serialize ccmr m-sweep cache payload")
+                    ccmr_samples = np.asarray(ccmr_results[1].sample_values, dtype=float)
+                    ccmr_samples_aligned_by_m = np.column_stack(
                         [
-                            np.asarray(ccrr_results[int(m)].sample_values_aligned, dtype=float)
-                            for m in ccrr_m_values
+                            np.asarray(ccmr_results[int(m)].sample_values_aligned, dtype=float)
+                            for m in ccmr_m_values
                         ]
                     )
-                    cache.put_json(key=keys["ccrr_m_sweep"], payload={"by_m": {str(k): v for k, v in ccrr_by_m.items()}})
-                    cache.put_npy(key=keys["ccrr_m1_samples"], values=ccrr_samples)
-                    cache.put_npy(key=keys["ccrr_samples_aligned_by_m"], values=ccrr_samples_aligned_by_m)
+                    cache.put_json(key=keys["ccmr_m_sweep"], payload={"by_m": {str(k): v for k, v in ccmr_by_m.items()}})
+                    cache.put_npy(key=keys["ccmr_m1_samples"], values=ccmr_samples)
+                    cache.put_npy(key=keys["ccmr_samples_aligned_by_m"], values=ccmr_samples_aligned_by_m)
                 else:
-                    ccrr_samples = np.asarray(ccrr_samples, dtype=float)
-                    if ccrr_samples_aligned_by_m is not None:
-                        ccrr_samples_aligned_by_m = np.asarray(ccrr_samples_aligned_by_m, dtype=float)
-                ticker.done("CCRR", cached=ccrr_was_cached)
+                    ccmr_samples = np.asarray(ccmr_samples, dtype=float)
+                    if ccmr_samples_aligned_by_m is not None:
+                        ccmr_samples_aligned_by_m = np.asarray(ccmr_samples_aligned_by_m, dtype=float)
+                ticker.done("CCMR", cached=ccmr_was_cached)
 
                 evaluation_unit = str(ri_summary["evaluation_unit"])
-                ccrr_m_rows_for_model: list[dict] = []
-                for m in ccrr_m_values:
-                    payload = ccrr_by_m[int(m)]
-                    ccrr_m_rows_for_model.append(
+                ccmr_m_rows_for_model: list[dict] = []
+                for m in ccmr_m_values:
+                    payload = ccmr_by_m[int(m)]
+                    ccmr_m_rows_for_model.append(
                         {
                             "dataset": str(args.dataset_name),
                             "model": str(model),
@@ -1178,31 +1178,31 @@ def main() -> int:
                             "tau": float(args.tau),
                             "k_candidates": str(k_candidates_sig),
                             "excluded_centers": str(excluded_centers_sig),
-                            "ccrr_search": str(ccrr_search_sig),
+                            "ccmr_search": str(ccmr_search_sig),
                             "m": int(payload["m"]),
-                            "ccrr": float(payload["ccrr"]),
-                            "ccrr_std": float(payload["ccrr_std"]),
-                            "ccrr_undefined_frac": float(payload["ccrr_undefined_frac"]),
-                            "ccrr_k_start": int(payload["ccrr_k_start"]),
-                            "ccrr_k_final": int(payload["ccrr_k_final"]),
-                            "ccrr_retries": int(payload["ccrr_retries"]),
-                            "ccrr_alpha": float(payload["ccrr_alpha"]),
-                            "ccrr_q_alpha": float(payload["ccrr_q_alpha"]),
-                            "ccrr_ltm_alpha": float(payload["ccrr_ltm_alpha"]),
+                            "ccmr": float(payload["ccmr"]),
+                            "ccmr_std": float(payload["ccmr_std"]),
+                            "ccmr_undefined_frac": float(payload["ccmr_undefined_frac"]),
+                            "ccmr_k_start": int(payload["ccmr_k_start"]),
+                            "ccmr_k_final": int(payload["ccmr_k_final"]),
+                            "ccmr_retries": int(payload["ccmr_retries"]),
+                            "ccmr_alpha": float(payload["ccmr_alpha"]),
+                            "ccmr_q_alpha": float(payload["ccmr_q_alpha"]),
+                            "ccmr_ltm_alpha": float(payload["ccmr_ltm_alpha"]),
                             "embedding_path": str(output_path),
                         }
                     )
     
-                m_sorted = sorted(ccrr_m_values)
-                ccrr_curve = [float(ccrr_by_m[m]["ccrr"]) for m in m_sorted]
-                finite_curve = [c for c in ccrr_curve if np.isfinite(c)]
+                m_sorted = sorted(ccmr_m_values)
+                ccmr_curve = [float(ccmr_by_m[m]["ccmr"]) for m in m_sorted]
+                finite_curve = [c for c in ccmr_curve if np.isfinite(c)]
                 if len(m_sorted) > 1:
                     _trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
-                    ccrr_auc = float(_trapz(ccrr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
+                    ccmr_auc = float(_trapz(ccmr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
                 else:
-                    ccrr_auc = ccrr_curve[0] if ccrr_curve else float("nan")
-                ccrr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
-                ccrr_delta = float(ccrr_curve[-1] - ccrr_curve[0]) if len(ccrr_curve) > 1 else 0.0
+                    ccmr_auc = ccmr_curve[0] if ccmr_curve else float("nan")
+                ccmr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
+                ccmr_delta = float(ccmr_curve[-1] - ccmr_curve[0]) if len(ccmr_curve) > 1 else 0.0
 
                 total_n = int(len(aligned_manifest))
                 ri_undefined_n = int(np.count_nonzero(~np.isfinite(ri_samples_aligned)))
@@ -1237,10 +1237,10 @@ def main() -> int:
                     values=ri_samples,
                 )
     
-                ccrr_result = ccrr_by_m[1]
-                ccrr_dist_path = _distribution_path(results_dir, "ccrr", model)
-                ccrr_dist_path.parent.mkdir(parents=True, exist_ok=True)
-                np.save(ccrr_dist_path, ccrr_samples)
+                ccmr_result = ccmr_by_m[1]
+                ccmr_dist_path = _distribution_path(results_dir, "ccmr", model)
+                ccmr_dist_path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(ccmr_dist_path, ccmr_samples)
     
                 row = {
                     "dataset": str(args.dataset_name),
@@ -1251,7 +1251,7 @@ def main() -> int:
                     "tau": float(args.tau),
                     "k_candidates": k_candidates_sig,
                     "excluded_centers": excluded_centers_sig,
-                    "ccrr_search": ccrr_search_sig,
+                    "ccmr_search": ccmr_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
                     "center_knn_bacc": float(knn_center_bacc_by_k[int(selected_k_center)]),
                     "selected_k_center": int(selected_k_center),
@@ -1269,20 +1269,20 @@ def main() -> int:
                     "mari_mixed_undefined_frac": mari_mixed_frac,
                     "ri_samples_path": str(saved_ri_dist_path),
                     "mari_samples_path": str(saved_dist_path),
-                    "ccrr": float(ccrr_result["ccrr"]),
-                    "ccrr_std": float(ccrr_result["ccrr_std"]),
-                    "ccrr_m": int(ccrr_result["m"]),
-                    "ccrr_undefined_frac": float(ccrr_result["ccrr_undefined_frac"]),
-                    "ccrr_k_start": int(ccrr_result["ccrr_k_start"]),
-                    "ccrr_k_final": int(ccrr_result["ccrr_k_final"]),
-                    "ccrr_retries": int(ccrr_result["ccrr_retries"]),
-                    "ccrr_alpha": float(ccrr_result["ccrr_alpha"]),
-                    "ccrr_q_alpha": float(ccrr_result["ccrr_q_alpha"]),
-                    "ccrr_ltm_alpha": float(ccrr_result["ccrr_ltm_alpha"]),
-                    "ccrr_auc": ccrr_auc,
-                    "ccrr_min": ccrr_min_val,
-                    "ccrr_delta": ccrr_delta,
-                    "ccrr_samples_path": str(ccrr_dist_path),
+                    "ccmr": float(ccmr_result["ccmr"]),
+                    "ccmr_std": float(ccmr_result["ccmr_std"]),
+                    "ccmr_m": int(ccmr_result["m"]),
+                    "ccmr_undefined_frac": float(ccmr_result["ccmr_undefined_frac"]),
+                    "ccmr_k_start": int(ccmr_result["ccmr_k_start"]),
+                    "ccmr_k_final": int(ccmr_result["ccmr_k_final"]),
+                    "ccmr_retries": int(ccmr_result["ccmr_retries"]),
+                    "ccmr_alpha": float(ccmr_result["ccmr_alpha"]),
+                    "ccmr_q_alpha": float(ccmr_result["ccmr_q_alpha"]),
+                    "ccmr_ltm_alpha": float(ccmr_result["ccmr_ltm_alpha"]),
+                    "ccmr_auc": ccmr_auc,
+                    "ccmr_min": ccmr_min_val,
+                    "ccmr_delta": ccmr_delta,
+                    "ccmr_samples_path": str(ccmr_dist_path),
                     "embedding_path": str(output_path),
                 }
                 rows.append(row)
@@ -1294,8 +1294,8 @@ def main() -> int:
                     evaluation_unit=evaluation_unit,
                     selected_k=int(ri_summary["k"]),
                     tau=float(args.tau),
-                    ccrr_alpha=float(args.ccrr_alpha),
-                    ccrr_search_sig=str(ccrr_search_sig),
+                    ccmr_alpha=float(args.ccmr_alpha),
+                    ccmr_search_sig=str(ccmr_search_sig),
                     excluded_centers_sig=str(excluded_centers_sig),
                     ri_samples_aligned=np.asarray(ri_samples_aligned, dtype=float),
                     mari_samples_aligned=np.asarray(mari_samples_aligned, dtype=float),
@@ -1303,8 +1303,8 @@ def main() -> int:
                     mari_defined_mask=np.isfinite(np.asarray(mari_samples_aligned, dtype=float)),
                     ri_undefined_types=np.asarray(ri_undefined_types, dtype=int),
                     mari_undefined_types=np.asarray(mari_undefined_types, dtype=int),
-                    ccrr_samples_aligned_by_m=np.asarray(ccrr_samples_aligned_by_m, dtype=float),
-                    ccrr_m_values=ccrr_m_values,
+                    ccmr_samples_aligned_by_m=np.asarray(ccmr_samples_aligned_by_m, dtype=float),
+                    ccmr_m_values=ccmr_m_values,
                 )
                 model_per_sample_rows = sorted(model_per_sample_rows, key=lambda row: int(row["occurrence_index"]))
                 model_csv, model_json = _per_sample_metrics_by_model_paths(results_dir, str(model))
@@ -1320,7 +1320,7 @@ def main() -> int:
                             "tau": float(args.tau),
                             "k_candidates": k_candidates_sig,
                             "excluded_centers": excluded_centers_sig,
-                            "ccrr_search": ccrr_search_sig,
+                            "ccmr_search": ccmr_search_sig,
                             "k": int(k),
                             "knn_bacc": float(knn_bacc_by_k[int(k)]),
                             "knn_center_bacc": float(knn_center_bacc_by_k[int(k)]),
@@ -1332,7 +1332,7 @@ def main() -> int:
                             "embedding_path": str(output_path),
                         }
                     )
-                ccrr_m_sweep_rows.extend(ccrr_m_rows_for_model)
+                ccmr_m_sweep_rows.extend(ccmr_m_rows_for_model)
 
                 metrics_status[model] = "cached" if all_cache_hit else "ok"
                 if all_cache_hit:
@@ -1340,15 +1340,15 @@ def main() -> int:
                 else:
                     ticker.log("[benchmark] metrics cache miss: partial/full recompute")
                 ticker.log(
-                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCRR={row['ccrr']:.4f}"
+                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCMR={row['ccmr']:.4f}"
                 )
                 undef_parts = []
                 if row["ri_undefined_frac"] > 0.0:
                     undef_parts.append(f"RI={100*row['ri_undefined_frac']:.1f}%")
                 if row["mari_undefined_frac"] > 0.0:
                     undef_parts.append(f"MaRI={100*row['mari_undefined_frac']:.1f}%")
-                if row["ccrr_undefined_frac"] > 0.0:
-                    undef_parts.append(f"CCRR={100*row['ccrr_undefined_frac']:.1f}%")
+                if row["ccmr_undefined_frac"] > 0.0:
+                    undef_parts.append(f"CCMR={100*row['ccmr_undefined_frac']:.1f}%")
                 if undef_parts:
                     ticker.log(f"[benchmark] undefined samples: {', '.join(undef_parts)}")
             except Exception as exc:  # noqa: BLE001
@@ -1361,18 +1361,18 @@ def main() -> int:
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
         save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
-        save_metrics(rows=ccrr_m_sweep_rows, csv_path=ccrr_m_sweep_csv, json_path=ccrr_m_sweep_json)
+        save_metrics(rows=ccmr_m_sweep_rows, csv_path=ccmr_m_sweep_csv, json_path=ccmr_m_sweep_json)
         plot_knn_bio_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png")
         plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
-        plot_ccrr_m_sweep_with_ltm(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_m_sweep.png")
-        plot_ccrr_trend_quadrants(rows=ccrr_m_sweep_rows, out_path=plots_dir / "ccrr_trend_quadrants.png")
-        plot_ccrr_ltm_comparison(rows=rows, out_path=plots_dir / "ccrr_ltm_comparison.png")
+        plot_ccmr_m_sweep_with_ltm(rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png")
+        plot_ccmr_trend_quadrants(rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_trend_quadrants.png")
+        plot_ccmr_ltm_comparison(rows=rows, out_path=plots_dir / "ccmr_ltm_comparison.png")
         plot_bio_vs_center_scatter(rows=rows, out_path=plots_dir / "bio_vs_center_scatter.png")
         plot_mari_vs_ri_scatter(rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png")
-        plot_ccrr_vs_mari_scatter(rows=rows, out_path=plots_dir / "ccrr_vs_mari_scatter.png")
-        plot_ccrr_sample_distributions(rows=rows, out_path=plots_dir / "ccrr_sample_distributions.png")
+        plot_ccmr_vs_mari_scatter(rows=rows, out_path=plots_dir / "ccmr_vs_mari_scatter.png")
+        plot_ccmr_sample_distributions(rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png")
         plot_benchmark_6panel_summary(
             rows=rows,
             k_sweep_rows=k_sweep_rows,
@@ -1388,8 +1388,8 @@ def main() -> int:
     progress_write(f"[benchmark] metrics_json={metrics_json}", enabled=progress_enabled)
     progress_write(f"[benchmark] k_sweep_csv={k_sweep_csv}", enabled=progress_enabled)
     progress_write(f"[benchmark] k_sweep_json={k_sweep_json}", enabled=progress_enabled)
-    progress_write(f"[benchmark] ccrr_m_sweep_csv={ccrr_m_sweep_csv}", enabled=progress_enabled)
-    progress_write(f"[benchmark] ccrr_m_sweep_json={ccrr_m_sweep_json}", enabled=progress_enabled)
+    progress_write(f"[benchmark] ccmr_m_sweep_csv={ccmr_m_sweep_csv}", enabled=progress_enabled)
+    progress_write(f"[benchmark] ccmr_m_sweep_json={ccmr_m_sweep_json}", enabled=progress_enabled)
     progress_write(f"[benchmark] plots_dir={plots_dir}", enabled=progress_enabled)
 
     if failures:

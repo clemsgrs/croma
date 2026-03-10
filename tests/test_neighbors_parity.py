@@ -4,7 +4,7 @@ import logging
 import numpy as np
 import pytest
 
-from mari.metrics import neighbors as nb
+from croma.metrics import neighbors as nb
 
 
 def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
@@ -97,7 +97,7 @@ def test_predict_labels_uses_per_sample_effective_k() -> None:
 
 
 def test_warn_when_reduced_effective_k_exceeds_ten_percent(caplog: pytest.LogCaptureFixture) -> None:
-    caplog.set_level(logging.WARNING, logger="mari")
+    caplog.set_level(logging.WARNING, logger="croma")
 
     nb._warn_if_effective_k_reduced(
         valid_counts=np.array([5] * 9 + [4], dtype=int),
@@ -214,7 +214,7 @@ def test_prepare_neighbors_stops_at_n_minus_one_when_unreachable(monkeypatch: py
 
 
 def test_warning_emitted_when_final_effective_k_still_reduced(caplog: pytest.LogCaptureFixture) -> None:
-    caplog.set_level(logging.WARNING, logger="mari")
+    caplog.set_level(logging.WARNING, logger="croma")
 
     nb._warn_if_effective_k_reduced(
         valid_counts=np.array([21] * 8 + [20, 20], dtype=int),

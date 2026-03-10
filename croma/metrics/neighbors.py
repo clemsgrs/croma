@@ -8,7 +8,7 @@ import numpy as np
 from sklearn.metrics import balanced_accuracy_score
 from sklearn.neighbors import NearestNeighbors
 
-logger = logging.getLogger("mari")
+logger = logging.getLogger("croma")
 
 _MIN_NEIGHBOR_BUFFER = 64
 _TARGET_EFFECTIVE_K_COVERAGE = 0.90

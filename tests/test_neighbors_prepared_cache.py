@@ -1,6 +1,6 @@
 import numpy as np
 
-from mari.metrics.neighbors import (
+from croma.metrics.neighbors import (
     _balanced_accuracy_by_k_from_prepared_neighbors,
     _knn_balanced_accuracy_by_k,
     _prepare_neighbors,

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from mari import CCRR, MaRI, RI
-from mari.metrics.pairs import load_manifest, normalize_center_values
+from croma import CCMR, MaRI, RI
+from croma.metrics.pairs import load_manifest, normalize_center_values
 
 
 def _parse_k_candidates(s: str) -> list[int]:
@@ -56,42 +56,42 @@ def main() -> None:
     mari_parser = sub.add_parser("mari", parents=[shared], help="Compute MaRI.")
     mari_parser.add_argument("--tau", type=float, default=0.2, help="Distance-decay temperature (>0).")
 
-    ccrr_shared = argparse.ArgumentParser(add_help=False)
-    ccrr_shared.add_argument("--manifest", required=True, help="Path to manifest CSV.")
-    ccrr_shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
-    ccrr_shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
-    ccrr_shared.add_argument(
+    ccmr_shared = argparse.ArgumentParser(add_help=False)
+    ccmr_shared.add_argument("--manifest", required=True, help="Path to manifest CSV.")
+    ccmr_shared.add_argument("--embeddings", required=True, help="Path to NPY embeddings.")
+    ccmr_shared.add_argument("--dataset-name", default="dataset", help="Dataset name for manifest loading.")
+    ccmr_shared.add_argument(
         "--evaluation-design",
         required=True,
         choices=["paired_2x2", "dataset_wide"],
         help="Evaluation design: paired_2x2=explicit manifest-defined 2x2 subsets, dataset_wide=one full-dataset evaluation.",
     )
-    ccrr_shared.add_argument(
+    ccmr_shared.add_argument(
         "--exclude-center",
         action="append",
         default=[],
         help="Medical center to exclude from computation. Repeat flag to exclude multiple centers.",
     )
-    ccrr_parser = sub.add_parser("ccrr", parents=[ccrr_shared], help="Compute CCRR.")
-    ccrr_parser.add_argument("--m", type=int, default=1, help="Number of SO/OS neighbors to average (>=1).")
-    ccrr_parser.add_argument("--alpha", type=float, default=0.10, help="Tail percentile for Q_alpha and LTM_alpha (default 0.10).")
-    ccrr_parser.add_argument(
+    ccmr_parser = sub.add_parser("ccmr", parents=[ccmr_shared], help="Compute CCMR.")
+    ccmr_parser.add_argument("--m", type=int, default=1, help="Number of SO/OS neighbors to average (>=1).")
+    ccmr_parser.add_argument("--alpha", type=float, default=0.10, help="Tail percentile for Q_alpha and LTM_alpha (default 0.10).")
+    ccmr_parser.add_argument(
         "--acceptance-threshold",
         type=float,
         default=0.0,
-        help="Stop CCRR search once undefined fraction is <= threshold (default 0.0).",
+        help="Stop CCMR search once undefined fraction is <= threshold (default 0.0).",
     )
-    ccrr_parser.add_argument(
+    ccmr_parser.add_argument(
         "--start-k",
         type=int,
         default=200,
-        help="Initial k for iterative CCRR neighbor search (default 200).",
+        help="Initial k for iterative CCMR neighbor search (default 200).",
     )
-    ccrr_parser.add_argument(
+    ccmr_parser.add_argument(
         "--k-growth-factor",
         type=float,
         default=2.0,
-        help="Geometric growth factor for CCRR iterative k search (>1, default 2.0).",
+        help="Geometric growth factor for CCMR iterative k search (>1, default 2.0).",
     )
 
     args = parser.parse_args()
@@ -99,8 +99,8 @@ def main() -> None:
     features = np.load(Path(args.embeddings))
     excluded_centers = normalize_center_values(args.exclude_center)
 
-    if args.command == "ccrr":
-        result = CCRR.compute(
+    if args.command == "ccmr":
+        result = CCMR.compute(
             features=features,
             manifest=manifest,
             evaluation_design=str(args.evaluation_design),
