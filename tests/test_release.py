@@ -1,33 +1,16 @@
-from pathlib import Path
-
 import release
 
 
-def test_release_targets_croma_init() -> None:
-    assert release.INIT_PY == release.ROOT / "croma" / "__init__.py"
+def test_write_version_updates_pyproject_and_runtime_init(monkeypatch, tmp_path) -> None:
+    pyproject = tmp_path / "pyproject.toml"
+    init_py = tmp_path / "__init__.py"
+    pyproject.write_text('[project]\nname = "cross-margin"\nversion = "0.1.0"\n', encoding="utf-8")
+    init_py.write_text('__version__ = "0.1.0"\n', encoding="utf-8")
 
+    monkeypatch.setattr(release, "PYPROJECT", pyproject)
+    monkeypatch.setattr(release, "INIT_PY", init_py)
 
-def test_main_stages_croma_init(monkeypatch) -> None:
-    commands: list[str] = []
+    release.write_version("0.1.1")
 
-    def fake_run(cmd: str, check: bool = True) -> str:
-        del check
-        commands.append(cmd)
-        if cmd == "git tag":
-            return ""
-        if cmd == "git remote get-url origin":
-            return "https://github.com/clemsgrs/MaRI.git"
-        return ""
-
-    monkeypatch.setattr(release, "run", fake_run)
-    monkeypatch.setattr(release, "ensure_clean_worktree", lambda: None)
-    monkeypatch.setattr(release, "get_current_version", lambda: "0.1.0")
-    monkeypatch.setattr(release, "write_version", lambda version: None)
-    monkeypatch.setattr(release, "create_pull_request", lambda branch, version: None)
-    monkeypatch.setattr(release, "open_release_draft", lambda tag: None)
-    monkeypatch.setattr("sys.argv", ["release.py", "--no-pr", "--no-draft"])
-
-    exit_code = release.main()
-
-    assert exit_code == 0
-    assert "git add pyproject.toml croma/__init__.py" in commands
+    assert 'version = "0.1.1"' in pyproject.read_text(encoding="utf-8")
+    assert '__version__ = "0.1.1"' in init_py.read_text(encoding="utf-8")
