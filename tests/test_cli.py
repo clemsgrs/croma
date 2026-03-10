@@ -25,9 +25,9 @@ def _write_manifest(path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                "sample_id,image_path,label,medical_center,slide_id,dataset",
-                "s0,/tmp/0.png,A,C1,sl0,wrong_name",
-                "s1,/tmp/1.png,B,C2,sl1,wrong_name",
+                "sample_id,image_path,label,scanner_vendor,slide_id,dataset",
+                "s0,/tmp/0.png,A,VendorA,sl0,wrong_name",
+                "s1,/tmp/1.png,B,VendorB,sl1,wrong_name",
             ]
         )
         + "\n",
@@ -37,28 +37,40 @@ def _write_manifest(path: Path) -> None:
 
 def _write_repeated_subset_manifest(path: Path) -> None:
     rows = [
-        ("s0", "/tmp/0.png", "A", "C1", "sl0"),
-        ("s1", "/tmp/1.png", "A", "C2", "sl1"),
-        ("s2", "/tmp/2.png", "B", "C1", "sl2"),
-        ("s3", "/tmp/3.png", "B", "C2", "sl3"),
+        ("s0", "/tmp/0.png", "A", "VendorA", "sl0"),
+        ("s1", "/tmp/1.png", "A", "VendorB", "sl1"),
+        ("s2", "/tmp/2.png", "B", "VendorA", "sl2"),
+        ("s3", "/tmp/3.png", "B", "VendorB", "sl3"),
     ]
     payload = [
-        "sample_id,image_path,label,medical_center,slide_id,subset,dataset",
+        "sample_id,image_path,label,scanner_vendor,slide_id,subset,dataset",
     ]
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, center, slide_id in rows:
+        for sample_id, image_path, label, confounder, slide_id in rows:
             payload.append(
-                ",".join([sample_id, image_path, label, center, slide_id, subset, "wrong_name"])
+                ",".join(
+                    [
+                        sample_id,
+                        image_path,
+                        label,
+                        confounder,
+                        slide_id,
+                        subset,
+                        "wrong_name",
+                    ]
+                )
             )
     path.write_text("\n".join(payload) + "\n", encoding="utf-8")
 
 
-def _write_embedding_manifest(path: Path, *, duplicate_first_row: bool = False, drop_last_row: bool = False) -> None:
+def _write_embedding_manifest(
+    path: Path, *, duplicate_first_row: bool = False, drop_last_row: bool = False
+) -> None:
     rows = [
-        ("s0", "/tmp/0.png", "A", "C1", "sl0"),
-        ("s1", "/tmp/1.png", "A", "C2", "sl1"),
-        ("s2", "/tmp/2.png", "B", "C1", "sl2"),
-        ("s3", "/tmp/3.png", "B", "C2", "sl3"),
+        ("s0", "/tmp/0.png", "A", "VendorA", "sl0"),
+        ("s1", "/tmp/1.png", "A", "VendorB", "sl1"),
+        ("s2", "/tmp/2.png", "B", "VendorA", "sl2"),
+        ("s3", "/tmp/3.png", "B", "VendorB", "sl3"),
     ]
     if drop_last_row:
         rows = rows[:-1]
@@ -67,7 +79,7 @@ def _write_embedding_manifest(path: Path, *, duplicate_first_row: bool = False, 
     path.write_text(
         "\n".join(
             [
-                "sample_id,image_path,label,medical_center,slide_id",
+                "sample_id,image_path,label,confounder,slide_id",
                 *[",".join(row) for row in rows],
             ]
         )
@@ -76,7 +88,9 @@ def _write_embedding_manifest(path: Path, *, duplicate_first_row: bool = False, 
     )
 
 
-def test_cli_uses_manifest_stem_for_dataset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_cli_uses_manifest_stem_for_dataset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     manifest_path = tmp_path / "camelyon.csv"
     embeddings_path = tmp_path / "embeddings.npy"
     _write_manifest(manifest_path)
@@ -97,6 +111,8 @@ def test_cli_uses_manifest_stem_for_dataset(monkeypatch: pytest.MonkeyPatch, tmp
             str(manifest_path),
             "--embeddings",
             str(embeddings_path),
+            "--confounder-column",
+            "scanner_vendor",
             "--evaluation-design",
             "dataset_wide",
             "--k-candidates",
@@ -124,6 +140,8 @@ def test_cli_builds_deduplicated_embedding_manifest(
             "build-embedding-manifest",
             "--manifest",
             str(manifest_path),
+            "--confounder-column",
+            "scanner_vendor",
             "--out",
             str(out_path),
         ],
@@ -135,7 +153,13 @@ def test_cli_builds_deduplicated_embedding_manifest(
     built = pd.read_csv(out_path, dtype=str)
     assert payload["manifest_rows"] == 8
     assert payload["embedding_manifest_rows"] == 4
-    assert built.columns.tolist() == ["sample_id", "image_path", "label", "medical_center", "slide_id"]
+    assert built.columns.tolist() == [
+        "sample_id",
+        "image_path",
+        "label",
+        "confounder",
+        "slide_id",
+    ]
     assert built["sample_id"].tolist() == ["s0", "s1", "s2", "s3"]
 
 
@@ -169,6 +193,8 @@ def test_cli_expand_embeddings_writes_manifest_aligned_npy(
             "expand-embeddings",
             "--manifest",
             str(manifest_path),
+            "--confounder-column",
+            "scanner_vendor",
             "--embedding-manifest",
             str(embedding_manifest_path),
             "--embeddings",
@@ -232,6 +258,8 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             str(manifest_path),
             "--embeddings",
             str(embeddings_path),
+            "--confounder-column",
+            "scanner_vendor",
             "--evaluation-design",
             "paired_2x2",
             "--k-candidates",
@@ -259,6 +287,8 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "m.csv",
             "--embeddings",
             "e.npy",
+            "--confounder-column",
+            "confounder",
             "--evaluation-design",
             "dataset_wide",
             "--dataset-name",
@@ -271,9 +301,11 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "m.csv",
             "--embeddings",
             "e.npy",
+            "--confounder-column",
+            "confounder",
             "--evaluation-design",
             "dataset_wide",
-            "--exclude-center",
+            "--exclude-confounder",
             "C1",
         ],
         [
@@ -285,6 +317,8 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "m.embed.csv",
             "--embeddings",
             "e.npy",
+            "--confounder-column",
+            "confounder",
             "--evaluation-design",
             "dataset_wide",
         ],
@@ -295,6 +329,8 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "m.csv",
             "--embeddings",
             "e.npy",
+            "--confounder-column",
+            "confounder",
             "--evaluation-design",
             "dataset_wide",
             "--acceptance-threshold",
@@ -302,8 +338,34 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
         ],
     ],
 )
-def test_cli_rejects_removed_flags(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_rejects_removed_flags(
+    argv: list[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(sys, "argv", argv)
+
+    with pytest.raises(SystemExit) as excinfo:
+        cli.main()
+
+    assert excinfo.value.code == 2
+
+
+def test_cli_requires_confounder_column(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli.py",
+            "ri",
+            "--manifest",
+            "m.csv",
+            "--embeddings",
+            "e.npy",
+            "--evaluation-design",
+            "dataset_wide",
+            "--k-candidates",
+            "1",
+        ],
+    )
 
     with pytest.raises(SystemExit) as excinfo:
         cli.main()

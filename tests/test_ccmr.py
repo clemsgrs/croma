@@ -1,4 +1,3 @@
-
 import inspect
 
 import numpy as np
@@ -27,7 +26,7 @@ def _make_manifest(
             "sample_id": [f"s{i}" for i in range(n)],
             "image_path": [f"/tmp/{i}.png" for i in range(n)],
             "label": labels,
-            "medical_center": centers,
+            "scanner_vendor": centers,
             "slide_id": slide_ids,
             "dataset": ["toy"] * n,
         }
@@ -59,6 +58,10 @@ def _toy_features_so_closer() -> tuple[np.ndarray, pd.DataFrame]:
     return features, manifest
 
 
+def _compute_ccmr(**kwargs):
+    return CCMR.compute(confounder_column="scanner_vendor", **kwargs)
+
+
 class TestComputeSampleCCMR:
 
     def test_basic_ratio(self) -> None:
@@ -88,7 +91,7 @@ class TestCCMRCompute:
 
     def test_compute_list_m_matches_individual_compute(self) -> None:
         features, manifest = _toy_features_so_closer()
-        by_m = CCMR.compute(
+        by_m = _compute_ccmr(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -96,8 +99,12 @@ class TestCCMRCompute:
         )
         assert isinstance(by_m, dict)
 
-        single_m1 = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
-        single_m2 = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=2)
+        single_m1 = _compute_ccmr(
+            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
+        )
+        single_m2 = _compute_ccmr(
+            features=features, manifest=manifest, evaluation_design="dataset_wide", m=2
+        )
 
         assert by_m[1].value == pytest.approx(single_m1.value)
         assert by_m[1].std == pytest.approx(single_m1.std)
@@ -111,7 +118,9 @@ class TestCCMRCompute:
         assert by_m[2].q_alpha == pytest.approx(single_m2.q_alpha)
         assert by_m[2].ltm_alpha == pytest.approx(single_m2.ltm_alpha)
 
-    def test_compute_list_m_uses_single_neighbor_search_for_multiple_m(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_compute_list_m_uses_single_neighbor_search_for_multiple_m(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         features, manifest = _toy_features_so_closer()
         calls = {"n": 0}
         original = ccmr_mod._iterative_typed_neighbor_search
@@ -121,7 +130,7 @@ class TestCCMRCompute:
             return original(**kwargs)
 
         monkeypatch.setattr(ccmr_mod, "_iterative_typed_neighbor_search", wrapped)
-        by_m = CCMR.compute(
+        by_m = _compute_ccmr(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -138,7 +147,7 @@ class TestCCMRCompute:
         if evaluation_design == "paired_2x2":
             manifest = manifest.copy()
             manifest["subset"] = "pair0"
-        result = CCMR.compute(
+        result = _compute_ccmr(
             features=features,
             manifest=manifest,
             evaluation_design=evaluation_design,
@@ -157,7 +166,9 @@ class TestCCMRCompute:
 
     def test_so_closer_yields_ccmr_above_one_dataset_wide(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        result = _compute_ccmr(
+            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
+        )
         assert result.value > 1.0
 
     def test_os_closer_yields_ccmr_below_one(self) -> None:
@@ -179,7 +190,9 @@ class TestCCMRCompute:
             ],
             dtype=float,
         )
-        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        result = _compute_ccmr(
+            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
+        )
         assert result.value < 1.0
 
     def test_all_same_label_and_center_are_undefined(self) -> None:
@@ -190,7 +203,9 @@ class TestCCMRCompute:
         )
         features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
 
-        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1)
+        result = _compute_ccmr(
+            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
+        )
 
         assert result.undefined_frac == pytest.approx(1.0)
         assert result.sample_values.shape[0] == 0
@@ -199,7 +214,9 @@ class TestCCMRCompute:
         assert result.occurrence_defined_mask.tolist() == [False] * len(manifest)
         assert np.isnan(result.sample_values_aligned).all()
 
-    def test_unresolved_rows_at_cap_warn(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_unresolved_rows_at_cap_warn(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         labels = ["A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2"]
         slides = ["s1", "s1", "s2", "s2"]
@@ -214,7 +231,7 @@ class TestCCMRCompute:
             dtype=float,
         )
 
-        result = CCMR.compute(
+        result = _compute_ccmr(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -226,14 +243,24 @@ class TestCCMRCompute:
         assert result.k_final == 3
         assert result.undefined_frac > 0.0
         assert any("could not find" in rec.message for rec in caplog.records)
-        assert any("dataset 'toy' (dataset_wide)" in rec.message for rec in caplog.records)
+        assert any(
+            "dataset 'toy' (dataset_wide)" in rec.message for rec in caplog.records
+        )
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=200)
+        result = _compute_ccmr(
+            features=features,
+            manifest=manifest,
+            evaluation_design="dataset_wide",
+            m=1,
+            start_k=200,
+        )
         assert result.k_start == len(manifest) - 1
 
-    def test_growth_schedule_follows_factor(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_growth_schedule_follows_factor(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         labels = ["A", "A", "A", "B", "B", "B", "A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2", "C1", "C2", "C2", "C1", "C2", "C1"]
         manifest = _make_manifest(n=10, labels=labels, centers=centers)
@@ -251,7 +278,9 @@ class TestCCMRCompute:
             def fit(self, _x: np.ndarray) -> "_FakeNN":
                 return self
 
-            def kneighbors(self, x: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
+            def kneighbors(
+                self, x: np.ndarray, n_neighbors: int
+            ) -> tuple[np.ndarray, np.ndarray]:
                 q = int(x.shape[0])
                 d = np.zeros((q, n_neighbors), dtype=float)
                 idx = np.tile(np.arange(n_neighbors, dtype=int) % 10, (q, 1))
@@ -262,9 +291,11 @@ class TestCCMRCompute:
             return np.zeros((len(query_indices),), dtype=bool)
 
         monkeypatch.setattr(ccmr_mod, "NearestNeighbors", _FakeNN)
-        monkeypatch.setattr(ccmr_mod, "_scan_typed_neighbors_for_query_rows", _never_define)
+        monkeypatch.setattr(
+            ccmr_mod, "_scan_typed_neighbors_for_query_rows", _never_define
+        )
 
-        result = CCMR.compute(
+        result = _compute_ccmr(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -277,7 +308,9 @@ class TestCCMRCompute:
         assert result.k_final == 9
         assert result.retries == 4
 
-    def test_queries_only_unresolved_samples_over_retries(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_queries_only_unresolved_samples_over_retries(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         labels = ["A", "A", "A", "A", "B", "B", "B", "B"]
         centers = ["C1", "C2", "C1", "C2", "C1", "C2", "C1", "C2"]
         manifest = _make_manifest(n=8, labels=labels, centers=centers)
@@ -297,7 +330,9 @@ class TestCCMRCompute:
             def fit(self, _x: np.ndarray) -> "_FakeNN":
                 return self
 
-            def kneighbors(self, x: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
+            def kneighbors(
+                self, x: np.ndarray, n_neighbors: int
+            ) -> tuple[np.ndarray, np.ndarray]:
                 q = int(x.shape[0])
                 query_sizes.append(q)
                 d = np.zeros((q, n_neighbors), dtype=float)
@@ -318,9 +353,11 @@ class TestCCMRCompute:
             return out
 
         monkeypatch.setattr(ccmr_mod, "NearestNeighbors", _FakeNN)
-        monkeypatch.setattr(ccmr_mod, "_scan_typed_neighbors_for_query_rows", _define_half_then_all)
+        monkeypatch.setattr(
+            ccmr_mod, "_scan_typed_neighbors_for_query_rows", _define_half_then_all
+        )
 
-        result = CCMR.compute(
+        result = _compute_ccmr(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -335,27 +372,51 @@ class TestCCMRCompute:
     def test_invalid_evaluation_design_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="evaluation_design"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="auto", m=1)
+            _compute_ccmr(
+                features=features, manifest=manifest, evaluation_design="auto", m=1
+            )
 
     def test_paired_requires_subset_metadata(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="subset"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="paired_2x2", m=1)
+            _compute_ccmr(
+                features=features,
+                manifest=manifest,
+                evaluation_design="paired_2x2",
+                m=1,
+            )
 
     def test_m_zero_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="m must be >= 1"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=0)
+            _compute_ccmr(
+                features=features,
+                manifest=manifest,
+                evaluation_design="dataset_wide",
+                m=0,
+            )
 
     def test_growth_factor_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="k_growth_factor"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, k_growth_factor=1.0)
+            _compute_ccmr(
+                features=features,
+                manifest=manifest,
+                evaluation_design="dataset_wide",
+                m=1,
+                k_growth_factor=1.0,
+            )
 
     def test_start_k_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="start_k"):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, start_k=0)
+            _compute_ccmr(
+                features=features,
+                manifest=manifest,
+                evaluation_design="dataset_wide",
+                m=1,
+                start_k=0,
+            )
 
     def test_api_alias(self) -> None:
         assert CCMR is CrossConfounderMarginRatio
@@ -363,4 +424,4 @@ class TestCCMRCompute:
     def test_manual_kmax_not_supported(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(TypeError):
-            CCMR.compute(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]
+            _compute_ccmr(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]

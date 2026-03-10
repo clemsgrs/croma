@@ -19,7 +19,9 @@ def test_resolve_progress_mode_off_is_false() -> None:
     assert pu.resolve_progress_mode("off") is False
 
 
-def test_resolve_progress_mode_auto_uses_isatty_true(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_progress_mode_auto_uses_isatty_true(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Err:
         @staticmethod
         def isatty() -> bool:
@@ -29,7 +31,9 @@ def test_resolve_progress_mode_auto_uses_isatty_true(monkeypatch: pytest.MonkeyP
     assert pu.resolve_progress_mode("auto") is True
 
 
-def test_resolve_progress_mode_auto_uses_isatty_false(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_progress_mode_auto_uses_isatty_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Err:
         @staticmethod
         def isatty() -> bool:

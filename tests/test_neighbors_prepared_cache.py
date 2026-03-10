@@ -22,7 +22,9 @@ def test_balanced_accuracy_from_prepared_neighbors_matches_direct_knn() -> None:
         dtype=float,
     )
     labels = np.asarray([0, 0, 1, 1, 0, 0, 1, 1], dtype=int)
-    slide_ids = np.asarray(["sl0", "sl1", "sl2", "sl3", "sl0b", "sl4", "sl5", "sl6"], dtype=object)
+    slide_ids = np.asarray(
+        ["sl0", "sl1", "sl2", "sl3", "sl0b", "sl4", "sl5", "sl6"], dtype=object
+    )
     k_values = [1, 3]
 
     direct = _knn_balanced_accuracy_by_k(
@@ -32,7 +34,9 @@ def test_balanced_accuracy_from_prepared_neighbors_matches_direct_knn() -> None:
         k_values=k_values,
         warn_context="toy",
     )
-    neigh_idx, _neigh_dist, valid_counts = _prepare_neighbors(features, slide_ids, max(k_values))
+    neigh_idx, _neigh_dist, valid_counts = _prepare_neighbors(
+        features, slide_ids, max(k_values)
+    )
     cached = _balanced_accuracy_by_k_from_prepared_neighbors(
         labels=labels,
         neigh_idx=neigh_idx,

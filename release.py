@@ -1,10 +1,8 @@
-
 import argparse
 import re
 import subprocess
 import sys
 from pathlib import Path
-
 
 ROOT = Path(__file__).resolve().parent
 PYPROJECT = ROOT / "pyproject.toml"
@@ -121,7 +119,9 @@ def main() -> int:
         default="v",
         help="Tag prefix, default 'v' (e.g. v0.1.1). Use empty string for bare tags.",
     )
-    parser.add_argument("--no-pr", action="store_true", help="Do not create a GitHub PR.")
+    parser.add_argument(
+        "--no-pr", action="store_true", help="Do not create a GitHub PR."
+    )
     parser.add_argument(
         "--no-draft", action="store_true", help="Do not print GitHub release draft URL."
     )

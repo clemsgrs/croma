@@ -11,7 +11,7 @@ def _paired_manifest() -> pd.DataFrame:
             "sample_id": [f"s{i}" for i in range(8)],
             "image_path": [f"/tmp/{i}.png" for i in range(8)],
             "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
-            "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
+            "scanner_vendor": ["V1", "V1", "V2", "V2", "V1", "V1", "V2", "V2"],
             "slide_id": [f"slide-{i}" for i in range(8)],
             "dataset": ["toy"] * 8,
             "subset": ["pair0"] * 8,
@@ -41,7 +41,7 @@ def _dataset_wide_undefined_manifest() -> pd.DataFrame:
             "sample_id": ["a1", "a2", "b1", "b2"],
             "image_path": [f"/tmp/{i}.png" for i in range(4)],
             "label": ["A", "A", "B", "B"],
-            "medical_center": ["C1", "C1", "C2", "C2"],
+            "scanner_vendor": ["V1", "V1", "V2", "V2"],
             "slide_id": [f"slide-{i}" for i in range(4)],
             "dataset": ["toy"] * 4,
         }
@@ -126,6 +126,7 @@ def test_dataset_wide_undefined_fraction_uses_sample_denominator() -> None:
     result = RI.compute(
         features=_dataset_wide_undefined_features(),
         manifest=_dataset_wide_undefined_manifest(),
+        confounder_column="scanner_vendor",
         evaluation_design="dataset_wide",
         k_candidates=[1],
     )
@@ -172,6 +173,7 @@ def test_paired_breakdown_sums_to_occurrence_weighted_undefined_fraction() -> No
     result = RI.compute(
         features=_paired_features(),
         manifest=_paired_manifest(),
+        confounder_column="scanner_vendor",
         evaluation_design="paired_2x2",
         k_candidates=[1, 3],
     )

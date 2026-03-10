@@ -16,6 +16,7 @@ from model_registry import ModelSpec, _build_model_registry, _parse_models
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from croma.alignment import build_embedding_source_manifest
 from croma import CCMR, MaRI, RI
+from croma.confounders import infer_confounder_display_name
 from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
     _normalize_k_values,
@@ -39,29 +40,36 @@ from metrics_io import (
 from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
     plot_benchmark_6panel_summary,
-    plot_bio_vs_center_scatter,
+    plot_bio_vs_confounder_scatter,
     plot_ccmr_ltm_comparison,
     plot_ccmr_m_sweep_with_ltm,
     plot_ccmr_sample_distributions,
     plot_ccmr_trend_quadrants,
     plot_ccmr_vs_mari_scatter,
     plot_knn_bio_k_sweep,
-    plot_knn_center_k_sweep,
+    plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_mari_vs_ri_scatter,
     plot_ri_k_sweep,
 )
+
 
 def _sample_distribution_dir(results_dir: Path) -> Path:
     return results_dir / "sample_distributions"
 
 
 def _distribution_path(results_dir: Path, metric_name: str, model: str) -> Path:
-    return _sample_distribution_dir(results_dir) / f"{metric_name}.{safe_model_name(model)}.npy"
+    return (
+        _sample_distribution_dir(results_dir)
+        / f"{metric_name}.{safe_model_name(model)}.npy"
+    )
 
 
 def _distribution_meta_path(results_dir: Path, metric_name: str, model: str) -> Path:
-    return _sample_distribution_dir(results_dir) / f"{metric_name}.{safe_model_name(model)}.json"
+    return (
+        _sample_distribution_dir(results_dir)
+        / f"{metric_name}.{safe_model_name(model)}.json"
+    )
 
 
 def _per_sample_metrics_path(results_dir: Path) -> Path:
@@ -76,12 +84,16 @@ def _per_sample_metrics_by_model_dir(results_dir: Path) -> Path:
     return results_dir / "per_sample_metrics_by_model"
 
 
-def _per_sample_metrics_by_model_paths(results_dir: Path, model: str) -> tuple[Path, Path]:
+def _per_sample_metrics_by_model_paths(
+    results_dir: Path, model: str
+) -> tuple[Path, Path]:
     base = _per_sample_metrics_by_model_dir(results_dir) / safe_model_name(model)
     return base.with_suffix(".csv"), base.with_suffix(".json")
 
 
-def _npy_matches_shape(values: np.ndarray | None, expected_shape: tuple[int, ...]) -> bool:
+def _npy_matches_shape(
+    values: np.ndarray | None, expected_shape: tuple[int, ...]
+) -> bool:
     if values is None:
         return False
     return tuple(int(v) for v in values.shape) == tuple(int(v) for v in expected_shape)
@@ -191,20 +203,33 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Unified benchmark pipeline: extract embeddings, compute RI/MaRI metrics, and plot results."
     )
-    parser.add_argument("--manifest", required=True, type=Path, help="Path to manifest CSV.")
+    parser.add_argument(
+        "--manifest", required=True, type=Path, help="Path to manifest CSV."
+    )
+    parser.add_argument(
+        "--confounder-column",
+        required=True,
+        help="Manifest column to treat as the non-biological confounder.",
+    )
     parser.add_argument(
         "--models",
         default="",
         help="Comma-separated model names. If omitted, all registered models are evaluated.",
     )
-    parser.add_argument("--output-dir", required=True, type=Path, help="Benchmark output directory.")
+    parser.add_argument(
+        "--output-dir", required=True, type=Path, help="Benchmark output directory."
+    )
     parser.add_argument(
         "--evaluation-design",
         default="paired_2x2",
         choices=["paired_2x2", "dataset_wide"],
         help="Evaluation design for RI/MaRI/CCMR.",
     )
-    parser.add_argument("--k-candidates", default="3,5,7,10,15,20,25", help="Comma-separated k candidates.")
+    parser.add_argument(
+        "--k-candidates",
+        default="3,5,7,10,15,20,25",
+        help="Comma-separated k candidates.",
+    )
     parser.add_argument(
         "--continuous-k-sweep-max",
         type=int,
@@ -245,7 +270,9 @@ def _parse_args() -> argparse.Namespace:
         default="auto",
         help="Progress display mode: auto=TTY only, on=always, off=never.",
     )
-    parser.add_argument("--force-embed", action="store_true", help="Force re-extraction of embeddings.")
+    parser.add_argument(
+        "--force-embed", action="store_true", help="Force re-extraction of embeddings."
+    )
     parser.add_argument(
         "--recompute-metrics",
         action="store_true",
@@ -265,7 +292,9 @@ def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str
     return list(registry.keys())
 
 
-def _resolve_sweep_k_values(k_candidates: list[int], continuous_k_sweep_max: int) -> list[int]:
+def _resolve_sweep_k_values(
+    k_candidates: list[int], continuous_k_sweep_max: int
+) -> list[int]:
     if int(continuous_k_sweep_max) > 0:
         return list(range(1, int(continuous_k_sweep_max) + 1))
     return _normalize_k_values(k_candidates)
@@ -285,7 +314,9 @@ def _prepare_eval_manifest(
             )
         eval_manifest = retain_complete_subset_memberships(eval_manifest)
         if len(eval_manifest) == 0:
-            raise ValueError(f"No evaluable subset-defined samples remain for dataset '{dataset_name}'")
+            raise ValueError(
+                f"No evaluable subset-defined samples remain for dataset '{dataset_name}'"
+            )
     elif len(eval_manifest) == 0:
         raise ValueError(f"No evaluable samples remain for dataset '{dataset_name}'")
 
@@ -299,15 +330,21 @@ def _build_aligned_manifest(
 ) -> pd.DataFrame:
     if evaluation_design == "dataset_wide":
         aligned_manifest = eval_manifest.copy().reset_index(drop=True)
-        aligned_manifest["source_sample_index"] = np.arange(len(aligned_manifest), dtype=int)
+        aligned_manifest["source_sample_index"] = np.arange(
+            len(aligned_manifest), dtype=int
+        )
         aligned_manifest["subset"] = "dataset"
         return aligned_manifest
 
     subsets = resolve_manifest_subsets(eval_manifest)
     if not subsets:
-        raise RuntimeError("paired_2x2 evaluation requires at least one complete manifest-defined subset")
+        raise RuntimeError(
+            "paired_2x2 evaluation requires at least one complete manifest-defined subset"
+        )
     aligned_manifest = pd.concat([subset.rows for subset in subsets], ignore_index=True)
-    aligned_manifest["source_sample_index"] = aligned_manifest["source_sample_index"].astype(int)
+    aligned_manifest["source_sample_index"] = aligned_manifest[
+        "source_sample_index"
+    ].astype(int)
     aligned_manifest["subset"] = aligned_manifest["subset"].astype(str)
     return aligned_manifest.reset_index(drop=True)
 
@@ -317,6 +354,8 @@ def _build_per_sample_rows(
     aligned_manifest: pd.DataFrame,
     dataset_name: str,
     model: str,
+    confounder_column: str,
+    confounder_display_name: str,
     evaluation_design: str,
     evaluation_unit: str,
     selected_k: int,
@@ -336,15 +375,23 @@ def _build_per_sample_rows(
     if ri_samples_aligned.shape != mari_samples_aligned.shape:
         raise RuntimeError("RI and MaRI aligned arrays must have the same shape")
     if ri_samples_aligned.shape[0] != len(aligned_manifest):
-        raise RuntimeError("Aligned metric arrays must match the aligned evaluation manifest row count")
+        raise RuntimeError(
+            "Aligned metric arrays must match the aligned evaluation manifest row count"
+        )
     if ccmr_samples_aligned_by_m.shape != (len(aligned_manifest), len(ccmr_m_values)):
-        raise RuntimeError("Aligned CCMR array must match the aligned evaluation manifest row count and m sweep")
+        raise RuntimeError(
+            "Aligned CCMR array must match the aligned evaluation manifest row count and m sweep"
+        )
 
-    for occurrence_index, sample_row in aligned_manifest.reset_index(drop=True).iterrows():
+    for occurrence_index, sample_row in aligned_manifest.reset_index(
+        drop=True
+    ).iterrows():
         source_sample_index = int(sample_row["source_sample_index"])
         record = {
             "dataset": str(dataset_name),
             "model": str(model),
+            "confounder_column": str(confounder_column),
+            "confounder_display_name": str(confounder_display_name),
             "evaluation_design": str(evaluation_design),
             "evaluation_unit": str(evaluation_unit),
             "occurrence_index": int(occurrence_index),
@@ -354,7 +401,7 @@ def _build_per_sample_rows(
             "sample_id": str(sample_row["sample_id"]),
             "slide_id": str(sample_row["slide_id"]),
             "label": str(sample_row["label"]),
-            "medical_center": str(sample_row["medical_center"]),
+            "confounder": str(sample_row["confounder"]),
             "k": int(selected_k),
             "tau": float(tau),
             "ccmr_alpha": float(ccmr_alpha),
@@ -367,7 +414,9 @@ def _build_per_sample_rows(
             "mari_undefined_type": int(mari_undefined_types[occurrence_index]),
         }
         for m_pos, m in enumerate(ccmr_m_values):
-            record[f"ccmr_m{int(m)}"] = float(ccmr_samples_aligned_by_m[occurrence_index, m_pos])
+            record[f"ccmr_m{int(m)}"] = float(
+                ccmr_samples_aligned_by_m[occurrence_index, m_pos]
+            )
         rows.append(record)
     return rows
 
@@ -422,7 +471,9 @@ def _knn_balanced_accuracy_by_k_for_design(
         subset_scores.append(scores)
 
     if not subset_scores:
-        raise RuntimeError(f"{warn_context}: no evaluable paired_2x2 subsets remain for kNN curves")
+        raise RuntimeError(
+            f"{warn_context}: no evaluable paired_2x2 subsets remain for kNN curves"
+        )
 
     out: dict[int, float] = {}
     for k in k_values:
@@ -432,12 +483,18 @@ def _knn_balanced_accuracy_by_k_for_design(
     return out
 
 
-
 def _curve_payload(values: dict[int, float]) -> dict:
-    return {"values": {str(int(k)): float(v) for k, v in sorted(values.items(), key=lambda kv: int(kv[0]))}}
+    return {
+        "values": {
+            str(int(k)): float(v)
+            for k, v in sorted(values.items(), key=lambda kv: int(kv[0]))
+        }
+    }
 
 
-def _curve_from_payload(payload: dict, *, expected_k_values: list[int]) -> dict[int, float] | None:
+def _curve_from_payload(
+    payload: dict, *, expected_k_values: list[int]
+) -> dict[int, float] | None:
     if not isinstance(payload, dict):
         return None
     values = payload.get("values")
@@ -465,8 +522,12 @@ def _summary_from_payload(payload: dict) -> dict | None:
             "value": float(payload["value"]),
             "std": float(payload["std"]),
             "undefined_frac": float(payload["undefined_frac"]),
-            "ss_dominated_undefined_frac": float(payload.get("ss_dominated_undefined_frac", 0.0)),
-            "oo_dominated_undefined_frac": float(payload.get("oo_dominated_undefined_frac", 0.0)),
+            "ss_dominated_undefined_frac": float(
+                payload.get("ss_dominated_undefined_frac", 0.0)
+            ),
+            "oo_dominated_undefined_frac": float(
+                payload.get("oo_dominated_undefined_frac", 0.0)
+            ),
             "mixed_undefined_frac": float(payload.get("mixed_undefined_frac", 0.0)),
             "evaluation_design": str(payload.get("evaluation_design", "paired_2x2")),
             "evaluation_unit": str(payload.get("evaluation_unit", "occurrence")),
@@ -500,7 +561,9 @@ def _ccmr_payload_from_results(results: dict[int, CCMRResult]) -> dict:
     }
 
 
-def _ccmr_payload_to_by_m(payload: dict, *, expected_m_values: list[int]) -> dict[int, dict] | None:
+def _ccmr_payload_to_by_m(
+    payload: dict, *, expected_m_values: list[int]
+) -> dict[int, dict] | None:
     if not isinstance(payload, dict):
         return None
     raw_by_m = payload.get("by_m")
@@ -519,6 +582,7 @@ def _compute_ccmr_by_m(
     *,
     features: np.ndarray,
     manifest: pd.DataFrame,
+    confounder_column: str,
     evaluation_design: str,
     m_values: list[int],
     ccmr_start_k: int,
@@ -530,6 +594,7 @@ def _compute_ccmr_by_m(
         CCMR.compute(
             features=features,
             manifest=manifest,
+            confounder_column=confounder_column,
             evaluation_design=evaluation_design,
             m=[int(m) for m in m_values],
             alpha=float(ccmr_alpha),
@@ -537,7 +602,6 @@ def _compute_ccmr_by_m(
             k_growth_factor=float(ccmr_k_growth_factor),
         ),
     )
-
 
 
 def main() -> int:
@@ -596,14 +660,20 @@ def main() -> int:
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
     ccmr_m_sweep_rows: list[dict] = []
-    per_sample_writer = StreamingMetricsWriter(csv_path=per_sample_csv, json_path=per_sample_json)
+    per_sample_writer = StreamingMetricsWriter(
+        csv_path=per_sample_csv, json_path=per_sample_json
+    )
 
     progress_write(f"[benchmark] manifest={args.manifest}", enabled=progress_enabled)
     progress_write(f"[benchmark] models={', '.join(models)}", enabled=progress_enabled)
     progress_write(f"[benchmark] output_dir={output_dir}", enabled=progress_enabled)
     progress_write(f"[benchmark] dataset_dir={dataset_dir}", enabled=progress_enabled)
-    progress_write(f"[benchmark] evaluation_design={evaluation_design}", enabled=progress_enabled)
-    manifest_df = load_manifest(str(args.manifest))
+    progress_write(
+        f"[benchmark] evaluation_design={evaluation_design}", enabled=progress_enabled
+    )
+    confounder_column = str(args.confounder_column)
+    confounder_display_name = infer_confounder_display_name(confounder_column)
+    manifest_df = load_manifest(str(args.manifest), confounder_column=confounder_column)
     base_manifest_fingerprint = manifest_fingerprint(manifest_df)
     eval_manifest = _prepare_eval_manifest(
         manifest_df=manifest_df,
@@ -614,7 +684,9 @@ def main() -> int:
         eval_manifest=eval_manifest,
         evaluation_design=evaluation_design,
     )
-    embedding_manifest, embedding_keep_indices = build_embedding_source_manifest(eval_manifest)
+    embedding_manifest, embedding_keep_indices = build_embedding_source_manifest(
+        eval_manifest
+    )
     embedding_manifest_path = _embedding_manifest_path(dataset_dir)
     embedding_manifest.to_csv(embedding_manifest_path, index=False)
     embedding_manifest_fingerprint = manifest_fingerprint(embedding_manifest)
@@ -624,14 +696,11 @@ def main() -> int:
             output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
             spec = registry[model]
             ticker.start("embed")
-            if (
-                not args.force_embed
-                and _embedding_cache_matches_expected(
-                    output_path,
-                    expected_n_samples=len(embedding_manifest),
-                    expected_manifest_fingerprint=embedding_manifest_fingerprint,
-                    expected_manifest_path=embedding_manifest_path,
-                )
+            if not args.force_embed and _embedding_cache_matches_expected(
+                output_path,
+                expected_n_samples=len(embedding_manifest),
+                expected_manifest_fingerprint=embedding_manifest_fingerprint,
+                expected_manifest_path=embedding_manifest_path,
             ):
                 ticker.log(f"[benchmark] embedding cache hit -> {output_path}")
                 extraction_status[model] = "skipped"
@@ -663,7 +732,7 @@ def main() -> int:
                     "manifest_fingerprint": base_manifest_fingerprint,
                     "embedding_fingerprint": embedding_fp,
                 }
-    
+
                 k_values_param = [int(k) for k in k_values]
                 tau_value = float(args.tau)
 
@@ -672,73 +741,125 @@ def main() -> int:
                         artifact_name="knn_bio_curve",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
-                    "knn_center_curve": build_cache_key(
-                        artifact_name="knn_center_curve",
+                    "knn_confounder_curve": build_cache_key(
+                        artifact_name="knn_confounder_curve",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "ri_curve": build_cache_key(
                         artifact_name="ri_curve",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "mari_curve": build_cache_key(
                         artifact_name="mari_curve",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param, "tau": tau_value},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "tau": tau_value,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "ri_summary": build_cache_key(
                         artifact_name="ri_summary",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "ri_samples": build_cache_key(
                         artifact_name="ri_samples",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "ri_samples_aligned": build_cache_key(
                         artifact_name="ri_samples_aligned",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "ri_undefined_types": build_cache_key(
                         artifact_name="ri_undefined_types",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "mari_summary": build_cache_key(
                         artifact_name="mari_summary",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param, "tau": tau_value},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "tau": tau_value,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "mari_samples": build_cache_key(
                         artifact_name="mari_samples",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param, "tau": tau_value},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "tau": tau_value,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "mari_samples_aligned": build_cache_key(
                         artifact_name="mari_samples_aligned",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param, "tau": tau_value},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "tau": tau_value,
+                            "confounder_column": confounder_column,
+                        },
                     ),
                     "mari_undefined_types": build_cache_key(
                         artifact_name="mari_undefined_types",
                         model=model,
                         input_fingerprint=input_fp,
-                        params={"evaluation_design": evaluation_design, "k_values": k_values_param, "tau": tau_value},
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "tau": tau_value,
+                        },
                     ),
                     "ccmr_m_sweep": build_cache_key(
                         artifact_name="ccmr_m_sweep",
@@ -750,6 +871,7 @@ def main() -> int:
                             "start_k": int(args.ccmr_start_k),
                             "k_growth_factor": float(args.ccmr_k_growth_factor),
                             "alpha": float(args.ccmr_alpha),
+                            "confounder_column": confounder_column,
                         },
                     ),
                     "ccmr_m1_samples": build_cache_key(
@@ -762,6 +884,7 @@ def main() -> int:
                             "start_k": int(args.ccmr_start_k),
                             "k_growth_factor": float(args.ccmr_k_growth_factor),
                             "alpha": float(args.ccmr_alpha),
+                            "confounder_column": confounder_column,
                         },
                     ),
                     "ccmr_samples_aligned_by_m": build_cache_key(
@@ -774,12 +897,13 @@ def main() -> int:
                             "start_k": int(args.ccmr_start_k),
                             "k_growth_factor": float(args.ccmr_k_growth_factor),
                             "alpha": float(args.ccmr_alpha),
+                            "confounder_column": confounder_column,
                         },
                     ),
                 }
-    
+
                 knn_bacc_by_k: dict[int, float] | None = None
-                knn_center_bacc_by_k: dict[int, float] | None = None
+                knn_confounder_bacc_by_k: dict[int, float] | None = None
                 ri_curve: dict[int, float] | None = None
                 mari_curve: dict[int, float] | None = None
                 ri_summary: dict | None = None
@@ -793,9 +917,9 @@ def main() -> int:
                 ccmr_by_m: dict[int, dict] | None = None
                 ccmr_samples: np.ndarray | None = None
                 ccmr_samples_aligned_by_m: np.ndarray | None = None
-    
+
                 all_cache_hit = not bool(args.recompute_metrics)
-    
+
                 if not args.recompute_metrics:
                     knn_bacc_by_k = _curve_from_payload(
                         cache.get_json(key=keys["knn_bio_curve"]),
@@ -803,62 +927,82 @@ def main() -> int:
                     )
                     if knn_bacc_by_k is None:
                         all_cache_hit = False
-    
-                    knn_center_bacc_by_k = _curve_from_payload(
-                        cache.get_json(key=keys["knn_center_curve"]),
+
+                    knn_confounder_bacc_by_k = _curve_from_payload(
+                        cache.get_json(key=keys["knn_confounder_curve"]),
                         expected_k_values=k_values,
                     )
-                    if knn_center_bacc_by_k is None:
+                    if knn_confounder_bacc_by_k is None:
                         all_cache_hit = False
-    
+
                     ri_curve = _curve_from_payload(
                         cache.get_json(key=keys["ri_curve"]),
                         expected_k_values=k_values,
                     )
                     if ri_curve is None:
                         all_cache_hit = False
-    
+
                     mari_curve = _curve_from_payload(
                         cache.get_json(key=keys["mari_curve"]),
                         expected_k_values=k_values,
                     )
                     if mari_curve is None:
                         all_cache_hit = False
-    
-                    ri_summary = _summary_from_payload(cache.get_json(key=keys["ri_summary"]))
+
+                    ri_summary = _summary_from_payload(
+                        cache.get_json(key=keys["ri_summary"])
+                    )
                     ri_samples = cache.get_npy(key=keys["ri_samples"])
                     ri_samples_aligned = cache.get_npy(key=keys["ri_samples_aligned"])
                     ri_undefined_types = cache.get_npy(key=keys["ri_undefined_types"])
                     if (
                         ri_summary is None
                         or ri_samples is None
-                        or not _npy_matches_shape(ri_samples_aligned, (len(aligned_manifest),))
-                        or not _npy_matches_shape(ri_undefined_types, (len(aligned_manifest),))
+                        or not _npy_matches_shape(
+                            ri_samples_aligned, (len(aligned_manifest),)
+                        )
+                        or not _npy_matches_shape(
+                            ri_undefined_types, (len(aligned_manifest),)
+                        )
                         or str(ri_summary["evaluation_design"]) != evaluation_design
-                        or str(ri_summary["evaluation_unit"]) not in {"sample", "occurrence"}
+                        or str(ri_summary["evaluation_unit"])
+                        not in {"sample", "occurrence"}
                     ):
                         all_cache_hit = False
 
-                    mari_summary = _summary_from_payload(cache.get_json(key=keys["mari_summary"]))
+                    mari_summary = _summary_from_payload(
+                        cache.get_json(key=keys["mari_summary"])
+                    )
                     mari_samples = cache.get_npy(key=keys["mari_samples"])
-                    mari_samples_aligned = cache.get_npy(key=keys["mari_samples_aligned"])
-                    mari_undefined_types = cache.get_npy(key=keys["mari_undefined_types"])
+                    mari_samples_aligned = cache.get_npy(
+                        key=keys["mari_samples_aligned"]
+                    )
+                    mari_undefined_types = cache.get_npy(
+                        key=keys["mari_undefined_types"]
+                    )
                     if (
                         mari_summary is None
                         or mari_samples is None
-                        or not _npy_matches_shape(mari_samples_aligned, (len(aligned_manifest),))
-                        or not _npy_matches_shape(mari_undefined_types, (len(aligned_manifest),))
+                        or not _npy_matches_shape(
+                            mari_samples_aligned, (len(aligned_manifest),)
+                        )
+                        or not _npy_matches_shape(
+                            mari_undefined_types, (len(aligned_manifest),)
+                        )
                         or str(mari_summary["evaluation_design"]) != evaluation_design
-                        or str(mari_summary["evaluation_unit"]) not in {"sample", "occurrence"}
+                        or str(mari_summary["evaluation_unit"])
+                        not in {"sample", "occurrence"}
                     ):
                         all_cache_hit = False
-    
+
                     ccmr_by_m = _ccmr_payload_to_by_m(
                         cache.get_json(key=keys["ccmr_m_sweep"]),
                         expected_m_values=ccmr_m_values,
                     )
                     ccmr_samples = cache.get_npy(key=keys["ccmr_m1_samples"])
-                    ccmr_samples_aligned_by_m = cache.get_npy(key=keys["ccmr_samples_aligned_by_m"])
+                    ccmr_samples_aligned_by_m = cache.get_npy(
+                        key=keys["ccmr_samples_aligned_by_m"]
+                    )
                     if (
                         ccmr_by_m is None
                         or ccmr_samples is None
@@ -870,7 +1014,7 @@ def main() -> int:
                         all_cache_hit = False
                 else:
                     all_cache_hit = False
-    
+
                 features_full: np.ndarray | None = None
                 eval_features: np.ndarray | None = None
                 eval_features_norm: np.ndarray | None = None
@@ -888,13 +1032,17 @@ def main() -> int:
                     nonlocal eval_features_norm
                     if eval_features_norm is None:
                         arr = _ensure_eval_features()
-                        eval_features_norm = arr / (np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12)
+                        eval_features_norm = arr / (
+                            np.linalg.norm(arr, axis=1, keepdims=True) + 1e-12
+                        )
                     return eval_features_norm
 
                 def _ensure_paired_subset_cache():
                     nonlocal paired_subset_cache
                     if evaluation_design != "paired_2x2":
-                        raise RuntimeError("paired subset cache is only available for paired_2x2 evaluation")
+                        raise RuntimeError(
+                            "paired subset cache is only available for paired_2x2 evaluation"
+                        )
                     if paired_subset_cache is None:
                         paired_subset_cache = RI._prepare_paired_subset_neighbor_cache(
                             features=_ensure_eval_features_norm(),
@@ -903,7 +1051,9 @@ def main() -> int:
                         )
                     return paired_subset_cache
 
-                knn_was_cached = knn_bacc_by_k is not None and knn_center_bacc_by_k is not None
+                knn_was_cached = (
+                    knn_bacc_by_k is not None and knn_confounder_bacc_by_k is not None
+                )
                 ticker.start("knn")
                 if knn_bacc_by_k is None:
                     knn_bacc_by_k = _knn_balanced_accuracy_by_k_for_design(
@@ -913,29 +1063,42 @@ def main() -> int:
                         k_values=k_values,
                         evaluation_design=evaluation_design,
                         warn_context=f"{dataset_name} k-curve",
-                        prepared_subsets=_ensure_paired_subset_cache() if evaluation_design == "paired_2x2" else None,
+                        prepared_subsets=(
+                            _ensure_paired_subset_cache()
+                            if evaluation_design == "paired_2x2"
+                            else None
+                        ),
                     )
-                    cache.put_json(key=keys["knn_bio_curve"], payload=_curve_payload(knn_bacc_by_k))
+                    cache.put_json(
+                        key=keys["knn_bio_curve"], payload=_curve_payload(knn_bacc_by_k)
+                    )
 
-                if knn_center_bacc_by_k is None:
-                    knn_center_bacc_by_k = _knn_balanced_accuracy_by_k_for_design(
+                if knn_confounder_bacc_by_k is None:
+                    knn_confounder_bacc_by_k = _knn_balanced_accuracy_by_k_for_design(
                         features=_ensure_eval_features_norm(),
                         manifest=eval_manifest,
-                        target_column="medical_center",
+                        target_column="confounder",
                         k_values=k_values,
                         evaluation_design=evaluation_design,
-                        warn_context=f"{dataset_name} center-k-curve",
-                        prepared_subsets=_ensure_paired_subset_cache() if evaluation_design == "paired_2x2" else None,
+                        warn_context=f"{dataset_name} confounder-k-curve",
+                        prepared_subsets=(
+                            _ensure_paired_subset_cache()
+                            if evaluation_design == "paired_2x2"
+                            else None
+                        ),
                     )
-                    cache.put_json(key=keys["knn_center_curve"], payload=_curve_payload(knn_center_bacc_by_k))
-    
+                    cache.put_json(
+                        key=keys["knn_confounder_curve"],
+                        payload=_curve_payload(knn_confounder_bacc_by_k),
+                    )
+
                 selected_k = _select_k_from_balanced_accuracy(
                     k_values=k_values,
                     scores=knn_bacc_by_k,
                 )
-                selected_k_center = _select_k_from_balanced_accuracy(
+                selected_k_confounder = _select_k_from_balanced_accuracy(
                     k_values=k_values,
-                    scores=knn_center_bacc_by_k,
+                    scores=knn_confounder_bacc_by_k,
                 )
                 ticker.done("knn", cached=knn_was_cached)
 
@@ -968,6 +1131,7 @@ def main() -> int:
                         ri_artifacts = RI._compute_artifacts(
                             features=_ensure_eval_features_norm(),
                             manifest=eval_manifest,
+                            confounder_column=confounder_column,
                             k_values=k_values,
                             evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
@@ -976,7 +1140,9 @@ def main() -> int:
                         )
                     ri_curve = dict(ri_artifacts.curve)
                     if ri_artifacts.result is None:
-                        raise RuntimeError("RI shared scoring did not return a selected-k result")
+                        raise RuntimeError(
+                            "RI shared scoring did not return a selected-k result"
+                        )
                     ri = ri_artifacts.result
                     if int(ri.k) != int(selected_k):
                         raise RuntimeError(
@@ -987,20 +1153,34 @@ def main() -> int:
                         "value": float(ri.value),
                         "std": float(ri.std),
                         "undefined_frac": float(ri.undefined_frac),
-                        "ss_dominated_undefined_frac": float(ri.ss_dominated_undefined_frac),
-                        "oo_dominated_undefined_frac": float(ri.oo_dominated_undefined_frac),
+                        "ss_dominated_undefined_frac": float(
+                            ri.ss_dominated_undefined_frac
+                        ),
+                        "oo_dominated_undefined_frac": float(
+                            ri.oo_dominated_undefined_frac
+                        ),
                         "mixed_undefined_frac": float(ri.mixed_undefined_frac),
                         "evaluation_design": str(ri.evaluation_design),
                         "evaluation_unit": str(ri.evaluation_unit),
                     }
                     ri_samples = np.asarray(ri.sample_values, dtype=float)
-                    ri_samples_aligned = np.asarray(ri.sample_values_aligned, dtype=float)
-                    ri_undefined_types = np.asarray(ri.sample_undefined_types, dtype=int)
-                    cache.put_json(key=keys["ri_curve"], payload=_curve_payload(ri_curve))
+                    ri_samples_aligned = np.asarray(
+                        ri.sample_values_aligned, dtype=float
+                    )
+                    ri_undefined_types = np.asarray(
+                        ri.sample_undefined_types, dtype=int
+                    )
+                    cache.put_json(
+                        key=keys["ri_curve"], payload=_curve_payload(ri_curve)
+                    )
                     cache.put_json(key=keys["ri_summary"], payload=ri_summary)
                     cache.put_npy(key=keys["ri_samples"], values=ri_samples)
-                    cache.put_npy(key=keys["ri_samples_aligned"], values=ri_samples_aligned)
-                    cache.put_npy(key=keys["ri_undefined_types"], values=ri_undefined_types)
+                    cache.put_npy(
+                        key=keys["ri_samples_aligned"], values=ri_samples_aligned
+                    )
+                    cache.put_npy(
+                        key=keys["ri_undefined_types"], values=ri_undefined_types
+                    )
                 else:
                     ri_samples = np.asarray(ri_samples, dtype=float)
                     if ri_samples_aligned is not None:
@@ -1039,6 +1219,7 @@ def main() -> int:
                         mari_artifacts = MaRI._compute_artifacts(
                             features=_ensure_eval_features_norm(),
                             manifest=eval_manifest,
+                            confounder_column=confounder_column,
                             k_values=k_values,
                             evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
@@ -1048,7 +1229,9 @@ def main() -> int:
                         )
                     mari_curve = dict(mari_artifacts.curve)
                     if mari_artifacts.result is None:
-                        raise RuntimeError("MaRI shared scoring did not return a selected-k result")
+                        raise RuntimeError(
+                            "MaRI shared scoring did not return a selected-k result"
+                        )
                     mari = mari_artifacts.result
                     if int(mari.k) != int(selected_k):
                         raise RuntimeError(
@@ -1059,38 +1242,61 @@ def main() -> int:
                         "value": float(mari.value),
                         "std": float(mari.std),
                         "undefined_frac": float(mari.undefined_frac),
-                        "ss_dominated_undefined_frac": float(mari.ss_dominated_undefined_frac),
-                        "oo_dominated_undefined_frac": float(mari.oo_dominated_undefined_frac),
+                        "ss_dominated_undefined_frac": float(
+                            mari.ss_dominated_undefined_frac
+                        ),
+                        "oo_dominated_undefined_frac": float(
+                            mari.oo_dominated_undefined_frac
+                        ),
                         "mixed_undefined_frac": float(mari.mixed_undefined_frac),
                         "evaluation_design": str(mari.evaluation_design),
                         "evaluation_unit": str(mari.evaluation_unit),
                     }
                     mari_samples = np.asarray(mari.sample_values, dtype=float)
-                    mari_samples_aligned = np.asarray(mari.sample_values_aligned, dtype=float)
-                    mari_undefined_types = np.asarray(mari.sample_undefined_types, dtype=int)
-                    cache.put_json(key=keys["mari_curve"], payload=_curve_payload(mari_curve))
+                    mari_samples_aligned = np.asarray(
+                        mari.sample_values_aligned, dtype=float
+                    )
+                    mari_undefined_types = np.asarray(
+                        mari.sample_undefined_types, dtype=int
+                    )
+                    cache.put_json(
+                        key=keys["mari_curve"], payload=_curve_payload(mari_curve)
+                    )
                     cache.put_json(key=keys["mari_summary"], payload=mari_summary)
                     cache.put_npy(key=keys["mari_samples"], values=mari_samples)
-                    cache.put_npy(key=keys["mari_samples_aligned"], values=mari_samples_aligned)
-                    cache.put_npy(key=keys["mari_undefined_types"], values=mari_undefined_types)
+                    cache.put_npy(
+                        key=keys["mari_samples_aligned"], values=mari_samples_aligned
+                    )
+                    cache.put_npy(
+                        key=keys["mari_undefined_types"], values=mari_undefined_types
+                    )
                 else:
                     mari_samples = np.asarray(mari_samples, dtype=float)
                     if mari_samples_aligned is not None:
-                        mari_samples_aligned = np.asarray(mari_samples_aligned, dtype=float)
+                        mari_samples_aligned = np.asarray(
+                            mari_samples_aligned, dtype=float
+                        )
                     if mari_undefined_types is not None:
-                        mari_undefined_types = np.asarray(mari_undefined_types, dtype=int)
+                        mari_undefined_types = np.asarray(
+                            mari_undefined_types, dtype=int
+                        )
                 ticker.done("MaRI", cached=mari_was_cached)
-    
+
                 ccmr_was_cached = (
                     ccmr_by_m is not None
                     and ccmr_samples is not None
                     and ccmr_samples_aligned_by_m is not None
                 )
                 ticker.start("CCMR")
-                if ccmr_by_m is None or ccmr_samples is None or ccmr_samples_aligned_by_m is None:
+                if (
+                    ccmr_by_m is None
+                    or ccmr_samples is None
+                    or ccmr_samples_aligned_by_m is None
+                ):
                     ccmr_results = _compute_ccmr_by_m(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
+                        confounder_column=confounder_column,
                         evaluation_design=evaluation_design,
                         m_values=ccmr_m_values,
                         ccmr_start_k=int(args.ccmr_start_k),
@@ -1102,21 +1308,35 @@ def main() -> int:
                         expected_m_values=ccmr_m_values,
                     )
                     if ccmr_by_m is None:
-                        raise RuntimeError("Failed to serialize ccmr m-sweep cache payload")
-                    ccmr_samples = np.asarray(ccmr_results[1].sample_values, dtype=float)
+                        raise RuntimeError(
+                            "Failed to serialize ccmr m-sweep cache payload"
+                        )
+                    ccmr_samples = np.asarray(
+                        ccmr_results[1].sample_values, dtype=float
+                    )
                     ccmr_samples_aligned_by_m = np.column_stack(
                         [
-                            np.asarray(ccmr_results[int(m)].sample_values_aligned, dtype=float)
+                            np.asarray(
+                                ccmr_results[int(m)].sample_values_aligned, dtype=float
+                            )
                             for m in ccmr_m_values
                         ]
                     )
-                    cache.put_json(key=keys["ccmr_m_sweep"], payload={"by_m": {str(k): v for k, v in ccmr_by_m.items()}})
+                    cache.put_json(
+                        key=keys["ccmr_m_sweep"],
+                        payload={"by_m": {str(k): v for k, v in ccmr_by_m.items()}},
+                    )
                     cache.put_npy(key=keys["ccmr_m1_samples"], values=ccmr_samples)
-                    cache.put_npy(key=keys["ccmr_samples_aligned_by_m"], values=ccmr_samples_aligned_by_m)
+                    cache.put_npy(
+                        key=keys["ccmr_samples_aligned_by_m"],
+                        values=ccmr_samples_aligned_by_m,
+                    )
                 else:
                     ccmr_samples = np.asarray(ccmr_samples, dtype=float)
                     if ccmr_samples_aligned_by_m is not None:
-                        ccmr_samples_aligned_by_m = np.asarray(ccmr_samples_aligned_by_m, dtype=float)
+                        ccmr_samples_aligned_by_m = np.asarray(
+                            ccmr_samples_aligned_by_m, dtype=float
+                        )
                 ticker.done("CCMR", cached=ccmr_was_cached)
 
                 evaluation_unit = str(ri_summary["evaluation_unit"])
@@ -1127,6 +1347,8 @@ def main() -> int:
                         {
                             "dataset": dataset_name,
                             "model": str(model),
+                            "confounder_column": confounder_column,
+                            "confounder_display_name": confounder_display_name,
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
                             "tau": float(args.tau),
@@ -1135,7 +1357,9 @@ def main() -> int:
                             "m": int(payload["m"]),
                             "ccmr": float(payload["ccmr"]),
                             "ccmr_std": float(payload["ccmr_std"]),
-                            "ccmr_undefined_frac": float(payload["ccmr_undefined_frac"]),
+                            "ccmr_undefined_frac": float(
+                                payload["ccmr_undefined_frac"]
+                            ),
                             "ccmr_k_start": int(payload["ccmr_k_start"]),
                             "ccmr_k_final": int(payload["ccmr_k_final"]),
                             "ccmr_retries": int(payload["ccmr_retries"]),
@@ -1145,26 +1369,40 @@ def main() -> int:
                             "embedding_path": str(output_path),
                         }
                     )
-    
+
                 m_sorted = sorted(ccmr_m_values)
                 ccmr_curve = [float(ccmr_by_m[m]["ccmr"]) for m in m_sorted]
                 finite_curve = [c for c in ccmr_curve if np.isfinite(c)]
                 if len(m_sorted) > 1:
                     _trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
-                    ccmr_auc = float(_trapz(ccmr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0]))
+                    ccmr_auc = float(
+                        _trapz(ccmr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0])
+                    )
                 else:
                     ccmr_auc = ccmr_curve[0] if ccmr_curve else float("nan")
-                ccmr_min_val = float(min(finite_curve)) if finite_curve else float("nan")
-                ccmr_delta = float(ccmr_curve[-1] - ccmr_curve[0]) if len(ccmr_curve) > 1 else 0.0
+                ccmr_min_val = (
+                    float(min(finite_curve)) if finite_curve else float("nan")
+                )
+                ccmr_delta = (
+                    float(ccmr_curve[-1] - ccmr_curve[0])
+                    if len(ccmr_curve) > 1
+                    else 0.0
+                )
 
                 total_n = int(len(aligned_manifest))
                 ri_undefined_n = int(np.count_nonzero(~np.isfinite(ri_samples_aligned)))
-                mari_undefined_n = int(np.count_nonzero(~np.isfinite(mari_samples_aligned)))
+                mari_undefined_n = int(
+                    np.count_nonzero(~np.isfinite(mari_samples_aligned))
+                )
                 ri_ss_frac = float(ri_summary.get("ss_dominated_undefined_frac", 0.0))
                 ri_oo_frac = float(ri_summary.get("oo_dominated_undefined_frac", 0.0))
                 ri_mixed_frac = float(ri_summary.get("mixed_undefined_frac", 0.0))
-                mari_ss_frac = float(mari_summary.get("ss_dominated_undefined_frac", 0.0))
-                mari_oo_frac = float(mari_summary.get("oo_dominated_undefined_frac", 0.0))
+                mari_ss_frac = float(
+                    mari_summary.get("ss_dominated_undefined_frac", 0.0)
+                )
+                mari_oo_frac = float(
+                    mari_summary.get("oo_dominated_undefined_frac", 0.0)
+                )
                 mari_mixed_frac = float(mari_summary.get("mixed_undefined_frac", 0.0))
                 saved_dist_path = _save_mari_sample_distribution(
                     results_dir=results_dir,
@@ -1189,15 +1427,17 @@ def main() -> int:
                     n_undefined_units=ri_undefined_n,
                     values=ri_samples,
                 )
-    
+
                 ccmr_result = ccmr_by_m[1]
                 ccmr_dist_path = _distribution_path(results_dir, "ccmr", model)
                 ccmr_dist_path.parent.mkdir(parents=True, exist_ok=True)
                 np.save(ccmr_dist_path, ccmr_samples)
-    
+
                 row = {
                     "dataset": dataset_name,
                     "model": model,
+                    "confounder_column": confounder_column,
+                    "confounder_display_name": confounder_display_name,
                     "k": int(ri_summary["k"]),
                     "evaluation_design": evaluation_design,
                     "evaluation_unit": evaluation_unit,
@@ -1205,8 +1445,10 @@ def main() -> int:
                     "k_candidates": k_candidates_sig,
                     "ccmr_search": ccmr_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
-                    "center_knn_bacc": float(knn_center_bacc_by_k[int(selected_k_center)]),
-                    "selected_k_center": int(selected_k_center),
+                    "confounder_knn_bacc": float(
+                        knn_confounder_bacc_by_k[int(selected_k_confounder)]
+                    ),
+                    "selected_k_confounder": int(selected_k_confounder),
                     "ri": float(ri_summary["value"]),
                     "ri_std": float(ri_summary["std"]),
                     "mari": float(mari_summary["value"]),
@@ -1242,6 +1484,8 @@ def main() -> int:
                     aligned_manifest=aligned_manifest,
                     dataset_name=dataset_name,
                     model=str(model),
+                    confounder_column=confounder_column,
+                    confounder_display_name=confounder_display_name,
                     evaluation_design=evaluation_design,
                     evaluation_unit=evaluation_unit,
                     selected_k=int(ri_summary["k"]),
@@ -1250,22 +1494,36 @@ def main() -> int:
                     ccmr_search_sig=str(ccmr_search_sig),
                     ri_samples_aligned=np.asarray(ri_samples_aligned, dtype=float),
                     mari_samples_aligned=np.asarray(mari_samples_aligned, dtype=float),
-                    ri_defined_mask=np.isfinite(np.asarray(ri_samples_aligned, dtype=float)),
-                    mari_defined_mask=np.isfinite(np.asarray(mari_samples_aligned, dtype=float)),
+                    ri_defined_mask=np.isfinite(
+                        np.asarray(ri_samples_aligned, dtype=float)
+                    ),
+                    mari_defined_mask=np.isfinite(
+                        np.asarray(mari_samples_aligned, dtype=float)
+                    ),
                     ri_undefined_types=np.asarray(ri_undefined_types, dtype=int),
                     mari_undefined_types=np.asarray(mari_undefined_types, dtype=int),
-                    ccmr_samples_aligned_by_m=np.asarray(ccmr_samples_aligned_by_m, dtype=float),
+                    ccmr_samples_aligned_by_m=np.asarray(
+                        ccmr_samples_aligned_by_m, dtype=float
+                    ),
                     ccmr_m_values=ccmr_m_values,
                 )
-                model_per_sample_rows = sorted(model_per_sample_rows, key=lambda row: int(row["occurrence_index"]))
-                model_csv, model_json = _per_sample_metrics_by_model_paths(results_dir, str(model))
-                save_metrics(rows=model_per_sample_rows, csv_path=model_csv, json_path=model_json)
+                model_per_sample_rows = sorted(
+                    model_per_sample_rows, key=lambda row: int(row["occurrence_index"])
+                )
+                model_csv, model_json = _per_sample_metrics_by_model_paths(
+                    results_dir, str(model)
+                )
+                save_metrics(
+                    rows=model_per_sample_rows, csv_path=model_csv, json_path=model_json
+                )
                 per_sample_writer.write_rows(model_per_sample_rows)
                 for k in k_values:
                     k_sweep_rows.append(
                         {
                             "dataset": dataset_name,
                             "model": model,
+                            "confounder_column": confounder_column,
+                            "confounder_display_name": confounder_display_name,
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
                             "tau": float(args.tau),
@@ -1273,12 +1531,16 @@ def main() -> int:
                             "ccmr_search": ccmr_search_sig,
                             "k": int(k),
                             "knn_bacc": float(knn_bacc_by_k[int(k)]),
-                            "knn_center_bacc": float(knn_center_bacc_by_k[int(k)]),
+                            "knn_confounder_bacc": float(
+                                knn_confounder_bacc_by_k[int(k)]
+                            ),
                             "ri": float(ri_curve[int(k)]),
                             "mari": float(mari_curve[int(k)]),
                             "selected_k": int(selected_k),
-                            "selected_k_center": int(selected_k_center),
-                            "continuous_k_sweep": int(int(args.continuous_k_sweep_max) > 0),
+                            "selected_k_confounder": int(selected_k_confounder),
+                            "continuous_k_sweep": int(
+                                int(args.continuous_k_sweep_max) > 0
+                            ),
                             "embedding_path": str(output_path),
                         }
                     )
@@ -1300,7 +1562,9 @@ def main() -> int:
                 if row["ccmr_undefined_frac"] > 0.0:
                     undef_parts.append(f"CCMR={100*row['ccmr_undefined_frac']:.1f}%")
                 if undef_parts:
-                    ticker.log(f"[benchmark] undefined samples: {', '.join(undef_parts)}")
+                    ticker.log(
+                        f"[benchmark] undefined samples: {', '.join(undef_parts)}"
+                    )
             except Exception as exc:  # noqa: BLE001
                 metrics_status[model] = "failed"
                 failures.append(f"{model}: metrics failed ({exc})")
@@ -1311,18 +1575,40 @@ def main() -> int:
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
         save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
-        save_metrics(rows=ccmr_m_sweep_rows, csv_path=ccmr_m_sweep_csv, json_path=ccmr_m_sweep_json)
-        plot_knn_bio_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png")
-        plot_knn_center_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "knn_center_k_sweep.png")
+        save_metrics(
+            rows=ccmr_m_sweep_rows,
+            csv_path=ccmr_m_sweep_csv,
+            json_path=ccmr_m_sweep_json,
+        )
+        plot_knn_bio_k_sweep(
+            rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png"
+        )
+        plot_knn_confounder_k_sweep(
+            rows=k_sweep_rows, out_path=plots_dir / "knn_confounder_k_sweep.png"
+        )
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
-        plot_ccmr_m_sweep_with_ltm(rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png")
-        plot_ccmr_trend_quadrants(rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_trend_quadrants.png")
-        plot_ccmr_ltm_comparison(rows=rows, out_path=plots_dir / "ccmr_ltm_comparison.png")
-        plot_bio_vs_center_scatter(rows=rows, out_path=plots_dir / "bio_vs_center_scatter.png")
-        plot_mari_vs_ri_scatter(rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png")
-        plot_ccmr_vs_mari_scatter(rows=rows, out_path=plots_dir / "ccmr_vs_mari_scatter.png")
-        plot_ccmr_sample_distributions(rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png")
+        plot_ccmr_m_sweep_with_ltm(
+            rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png"
+        )
+        plot_ccmr_trend_quadrants(
+            rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_trend_quadrants.png"
+        )
+        plot_ccmr_ltm_comparison(
+            rows=rows, out_path=plots_dir / "ccmr_ltm_comparison.png"
+        )
+        plot_bio_vs_confounder_scatter(
+            rows=rows, out_path=plots_dir / "bio_vs_confounder_scatter.png"
+        )
+        plot_mari_vs_ri_scatter(
+            rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png"
+        )
+        plot_ccmr_vs_mari_scatter(
+            rows=rows, out_path=plots_dir / "ccmr_vs_mari_scatter.png"
+        )
+        plot_ccmr_sample_distributions(
+            rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png"
+        )
         plot_benchmark_6panel_summary(
             rows=rows,
             k_sweep_rows=k_sweep_rows,
@@ -1333,13 +1619,19 @@ def main() -> int:
     for model in models:
         e = extraction_status.get(model, "n/a")
         m = metrics_status.get(model, "n/a")
-        progress_write(f"[benchmark] {model}: extract={e} metrics={m}", enabled=progress_enabled)
+        progress_write(
+            f"[benchmark] {model}: extract={e} metrics={m}", enabled=progress_enabled
+        )
     progress_write(f"[benchmark] metrics_csv={metrics_csv}", enabled=progress_enabled)
     progress_write(f"[benchmark] metrics_json={metrics_json}", enabled=progress_enabled)
     progress_write(f"[benchmark] k_sweep_csv={k_sweep_csv}", enabled=progress_enabled)
     progress_write(f"[benchmark] k_sweep_json={k_sweep_json}", enabled=progress_enabled)
-    progress_write(f"[benchmark] ccmr_m_sweep_csv={ccmr_m_sweep_csv}", enabled=progress_enabled)
-    progress_write(f"[benchmark] ccmr_m_sweep_json={ccmr_m_sweep_json}", enabled=progress_enabled)
+    progress_write(
+        f"[benchmark] ccmr_m_sweep_csv={ccmr_m_sweep_csv}", enabled=progress_enabled
+    )
+    progress_write(
+        f"[benchmark] ccmr_m_sweep_json={ccmr_m_sweep_json}", enabled=progress_enabled
+    )
     progress_write(f"[benchmark] plots_dir={plots_dir}", enabled=progress_enabled)
 
     if failures:

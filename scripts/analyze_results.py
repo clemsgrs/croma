@@ -4,6 +4,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from croma.confounders import infer_confounder_display_name
+
 try:
     from croma.metrics.tail import compute_tail_metrics
 except ModuleNotFoundError:
@@ -56,21 +58,21 @@ _THRESH_TIER2_MIN_LT1_COUNT = 3
 
 _SUBGROUP_SCORE_COLUMN = "ccmr_m1"
 _SUBGROUP_MIN_HEADLINE_SAMPLES = 2
-_SUBGROUP_SCOPE_ORDER = ("stratum", "label", "medical_center")
+_SUBGROUP_SCOPE_ORDER = ("stratum", "label", "confounder")
 _SUBGROUP_SCOPE_TO_COLUMNS = {
-    "stratum": ("label", "medical_center"),
+    "stratum": ("label", "confounder"),
     "label": ("label",),
-    "medical_center": ("medical_center",),
+    "confounder": ("confounder",),
 }
 _SUBGROUP_SCOPE_TO_TITLE = {
     "stratum": "Strata",
     "label": "Biology",
-    "medical_center": "Centers",
+    "confounder": "Confounders",
 }
 _SCOPE_SORT_ORDER = {
     "stratum": 0,
     "label": 1,
-    "medical_center": 2,
+    "confounder": 2,
 }
 
 
@@ -78,7 +80,9 @@ def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Analyze benchmark metrics: correlations, model ranks, and rank changes."
     )
-    parser.add_argument("--metrics-csv", required=True, type=Path, help="Path to benchmark metrics CSV.")
+    parser.add_argument(
+        "--metrics-csv", required=True, type=Path, help="Path to benchmark metrics CSV."
+    )
     parser.add_argument(
         "--out-dir",
         type=Path,
@@ -90,7 +94,9 @@ def _parse_args() -> argparse.Namespace:
         default="RI",
         help="Reference metric for rank deltas (case-insensitive, default: RI).",
     )
-    parser.add_argument("--top-k", type=int, default=5, help="Top-k models to highlight per metric.")
+    parser.add_argument(
+        "--top-k", type=int, default=5, help="Top-k models to highlight per metric."
+    )
     parser.add_argument(
         "--k-sweep-csv",
         type=Path,
@@ -114,7 +120,9 @@ def _resolve_metric_name(name: str, available: list[str]) -> str:
     return by_lower[key]
 
 
-def _resolve_required_metrics(canonical: list[str], numeric_cols: list[str], label: str) -> list[str]:
+def _resolve_required_metrics(
+    canonical: list[str], numeric_cols: list[str], label: str
+) -> list[str]:
     resolved: list[str] = []
     missing: list[str] = []
     for name in canonical:
@@ -154,14 +162,22 @@ def _aggregate_by_model(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("metrics CSV must include a 'model' column")
     working = df.copy()
     working["model"] = _scoped_model_labels(working)
-    numeric_cols = [c for c in working.columns if c != "model" and pd.api.types.is_numeric_dtype(working[c])]
+    numeric_cols = [
+        c
+        for c in working.columns
+        if c != "model" and pd.api.types.is_numeric_dtype(working[c])
+    ]
     if not numeric_cols:
         raise ValueError("metrics CSV has no numeric columns to analyze")
-    grouped = working.groupby("model", as_index=False)[numeric_cols].mean(numeric_only=True)
+    grouped = working.groupby("model", as_index=False)[numeric_cols].mean(
+        numeric_only=True
+    )
     return grouped
 
 
-def _correlation_outputs(df_model: pd.DataFrame, metrics: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _correlation_outputs(
+    df_model: pd.DataFrame, metrics: list[str]
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     corr_df = df_model.loc[:, metrics]
     pearson = pd.DataFrame(np.nan, index=metrics, columns=metrics, dtype=float)
     spearman = pd.DataFrame(np.nan, index=metrics, columns=metrics, dtype=float)
@@ -249,8 +265,8 @@ def _rank_agreement(rank_df: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict] = []
     for i, c1 in enumerate(rank_cols):
         for c2 in rank_cols[i + 1 :]:
-            metric_1 = c1[len("rank_"):]
-            metric_2 = c2[len("rank_"):]
+            metric_1 = c1[len("rank_") :]
+            metric_2 = c2[len("rank_") :]
             s1 = rank_df[c1]
             s2 = rank_df[c2]
             if int(s1.dropna().nunique()) < 2 or int(s2.dropna().nunique()) < 2:
@@ -270,7 +286,9 @@ def _rank_agreement(rank_df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _strongest_corr_pairs(corr: pd.DataFrame, top_n: int = 5) -> list[tuple[str, str, float]]:
+def _strongest_corr_pairs(
+    corr: pd.DataFrame, top_n: int = 5
+) -> list[tuple[str, str, float]]:
     rows: list[tuple[str, str, float]] = []
     cols = list(corr.columns)
     for i, c1 in enumerate(cols):
@@ -304,8 +322,10 @@ def _empty_subgroup_df() -> pd.DataFrame:
             "context_label",
             "scope",
             "subgroup_name",
+            "confounder_column",
+            "confounder_display_name",
             "label",
-            "medical_center",
+            "confounder",
             "n_samples",
             "group_frac",
             "mean_ccmr",
@@ -374,16 +394,32 @@ def _safe_float(value: object, default: float) -> float:
     return parsed
 
 
+def _resolve_confounder_display_name(df: pd.DataFrame) -> str:
+    if "confounder_display_name" in df.columns:
+        values = df["confounder_display_name"].dropna().astype(str).str.strip()
+        values = values[values != ""]
+        if len(values) > 0:
+            return str(values.iloc[0])
+    if "confounder_column" in df.columns:
+        values = df["confounder_column"].dropna().astype(str).str.strip()
+        values = values[values != ""]
+        if len(values) > 0:
+            return infer_confounder_display_name(str(values.iloc[0]))
+    return "Confounder"
+
+
 def _sort_tail_rows(df: pd.DataFrame) -> pd.DataFrame:
-    return df.sort_values([_SUBGROUP_SCORE_COLUMN, "sample_id"], ascending=[True, True], kind="mergesort").reset_index(drop=True)
+    return df.sort_values(
+        [_SUBGROUP_SCORE_COLUMN, "sample_id"], ascending=[True, True], kind="mergesort"
+    ).reset_index(drop=True)
 
 
 def _render_subgroup_name(row: pd.Series, scope: str) -> str:
     if scope == "stratum":
-        return f"{row['label']} / {row['medical_center']}"
+        return f"{row['label']} / {row['confounder']}"
     if scope == "label":
         return str(row["label"])
-    return str(row["medical_center"])
+    return str(row["confounder"])
 
 
 def _subgroup_report_sort(df: pd.DataFrame) -> pd.DataFrame:
@@ -394,7 +430,15 @@ def _subgroup_report_sort(df: pd.DataFrame) -> pd.DataFrame:
         working["_tail_signal"] = working["tail_prevalence_ratio"]
     else:
         working["_tail_signal"] = float("nan")
-    sort_cols = ["_tail_signal", "tail_prevalence", "mean_ccmr", "ccmr_lt1_frac", "tail_mean_ccmr", "label", "medical_center"]
+    sort_cols = [
+        "_tail_signal",
+        "tail_prevalence",
+        "mean_ccmr",
+        "ccmr_lt1_frac",
+        "tail_mean_ccmr",
+        "label",
+        "confounder",
+    ]
     ascending = [False, False, True, False, True, True, True]
     available = [c for c in sort_cols if c in working.columns]
     asc = [ascending[sort_cols.index(c)] for c in available]
@@ -435,7 +479,9 @@ def _fmt_ratio(value: object) -> str:
     return f"{parsed:.1f}x"
 
 
-def _render_context_heading(*, dataset: object, context_id: object, evaluation_design: object) -> str:
+def _render_context_heading(
+    *, dataset: object, context_id: object, evaluation_design: object
+) -> str:
     return f"{dataset} / {context_id} ({evaluation_design})"
 
 
@@ -449,7 +495,10 @@ def _tier1_status(
 ) -> str:
     if n_samples < _SUBGROUP_MIN_HEADLINE_SAMPLES:
         return "insufficient_support"
-    if median_delta <= -_THRESH_TIER1_MEDIAN_DELTA and ccmr_lt1_delta >= _THRESH_TIER1_LT1_DELTA:
+    if (
+        median_delta <= -_THRESH_TIER1_MEDIAN_DELTA
+        and ccmr_lt1_delta >= _THRESH_TIER1_LT1_DELTA
+    ):
         if median_ccmr < 1.0 and rest_median_ccmr >= 1.0:
             return "broad_weakness"
         if median_ccmr >= 1.0 and rest_median_ccmr >= 1.0:
@@ -489,7 +538,9 @@ def _tier2_status(
     return "neutral"
 
 
-def _tail_severity_label(*, tail_count: int, rest_tail_count: int, tail_delta: float) -> str:
+def _tail_severity_label(
+    *, tail_count: int, rest_tail_count: int, tail_delta: float
+) -> str:
     if tail_count == 0:
         return "no_tail_samples"
     if rest_tail_count == 0 or not np.isfinite(tail_delta):
@@ -501,10 +552,15 @@ def _tail_severity_label(*, tail_count: int, rest_tail_count: int, tail_delta: f
     return "similar"
 
 
-def _tier3_status(*, n_samples: int, tail_prevalence_ratio: float, tail_severity_label: str) -> str:
+def _tier3_status(
+    *, n_samples: int, tail_prevalence_ratio: float, tail_severity_label: str
+) -> str:
     if n_samples < _SUBGROUP_MIN_HEADLINE_SAMPLES:
         return "insufficient_support"
-    enriched = np.isfinite(tail_prevalence_ratio) and tail_prevalence_ratio >= _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO
+    enriched = (
+        np.isfinite(tail_prevalence_ratio)
+        and tail_prevalence_ratio >= _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO
+    )
     severe = tail_severity_label == "more severe"
     if enriched and severe:
         return "tail_enriched_and_severe"
@@ -519,7 +575,9 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
     if len(df) == 0:
         return df.reset_index(drop=True)
     working = df.copy()
-    working["_scope_order"] = working["scope"].map(_SCOPE_SORT_ORDER).fillna(99).astype(int)
+    working["_scope_order"] = (
+        working["scope"].map(_SCOPE_SORT_ORDER).fillna(99).astype(int)
+    )
     if tier == "tier1":
         status_order = {
             "broad_weakness": 0,
@@ -528,8 +586,16 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
             "neutral": 3,
             "insufficient_support": 4,
         }
-        working["_status_order"] = working["tier1_status"].map(status_order).fillna(9).astype(int)
-        sort_cols = ["_status_order", "median_ccmr_delta_vs_rest", "ccmr_lt1_frac_delta_vs_rest", "_scope_order", "subgroup_name"]
+        working["_status_order"] = (
+            working["tier1_status"].map(status_order).fillna(9).astype(int)
+        )
+        sort_cols = [
+            "_status_order",
+            "median_ccmr_delta_vs_rest",
+            "ccmr_lt1_frac_delta_vs_rest",
+            "_scope_order",
+            "subgroup_name",
+        ]
         ascending = [True, True, False, True, True]
     elif tier == "tier2":
         status_order = {
@@ -539,8 +605,16 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
             "neutral": 3,
             "insufficient_support": 4,
         }
-        working["_status_order"] = working["tier2_status"].map(status_order).fillna(9).astype(int)
-        sort_cols = ["_status_order", "internal_tail_drop", "median_ccmr", "_scope_order", "subgroup_name"]
+        working["_status_order"] = (
+            working["tier2_status"].map(status_order).fillna(9).astype(int)
+        )
+        sort_cols = [
+            "_status_order",
+            "internal_tail_drop",
+            "median_ccmr",
+            "_scope_order",
+            "subgroup_name",
+        ]
         ascending = [True, False, False, True, True]
     else:
         status_order = {
@@ -550,14 +624,29 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
             "neutral": 3,
             "insufficient_support": 4,
         }
-        working["_status_order"] = working["tier3_status"].map(status_order).fillna(9).astype(int)
-        sort_cols = ["_status_order", "tail_prevalence_ratio", "tail_mean_ccmr_delta_vs_rest", "_scope_order", "subgroup_name"]
+        working["_status_order"] = (
+            working["tier3_status"].map(status_order).fillna(9).astype(int)
+        )
+        sort_cols = [
+            "_status_order",
+            "tail_prevalence_ratio",
+            "tail_mean_ccmr_delta_vs_rest",
+            "_scope_order",
+            "subgroup_name",
+        ]
         ascending = [True, False, True, True, True]
-    return working.sort_values(sort_cols, ascending=ascending, kind="mergesort").drop(columns=["_scope_order", "_status_order"]).reset_index(drop=True)
+    return (
+        working.sort_values(sort_cols, ascending=ascending, kind="mergesort")
+        .drop(columns=["_scope_order", "_status_order"])
+        .reset_index(drop=True)
+    )
 
 
 def _render_markdown_table(headers: list[str], rows: list[list[str]]) -> list[str]:
-    lines = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(headers)) + " |",
+    ]
     for row in rows:
         lines.append("| " + " | ".join(row) + " |")
     return lines
@@ -677,7 +766,9 @@ def _build_context_row(
     }
 
 
-def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _build_ccmr_subgroup_analysis(
+    df_per_sample: pd.DataFrame | None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     subgroup_rows: list[dict[str, object]] = []
     context_rows: list[dict[str, object]] = []
     if df_per_sample is None or len(df_per_sample) == 0:
@@ -691,7 +782,7 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
         "subset",
         "sample_id",
         "label",
-        "medical_center",
+        "confounder",
         "ccmr_alpha",
         _SUBGROUP_SCORE_COLUMN,
     }
@@ -699,9 +790,26 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
         return _empty_subgroup_df(), _empty_context_df()
 
     working = df_per_sample.copy()
-    for col in ("dataset", "model", "evaluation_design", "evaluation_unit", "subset", "sample_id", "label", "medical_center"):
+    confounder_display_name = _resolve_confounder_display_name(working)
+    confounder_column = (
+        str(working.get("confounder_column", pd.Series(dtype=str)).iloc[0])
+        if "confounder_column" in working.columns and len(working) > 0
+        else "confounder"
+    )
+    for col in (
+        "dataset",
+        "model",
+        "evaluation_design",
+        "evaluation_unit",
+        "subset",
+        "sample_id",
+        "label",
+        "confounder",
+    ):
         working[col] = working[col].astype(str)
-    working[_SUBGROUP_SCORE_COLUMN] = pd.to_numeric(working[_SUBGROUP_SCORE_COLUMN], errors="coerce")
+    working[_SUBGROUP_SCORE_COLUMN] = pd.to_numeric(
+        working[_SUBGROUP_SCORE_COLUMN], errors="coerce"
+    )
     working["ccmr_alpha"] = pd.to_numeric(working["ccmr_alpha"], errors="coerce")
     working["context_id"] = np.where(
         working["evaluation_design"] == "paired_2x2",
@@ -709,11 +817,26 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
         "dataset",
     )
 
-    group_cols = ["dataset", "model", "evaluation_design", "evaluation_unit", "context_id"]
+    group_cols = [
+        "dataset",
+        "model",
+        "evaluation_design",
+        "evaluation_unit",
+        "context_id",
+    ]
     for keys, group in working.groupby(group_cols, sort=True, dropna=False):
-        dataset, model, evaluation_design, evaluation_unit, context_id = [str(v) for v in keys]
+        dataset, model, evaluation_design, evaluation_unit, context_id = [
+            str(v) for v in keys
+        ]
         defined = group[np.isfinite(group[_SUBGROUP_SCORE_COLUMN])].copy()
-        alpha = _safe_float(group["ccmr_alpha"].dropna().iloc[0] if group["ccmr_alpha"].notna().any() else np.nan, 0.10)
+        alpha = _safe_float(
+            (
+                group["ccmr_alpha"].dropna().iloc[0]
+                if group["ccmr_alpha"].notna().any()
+                else np.nan
+            ),
+            0.10,
+        )
         n_labels = int(defined["label"].nunique())
         context_row = _build_context_row(
             context_df=defined,
@@ -728,7 +851,9 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
 
         if len(defined) == 0:
             context_row["skipped"] = True
-            context_row["skip_reason"] = "Skipped: no defined CCMR(m=1) samples are available for this context."
+            context_row["skip_reason"] = (
+                "Skipped: no defined CCMR(m=1) samples are available for this context."
+            )
             context_rows.append(context_row)
             continue
 
@@ -748,13 +873,19 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
 
         context_row["tail_size"] = int(tail_size)
         context_row["pooled_mean_ccmr"] = float(defined[_SUBGROUP_SCORE_COLUMN].mean())
-        context_row["pooled_median_ccmr"] = float(defined[_SUBGROUP_SCORE_COLUMN].median())
-        context_row["pooled_tail_mean_ccmr"] = float(defined.loc[defined["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
+        context_row["pooled_median_ccmr"] = float(
+            defined[_SUBGROUP_SCORE_COLUMN].median()
+        )
+        context_row["pooled_tail_mean_ccmr"] = float(
+            defined.loc[defined["is_tail"], _SUBGROUP_SCORE_COLUMN].mean()
+        )
         context_rows.append(context_row)
 
         n_defined = int(len(defined))
         context_mean_ccmr = float(context_row["pooled_mean_ccmr"])
-        context_tail_prevalence = float(tail_size / n_defined) if n_defined > 0 else float("nan")
+        context_tail_prevalence = (
+            float(tail_size / n_defined) if n_defined > 0 else float("nan")
+        )
         context_tail_mean_ccmr = float(context_row["pooled_tail_mean_ccmr"])
         for scope in _SUBGROUP_SCOPE_ORDER:
             cols = list(_SUBGROUP_SCOPE_TO_COLUMNS[scope])
@@ -763,11 +894,11 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                 if not isinstance(subgroup_key, tuple):
                     subgroup_key = (subgroup_key,)
                 label = ""
-                medical_center = ""
+                confounder = ""
                 if "label" in cols:
                     label = str(subgroup_key[cols.index("label")])
-                if "medical_center" in cols:
-                    medical_center = str(subgroup_key[cols.index("medical_center")])
+                if "confounder" in cols:
+                    confounder = str(subgroup_key[cols.index("confounder")])
 
                 n_samples = int(len(subgroup))
                 tail_count = int(subgroup["is_tail"].sum())
@@ -779,19 +910,36 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                 tail_prevalence = float(tail_count / n_samples)
                 tail_prevalence_ratio = (
                     float(tail_prevalence / context_tail_prevalence)
-                    if np.isfinite(context_tail_prevalence) and context_tail_prevalence > 0
+                    if np.isfinite(context_tail_prevalence)
+                    and context_tail_prevalence > 0
                     else float("nan")
                 )
-                tail_share = float(tail_count / tail_size) if tail_size > 0 else float("nan")
+                tail_share = (
+                    float(tail_count / tail_size) if tail_size > 0 else float("nan")
+                )
                 tail_mean_ccmr = (
-                    float(subgroup.loc[subgroup["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
+                    float(
+                        subgroup.loc[subgroup["is_tail"], _SUBGROUP_SCORE_COLUMN].mean()
+                    )
                     if tail_count > 0
                     else float("nan")
                 )
                 rest = defined.loc[~defined.index.isin(subgroup.index)]
-                rest_mean_ccmr = float(rest[_SUBGROUP_SCORE_COLUMN].mean()) if len(rest) > 0 else float("nan")
-                rest_median_ccmr = float(rest[_SUBGROUP_SCORE_COLUMN].median()) if len(rest) > 0 else float("nan")
-                rest_ccmr_lt1_frac = float((rest[_SUBGROUP_SCORE_COLUMN] < 1.0).mean()) if len(rest) > 0 else float("nan")
+                rest_mean_ccmr = (
+                    float(rest[_SUBGROUP_SCORE_COLUMN].mean())
+                    if len(rest) > 0
+                    else float("nan")
+                )
+                rest_median_ccmr = (
+                    float(rest[_SUBGROUP_SCORE_COLUMN].median())
+                    if len(rest) > 0
+                    else float("nan")
+                )
+                rest_ccmr_lt1_frac = (
+                    float((rest[_SUBGROUP_SCORE_COLUMN] < 1.0).mean())
+                    if len(rest) > 0
+                    else float("nan")
+                )
                 rest_tail_count = int(rest["is_tail"].sum()) if len(rest) > 0 else 0
                 rest_tail_mean_ccmr = (
                     float(rest.loc[rest["is_tail"], _SUBGROUP_SCORE_COLUMN].mean())
@@ -803,10 +951,14 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                     alpha=alpha,
                 )
                 median_ccmr_delta_vs_rest = (
-                    float(median_ccmr - rest_median_ccmr) if np.isfinite(rest_median_ccmr) else float("nan")
+                    float(median_ccmr - rest_median_ccmr)
+                    if np.isfinite(rest_median_ccmr)
+                    else float("nan")
                 )
                 ccmr_lt1_frac_delta_vs_rest = (
-                    float(ccmr_lt1_frac - rest_ccmr_lt1_frac) if np.isfinite(rest_ccmr_lt1_frac) else float("nan")
+                    float(ccmr_lt1_frac - rest_ccmr_lt1_frac)
+                    if np.isfinite(rest_ccmr_lt1_frac)
+                    else float("nan")
                 )
                 tail_mean_ccmr_delta_vs_rest = (
                     float(tail_mean_ccmr - rest_tail_mean_ccmr)
@@ -819,7 +971,7 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                     else float("nan")
                 )
                 subgroup_name = _render_subgroup_name(
-                    pd.Series({"label": label, "medical_center": medical_center}),
+                    pd.Series({"label": label, "confounder": confounder}),
                     scope=scope,
                 )
                 tier1_status = _tier1_status(
@@ -857,14 +1009,18 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                         "context_label": context_id,
                         "scope": scope,
                         "subgroup_name": subgroup_name,
+                        "confounder_column": confounder_column,
+                        "confounder_display_name": confounder_display_name,
                         "label": label,
-                        "medical_center": medical_center,
+                        "confounder": confounder,
                         "n_samples": n_samples,
                         "group_frac": group_frac,
                         "mean_ccmr": mean_ccmr,
                         "rest_mean_ccmr": rest_mean_ccmr,
                         "mean_ccmr_delta_vs_rest": (
-                            float(mean_ccmr - rest_mean_ccmr) if np.isfinite(rest_mean_ccmr) else float("nan")
+                            float(mean_ccmr - rest_mean_ccmr)
+                            if np.isfinite(rest_mean_ccmr)
+                            else float("nan")
                         ),
                         "median_ccmr": median_ccmr,
                         "rest_median_ccmr": rest_median_ccmr,
@@ -881,7 +1037,9 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                         "tail_count": tail_count,
                         "tail_prevalence": tail_prevalence,
                         "context_tail_prevalence": context_tail_prevalence,
-                        "tail_prevalence_delta": float(tail_prevalence - context_tail_prevalence),
+                        "tail_prevalence_delta": float(
+                            tail_prevalence - context_tail_prevalence
+                        ),
                         "tail_prevalence_ratio": tail_prevalence_ratio,
                         "tail_share": tail_share,
                         "tail_mean_ccmr": tail_mean_ccmr,
@@ -891,7 +1049,9 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
                         "tier3_status": tier3_status,
                         "n_defined_samples": n_defined,
                         "tail_size": tail_size,
-                        "headline_eligible": bool(n_samples >= _SUBGROUP_MIN_HEADLINE_SAMPLES),
+                        "headline_eligible": bool(
+                            n_samples >= _SUBGROUP_MIN_HEADLINE_SAMPLES
+                        ),
                     }
                 )
 
@@ -901,18 +1061,31 @@ def _build_ccmr_subgroup_analysis(df_per_sample: pd.DataFrame | None) -> tuple[p
 
     subgroup_out = pd.DataFrame(subgroup_rows)
     ranked_frames: list[pd.DataFrame] = []
-    rank_group_cols = ["dataset", "model", "evaluation_design", "evaluation_unit", "context_id", "scope"]
+    rank_group_cols = [
+        "dataset",
+        "model",
+        "evaluation_design",
+        "evaluation_unit",
+        "context_id",
+        "scope",
+    ]
     for _, frame in subgroup_out.groupby(rank_group_cols, sort=False, dropna=False):
         ranked = _subgroup_report_sort(frame)
         ranked["report_rank"] = np.arange(1, len(ranked) + 1, dtype=int)
         ranked_frames.append(ranked)
-    subgroup_out = pd.concat(ranked_frames, ignore_index=True) if ranked_frames else _empty_subgroup_df()
+    subgroup_out = (
+        pd.concat(ranked_frames, ignore_index=True)
+        if ranked_frames
+        else _empty_subgroup_df()
+    )
     subgroup_out = subgroup_out.loc[:, _empty_subgroup_df().columns]
     context_out = context_out.loc[:, _empty_context_df().columns]
     return subgroup_out, context_out
 
 
-def _render_ccmr_subgroup_markdown(subgroup_df: pd.DataFrame, context_df: pd.DataFrame) -> str:
+def _render_ccmr_subgroup_markdown(
+    subgroup_df: pd.DataFrame, context_df: pd.DataFrame
+) -> str:
     lines: list[str] = ["# Model-Specific CCMR Subgroup Analysis", ""]
     if len(context_df) == 0:
         lines.append("- No per-sample CCMR(m=1) contexts available.")
@@ -922,7 +1095,9 @@ def _render_ccmr_subgroup_markdown(subgroup_df: pd.DataFrame, context_df: pd.Dat
     for model, model_contexts in grouped_models:
         lines.append(f"## {model}")
         lines.append("")
-        for _, context in model_contexts.sort_values(["dataset", "context_id"], kind="mergesort").iterrows():
+        for _, context in model_contexts.sort_values(
+            ["dataset", "context_id"], kind="mergesort"
+        ).iterrows():
             context_id = str(context["context_id"])
             dataset = str(context["dataset"])
             evaluation_design = str(context["evaluation_design"])
@@ -1006,9 +1181,16 @@ def _ccmr_m_sweep_sensitivity(df_m: pd.DataFrame | None) -> pd.DataFrame:
             "m_max": float(grp_sorted["m"].iloc[-1]),
             "ccmr_m_min": float(grp_sorted["ccmr"].iloc[0]),
             "ccmr_m_max": float(grp_sorted["ccmr"].iloc[-1]),
-            "ccmr_gain": float(grp_sorted["ccmr"].iloc[-1] - grp_sorted["ccmr"].iloc[0]),
-            "q_gain": float(grp_sorted["ccmr_q_alpha"].iloc[-1] - grp_sorted["ccmr_q_alpha"].iloc[0]),
-            "ltm_gain": float(grp_sorted["ccmr_ltm_alpha"].iloc[-1] - grp_sorted["ccmr_ltm_alpha"].iloc[0]),
+            "ccmr_gain": float(
+                grp_sorted["ccmr"].iloc[-1] - grp_sorted["ccmr"].iloc[0]
+            ),
+            "q_gain": float(
+                grp_sorted["ccmr_q_alpha"].iloc[-1] - grp_sorted["ccmr_q_alpha"].iloc[0]
+            ),
+            "ltm_gain": float(
+                grp_sorted["ccmr_ltm_alpha"].iloc[-1]
+                - grp_sorted["ccmr_ltm_alpha"].iloc[0]
+            ),
         }
         if "ccmr_retries" in grp_sorted.columns:
             row["ccmr_retries_max"] = float(grp_sorted["ccmr_retries"].max())
@@ -1053,10 +1235,16 @@ def _model_action_flags(
 
     # Coverage risks: RI/MaRI undefined coverage is shared in this benchmark path,
     # so emit one model-level flag using the max available undefined fraction.
-    coverage_cols = [c for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac") if c in df_model.columns]
+    coverage_cols = [
+        c
+        for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac")
+        if c in df_model.columns
+    ]
     if coverage_cols:
         for _, row in df_model.iterrows():
-            coverage_values = [float(row[c]) for c in coverage_cols if np.isfinite(row[c])]
+            coverage_values = [
+                float(row[c]) for c in coverage_cols if np.isfinite(row[c])
+            ]
             if not coverage_values:
                 continue
             coverage_value = float(max(coverage_values))
@@ -1073,7 +1261,11 @@ def _model_action_flags(
                 )
 
     # Undefined breakdown flags: retain one OO-dominated poor-embedding warning.
-    oo_cols = [c for c in ("ri_oo_dominated_undefined_frac", "mari_oo_dominated_undefined_frac") if c in df_model.columns]
+    oo_cols = [
+        c
+        for c in ("ri_oo_dominated_undefined_frac", "mari_oo_dominated_undefined_frac")
+        if c in df_model.columns
+    ]
     if oo_cols:
         for _, row in df_model.iterrows():
             oo_values = [float(row[c]) for c in oo_cols if np.isfinite(row[c])]
@@ -1110,7 +1302,9 @@ def _model_action_flags(
 
     # k-sweep sensitivity.
     if len(k_sensitivity_df) > 0 and "max_range" in k_sensitivity_df.columns:
-        for _, row in k_sensitivity_df[k_sensitivity_df["max_range"] >= _THRESH_K_SWEEP_RANGE].iterrows():
+        for _, row in k_sensitivity_df[
+            k_sensitivity_df["max_range"] >= _THRESH_K_SWEEP_RANGE
+        ].iterrows():
             rows.append(
                 {
                     "model": str(row["model"]),
@@ -1125,7 +1319,9 @@ def _model_action_flags(
     # m-sweep CCMR gain and compute cost.
     if len(ccmr_m_sensitivity_df) > 0:
         if "ccmr_gain" in ccmr_m_sensitivity_df.columns:
-            for _, row in ccmr_m_sensitivity_df[ccmr_m_sensitivity_df["ccmr_gain"] >= _THRESH_M_SWEEP_CCMR_GAIN].iterrows():
+            for _, row in ccmr_m_sensitivity_df[
+                ccmr_m_sensitivity_df["ccmr_gain"] >= _THRESH_M_SWEEP_CCMR_GAIN
+            ].iterrows():
                 rows.append(
                     {
                         "model": str(row["model"]),
@@ -1140,7 +1336,9 @@ def _model_action_flags(
     if len(out) == 0:
         return out
     out = (
-        out.sort_values(["severity", "flag", "model", "value"], ascending=[True, True, True, False])
+        out.sort_values(
+            ["severity", "flag", "model", "value"], ascending=[True, True, True, False]
+        )
         .drop_duplicates(subset=["model", "flag"], keep="first")
         .reset_index(drop=True)
     )
@@ -1166,7 +1364,11 @@ def _write_report(
     ccmr_m_sensitivity_df: pd.DataFrame,
 ) -> None:
     strong_corr = _strongest_corr_pairs(pearson, top_n=8)
-    coverage_cols = [c for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac") if c in df_model.columns]
+    coverage_cols = [
+        c
+        for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac")
+        if c in df_model.columns
+    ]
 
     lines: list[str] = []
     lines.append("# Benchmark Metrics Analysis")
@@ -1174,25 +1376,41 @@ def _write_report(
     lines.append(f"- Input CSV: `{input_csv}`")
     lines.append(f"- Raw rows: {len(df_raw)}")
     lines.append(f"- Unique models analyzed: {len(df_model)}")
-    lines.append(f"- Top-model metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in top_metrics)}")
-    lines.append(f"- Correlation metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in corr_metrics)}")
-    lines.append(f"- Rank-shift metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in rank_metrics)}")
-    lines.append(f"- Rank reference: `{_DISPLAY_NAMES.get(rank_reference, rank_reference)}`")
+    lines.append(
+        f"- Top-model metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in top_metrics)}"
+    )
+    lines.append(
+        f"- Correlation metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in corr_metrics)}"
+    )
+    lines.append(
+        f"- Rank-shift metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in rank_metrics)}"
+    )
+    lines.append(
+        f"- Rank reference: `{_DISPLAY_NAMES.get(rank_reference, rank_reference)}`"
+    )
     lines.append("")
     lines.append("## Top Models By Metric")
     lines.append("")
     for metric in top_metrics:
         lines.append(f"### {_DISPLAY_NAMES.get(metric, metric)}")
-        metric_rows = top_df[top_df["metric"] == metric].sort_values("rank_position").head(int(top_k))
+        metric_rows = (
+            top_df[top_df["metric"] == metric]
+            .sort_values("rank_position")
+            .head(int(top_k))
+        )
         for _, row in metric_rows.iterrows():
-            lines.append(f"- #{int(row['rank_position'])} {row['model']} ({float(row['value']):.6g})")
+            lines.append(
+                f"- #{int(row['rank_position'])} {row['model']} ({float(row['value']):.6g})"
+            )
         lines.append("")
 
     lines.append("")
     lines.append("## Pearson Correlations (RI / MaRI / CCMR)")
     lines.append("")
     for m1, m2, val in strong_corr:
-        lines.append(f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}")
+        lines.append(
+            f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}"
+        )
     lines.append("")
     lines.append("## Rank Shift Analysis (Pairwise)")
     lines.append("")
@@ -1200,7 +1418,9 @@ def _write_report(
         pair_rows = delta_df[
             (delta_df["metric_a"] == metric_a) & (delta_df["metric_b"] == metric_b)
         ].sort_values("abs_improvement_delta", ascending=False)
-        lines.append(f"### {_DISPLAY_NAMES.get(metric_a, metric_a)} vs {_DISPLAY_NAMES.get(metric_b, metric_b)}")
+        lines.append(
+            f"### {_DISPLAY_NAMES.get(metric_a, metric_a)} vs {_DISPLAY_NAMES.get(metric_b, metric_b)}"
+        )
         shown_rows = pair_rows[pair_rows["abs_improvement_delta"] >= _THRESH_RANK_SHIFT]
         if len(shown_rows) == 0:
             lines.append(f"- No rank shifts with |delta| >= {int(_THRESH_RANK_SHIFT)}.")
@@ -1222,13 +1442,19 @@ def _write_report(
         lines.append("- Undefined-fraction columns unavailable.")
     else:
         coverage_flag_models = set(
-            action_flags_df.loc[action_flags_df["flag"] == "coverage_risk", "model"].astype(str)
+            action_flags_df.loc[
+                action_flags_df["flag"] == "coverage_risk", "model"
+            ].astype(str)
         )
         coverage_headers = ["Model", "Undefined Frac", "Coverage Risk"]
         coverage_rows: list[list[str]] = []
         for _, row in df_model.sort_values("model").iterrows():
-            coverage_values = [float(row[c]) for c in coverage_cols if np.isfinite(row[c])]
-            coverage_value = float(max(coverage_values)) if coverage_values else float("nan")
+            coverage_values = [
+                float(row[c]) for c in coverage_cols if np.isfinite(row[c])
+            ]
+            coverage_value = (
+                float(max(coverage_values)) if coverage_values else float("nan")
+            )
             coverage_rows.append(
                 [
                     str(row["model"]),
@@ -1248,10 +1474,16 @@ def _write_report(
     lines.append("## Additional Insights and Action Flags")
     lines.append("")
     if len(filtered_action_flags_df) == 0:
-        lines.append("- No additional action flags triggered beyond the dedicated coverage and rank-shift sections.")
+        lines.append(
+            "- No additional action flags triggered beyond the dedicated coverage and rank-shift sections."
+        )
     else:
-        lines.append(f"- Models with >=1 additional action flag: {filtered_action_flags_df['model'].nunique()}")
-        lines.append(f"- Total unique additional flags: {len(filtered_action_flags_df)}")
+        lines.append(
+            f"- Models with >=1 additional action flag: {filtered_action_flags_df['model'].nunique()}"
+        )
+        lines.append(
+            f"- Total unique additional flags: {len(filtered_action_flags_df)}"
+        )
         lines.append("")
         lines.append("### Triggered Flags (Top 20)")
         for _, row in filtered_action_flags_df.head(20).iterrows():
@@ -1265,7 +1497,9 @@ def _write_report(
     if len(k_sensitivity_df) == 0:
         lines.append("- k-sweep metrics unavailable.")
     else:
-        lines.append(f"- Threshold: `max(ri_range, mari_range) >= {_THRESH_K_SWEEP_RANGE:.2f}`")
+        lines.append(
+            f"- Threshold: `max(ri_range, mari_range) >= {_THRESH_K_SWEEP_RANGE:.2f}`"
+        )
         for _, row in k_sensitivity_df.head(5).iterrows():
             lines.append(
                 f"- {row['model']}: ri_range={float(row['ri_range']):.3f}, "
@@ -1277,7 +1511,9 @@ def _write_report(
     if len(ccmr_m_sensitivity_df) == 0:
         lines.append("- CCMR m-sweep metrics unavailable.")
     else:
-        lines.append(f"- Sensitivity threshold: `ccmr_gain >= {_THRESH_M_SWEEP_CCMR_GAIN:.2f}`")
+        lines.append(
+            f"- Sensitivity threshold: `ccmr_gain >= {_THRESH_M_SWEEP_CCMR_GAIN:.2f}`"
+        )
         for _, row in ccmr_m_sensitivity_df.head(5).iterrows():
             lines.append(
                 f"- {row['model']}: ccmr_gain={float(row['ccmr_gain']):.3f}, "
@@ -1293,7 +1529,11 @@ def main() -> int:
     if not metrics_csv.exists():
         raise FileNotFoundError(f"Metrics CSV not found: {metrics_csv}")
 
-    out_dir = Path(args.out_dir) if args.out_dir is not None else metrics_csv.parent / "analysis"
+    out_dir = (
+        Path(args.out_dir)
+        if args.out_dir is not None
+        else metrics_csv.parent / "analysis"
+    )
     out_dir.mkdir(parents=True, exist_ok=True)
 
     df_raw = pd.read_csv(metrics_csv)
@@ -1301,10 +1541,20 @@ def main() -> int:
         raise ValueError(f"Metrics CSV is empty: {metrics_csv}")
 
     df_model = _aggregate_by_model(df_raw)
-    numeric_cols = [c for c in df_model.columns if c != "model" and pd.api.types.is_numeric_dtype(df_model[c])]
-    top_metrics = _resolve_required_metrics(_TOP_METRICS_CANONICAL, numeric_cols, "top-model")
-    corr_metrics = _resolve_required_metrics(_CORR_METRICS_CANONICAL, numeric_cols, "correlation")
-    rank_metrics = _resolve_required_metrics(_RANK_METRICS_CANONICAL, numeric_cols, "rank-shift")
+    numeric_cols = [
+        c
+        for c in df_model.columns
+        if c != "model" and pd.api.types.is_numeric_dtype(df_model[c])
+    ]
+    top_metrics = _resolve_required_metrics(
+        _TOP_METRICS_CANONICAL, numeric_cols, "top-model"
+    )
+    corr_metrics = _resolve_required_metrics(
+        _CORR_METRICS_CANONICAL, numeric_cols, "correlation"
+    )
+    rank_metrics = _resolve_required_metrics(
+        _RANK_METRICS_CANONICAL, numeric_cols, "rank-shift"
+    )
 
     rank_reference = _resolve_metric_name(str(args.rank_reference), rank_metrics)
 
@@ -1314,9 +1564,15 @@ def main() -> int:
     delta_df = _rank_deltas(rank_df)
     agreement_df = _rank_agreement(rank_df)
 
-    k_sweep_path = Path(args.k_sweep_csv) if args.k_sweep_csv is not None else metrics_csv.parent / "k_sweep_metrics.csv"
+    k_sweep_path = (
+        Path(args.k_sweep_csv)
+        if args.k_sweep_csv is not None
+        else metrics_csv.parent / "k_sweep_metrics.csv"
+    )
     ccmr_m_sweep_path = (
-        Path(args.ccmr_m_sweep_csv) if args.ccmr_m_sweep_csv is not None else metrics_csv.parent / "ccmr_m_sweep_metrics.csv"
+        Path(args.ccmr_m_sweep_csv)
+        if args.ccmr_m_sweep_csv is not None
+        else metrics_csv.parent / "ccmr_m_sweep_metrics.csv"
     )
     per_sample_path = metrics_csv.parent / "per_sample_metrics.csv"
     df_k_sweep = _load_optional_csv(k_sweep_path)
@@ -1342,7 +1598,9 @@ def main() -> int:
     if len(k_sensitivity_df) > 0:
         k_sensitivity_df.to_csv(out_dir / "k_sweep_sensitivity.csv", index=False)
     if len(ccmr_m_sensitivity_df) > 0:
-        ccmr_m_sensitivity_df.to_csv(out_dir / "ccmr_m_sweep_sensitivity.csv", index=False)
+        ccmr_m_sensitivity_df.to_csv(
+            out_dir / "ccmr_m_sweep_sensitivity.csv", index=False
+        )
     if df_per_sample is not None:
         subgroup_df.to_csv(out_dir / "model_specific_ccmr_subgroups.csv", index=False)
         (out_dir / "model_specific_ccmr_subgroups.md").write_text(

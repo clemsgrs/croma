@@ -1,4 +1,3 @@
-
 import math
 import logging
 from dataclasses import dataclass
@@ -227,7 +226,9 @@ def _prepare_neighbors(
     slide_ids: np.ndarray,
     kmax: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    neigh_idx, neigh_dist, valid_counts, _meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
+    neigh_idx, neigh_dist, valid_counts, _meta = _prepare_neighbors_with_meta(
+        features, slide_ids, kmax
+    )
     return neigh_idx, neigh_dist, valid_counts
 
 
@@ -317,8 +318,14 @@ def _knn_balanced_accuracy_by_k(
     candidates = _normalize_k_values(k_values)
     kmax = int(max(candidates))
 
-    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
-    capped = ", capped" if prep_meta.hit_neighbor_cap and prep_meta.coverage < prep_meta.target_coverage else ""
+    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(
+        features, slide_ids, kmax
+    )
+    capped = (
+        ", capped"
+        if prep_meta.hit_neighbor_cap and prep_meta.coverage < prep_meta.target_coverage
+        else ""
+    )
     warn_context_with_fetch = (
         f"{warn_context} [fetch={prep_meta.final_n_neighbors}/{len(features) - 1}, "
         f"coverage={prep_meta.coverage * 100.0:.1f}%, "

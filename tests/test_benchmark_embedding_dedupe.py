@@ -15,20 +15,20 @@ import benchmark as bm
 
 def _repeated_subset_manifest() -> pd.DataFrame:
     base_rows = [
-        ("s0", "/tmp/s0.png", "A", "C1", "sl0"),
-        ("s1", "/tmp/s1.png", "A", "C2", "sl1"),
-        ("s2", "/tmp/s2.png", "B", "C1", "sl2"),
-        ("s3", "/tmp/s3.png", "B", "C2", "sl3"),
+        ("s0", "/tmp/s0.png", "A", "V1", "sl0"),
+        ("s1", "/tmp/s1.png", "A", "V2", "sl1"),
+        ("s2", "/tmp/s2.png", "B", "V1", "sl2"),
+        ("s3", "/tmp/s3.png", "B", "V2", "sl3"),
     ]
     rows: list[dict[str, str]] = []
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, center, slide_id in base_rows:
+        for sample_id, image_path, label, confounder, slide_id in base_rows:
             rows.append(
                 {
                     "sample_id": sample_id,
                     "image_path": image_path,
                     "label": label,
-                    "medical_center": center,
+                    "scanner_vendor": confounder,
                     "slide_id": slide_id,
                     "subset": subset,
                     "dataset": "toy",
@@ -44,14 +44,14 @@ def _install_noop_plots(monkeypatch) -> None:
 
     for name in (
         "plot_benchmark_6panel_summary",
-        "plot_bio_vs_center_scatter",
+        "plot_bio_vs_confounder_scatter",
         "plot_ccmr_ltm_comparison",
         "plot_ccmr_m_sweep_with_ltm",
         "plot_ccmr_sample_distributions",
         "plot_ccmr_trend_quadrants",
         "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
-        "plot_knn_center_k_sweep",
+        "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
         "plot_mari_vs_ri_scatter",
         "plot_ri_k_sweep",
@@ -59,7 +59,9 @@ def _install_noop_plots(monkeypatch) -> None:
         monkeypatch.setattr(bm, name, fake_plot)
 
 
-def test_benchmark_embeds_unique_source_samples_once(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_embeds_unique_source_samples_once(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     _repeated_subset_manifest().to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
@@ -127,6 +129,8 @@ def test_benchmark_embeds_unique_source_samples_once(monkeypatch, tmp_path: Path
             "M1",
             "--output-dir",
             str(output_dir),
+            "--confounder-column",
+            "scanner_vendor",
             "--evaluation-design",
             "paired_2x2",
             "--k-candidates",
@@ -141,7 +145,9 @@ def test_benchmark_embeds_unique_source_samples_once(monkeypatch, tmp_path: Path
     assert embed_calls[0]["rows"] == 4
     assert embed_calls[0]["sample_ids"] == ["s0", "s1", "s2", "s3"]
 
-    per_sample_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv")
+    per_sample_df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv"
+    )
     assert len(per_sample_df) == 8
     assert set(per_sample_df["subset"]) == {"pair1", "pair2"}
     assert int((per_sample_df["sample_id"] == "s0").sum()) == 2

@@ -101,7 +101,9 @@ class StepTicker:
     def done(self, step: str, *, cached: bool = False) -> None:
         elapsed = time.perf_counter() - self._t0
         if cached:
-            self._completed.append(RichText(f"  \u2713 {step:<8}  (cached)", style="dim"))
+            self._completed.append(
+                RichText(f"  \u2713 {step:<8}  (cached)", style="dim")
+            )
         else:
             self._completed.append(RichText(f"  \u2713 {step:<8}  {elapsed:.1f}s"))
         self._current = None

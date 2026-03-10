@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -68,7 +67,7 @@ class TestCCMRTailIntegration:
                 "sample_id": [f"s{i}" for i in range(8)],
                 "image_path": [f"/tmp/{i}.png" for i in range(8)],
                 "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
-                "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
+                "scanner_vendor": ["V1", "V1", "V2", "V2", "V1", "V1", "V2", "V2"],
                 "slide_id": [f"slide-{i}" for i in range(8)],
                 "dataset": ["toy"] * 8,
             }
@@ -90,6 +89,7 @@ class TestCCMRTailIntegration:
         result = CCMR.compute(
             features=features,
             manifest=manifest,
+            confounder_column="scanner_vendor",
             evaluation_design="dataset_wide",
             m=1,
             alpha=0.10,
@@ -107,7 +107,7 @@ class TestCCMRTailIntegration:
                 "sample_id": [f"s{i}" for i in range(8)],
                 "image_path": [f"/tmp/{i}.png" for i in range(8)],
                 "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
-                "medical_center": ["C1", "C1", "C2", "C2", "C1", "C1", "C2", "C2"],
+                "scanner_vendor": ["V1", "V1", "V2", "V2", "V1", "V1", "V2", "V2"],
                 "slide_id": [f"slide-{i}" for i in range(8)],
                 "dataset": ["toy"] * 8,
             }
@@ -129,6 +129,7 @@ class TestCCMRTailIntegration:
         result = CCMR.compute(
             features=features,
             manifest=manifest,
+            confounder_column="scanner_vendor",
             evaluation_design="dataset_wide",
             m=1,
             alpha=0.25,

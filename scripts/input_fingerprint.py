@@ -5,7 +5,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-_MANIFEST_COLUMNS = ("sample_id", "label", "medical_center", "slide_id", "image_path")
+from croma.confounders import CANONICAL_CONFOUNDER_COLUMN
+
+_MANIFEST_COLUMNS = (
+    "sample_id",
+    "label",
+    CANONICAL_CONFOUNDER_COLUMN,
+    "slide_id",
+    "image_path",
+)
 _OPTIONAL_MANIFEST_COLUMNS = ("subset",)
 
 
@@ -20,9 +28,13 @@ def _normalize_manifest_value(value: object) -> str:
 def manifest_fingerprint(manifest: pd.DataFrame) -> str:
     missing = [c for c in _MANIFEST_COLUMNS if c not in manifest.columns]
     if missing:
-        raise ValueError(f"manifest is missing required columns for fingerprinting: {missing}")
+        raise ValueError(
+            f"manifest is missing required columns for fingerprinting: {missing}"
+        )
 
-    columns = list(_MANIFEST_COLUMNS) + [c for c in _OPTIONAL_MANIFEST_COLUMNS if c in manifest.columns]
+    columns = list(_MANIFEST_COLUMNS) + [
+        c for c in _OPTIONAL_MANIFEST_COLUMNS if c in manifest.columns
+    ]
     rows = [
         [_normalize_manifest_value(v) for v in row]
         for row in manifest.loc[:, columns].itertuples(index=False, name=None)
@@ -30,6 +42,9 @@ def manifest_fingerprint(manifest: pd.DataFrame) -> str:
     payload = {
         "columns": columns,
         "rows": rows,
+        "confounder_column": str(
+            manifest.attrs.get("confounder_column", CANONICAL_CONFOUNDER_COLUMN)
+        ),
     }
     return _sha256_text(json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
@@ -43,7 +58,15 @@ def _sidecar_payload(sidecar_path: Path) -> dict:
         return {}
     if not isinstance(raw, dict):
         return {}
-    keys = ("manifest", "manifest_fingerprint", "model_id", "extract", "mixed_precision", "n_samples", "embedding_dim")
+    keys = (
+        "manifest",
+        "manifest_fingerprint",
+        "model_id",
+        "extract",
+        "mixed_precision",
+        "n_samples",
+        "embedding_dim",
+    )
     return {key: raw.get(key) for key in keys if key in raw}
 
 

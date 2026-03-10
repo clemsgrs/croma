@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 
@@ -17,12 +16,14 @@ class RobustnessIndex(BaseRobustnessIndex):
         features: np.ndarray,
         manifest: pd.DataFrame,
         *,
+        confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
         evaluation_design: str = "paired_2x2",
     ) -> RobustnessResult:
         return cls._compute(
             features=features,
             manifest=manifest,
+            confounder_column=confounder_column,
             k_candidates=k_candidates,
             evaluation_design=evaluation_design,
         )
@@ -33,12 +34,14 @@ class RobustnessIndex(BaseRobustnessIndex):
         features: np.ndarray,
         manifest: pd.DataFrame,
         *,
+        confounder_column: str,
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = "paired_2x2",
     ) -> dict[int, float]:
         return cls._compute_curve(
             features=features,
             manifest=manifest,
+            confounder_column=confounder_column,
             k_values=k_values,
             evaluation_design=evaluation_design,
         )

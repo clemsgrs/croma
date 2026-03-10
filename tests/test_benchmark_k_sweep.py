@@ -20,9 +20,18 @@ def _toy_manifest() -> pd.DataFrame:
             "sample_id": ["s0", "s1", "s2", "s3", "s0", "s4", "s5", "s6"],
             "image_path": [f"/tmp/{i}.png" for i in range(8)],
             "label": ["A", "A", "B", "B", "A", "A", "B", "B"],
-            "medical_center": ["C1", "C2", "C1", "C2", "C1", "C2", "C1", "C2"],
+            "scanner_vendor": ["V1", "V2", "V1", "V2", "V1", "V2", "V1", "V2"],
             "slide_id": ["sl0", "sl1", "sl2", "sl3", "sl0", "sl4", "sl5", "sl6"],
-            "subset": ["pair1", "pair1", "pair1", "pair1", "pair2", "pair2", "pair2", "pair2"],
+            "subset": [
+                "pair1",
+                "pair1",
+                "pair1",
+                "pair1",
+                "pair2",
+                "pair2",
+                "pair2",
+                "pair2",
+            ],
             "dataset": ["toy"] * 8,
         }
     )
@@ -82,14 +91,14 @@ def _install_noop_plots(monkeypatch) -> None:
 
     plot_names = [
         "plot_benchmark_6panel_summary",
-        "plot_bio_vs_center_scatter",
+        "plot_bio_vs_confounder_scatter",
         "plot_ccmr_ltm_comparison",
         "plot_ccmr_m_sweep_with_ltm",
         "plot_ccmr_sample_distributions",
         "plot_ccmr_trend_quadrants",
         "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
-        "plot_knn_center_k_sweep",
+        "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
         "plot_mari_vs_ri_scatter",
         "plot_ri_k_sweep",
@@ -113,6 +122,8 @@ def _run_benchmark(
         str(manifest_path),
         "--output-dir",
         str(output_dir),
+        "--confounder-column",
+        "scanner_vendor",
         "--evaluation-design",
         evaluation_design,
         "--k-candidates",
@@ -132,10 +143,12 @@ def _run_benchmark(
     "argv_tail",
     [
         ["--dataset-name", "override"],
-        ["--exclude-center", "C1"],
+        ["--exclude-confounder", "C1"],
     ],
 )
-def test_benchmark_rejects_removed_flags(monkeypatch, tmp_path: Path, argv_tail: list[str]) -> None:
+def test_benchmark_rejects_removed_flags(
+    monkeypatch, tmp_path: Path, argv_tail: list[str]
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     _toy_manifest().to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
@@ -154,7 +167,9 @@ def test_benchmark_rejects_removed_flags(monkeypatch, tmp_path: Path, argv_tail:
     assert excinfo.value.code == 2
 
 
-def test_benchmark_uses_manifest_stem_for_dataset_output(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_uses_manifest_stem_for_dataset_output(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "release-ready.csv"
     manifest = _toy_manifest()
     manifest["dataset"] = "wrong_name"
@@ -163,18 +178,25 @@ def test_benchmark_uses_manifest_stem_for_dataset_output(monkeypatch, tmp_path: 
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
     _install_noop_plots(monkeypatch)
 
-    assert _run_benchmark(
-        monkeypatch,
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        models=["M1"],
-    ) == 0
+    assert (
+        _run_benchmark(
+            monkeypatch,
+            manifest_path=manifest_path,
+            output_dir=output_dir,
+            models=["M1"],
+        )
+        == 0
+    )
 
-    metrics_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "metrics.csv")
+    metrics_df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "metrics.csv"
+    )
     assert set(metrics_df["dataset"]) == {"release-ready"}
 
 
-def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_dataset_wide_outputs_sample_level_rows(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     _toy_manifest().to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
@@ -182,12 +204,15 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path:
     _install_fake_registry_and_embed(monkeypatch, models=models)
     _install_noop_plots(monkeypatch)
 
-    assert _run_benchmark(
-        monkeypatch,
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        models=None,
-    ) == 0
+    assert (
+        _run_benchmark(
+            monkeypatch,
+            manifest_path=manifest_path,
+            output_dir=output_dir,
+            models=None,
+        )
+        == 0
+    )
 
     dataset_dir = output_dir / manifest_path.stem
     results_dir = dataset_dir / "results"
@@ -209,11 +234,17 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path:
     expected_rows = len(_toy_manifest()) * len(models)
     assert len(per_sample_df) == expected_rows
     for model in models:
-        model_rows = per_sample_df[per_sample_df["model"] == model].sort_values("occurrence_index")
-        assert model_rows["occurrence_index"].tolist() == list(range(len(_toy_manifest())))
+        model_rows = per_sample_df[per_sample_df["model"] == model].sort_values(
+            "occurrence_index"
+        )
+        assert model_rows["occurrence_index"].tolist() == list(
+            range(len(_toy_manifest()))
+        )
         assert model_rows["sample_index"].tolist() == list(range(len(_toy_manifest())))
         model_df = pd.read_csv(per_model_dir / f"{model}.csv")
-        assert model_df["occurrence_index"].tolist() == list(range(len(_toy_manifest())))
+        assert model_df["occurrence_index"].tolist() == list(
+            range(len(_toy_manifest()))
+        )
         assert set(model_df["model"]) == {model}
 
     for path in (
@@ -229,7 +260,9 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(monkeypatch, tmp_path:
         assert path.exists(), f"Missing output: {path}"
 
 
-def test_benchmark_paired_outputs_occurrence_level_rows(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_paired_outputs_occurrence_level_rows(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     manifest = _toy_manifest()
     manifest.to_csv(manifest_path, index=False)
@@ -237,13 +270,16 @@ def test_benchmark_paired_outputs_occurrence_level_rows(monkeypatch, tmp_path: P
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
     _install_noop_plots(monkeypatch)
 
-    assert _run_benchmark(
-        monkeypatch,
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        models=["M1"],
-        evaluation_design="paired_2x2",
-    ) == 0
+    assert (
+        _run_benchmark(
+            monkeypatch,
+            manifest_path=manifest_path,
+            output_dir=output_dir,
+            models=["M1"],
+            evaluation_design="paired_2x2",
+        )
+        == 0
+    )
 
     results_dir = output_dir / manifest_path.stem / "results"
     metrics_df = pd.read_csv(results_dir / "metrics.csv")
@@ -258,7 +294,9 @@ def test_benchmark_paired_outputs_occurrence_level_rows(monkeypatch, tmp_path: P
     assert int((per_sample_df["sample_id"] == "s0").sum()) == 2
 
 
-def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     manifest = _toy_manifest()
     manifest.to_csv(manifest_path, index=False)
@@ -279,8 +317,12 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
             self.sample_values_aligned = aligned
             self.sample_undefined_types = np.asarray(undef_types, dtype=int)
             self.undefined_frac = float((~informative).mean())
-            self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
-            self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
+            self.ss_dominated_undefined_frac = float(
+                np.mean(self.sample_undefined_types == 1)
+            )
+            self.oo_dominated_undefined_frac = float(
+                np.mean(self.sample_undefined_types == 2)
+            )
             self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
             self.evaluation_design = "dataset_wide"
             self.evaluation_unit = "sample"
@@ -311,6 +353,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
+        confounder_column: str,
         k_values: list[int],
         evaluation_design: str,
         selected_k: int,
@@ -331,6 +374,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
+        confounder_column: str,
         k_values: list[int],
         evaluation_design: str,
         selected_k: int,
@@ -352,6 +396,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
+        confounder_column: str,
         evaluation_design: str,
         m: list[int],
         alpha: float,
@@ -370,19 +415,42 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
     monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_mari_compute_artifacts)
     monkeypatch.setattr(bm.CCMR, "compute", fake_ccmr_compute)
 
-    assert _run_benchmark(
-        monkeypatch,
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        models=[model],
-        extra_args=["--ccmr-m-max", "2"],
-    ) == 0
+    assert (
+        _run_benchmark(
+            monkeypatch,
+            manifest_path=manifest_path,
+            output_dir=output_dir,
+            models=[model],
+            extra_args=["--ccmr-m-max", "2"],
+        )
+        == 0
+    )
 
-    per_sample_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv")
+    per_sample_df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv"
+    )
     assert len(per_sample_df) == len(manifest)
     assert per_sample_df["sample_index"].tolist() == list(range(len(manifest)))
-    assert per_sample_df["ri_defined"].tolist() == [True, False, True, False, True, True, False, True]
-    assert per_sample_df["mari_defined"].tolist() == [True, False, True, False, True, True, False, True]
+    assert per_sample_df["ri_defined"].tolist() == [
+        True,
+        False,
+        True,
+        False,
+        True,
+        True,
+        False,
+        True,
+    ]
+    assert per_sample_df["mari_defined"].tolist() == [
+        True,
+        False,
+        True,
+        False,
+        True,
+        True,
+        False,
+        True,
+    ]
     assert per_sample_df["ri_undefined_type"].tolist() == [0, 1, 0, 2, 0, 0, 3, 0]
     assert per_sample_df["mari_undefined_type"].tolist() == [0, 3, 0, 1, 0, 0, 2, 0]
     assert np.isnan(per_sample_df.loc[1, "ri"])
@@ -391,7 +459,9 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(monkeypatch, t
     assert np.isnan(per_sample_df.loc[5, "ccmr_m2"])
 
 
-def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_continuous_k_sweep_uses_full_range(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     _toy_manifest().to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
@@ -399,20 +469,27 @@ def test_benchmark_continuous_k_sweep_uses_full_range(monkeypatch, tmp_path: Pat
     _install_fake_registry_and_embed(monkeypatch, models=models)
     _install_noop_plots(monkeypatch)
 
-    assert _run_benchmark(
-        monkeypatch,
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        models=models,
-        extra_args=["--k-candidates", "3,5", "--continuous-k-sweep-max", "4"],
-    ) == 0
+    assert (
+        _run_benchmark(
+            monkeypatch,
+            manifest_path=manifest_path,
+            output_dir=output_dir,
+            models=models,
+            extra_args=["--k-candidates", "3,5", "--continuous-k-sweep-max", "4"],
+        )
+        == 0
+    )
 
-    df = pd.read_csv(output_dir / manifest_path.stem / "results" / "k_sweep_metrics.csv")
+    df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "k_sweep_metrics.csv"
+    )
     assert set(df["model"]) == set(models)
     assert set(df["k"]) == {1, 2, 3, 4}
 
 
-def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) -> None:
+def test_benchmark_can_select_different_confounder_k(
+    monkeypatch, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     _toy_manifest().to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
@@ -424,8 +501,12 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
             self.std = 0.0
             self.n_pairs = 1
             self.sample_values = np.asarray([0.2, 0.6, 0.8], dtype=float)
-            self.sample_values_aligned = np.asarray([0.2, np.nan, 0.6, 0.8, np.nan, np.nan, np.nan, np.nan], dtype=float)
-            self.sample_undefined_types = np.asarray([0, 3, 0, 0, 3, 3, 3, 3], dtype=int)
+            self.sample_values_aligned = np.asarray(
+                [0.2, np.nan, 0.6, 0.8, np.nan, np.nan, np.nan, np.nan], dtype=float
+            )
+            self.sample_undefined_types = np.asarray(
+                [0, 3, 0, 0, 3, 3, 3, 3], dtype=int
+            )
             self.undefined_frac = 0.0
             self.ss_dominated_undefined_frac = 0.0
             self.oo_dominated_undefined_frac = 0.0
@@ -449,6 +530,7 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
+        confounder_column: str,
         k_values: list[int],
         evaluation_design: str,
         selected_k: int,
@@ -464,22 +546,27 @@ def test_benchmark_can_select_different_center_k(monkeypatch, tmp_path: Path) ->
 
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
     _install_noop_plots(monkeypatch)
-    monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k)
+    monkeypatch.setattr(
+        bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k
+    )
     monkeypatch.setattr(bm.RI, "_compute_artifacts", fake_compute_artifacts)
     monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_compute_artifacts)
 
-    assert _run_benchmark(
-        monkeypatch,
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        models=["M1"],
-    ) == 0
+    assert (
+        _run_benchmark(
+            monkeypatch,
+            manifest_path=manifest_path,
+            output_dir=output_dir,
+            models=["M1"],
+        )
+        == 0
+    )
 
     dataset_dir = output_dir / manifest_path.stem
     metrics_df = pd.read_csv(dataset_dir / "results" / "metrics.csv")
     k_sweep_df = pd.read_csv(dataset_dir / "results" / "k_sweep_metrics.csv")
 
     assert int(metrics_df.loc[0, "k"]) == 1
-    assert int(metrics_df.loc[0, "selected_k_center"]) == 3
+    assert int(metrics_df.loc[0, "selected_k_confounder"]) == 3
     assert int(k_sweep_df.loc[0, "selected_k"]) == 1
-    assert int(k_sweep_df.loc[0, "selected_k_center"]) == 3
+    assert int(k_sweep_df.loc[0, "selected_k_confounder"]) == 3
