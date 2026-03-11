@@ -4,23 +4,16 @@ from pathlib import Path
 from typing import Iterable, Mapping, TextIO
 
 
-def parse_k_candidates(raw: str) -> list[int]:
-    values = [int(v.strip()) for v in raw.split(",") if v.strip()]
-    if not values:
-        raise ValueError("k-candidates must include at least one integer")
-    return values
-
-
 def safe_model_name(model: str) -> str:
     return str(model).replace("/", "_").replace(":", "_")
 
 
-def k_candidates_signature(k_candidates: list[int] | tuple[int, ...]) -> str:
-    uniq = sorted({int(k) for k in k_candidates})
+def k_values_signature(k_values: list[int] | tuple[int, ...]) -> str:
+    uniq = sorted({int(k) for k in k_values})
     if not uniq:
-        raise ValueError("k_candidates must include at least one integer")
+        raise ValueError("k_values must include at least one integer")
     if min(uniq) <= 0:
-        raise ValueError("k_candidates must be strictly positive")
+        raise ValueError("k_values must be strictly positive")
     return ",".join(str(int(k)) for k in uniq)
 
 

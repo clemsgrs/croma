@@ -43,12 +43,10 @@ def _install_noop_plots(monkeypatch) -> None:
         out_path.write_bytes(b"plot")
 
     for name in (
-        "plot_benchmark_6panel_summary",
         "plot_bio_vs_confounder_scatter",
         "plot_ccmr_ltm_comparison",
         "plot_ccmr_m_sweep_with_ltm",
         "plot_ccmr_sample_distributions",
-        "plot_ccmr_trend_quadrants",
         "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_confounder_k_sweep",
@@ -133,8 +131,8 @@ def test_benchmark_embeds_unique_source_samples_once(
             "scanner_vendor",
             "--evaluation-design",
             "paired_2x2",
-            "--k-candidates",
-            "1,3",
+            "--k-max",
+            "3",
             "--progress",
             "off",
         ],

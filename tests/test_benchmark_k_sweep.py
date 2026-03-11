@@ -90,12 +90,10 @@ def _install_noop_plots(monkeypatch) -> None:
         out_path.write_bytes(b"plot")
 
     plot_names = [
-        "plot_benchmark_6panel_summary",
         "plot_bio_vs_confounder_scatter",
         "plot_ccmr_ltm_comparison",
         "plot_ccmr_m_sweep_with_ltm",
         "plot_ccmr_sample_distributions",
-        "plot_ccmr_trend_quadrants",
         "plot_ccmr_vs_mari_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_confounder_k_sweep",
@@ -114,6 +112,7 @@ def _run_benchmark(
     output_dir: Path,
     models: list[str] | None,
     evaluation_design: str = "dataset_wide",
+    k_max: int = 3,
     extra_args: list[str] | None = None,
 ) -> int:
     argv = [
@@ -126,8 +125,8 @@ def _run_benchmark(
         "scanner_vendor",
         "--evaluation-design",
         evaluation_design,
-        "--k-candidates",
-        "1,3",
+        "--k-max",
+        str(int(k_max)),
         "--progress",
         "off",
     ]
@@ -159,6 +158,38 @@ def test_benchmark_rejects_removed_flags(
         str(manifest_path),
         "--output-dir",
         str(output_dir),
+    ]
+    argv.extend(argv_tail)
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit) as excinfo:
+        bm._parse_args()
+    assert excinfo.value.code == 2
+
+
+@pytest.mark.parametrize(
+    "argv_tail",
+    [
+        ["--k-candidates", "1,3"],
+        ["--continuous-k-sweep-max", "4"],
+    ],
+)
+def test_benchmark_rejects_removed_k_sweep_flags(
+    monkeypatch, tmp_path: Path, argv_tail: list[str]
+) -> None:
+    manifest_path = tmp_path / "toy.csv"
+    _toy_manifest().to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+
+    argv = [
+        "benchmark.py",
+        "--manifest",
+        str(manifest_path),
+        "--output-dir",
+        str(output_dir),
+        "--confounder-column",
+        "scanner_vendor",
+        "--k-max",
+        "3",
     ]
     argv.extend(argv_tail)
     monkeypatch.setattr(sys, "argv", argv)
@@ -225,8 +256,10 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
     assert set(metrics_df["model"]) == set(models)
     assert set(metrics_df["evaluation_design"]) == {"dataset_wide"}
     assert set(metrics_df["evaluation_unit"]) == {"sample"}
+    assert set(metrics_df["k_max"]) == {3}
     assert set(k_sweep_df["evaluation_design"]) == {"dataset_wide"}
     assert set(k_sweep_df["evaluation_unit"]) == {"sample"}
+    assert set(k_sweep_df["k_max"]) == {3}
     assert set(per_sample_df["evaluation_design"]) == {"dataset_wide"}
     assert set(per_sample_df["evaluation_unit"]) == {"sample"}
     assert set(per_sample_df["subset"]) == {"dataset"}
@@ -254,10 +287,15 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
         results_dir / "per_sample_metrics.csv",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
-        plots_dir / "benchmark_6panel_summary.png",
         plots_dir / "ccmr_ltm_comparison.png",
     ):
         assert path.exists(), f"Missing output: {path}"
+
+    for path in (
+        plots_dir / "benchmark_6panel_summary.png",
+        plots_dir / "ccmr_trend_quadrants.png",
+    ):
+        assert not path.exists(), f"Deprecated plot should not be written: {path}"
 
 
 def test_benchmark_paired_outputs_occurrence_level_rows(
@@ -459,7 +497,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
     assert np.isnan(per_sample_df.loc[5, "ccmr_m2"])
 
 
-def test_benchmark_continuous_k_sweep_uses_full_range(
+def test_benchmark_k_max_uses_full_range(
     monkeypatch, tmp_path: Path
 ) -> None:
     manifest_path = tmp_path / "toy.csv"
@@ -475,7 +513,7 @@ def test_benchmark_continuous_k_sweep_uses_full_range(
             manifest_path=manifest_path,
             output_dir=output_dir,
             models=models,
-            extra_args=["--k-candidates", "3,5", "--continuous-k-sweep-max", "4"],
+            k_max=4,
         )
         == 0
     )
@@ -485,6 +523,7 @@ def test_benchmark_continuous_k_sweep_uses_full_range(
     )
     assert set(df["model"]) == set(models)
     assert set(df["k"]) == {1, 2, 3, 4}
+    assert set(df["k_max"]) == {4}
 
 
 def test_benchmark_can_select_different_confounder_k(
@@ -523,8 +562,10 @@ def test_benchmark_can_select_different_confounder_k(
         warn_context: str,
     ) -> dict[int, float]:
         if np.array_equal(labels, np.array([0, 1, 0, 1, 0, 1, 0, 1], dtype=int)):
-            return {int(k): v for k, v in zip(k_values, [0.60, 0.92], strict=False)}
-        return {int(k): v for k, v in zip(k_values, [0.90, 0.70], strict=False)}
+            return {
+                int(k): v for k, v in zip(k_values, [0.60, 0.75, 0.92], strict=False)
+            }
+        return {int(k): v for k, v in zip(k_values, [0.90, 0.70, 0.68], strict=False)}
 
     def fake_compute_artifacts(
         *,

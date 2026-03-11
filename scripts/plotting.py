@@ -6,7 +6,6 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 
-from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
 from croma.confounders import infer_confounder_display_name
@@ -458,108 +457,6 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccmr_trend_quadrants(rows: list[dict], out_path: Path) -> None:
-    by_model: dict[str, list[dict]] = {}
-    for row in rows:
-        model = str(row["model"])
-        by_model.setdefault(model, []).append(row)
-
-    model_slopes: list[dict] = []
-    for model, model_rows in by_model.items():
-        valid = []
-        for r in model_rows:
-            try:
-                m_val = int(r["m"])
-                ccmr_val = float(r["ccmr"])
-                ltm_val = float(r["ccmr_ltm_alpha"])
-                if np.isfinite(ccmr_val) and np.isfinite(ltm_val):
-                    valid.append((m_val, ccmr_val, ltm_val))
-            except Exception:  # noqa: BLE001
-                continue
-        if len(valid) < 2:
-            continue
-        valid.sort(key=lambda x: x[0])
-        ms = np.asarray([v[0] for v in valid], dtype=float)
-        ccmr_vals = np.asarray([v[1] for v in valid], dtype=float)
-        ltm_vals = np.asarray([v[2] for v in valid], dtype=float)
-        ccmr_slope = float(np.polyfit(ms, ccmr_vals, 1)[0])
-        ltm_slope = float(np.polyfit(ms, ltm_vals, 1)[0])
-        model_slopes.append(
-            {"model": model, "ccmr_slope": ccmr_slope, "ltm_slope": ltm_slope}
-        )
-
-    fig, ax = plt.subplots(figsize=(8.0, 7.0))
-
-    if not model_slopes:
-        ax.set_visible(False)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.tight_layout()
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
-        return
-
-    ax.set_facecolor("#fbfcfd")
-    ax.grid(color="#d9dee5", linewidth=0.8, alpha=0.9)
-    ax.axvline(0, linestyle="--", linewidth=1.0, color="#9ca3af", zorder=1)
-    ax.axhline(0, linestyle="--", linewidth=1.0, color="#9ca3af", zorder=1)
-
-    xs = np.asarray([d["ccmr_slope"] for d in model_slopes], dtype=float)
-    ys = np.asarray([d["ltm_slope"] for d in model_slopes], dtype=float)
-
-    for d in model_slopes:
-        x = float(d["ccmr_slope"])
-        y = float(d["ltm_slope"])
-        color = _color_for_model(d["model"])
-        ax.scatter(
-            [x], [y], s=100, color=color, edgecolors="white", linewidths=1.0, zorder=3
-        )
-        ax.annotate(
-            d["model"],
-            xy=(x, y),
-            xytext=(4, 4),
-            textcoords="offset points",
-            fontsize=7,
-            zorder=4,
-        )
-
-    max_abs = max(
-        float(np.max(np.abs(xs))) if xs.size > 0 else 0.0,
-        float(np.max(np.abs(ys))) if ys.size > 0 else 0.0,
-        1e-9,
-    )
-    lim = max_abs * 1.3
-    ax.set_xlim(-lim, lim)
-    ax.set_ylim(-lim, lim)
-
-    _q_props = {
-        "fontsize": 7,
-        "style": "italic",
-        "color": "#6b7280",
-        "ha": "center",
-        "va": "center",
-    }
-    ax.text(
-        lim * 0.65, lim * 0.75, "Rising / Rising\ntail rescued at scale", **_q_props
-    )
-    ax.text(-lim * 0.65, lim * 0.75, "Falling / Rising\ntail idiosyncratic", **_q_props)
-    ax.text(
-        lim * 0.65,
-        -lim * 0.75,
-        "Rising / Falling\nmedian improves, tail stuck",
-        **_q_props,
-    )
-    ax.text(-lim * 0.65, -lim * 0.75, "Falling / Falling\neroding at scale", **_q_props)
-
-    ax.set_xlabel("CCMR(m) slope", fontsize=11)
-    ax.set_ylabel("LTM(m) slope", fontsize=11)
-    ax.set_title("CCMR vs LTM trend quadrants", fontsize=14, weight="bold")
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
-
 def _valid_ccmr_ltm_rows(rows: list[dict]) -> list[dict]:
     valid: list[dict] = []
     for row in rows:
@@ -914,77 +811,5 @@ def plot_ccmr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
     _draw_ccmr_vs_mari_scatter(ax, rows, show_legend=True, legend_outside=False)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-
-
-def plot_benchmark_6panel_summary(
-    *, rows: list[dict], k_sweep_rows: list[dict], out_path: Path
-) -> None:
-    fig, axes = plt.subplots(3, 2, figsize=(15.0, 16.0))
-
-    _draw_k_curve(
-        axes[0, 0],
-        rows=k_sweep_rows,
-        value_key="knn_bacc",
-        ylabel="Balanced accuracy",
-        title="Biological Accuracy over k",
-        highlight_rules=[("selected_k", "*")],
-        show_legend=False,
-        legend_outside=False,
-    )
-    _draw_k_curve(
-        axes[0, 1],
-        rows=k_sweep_rows,
-        value_key="knn_confounder_bacc",
-        ylabel="Balanced accuracy",
-        title=f"{_confounder_display_name(k_sweep_rows)} Accuracy over k",
-        highlight_rules=[("selected_k_confounder", "X"), ("selected_k", "*")],
-        show_legend=False,
-        legend_outside=False,
-    )
-    _draw_k_curve(
-        axes[1, 0],
-        rows=k_sweep_rows,
-        value_key="ri",
-        ylabel="RI",
-        title="RI over k",
-        highlight_rules=[("selected_k", "*")],
-        show_legend=False,
-        legend_outside=False,
-    )
-    _draw_k_curve(
-        axes[1, 1],
-        rows=k_sweep_rows,
-        value_key="mari",
-        ylabel="MaRI",
-        title="MaRI over k",
-        highlight_rules=[("selected_k", "*")],
-        show_legend=False,
-        legend_outside=False,
-    )
-    _draw_bio_vs_confounder_scatter(
-        axes[2, 0], rows, show_legend=False, legend_outside=False
-    )
-    _draw_mari_vs_ri_scatter(axes[2, 1], rows, show_legend=False, legend_outside=False)
-
-    model_names = sorted(
-        {str(r["model"]) for r in k_sweep_rows} | {str(r["model"]) for r in rows}
-    )
-    handles = [
-        Line2D([0], [0], color=_color_for_model(model), lw=2.0, label=model)
-        for model in model_names
-    ]
-    if handles:
-        fig.legend(
-            handles=handles,
-            loc="upper center",
-            bbox_to_anchor=(0.5, 0.995),
-            ncol=min(4, len(handles)),
-            frameon=False,
-        )
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.97))
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
