@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cross-margin"
-version = "0.1.0"
+version = "1.0.0"
 description = "Margin-aware robustness metrics for pathology foundation models."
 readme = "README.md"
 requires-python = ">=3.10"
