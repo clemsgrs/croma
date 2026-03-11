@@ -80,7 +80,7 @@ def write_version(version: str) -> None:
 
 
 def ensure_clean_worktree() -> None:
-    out = run("git status --porcelain")
+    out = run("git status --porcelain --untracked-files=no")
     if out:
         raise RuntimeError(
             "Working tree is not clean. Commit or stash changes before running release.py."
