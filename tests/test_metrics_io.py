@@ -12,8 +12,8 @@ if str(SCRIPTS) not in sys.path:
 import metrics_io as mio
 
 
-def test_k_candidates_signature_is_sorted_and_unique() -> None:
-    assert mio.k_candidates_signature([7, 3, 7, 5]) == "3,5,7"
+def test_k_values_signature_is_sorted_and_unique() -> None:
+    assert mio.k_values_signature([7, 3, 7, 5]) == "3,5,7"
 
 
 def test_ccmr_search_signature_is_stable() -> None:

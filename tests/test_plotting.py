@@ -9,7 +9,6 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from plotting import (
-    plot_benchmark_6panel_summary,
     plot_bio_vs_confounder_scatter,
     plot_ccmr_ltm_comparison,
     plot_ccmr_m_sweep_with_ltm,
@@ -121,9 +120,9 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
             "ccmr_m_sweep.png",
         ),
         (
-            plot_benchmark_6panel_summary,
-            {"rows": _sample_summary_rows(), "k_sweep_rows": _sample_k_rows()},
-            "benchmark_6panel_summary.png",
+            plot_ri_k_sweep,
+            {"rows": _sample_k_rows()},
+            "ri_k_sweep.png",
         ),
     ]
 

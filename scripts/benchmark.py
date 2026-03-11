@@ -19,7 +19,6 @@ from croma import CCMR, MaRI, RI
 from croma.confounders import infer_confounder_display_name
 from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
-    _normalize_k_values,
     _select_k_from_balanced_accuracy,
 )
 from croma.metrics.pairs import (
@@ -32,19 +31,16 @@ from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
     StreamingMetricsWriter,
     ccmr_search_signature,
-    k_candidates_signature,
-    parse_k_candidates,
+    k_values_signature,
     save_metrics,
     safe_model_name,
 )
 from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
-    plot_benchmark_6panel_summary,
     plot_bio_vs_confounder_scatter,
     plot_ccmr_ltm_comparison,
     plot_ccmr_m_sweep_with_ltm,
     plot_ccmr_sample_distributions,
-    plot_ccmr_trend_quadrants,
     plot_ccmr_vs_mari_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_confounder_k_sweep,
@@ -226,15 +222,10 @@ def _parse_args() -> argparse.Namespace:
         help="Evaluation design for RI/MaRI/CCMR.",
     )
     parser.add_argument(
-        "--k-candidates",
-        default="3,5,7,10,15,20,25",
-        help="Comma-separated k candidates.",
-    )
-    parser.add_argument(
-        "--continuous-k-sweep-max",
-        type=int,
-        default=0,
-        help="If > 0, sweep k continuously from 1..max instead of only --k-candidates.",
+        "--k-max",
+        type=_positive_int,
+        default=25,
+        help="Maximum k for dense benchmark sweeps; benchmark evaluates all integer k in 1..k_max (default 25).",
     )
     parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
     parser.add_argument(
@@ -281,6 +272,13 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("value must be a positive integer")
+    return int(parsed)
+
+
 def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str]:
     if str(raw_models).strip():
         models = _parse_models(raw_models)
@@ -292,12 +290,10 @@ def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str
     return list(registry.keys())
 
 
-def _resolve_sweep_k_values(
-    k_candidates: list[int], continuous_k_sweep_max: int
-) -> list[int]:
-    if int(continuous_k_sweep_max) > 0:
-        return list(range(1, int(continuous_k_sweep_max) + 1))
-    return _normalize_k_values(k_candidates)
+def _resolve_sweep_k_values(k_max: int) -> list[int]:
+    if int(k_max) <= 0:
+        raise ValueError("k_max must be strictly positive")
+    return list(range(1, int(k_max) + 1))
 
 
 def _prepare_eval_manifest(
@@ -639,13 +635,10 @@ def main() -> int:
 
     cache = MetricsArtifactCache(results_dir=results_dir)
 
-    k_candidates = parse_k_candidates(args.k_candidates)
-    k_values = _resolve_sweep_k_values(
-        k_candidates=k_candidates,
-        continuous_k_sweep_max=int(args.continuous_k_sweep_max),
-    )
+    k_max = int(args.k_max)
+    k_values = _resolve_sweep_k_values(k_max)
     ccmr_m_values = list(range(1, int(args.ccmr_m_max) + 1))
-    k_candidates_sig = k_candidates_signature(k_values)
+    k_values_sig = k_values_signature(k_values)
     ccmr_search_sig = ccmr_search_signature(
         start_k=int(args.ccmr_start_k),
         k_growth_factor=float(args.ccmr_k_growth_factor),
@@ -1352,7 +1345,8 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
                             "tau": float(args.tau),
-                            "k_candidates": str(k_candidates_sig),
+                            "k_max": int(k_max),
+                            "k_values": str(k_values_sig),
                             "ccmr_search": str(ccmr_search_sig),
                             "m": int(payload["m"]),
                             "ccmr": float(payload["ccmr"]),
@@ -1439,10 +1433,11 @@ def main() -> int:
                     "confounder_column": confounder_column,
                     "confounder_display_name": confounder_display_name,
                     "k": int(ri_summary["k"]),
+                    "k_max": int(k_max),
                     "evaluation_design": evaluation_design,
                     "evaluation_unit": evaluation_unit,
                     "tau": float(args.tau),
-                    "k_candidates": k_candidates_sig,
+                    "k_values": k_values_sig,
                     "ccmr_search": ccmr_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
                     "confounder_knn_bacc": float(
@@ -1527,7 +1522,8 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
                             "tau": float(args.tau),
-                            "k_candidates": k_candidates_sig,
+                            "k_max": int(k_max),
+                            "k_values": k_values_sig,
                             "ccmr_search": ccmr_search_sig,
                             "k": int(k),
                             "knn_bacc": float(knn_bacc_by_k[int(k)]),
@@ -1538,9 +1534,6 @@ def main() -> int:
                             "mari": float(mari_curve[int(k)]),
                             "selected_k": int(selected_k),
                             "selected_k_confounder": int(selected_k_confounder),
-                            "continuous_k_sweep": int(
-                                int(args.continuous_k_sweep_max) > 0
-                            ),
                             "embedding_path": str(output_path),
                         }
                     )
@@ -1591,9 +1584,6 @@ def main() -> int:
         plot_ccmr_m_sweep_with_ltm(
             rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png"
         )
-        plot_ccmr_trend_quadrants(
-            rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_trend_quadrants.png"
-        )
         plot_ccmr_ltm_comparison(
             rows=rows, out_path=plots_dir / "ccmr_ltm_comparison.png"
         )
@@ -1608,11 +1598,6 @@ def main() -> int:
         )
         plot_ccmr_sample_distributions(
             rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png"
-        )
-        plot_benchmark_6panel_summary(
-            rows=rows,
-            k_sweep_rows=k_sweep_rows,
-            out_path=plots_dir / "benchmark_6panel_summary.png",
         )
 
     progress_write("\n[benchmark] === summary ===", enabled=progress_enabled)
