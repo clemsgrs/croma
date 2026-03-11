@@ -115,11 +115,6 @@ def main() -> int:
         help="Version bump level.",
     )
     parser.add_argument(
-        "--tag-prefix",
-        default="v",
-        help="Tag prefix, default 'v' (e.g. v0.1.1). Use empty string for bare tags.",
-    )
-    parser.add_argument(
         "--no-pr", action="store_true", help="Do not create a GitHub PR."
     )
     parser.add_argument(
@@ -141,7 +136,7 @@ def main() -> int:
 
         current = get_current_version()
         next_version = bump_semver(current, args.level)
-        tag = f"{args.tag_prefix}{next_version}"
+        tag = f"{next_version}"
         branch = f"release-{next_version}"
 
         print(f"Bumping version: {current} -> {next_version}")
