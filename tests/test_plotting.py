@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
@@ -9,11 +10,13 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from plotting import (
+    _support_plot_rows,
     plot_bio_vs_confounder_scatter,
     plot_ccmr_ltm_comparison,
     plot_ccmr_m_sweep_with_ltm,
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
+    plot_ri_mari_support,
     plot_ri_k_sweep,
 )
 
@@ -88,6 +91,21 @@ def _sample_summary_rows() -> list[dict]:
     ]
 
 
+def _sample_support_rows() -> list[dict]:
+    return [
+        {
+            "model": "Virchow2",
+            "ri_undefined_frac": 0.12,
+            "mari_undefined_frac": 0.18,
+        },
+        {
+            "model": "UNI",
+            "ri_undefined_frac": 0.35,
+            "mari_undefined_frac": 0.52,
+        },
+    ]
+
+
 def _sample_ccmr_m_rows() -> list[dict]:
     return [
         {"model": "Virchow2", "m": 1, "ccmr": 1.40, "ccmr_ltm_alpha": 1.05},
@@ -124,6 +142,11 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
             {"rows": _sample_k_rows()},
             "ri_k_sweep.png",
         ),
+        (
+            plot_ri_mari_support,
+            {"rows": _sample_support_rows()},
+            "ri_mari_support.png",
+        ),
     ]
 
     for fn, kwargs, filename in cases:
@@ -131,6 +154,25 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
         fn(out_path=out_path, **kwargs)
         assert out_path.exists()
         assert out_path.stat().st_size > 0
+
+
+def test_support_plot_rows_use_defined_fraction_thresholds_and_worst_first_order() -> None:
+    rows = _support_plot_rows(_sample_support_rows())
+
+    assert [(row["model"], row["metric"]) for row in rows] == [
+        ("UNI", "RI"),
+        ("UNI", "MaRI"),
+        ("Virchow2", "RI"),
+        ("Virchow2", "MaRI"),
+    ]
+
+    indexed = {(row["model"], row["metric"]): row for row in rows}
+    assert indexed[("Virchow2", "RI")]["defined_frac"] == pytest.approx(0.88)
+    assert indexed[("Virchow2", "RI")]["status"] == "good"
+    assert indexed[("UNI", "RI")]["defined_frac"] == pytest.approx(0.65)
+    assert indexed[("UNI", "RI")]["status"] == "warning"
+    assert indexed[("UNI", "MaRI")]["defined_frac"] == pytest.approx(0.48)
+    assert indexed[("UNI", "MaRI")]["status"] == "critical"
 
 
 def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(

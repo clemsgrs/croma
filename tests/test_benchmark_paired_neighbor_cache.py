@@ -71,6 +71,7 @@ def _install_noop_plots(monkeypatch) -> None:
         "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
         "plot_mari_vs_ri_scatter",
+        "plot_ri_mari_support",
         "plot_ri_k_sweep",
     ):
         monkeypatch.setattr(bm, name, fake_plot)

@@ -99,6 +99,7 @@ def _install_noop_plots(monkeypatch) -> None:
         "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
         "plot_mari_vs_ri_scatter",
+        "plot_ri_mari_support",
         "plot_ri_k_sweep",
     ]
     for name in plot_names:
@@ -288,6 +289,7 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
         plots_dir / "ccmr_ltm_comparison.png",
+        plots_dir / "ri_mari_support.png",
     ):
         assert path.exists(), f"Missing output: {path}"
 

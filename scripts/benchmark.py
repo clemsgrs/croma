@@ -46,6 +46,7 @@ from plotting import (
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_mari_vs_ri_scatter,
+    plot_ri_mari_support,
     plot_ri_k_sweep,
 )
 
@@ -1593,6 +1594,7 @@ def main() -> int:
         plot_mari_vs_ri_scatter(
             rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png"
         )
+        plot_ri_mari_support(rows=rows, out_path=plots_dir / "ri_mari_support.png")
         plot_ccmr_vs_mari_scatter(
             rows=rows, out_path=plots_dir / "ccmr_vs_mari_scatter.png"
         )

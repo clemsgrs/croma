@@ -29,9 +29,74 @@ MODEL_COLOR_MAP: dict[str, str] = {
     "Prost40M": "#636363",
 }
 
+_SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
+    "good": ("#4f8b5f", "#dbe9df"),
+    "warning": ("#dd8b2d", "#f5e2c8"),
+    "critical": ("#c95555", "#f4d3d3"),
+}
+
 
 def _color_for_model(model: str) -> str:
     return str(MODEL_COLOR_MAP.get(str(model), "#808080"))
+
+
+def _clamp_fraction(value: float) -> float:
+    return float(min(1.0, max(0.0, float(value))))
+
+
+def _support_status(undefined_frac: float) -> str:
+    frac = _clamp_fraction(undefined_frac)
+    if frac > 0.50:
+        return "critical"
+    if frac > 0.25:
+        return "warning"
+    return "good"
+
+
+def _support_plot_rows(rows: list[dict]) -> list[dict]:
+    model_entries: list[tuple[float, str, list[dict]]] = []
+
+    for raw_row in rows:
+        model = str(raw_row.get("model", "")).strip()
+        if not model:
+            continue
+
+        metric_rows: list[dict] = []
+        undefined_values: list[float] = []
+        for metric, key in (("RI", "ri_undefined_frac"), ("MaRI", "mari_undefined_frac")):
+            if key not in raw_row:
+                continue
+            try:
+                undefined_frac = float(raw_row[key])
+            except Exception:  # noqa: BLE001
+                continue
+            if not np.isfinite(undefined_frac):
+                continue
+            undefined_frac = _clamp_fraction(undefined_frac)
+            defined_frac = float(1.0 - undefined_frac)
+            status = _support_status(undefined_frac)
+            fill_color, track_color = _SUPPORT_STATUS_COLORS[status]
+            metric_rows.append(
+                {
+                    "model": model,
+                    "metric": metric,
+                    "undefined_frac": undefined_frac,
+                    "defined_frac": defined_frac,
+                    "status": status,
+                    "fill_color": fill_color,
+                    "track_color": track_color,
+                    "label": f"{model}  {metric}",
+                }
+            )
+            undefined_values.append(undefined_frac)
+
+        if metric_rows:
+            model_entries.append((max(undefined_values), model, metric_rows))
+
+    support_rows: list[dict] = []
+    for _, _, metric_rows in sorted(model_entries, key=lambda item: (-item[0], item[1])):
+        support_rows.extend(metric_rows)
+    return support_rows
 
 
 def _padded_unit_interval_limits(values: np.ndarray) -> tuple[float, float]:
@@ -365,6 +430,97 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
     )
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
+    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
+    support_rows = _support_plot_rows(rows)
+    fig_height = max(3.8, 1.0 + 0.72 * max(len(support_rows), 1))
+    fig, ax = plt.subplots(figsize=(10.0, fig_height))
+
+    if not support_rows:
+        ax.set_visible(False)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.tight_layout()
+        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        plt.close(fig)
+        return
+
+    y = np.arange(len(support_rows), dtype=float)
+    labels = [str(row["label"]) for row in support_rows]
+
+    ax.set_facecolor("#fbfcfd")
+    fig.patch.set_facecolor("#fbfcfd")
+    ax.grid(axis="x", color="#d9dee5", linewidth=0.8, alpha=0.9, zorder=0)
+
+    for idx, row in enumerate(support_rows):
+        defined_frac = float(row["defined_frac"])
+        undefined_frac = float(row["undefined_frac"])
+        fill_color = str(row["fill_color"])
+        track_color = str(row["track_color"])
+
+        ax.barh(
+            y[idx],
+            1.0,
+            color=track_color,
+            edgecolor="none",
+            height=0.62,
+            zorder=1,
+        )
+        ax.barh(
+            y[idx],
+            defined_frac,
+            color=fill_color,
+            edgecolor="none",
+            height=0.62,
+            zorder=2,
+        )
+
+        ax.text(
+            1.03,
+            y[idx],
+            f"{defined_frac * 100.0:.0f}% defined",
+            va="center",
+            ha="left",
+            fontsize=10,
+            color="#334155",
+        )
+        ax.text(
+            min(defined_frac, 0.98),
+            y[idx],
+            f"{undefined_frac * 100.0:.0f}% undefined",
+            va="center",
+            ha="right" if defined_frac >= 0.30 else "left",
+            fontsize=9,
+            color="white" if defined_frac >= 0.30 else "#475569",
+            zorder=3,
+        )
+
+    ax.set_xlim(0.0, 1.18)
+    ax.set_xticks([0.0, 0.25, 0.50, 0.75, 1.0])
+    ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
+    ax.set_xlabel("Share of evaluated samples", fontsize=11)
+    ax.set_yticks(y)
+    ax.set_yticklabels(labels, fontsize=10)
+    ax.set_title("RI / MaRI Support Coverage", fontsize=14, weight="bold")
+    ax.text(
+        0.0,
+        1.02,
+        "Green: <=25% undefined  Orange: 25-50% undefined  Red: >50% undefined",
+        transform=ax.transAxes,
+        fontsize=9.5,
+        color="#475569",
+        ha="left",
+        va="bottom",
+    )
+    ax.invert_yaxis()
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(axis="y", length=0)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
