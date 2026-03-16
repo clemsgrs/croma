@@ -31,9 +31,9 @@ MODEL_COLOR_MAP: dict[str, str] = {
 }
 
 _SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
-    "good": ("#4f8b5f", "#dbe9df"),
-    "warning": ("#dd8b2d", "#f5e2c8"),
-    "critical": ("#c95555", "#f4d3d3"),
+    "good": ("#4f8f76", "#dcebe4"),
+    "warning": ("#b88a2a", "#f3e6c8"),
+    "critical": ("#c9625b", "#f2d8d5"),
 }
 
 
@@ -491,7 +491,7 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     ax.set_xlabel("Share of evaluated samples", fontsize=11)
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=10)
-    ax.set_title("Support Coverage", fontsize=14, weight="bold")
+    ax.set_title("Support Coverage", fontsize=13, weight="bold", pad=8)
     ax.invert_yaxis()
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -505,14 +505,14 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     fig.legend(
         handles=legend_handles,
         loc="lower center",
-        bbox_to_anchor=(0.5, 0.01),
+        bbox_to_anchor=(0.5, -0.02),
         frameon=False,
         ncol=3,
         fontsize=9.5,
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.06, 1.0, 1.0))
+    fig.tight_layout(rect=(0.0, 0.11, 1.0, 1.0))
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
