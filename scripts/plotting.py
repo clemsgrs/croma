@@ -433,7 +433,7 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
 
 def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     support_rows = _support_plot_rows(rows)
-    fig_height = max(3.8, 1.0 + 0.72 * max(len(support_rows), 1))
+    fig_height = max(3.4, 0.85 + 0.58 * max(len(support_rows), 1))
     fig, ax = plt.subplots(figsize=(9.0, fig_height))
 
     if not support_rows:
@@ -462,7 +462,7 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
             1.0,
             color=track_color,
             edgecolor="none",
-            height=0.62,
+            height=0.58,
             zorder=1,
         )
         ax.barh(
@@ -470,7 +470,7 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
             defined_frac,
             color=fill_color,
             edgecolor="none",
-            height=0.62,
+            height=0.58,
             zorder=2,
         )
 
@@ -488,10 +488,11 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     ax.set_xlim(0.0, 1.0)
     ax.set_xticks([0.0, 0.25, 0.50, 0.75, 1.0])
     ax.set_xticklabels(["0%", "25%", "50%", "75%", "100%"])
-    ax.set_xlabel("Share of evaluated samples", fontsize=11)
+    ax.set_xlabel("Share of evaluated samples", fontsize=11, labelpad=4)
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=10)
-    ax.set_title("Support Coverage", fontsize=13, weight="bold", pad=8)
+    ax.set_title("Support Coverage", fontsize=13, weight="bold", pad=6)
+    ax.set_ylim(float(len(support_rows) - 0.35), -0.65)
     ax.invert_yaxis()
     for spine in ax.spines.values():
         spine.set_visible(False)
@@ -505,14 +506,14 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     fig.legend(
         handles=legend_handles,
         loc="lower center",
-        bbox_to_anchor=(0.5, -0.02),
+        bbox_to_anchor=(0.5, -0.005),
         frameon=False,
         ncol=3,
         fontsize=9.5,
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.11, 1.0, 1.0))
+    fig.tight_layout(rect=(0.0, 0.075, 1.0, 0.985))
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
