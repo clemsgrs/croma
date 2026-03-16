@@ -180,12 +180,47 @@ def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_wo
     assert indexed["Virchow2"]["defined_frac"] == pytest.approx(0.88)
     assert indexed["Virchow2"]["status"] == "good"
     assert indexed["UNI"]["defined_frac"] == pytest.approx(0.65)
-    assert indexed["UNI"]["status"] == "fair"
+    assert indexed["UNI"]["status"] == "good"
     assert indexed["CONCH"]["defined_frac"] == pytest.approx(0.42)
     assert indexed["CONCH"]["status"] == "warning"
     assert indexed["Phikon"]["defined_frac"] == pytest.approx(0.20)
     assert indexed["Phikon"]["status"] == "critical"
     assert indexed["UNI"]["label"] == "65%"
+
+
+def test_support_plot_uses_bottom_legend_for_thresholds(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import matplotlib.figure
+
+    legend_calls: list[dict[str, object]] = []
+    original_legend = matplotlib.figure.Figure.legend
+
+    def spy_legend(self, *args, **kwargs):
+        handles = list(args[0]) if args else list(kwargs.get("handles", []))
+        labels = [str(getattr(handle, "get_label", lambda: "")()) for handle in handles]
+        legend_calls.append(
+            {
+                "labels": labels,
+                "loc": kwargs.get("loc"),
+                "ncol": kwargs.get("ncol"),
+            }
+        )
+        return original_legend(self, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_legend)
+
+    out_path = tmp_path / "ri_mari_support.png"
+    plot_ri_mari_support(rows=_sample_support_rows(), out_path=out_path)
+
+    assert out_path.exists()
+    assert legend_calls
+    labels = legend_calls[0]["labels"]
+    assert "Defined <25%" in labels
+    assert "Defined <50%" in labels
+    assert "Defined >=50%" in labels
+    assert legend_calls[0]["loc"] == "lower center"
+    assert legend_calls[0]["ncol"] == 3
 
 
 def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(

@@ -5,6 +5,7 @@ import matplotlib
 
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 from scipy.stats import gaussian_kde
 
@@ -31,7 +32,6 @@ MODEL_COLOR_MAP: dict[str, str] = {
 
 _SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
     "good": ("#4f8b5f", "#dbe9df"),
-    "fair": ("#5a84b3", "#d8e4f1"),
     "warning": ("#dd8b2d", "#f5e2c8"),
     "critical": ("#c95555", "#f4d3d3"),
 }
@@ -51,8 +51,6 @@ def _support_status(defined_frac: float) -> str:
         return "critical"
     if frac < 0.50:
         return "warning"
-    if frac < 0.75:
-        return "fair"
     return "good"
 
 
@@ -494,23 +492,27 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     ax.set_yticks(y)
     ax.set_yticklabels(labels, fontsize=10)
     ax.set_title("Support Coverage", fontsize=14, weight="bold")
-    ax.text(
-        0.0,
-        1.02,
-        "Red: <25% defined  Orange: <50%  Blue: <75%  Green: >=75%",
-        transform=ax.transAxes,
-        fontsize=9.5,
-        color="#475569",
-        ha="left",
-        va="bottom",
-    )
     ax.invert_yaxis()
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.tick_params(axis="y", length=0)
 
+    legend_handles = [
+        Patch(facecolor=_SUPPORT_STATUS_COLORS["critical"][0], label="Defined <25%"),
+        Patch(facecolor=_SUPPORT_STATUS_COLORS["warning"][0], label="Defined <50%"),
+        Patch(facecolor=_SUPPORT_STATUS_COLORS["good"][0], label="Defined >=50%"),
+    ]
+    fig.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.01),
+        frameon=False,
+        ncol=3,
+        fontsize=9.5,
+    )
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
+    fig.tight_layout(rect=(0.0, 0.06, 1.0, 1.0))
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
