@@ -96,12 +96,22 @@ def _sample_support_rows() -> list[dict]:
         {
             "model": "Virchow2",
             "ri_undefined_frac": 0.12,
-            "mari_undefined_frac": 0.18,
+            "mari_undefined_frac": 0.12,
         },
         {
             "model": "UNI",
             "ri_undefined_frac": 0.35,
-            "mari_undefined_frac": 0.52,
+            "mari_undefined_frac": 0.35,
+        },
+        {
+            "model": "CONCH",
+            "ri_undefined_frac": 0.58,
+            "mari_undefined_frac": 0.58,
+        },
+        {
+            "model": "Phikon",
+            "ri_undefined_frac": 0.80,
+            "mari_undefined_frac": 0.80,
         },
     ]
 
@@ -156,23 +166,26 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
         assert out_path.stat().st_size > 0
 
 
-def test_support_plot_rows_use_defined_fraction_thresholds_and_worst_first_order() -> None:
+def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_worst_first_order() -> None:
     rows = _support_plot_rows(_sample_support_rows())
 
-    assert [(row["model"], row["metric"]) for row in rows] == [
-        ("UNI", "RI"),
-        ("UNI", "MaRI"),
-        ("Virchow2", "RI"),
-        ("Virchow2", "MaRI"),
+    assert [row["model"] for row in rows] == [
+        "Phikon",
+        "CONCH",
+        "UNI",
+        "Virchow2",
     ]
 
-    indexed = {(row["model"], row["metric"]): row for row in rows}
-    assert indexed[("Virchow2", "RI")]["defined_frac"] == pytest.approx(0.88)
-    assert indexed[("Virchow2", "RI")]["status"] == "good"
-    assert indexed[("UNI", "RI")]["defined_frac"] == pytest.approx(0.65)
-    assert indexed[("UNI", "RI")]["status"] == "warning"
-    assert indexed[("UNI", "MaRI")]["defined_frac"] == pytest.approx(0.48)
-    assert indexed[("UNI", "MaRI")]["status"] == "critical"
+    indexed = {row["model"]: row for row in rows}
+    assert indexed["Virchow2"]["defined_frac"] == pytest.approx(0.88)
+    assert indexed["Virchow2"]["status"] == "good"
+    assert indexed["UNI"]["defined_frac"] == pytest.approx(0.65)
+    assert indexed["UNI"]["status"] == "fair"
+    assert indexed["CONCH"]["defined_frac"] == pytest.approx(0.42)
+    assert indexed["CONCH"]["status"] == "warning"
+    assert indexed["Phikon"]["defined_frac"] == pytest.approx(0.20)
+    assert indexed["Phikon"]["status"] == "critical"
+    assert indexed["UNI"]["label"] == "65%"
 
 
 def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(
