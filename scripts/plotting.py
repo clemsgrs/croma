@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import numpy as np
@@ -11,13 +12,35 @@ from scipy.stats import gaussian_kde
 
 from croma.confounders import infer_confounder_display_name
 
+matplotlib.rcParams.update(
+    {
+        "figure.facecolor": "white",
+        "axes.facecolor": "white",
+        "savefig.facecolor": "white",
+        "font.family": "DejaVu Serif",
+        "mathtext.fontset": "dejavuserif",
+    }
+)
+
+TEXT_COLOR = "#18212b"
+GRID_COLOR = "#d8dee7"
+SPINE_COLOR = "#c6ced8"
+REFERENCE_LINE_COLOR = "#6b7280"
+PANEL_FACE_COLOR = "#fdfdfc"
+FRAGILE_SHADE_COLOR = "#f7e7d7"
+DEFAULT_DPI = 300
+LEGEND_Y = 0.02
+LEGEND_MAX_COLUMNS = 4
+
 MODEL_COLOR_MAP: dict[str, str] = {
     "Virchow2": "#ff7f0e",
     "Virchow": "#ffbb78",
+    "PRISM": "#ffbb78",
     "UNI2-h": "#2ca02c",
     "UNI": "#98df8a",
     "CONCHv1.5": "#d62728",
     "CONCH": "#ff9896",
+    "TITAN": "#d62728",
     "Phikon-v2": "#9467bd",
     "Phikon": "#c5b0d5",
     "H-optimus-1": "#8c564b",
@@ -30,6 +53,61 @@ MODEL_COLOR_MAP: dict[str, str] = {
     "Prost40M": "#636363",
 }
 
+MODEL_FAMILY_MAP: dict[str, str] = {
+    "Virchow2": "virchow",
+    "Virchow": "virchow",
+    "PRISM": "virchow",
+    "UNI2-h": "uni",
+    "UNI": "uni",
+    "CONCHv1.5": "conch",
+    "CONCH": "conch",
+    "TITAN": "conch",
+    "Phikon-v2": "phikon",
+    "Phikon": "phikon",
+    "H-optimus-1": "hoptimus",
+    "H-optimus-0": "hoptimus",
+    "H0-mini": "hoptimus",
+    "Prov-GigaPath": "gigapath",
+    "Midnight-12k": "midnight",
+    "Hibou-L": "hibou",
+    "Hibou-B": "hibou",
+    "Prost40M": "prost",
+}
+
+FAMILY_PALETTE: dict[str, list[str]] = {
+    "virchow": ["#996127", "#cf8f45"],
+    "uni": ["#3f7f62", "#76a888"],
+    "conch": ["#9e4d4d", "#ce7e74"],
+    "phikon": ["#6274a8", "#8e9bc4"],
+    "hoptimus": ["#557985", "#809aa3", "#b1bcc2"],
+    "gigapath": ["#4d7296"],
+    "midnight": ["#3e8c9b"],
+    "hibou": ["#8d678b", "#b996b4"],
+    "prost": ["#6d6a68"],
+    "other": ["#6f7b87", "#98a1ab", "#c0c6cd"],
+}
+
+MODEL_TONE_INDEX: dict[str, int] = {
+    "Virchow": 0,
+    "Virchow2": 1,
+    "PRISM": 0,
+    "UNI": 0,
+    "UNI2-h": 1,
+    "CONCH": 0,
+    "CONCHv1.5": 1,
+    "TITAN": 1,
+    "Phikon": 0,
+    "Phikon-v2": 1,
+    "H-optimus-1": 0,
+    "H-optimus-0": 1,
+    "H0-mini": 2,
+    "Prov-GigaPath": 0,
+    "Midnight-12k": 0,
+    "Hibou-L": 0,
+    "Hibou-B": 1,
+    "Prost40M": 0,
+}
+
 _SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
     "good": ("#4f8f76", "#dcebe4"),
     "warning": ("#b88a2a", "#f3e6c8"),
@@ -37,8 +115,174 @@ _SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
 }
 
 
+def _family_for_model(model: str) -> str:
+    return str(MODEL_FAMILY_MAP.get(str(model), "other"))
+
+
 def _color_for_model(model: str) -> str:
-    return str(MODEL_COLOR_MAP.get(str(model), "#808080"))
+    if str(model) in MODEL_COLOR_MAP:
+        return str(MODEL_COLOR_MAP[str(model)])
+    family = _family_for_model(model)
+    palette = FAMILY_PALETTE.get(family, FAMILY_PALETTE["other"])
+    tone_idx = int(MODEL_TONE_INDEX.get(str(model), 0)) % len(palette)
+    return str(palette[tone_idx])
+
+
+
+def _style_axes(ax, *, grid_axis: str = "both") -> None:
+    ax.set_facecolor(PANEL_FACE_COLOR)
+    ax.set_axisbelow(True)
+    for spine_name in ("top", "right"):
+        ax.spines[spine_name].set_visible(False)
+    for spine_name in ("left", "bottom"):
+        ax.spines[spine_name].set_color(SPINE_COLOR)
+        ax.spines[spine_name].set_linewidth(0.8)
+    ax.tick_params(axis="both", colors=TEXT_COLOR, labelsize=9.5, width=0.8)
+    ax.xaxis.label.set_color(TEXT_COLOR)
+    ax.yaxis.label.set_color(TEXT_COLOR)
+    ax.title.set_color(TEXT_COLOR)
+    if grid_axis == "y":
+        ax.grid(axis="y", color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+    else:
+        ax.grid(color=GRID_COLOR, linewidth=0.8, alpha=0.9)
+
+
+def _set_panel_title(ax, title: str) -> None:
+    ax.set_title(title, fontsize=13, weight="semibold", pad=8)
+
+
+def _legend_columns(n_labels: int) -> int:
+    if n_labels <= 1:
+        return 1
+    return min(LEGEND_MAX_COLUMNS, max(2, n_labels))
+
+
+def _collect_legend_entries(axes: list[plt.Axes]) -> tuple[list, list[str]]:
+    handles: list = []
+    labels: list[str] = []
+    seen: set[str] = set()
+    for ax in axes:
+        if not ax.get_visible():
+            continue
+        ax_handles, ax_labels = ax.get_legend_handles_labels()
+        for handle, label in zip(ax_handles, ax_labels):
+            text = str(label).strip()
+            if not text or text.startswith("_") or text in seen:
+                continue
+            seen.add(text)
+            handles.append(handle)
+            labels.append(text)
+    return handles, labels
+
+
+def _add_figure_legend(
+    fig,
+    axes: list[plt.Axes],
+    *,
+    y: float = LEGEND_Y,
+    ncol: int | None = None,
+    fontsize: float = 9.0,
+    columnspacing: float = 1.4,
+    handlelength: float = 2.2,
+) -> bool:
+    handles, labels = _collect_legend_entries(axes)
+    if not handles:
+        return False
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        bbox_to_anchor=(0.5, y),
+        ncol=int(ncol) if ncol is not None else _legend_columns(len(labels)),
+        frameon=False,
+        fontsize=fontsize,
+        columnspacing=columnspacing,
+        handlelength=handlelength,
+        handletextpad=0.6,
+    )
+    return True
+
+
+def _legend_bottom_margin(axes: list[plt.Axes]) -> float:
+    _handles, labels = _collect_legend_entries(axes)
+    if not labels:
+        return 0.12
+    ncols = _legend_columns(len(labels))
+    nrows = int(math.ceil(len(labels) / float(ncols)))
+    return min(0.095 + 0.042 * nrows, 0.255)
+
+
+def _png_export_path(out_path: Path) -> Path:
+    return out_path.parent / "png" / out_path.name
+
+
+def _pdf_export_path(out_path: Path) -> Path:
+    return out_path.parent / "pdf" / out_path.with_suffix(".pdf").name
+
+
+def _finalize_figure(
+    fig,
+    *,
+    out_path: Path,
+    legend_axes: list[plt.Axes] | None = None,
+    hspace: float = 0.30,
+    wspace: float = 0.24,
+    add_legend: bool = True,
+    left: float = 0.10,
+    right: float = 0.98,
+    top: float = 0.92,
+    bottom: float | None = None,
+    legend_y: float = LEGEND_Y,
+    legend_ncol: int | None = None,
+    legend_fontsize: float = 9.0,
+    legend_columnspacing: float = 1.4,
+    legend_handlelength: float = 2.2,
+) -> None:
+    axes = [ax for ax in (legend_axes or list(fig.axes)) if ax.get_visible()]
+    bottom_margin = (
+        float(bottom)
+        if bottom is not None
+        else (_legend_bottom_margin(axes) if add_legend else 0.10)
+    )
+    fig.subplots_adjust(
+        left=left,
+        right=right,
+        top=top,
+        bottom=bottom_margin,
+        hspace=hspace,
+        wspace=wspace,
+    )
+    if add_legend:
+        _add_figure_legend(
+            fig,
+            axes,
+            y=legend_y,
+            ncol=legend_ncol,
+            fontsize=legend_fontsize,
+            columnspacing=legend_columnspacing,
+            handlelength=legend_handlelength,
+        )
+    png_path = _png_export_path(out_path)
+    pdf_path = _pdf_export_path(out_path)
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(png_path, dpi=DEFAULT_DPI)
+    fig.savefig(pdf_path)
+    plt.close(fig)
+
+
+def _finalize_single_panel_legend_figure(fig, *, out_path: Path, ax: plt.Axes) -> None:
+    _finalize_figure(
+        fig,
+        out_path=out_path,
+        legend_axes=[ax],
+        top=0.94,
+        bottom=0.245,
+        legend_y=0.016,
+        legend_fontsize=8.8,
+        legend_columnspacing=1.25,
+        legend_handlelength=2.0,
+    )
 
 
 def _clamp_fraction(value: float) -> float:
@@ -367,13 +611,10 @@ def plot_knn_bio_k_sweep(rows: list[dict], out_path: Path) -> None:
         ylabel="Balanced accuracy",
         title="Biological Accuracy over k",
         highlight_rules=[("selected_k", "*")],
-        show_legend=True,
-        legend_outside=True,
+        show_legend=False,
+        legend_outside=False,
     )
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_knn_confounder_k_sweep(rows: list[dict], out_path: Path) -> None:
@@ -386,13 +627,10 @@ def plot_knn_confounder_k_sweep(rows: list[dict], out_path: Path) -> None:
         ylabel="Balanced accuracy",
         title=f"{confounder_display_name} Accuracy over k",
         highlight_rules=[("selected_k_confounder", "X"), ("selected_k", "*")],
-        show_legend=True,
-        legend_outside=True,
+        show_legend=False,
+        legend_outside=False,
     )
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_ri_k_sweep(rows: list[dict], out_path: Path) -> None:
@@ -404,13 +642,10 @@ def plot_ri_k_sweep(rows: list[dict], out_path: Path) -> None:
         ylabel="RI",
         title="RI over k",
         highlight_rules=[("selected_k", "*")],
-        show_legend=True,
-        legend_outside=True,
+        show_legend=False,
+        legend_outside=False,
     )
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
@@ -422,13 +657,10 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
         ylabel="MaRI",
         title="MaRI over k",
         highlight_rules=[("selected_k", "*")],
-        show_legend=True,
-        legend_outside=True,
+        show_legend=False,
+        legend_outside=False,
     )
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.0, 0.94, 1.0))
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
@@ -438,9 +670,13 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
 
     if not support_rows:
         ax.set_visible(False)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
+        png_path = _png_export_path(out_path)
+        pdf_path = _pdf_export_path(out_path)
+        png_path.parent.mkdir(parents=True, exist_ok=True)
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
         fig.tight_layout()
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
+        fig.savefig(png_path, dpi=DEFAULT_DPI)
+        fig.savefig(pdf_path)
         plt.close(fig)
         return
 
@@ -512,9 +748,13 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
         fontsize=9.5,
     )
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    png_path = _png_export_path(out_path)
+    pdf_path = _pdf_export_path(out_path)
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
     fig.tight_layout(rect=(0.0, 0.075, 1.0, 0.985))
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
+    fig.savefig(png_path, dpi=DEFAULT_DPI)
+    fig.savefig(pdf_path)
     plt.close(fig)
 
 
@@ -531,10 +771,7 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     if not ccmr_rows:
         for ax in (ax_ccmr, ax_ltm):
             ax.set_visible(False)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.tight_layout()
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+        _finalize_figure(fig, out_path=out_path, add_legend=False)
         return
 
     by_model: dict[str, list[dict]] = {}
@@ -597,13 +834,7 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     ax_ltm.set_xlim(m_min - 0.5, m_max + 0.5)
     ax_ltm.set_xlabel("m", fontsize=11)
 
-    ax_ccmr.legend(frameon=False, loc="best", fontsize=9)
-    ax_ltm.legend(frameon=False, loc="best", fontsize=9)
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(fig, out_path=out_path, legend_axes=[ax_ccmr, ax_ltm])
 
 
 def _valid_ccmr_ltm_rows(rows: list[dict]) -> list[dict]:
@@ -672,10 +903,7 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     if not valid_rows:
         scatter_ax.set_visible(False)
         bar_ax.set_visible(False)
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.tight_layout()
-        fig.savefig(out_path, dpi=300, bbox_inches="tight")
-        plt.close(fig)
+        _finalize_figure(fig, out_path=out_path, add_legend=False)
         return
 
     label_ltm = _ltm_label(valid_rows)
@@ -754,32 +982,22 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     bar_ax.set_xticklabels(model_names, rotation=35, ha="right")
     bar_ax.set_ylabel("score", fontsize=11)
     bar_ax.set_title(f"Sorted by {label_ltm}", fontsize=13, weight="bold")
-    bar_ax.legend(frameon=False, loc="best")
     y_lo, y_hi = _padded_positive_limits(np.concatenate([ccmr_vals, ltm_vals]))
     bar_ax.set_ylim(y_lo, y_hi)
 
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(fig, out_path=out_path, legend_axes=[scatter_ax, bar_ax])
 
 
 def plot_bio_vs_confounder_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
-    _draw_bio_vs_confounder_scatter(ax, rows, show_legend=True, legend_outside=False)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _draw_bio_vs_confounder_scatter(ax, rows, show_legend=False, legend_outside=False)
+    _finalize_figure(fig, out_path=out_path, legend_axes=[ax])
 
 
 def plot_mari_vs_ri_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
-    _draw_mari_vs_ri_scatter(ax, rows, show_legend=True, legend_outside=False)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _draw_mari_vs_ri_scatter(ax, rows, show_legend=False, legend_outside=False)
+    _finalize_figure(fig, out_path=out_path, legend_axes=[ax])
 
 
 def _draw_ccmr_vs_mari_scatter(
@@ -939,26 +1157,10 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
 def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(11.0, 5.8))
     _draw_ccmr_sample_distributions(ax, rows)
-    handles, labels = ax.get_legend_handles_labels()
-    if handles:
-        fig.legend(
-            handles,
-            labels,
-            loc="center left",
-            bbox_to_anchor=(0.98, 0.5),
-            frameon=False,
-            fontsize=9,
-        )
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout(rect=(0.0, 0.0, 0.96, 1.0))
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _finalize_figure(fig, out_path=out_path, add_legend=False)
 
 
 def plot_ccmr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
-    _draw_ccmr_vs_mari_scatter(ax, rows, show_legend=True, legend_outside=False)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.tight_layout()
-    fig.savefig(out_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
+    _draw_ccmr_vs_mari_scatter(ax, rows, show_legend=False, legend_outside=False)
+    _finalize_figure(fig, out_path=out_path, legend_axes=[ax])

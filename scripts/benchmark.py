@@ -282,12 +282,7 @@ def _positive_int(value: str) -> int:
 
 def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str]:
     if str(raw_models).strip():
-        models = _parse_models(raw_models)
-        unknown = [m for m in models if m not in registry]
-        if unknown:
-            available = ", ".join(sorted(registry))
-            raise ValueError(f"Unknown model(s): {unknown}. Available: {available}")
-        return models
+        return _parse_models(raw_models)
     return list(registry.keys())
 
 
@@ -688,7 +683,7 @@ def main() -> int:
     for i, model in enumerate(models):
         with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
             output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
-            spec = registry[model]
+            spec = registry.get(model)
             ticker.start("embed")
             if not args.force_embed and _embedding_cache_matches_expected(
                 output_path,
@@ -700,6 +695,23 @@ def main() -> int:
                 extraction_status[model] = "skipped"
                 ticker.done("embed", cached=True)
             else:
+                if spec is None:
+                    extraction_status[model] = "failed"
+                    metrics_status[model] = "failed"
+                    if bool(args.force_embed):
+                        msg = (
+                            f"{model}: --force-embed requested but the model is not "
+                            "registered for extraction"
+                        )
+                    else:
+                        msg = (
+                            f"{model}: no compatible cached embeddings found at "
+                            f"{output_path} and the model is not registered for "
+                            "extraction"
+                        )
+                    failures.append(msg)
+                    ticker.log(f"[benchmark] {msg}")
+                    continue
                 try:
                     ee.embed_manifest(
                         manifest_path=embedding_manifest_path,
