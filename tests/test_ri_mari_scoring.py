@@ -442,3 +442,24 @@ def test_summarize_by_mean_false_default_unchanged() -> None:
     assert result_default.value == pytest.approx(result_explicit_false.value)
     assert result_default.std == pytest.approx(result_explicit_false.std)
     assert result_default.k == result_explicit_false.k
+
+
+def test_mean_over_k_equals_rectangle_auc() -> None:
+    """summarize_by_mean returns the arithmetic mean of curve values, which equals
+    the rectangle-rule AUC divided by the number of k points.
+
+    Mocked curve: {1: 0.4, 2: 0.6, 3: 0.8, 4: 0.6}
+      mean = (0.4 + 0.6 + 0.8 + 0.6) / 4 = 0.6
+      rectangle AUC (unit step) = 0.4 + 0.6 + 0.8 + 0.6 = 2.4
+      rectangle AUC / n_points  = 2.4 / 4 = 0.6  == mean ✓
+    """
+    from croma.metrics.base import BaseRobustnessIndex
+
+    curve = {1: 0.4, 2: 0.6, 3: 0.8, 4: 0.6}
+    mean_val, _ = BaseRobustnessIndex._compute_mean_from_curve(curve)
+
+    expected_mean = (0.4 + 0.6 + 0.8 + 0.6) / 4          # 0.6
+    rectangle_auc_per_point = sum(curve.values()) / len(curve)  # 2.4 / 4 = 0.6
+
+    assert mean_val == pytest.approx(expected_mean)
+    assert mean_val == pytest.approx(rectangle_auc_per_point)
