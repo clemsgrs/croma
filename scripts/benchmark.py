@@ -288,6 +288,15 @@ def _parse_args() -> argparse.Namespace:
             "selecting a single k via kNN biological accuracy."
         ),
     )
+    parser.add_argument(
+        "--use-median-k",
+        action="store_true",
+        help=(
+            "Use the median of per-model optimal k values as a shared k for the dataset, "
+            "matching the original RI paper's k-selection procedure. "
+            "By default each model is evaluated at its own kNN-optimal k."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -698,6 +707,74 @@ def main() -> int:
     embedding_manifest.to_csv(embedding_manifest_path, index=False)
     embedding_manifest_fingerprint = manifest_fingerprint(embedding_manifest)
 
+    # --- Pre-pass: collect per-model best k to determine dataset-wide median k ---
+    dataset_median_k: int | None = None
+    if args.use_median_k and not (args.prune_ss_oo or args.summarize_by_mean):
+        per_model_best_k: list[int] = []
+        for model in models:
+            try:
+                output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
+                if not output_path.exists():
+                    continue
+                embedding_fp = embedding_fingerprint(output_path)
+                input_fp_pre = {
+                    "manifest_fingerprint": base_manifest_fingerprint,
+                    "embedding_fingerprint": embedding_fp,
+                }
+                knn_bio_key = build_cache_key(
+                    artifact_name="knn_bio_curve",
+                    model=model,
+                    input_fingerprint=input_fp_pre,
+                    params={
+                        "evaluation_design": evaluation_design,
+                        "k_values": [int(k) for k in k_values],
+                        "confounder_column": confounder_column,
+                    },
+                )
+                knn_bacc_pre = _curve_from_payload(
+                    cache.get_json(key=knn_bio_key), expected_k_values=k_values
+                )
+                if knn_bacc_pre is None:
+                    features_pre = np.load(output_path)[embedding_keep_indices]
+                    features_pre_norm = features_pre / (
+                        np.linalg.norm(features_pre, axis=1, keepdims=True) + 1e-12
+                    )
+                    prepared_subsets_pre = (
+                        RI._prepare_paired_subset_neighbor_cache(
+                            features=features_pre_norm,
+                            subsets=resolve_manifest_subsets(eval_manifest),
+                            k_values=k_values,
+                            prune_ss_oo=bool(args.prune_ss_oo),
+                        )
+                        if evaluation_design == "paired_2x2"
+                        else None
+                    )
+                    knn_bacc_pre = _knn_balanced_accuracy_by_k_for_design(
+                        features=features_pre_norm,
+                        manifest=eval_manifest,
+                        target_column="label",
+                        k_values=k_values,
+                        evaluation_design=evaluation_design,
+                        warn_context=f"{dataset_name} k-curve (median-k pre-pass)",
+                        prepared_subsets=prepared_subsets_pre,
+                    )
+                    cache.put_json(key=knn_bio_key, payload=_curve_payload(knn_bacc_pre))
+                per_model_best_k.append(
+                    _select_k_from_balanced_accuracy(k_values=k_values, scores=knn_bacc_pre)
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        if per_model_best_k:
+            dataset_median_k = int(np.median(per_model_best_k))
+            progress_write(
+                f"[benchmark] use-median-k: per-model optimal k = {per_model_best_k}",
+                enabled=progress_enabled,
+            )
+            progress_write(
+                f"[benchmark] use-median-k: dataset median k = {dataset_median_k}",
+                enabled=progress_enabled,
+            )
+
     for i, model in enumerate(models):
         with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
             output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
@@ -761,6 +838,7 @@ def main() -> int:
                 tau_value = float(args.tau)
                 prune_ss_oo_value = bool(args.prune_ss_oo)
                 summarize_by_mean_value = bool(args.summarize_by_mean)
+                use_median_k_value = bool(args.use_median_k)
 
                 keys = {
                     "knn_bio_curve": build_cache_key(
@@ -818,6 +896,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "ri_samples": build_cache_key(
@@ -830,6 +909,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "ri_samples_aligned": build_cache_key(
@@ -842,6 +922,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "ri_undefined_types": build_cache_key(
@@ -854,6 +935,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "mari_summary": build_cache_key(
@@ -867,6 +949,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "mari_samples": build_cache_key(
@@ -880,6 +963,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "mari_samples_aligned": build_cache_key(
@@ -893,6 +977,7 @@ def main() -> int:
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "mari_undefined_types": build_cache_key(
@@ -905,6 +990,7 @@ def main() -> int:
                             "tau": tau_value,
                             "prune_ss_oo": prune_ss_oo_value,
                             "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
                         },
                     ),
                     "ccmr_m_sweep": build_cache_key(
@@ -1142,6 +1228,8 @@ def main() -> int:
                 selected_k = (
                     max(k_values)
                     if (args.prune_ss_oo or args.summarize_by_mean)
+                    else dataset_median_k
+                    if args.use_median_k and dataset_median_k is not None
                     else _select_k_from_balanced_accuracy(
                         k_values=k_values,
                         scores=knn_bacc_by_k,
