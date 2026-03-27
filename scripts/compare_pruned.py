@@ -177,6 +177,74 @@ def _scatter_plot(
     print(f"  saved {out_path}")
 
 
+def _rank_change_plot(df: pd.DataFrame, *, out_path: Path) -> None:
+    """Slope / bump chart showing rank changes for RI and MaRI side by side.
+
+    Rank 1 = highest (best) value. Lines slope upward when a model improves
+    its rank after pruning, downward when it drops.
+    """
+    pairs = [("ri", "RI"), ("mari", "MaRI")]
+    fig, axes = plt.subplots(1, 2, figsize=(10.0, max(5.0, len(df) * 0.55 + 2.0)))
+
+    for ax, (metric, label) in zip(axes, pairs):
+        _style_axes(ax, grid_axis="y")
+
+        x_col, xp_col = metric, f"{metric}_pruned"
+        valid = df[[x_col, xp_col, "model"]].dropna()
+        if valid.empty:
+            ax.set_visible(False)
+            continue
+
+        n = len(valid)
+        # rank ascending=False so rank 1 = best (highest value)
+        ranks_base   = valid[x_col].rank(ascending=False, method="min").astype(int)
+        ranks_pruned = valid[xp_col].rank(ascending=False, method="min").astype(int)
+
+        x_left, x_right = 0.0, 1.0
+        label_pad = 0.08
+
+        for i, row in valid.iterrows():
+            model = str(row["model"])
+            r_base   = int(ranks_base[i])
+            r_pruned = int(ranks_pruned[i])
+            color = _color_for_model(model)
+            delta = r_base - r_pruned  # positive = improved rank
+
+            lw = 1.6 + abs(delta) * 0.25
+            ax.plot(
+                [x_left, x_right], [r_base, r_pruned],
+                color=color, linewidth=lw, solid_capstyle="round", zorder=2,
+            )
+            ax.scatter([x_left], [r_base],   s=70, color=color, zorder=3, edgecolors="white", linewidths=0.8)
+            ax.scatter([x_right], [r_pruned], s=70, color=color, zorder=3, edgecolors="white", linewidths=0.8)
+
+            # left label
+            ax.text(
+                x_left - label_pad, r_base, f"{r_base}. {model}",
+                ha="right", va="center", fontsize=7.5, color=TEXT_COLOR,
+            )
+            # right label (show Δrank if non-zero)
+            delta_str = f"  ({'+' if delta > 0 else ''}{delta})" if delta != 0 else ""
+            ax.text(
+                x_right + label_pad, r_pruned, f"{r_pruned}. {model}{delta_str}",
+                ha="left", va="center", fontsize=7.5, color=TEXT_COLOR,
+            )
+
+        ax.set_xlim(-0.55, 1.55)
+        ax.set_ylim(n + 0.5, 0.5)          # rank 1 at top
+        ax.set_xticks([x_left, x_right])
+        ax.set_xticklabels([label, f"{label}\n(pruned)"], fontsize=10.0, color=TEXT_COLOR)
+        ax.yaxis.set_visible(False)
+        for spine in ax.spines.values():
+            spine.set_visible(False)
+        ax.set_title(f"{label} rank change", fontsize=12, weight="semibold", pad=8, color=TEXT_COLOR)
+
+    fig.tight_layout(pad=2.0)
+    fig.savefig(out_path, dpi=DEFAULT_DPI)
+    plt.close(fig)
+    print(f"  saved {out_path}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Compare RI/MaRI results with and without --prune-ss-oo."
@@ -213,6 +281,7 @@ def main() -> int:
     print("\nPlots:")
     _scatter_plot(df, metric="ri", out_path=out_dir / "ri_pruned_vs_unpruned.png")
     _scatter_plot(df, metric="mari", out_path=out_dir / "mari_pruned_vs_unpruned.png")
+    _rank_change_plot(df, out_path=out_dir / "rank_change.png")
 
     return 0
 
