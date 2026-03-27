@@ -19,6 +19,7 @@ class RobustnessIndex(BaseRobustnessIndex):
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
         evaluation_design: str = "paired_2x2",
+        prune_ss_oo: bool = False,
     ) -> RobustnessResult:
         return cls._compute(
             features=features,
@@ -26,6 +27,7 @@ class RobustnessIndex(BaseRobustnessIndex):
             confounder_column=confounder_column,
             k_candidates=k_candidates,
             evaluation_design=evaluation_design,
+            prune_ss_oo=prune_ss_oo,
         )
 
     @classmethod
@@ -37,6 +39,7 @@ class RobustnessIndex(BaseRobustnessIndex):
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = "paired_2x2",
+        prune_ss_oo: bool = False,
     ) -> dict[int, float]:
         return cls._compute_curve(
             features=features,
@@ -44,4 +47,5 @@ class RobustnessIndex(BaseRobustnessIndex):
             confounder_column=confounder_column,
             k_values=k_values,
             evaluation_design=evaluation_design,
+            prune_ss_oo=prune_ss_oo,
         )

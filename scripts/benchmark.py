@@ -271,6 +271,15 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Force recomputation of metrics even if compatible cache exists.",
     )
+    parser.add_argument(
+        "--prune-ss-oo",
+        action="store_true",
+        help=(
+            "Prune SS and OO neighbours before counting k. "
+            "Each sample's neighbourhood contains only SO/OS neighbours, "
+            "eliminating undefined samples caused by SS/OO dominance."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -742,6 +751,7 @@ def main() -> int:
 
                 k_values_param = [int(k) for k in k_values]
                 tau_value = float(args.tau)
+                prune_ss_oo_value = bool(args.prune_ss_oo)
 
                 keys = {
                     "knn_bio_curve": build_cache_key(
@@ -772,6 +782,7 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "mari_curve": build_cache_key(
@@ -783,6 +794,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "ri_summary": build_cache_key(
@@ -793,6 +805,7 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "ri_samples": build_cache_key(
@@ -803,6 +816,7 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "ri_samples_aligned": build_cache_key(
@@ -813,6 +827,7 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "ri_undefined_types": build_cache_key(
@@ -823,6 +838,7 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "mari_summary": build_cache_key(
@@ -834,6 +850,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "mari_samples": build_cache_key(
@@ -845,6 +862,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "mari_samples_aligned": build_cache_key(
@@ -856,6 +874,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "mari_undefined_types": build_cache_key(
@@ -866,6 +885,7 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "tau": tau_value,
+                            "prune_ss_oo": prune_ss_oo_value,
                         },
                     ),
                     "ccmr_m_sweep": build_cache_key(
@@ -1055,6 +1075,7 @@ def main() -> int:
                             features=_ensure_eval_features_norm(),
                             subsets=resolve_manifest_subsets(eval_manifest),
                             k_values=k_values,
+                            prune_ss_oo=bool(args.prune_ss_oo),
                         )
                     return paired_subset_cache
 
@@ -1144,6 +1165,7 @@ def main() -> int:
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
+                            prune_ss_oo=bool(args.prune_ss_oo),
                         )
                     ri_curve = dict(ri_artifacts.curve)
                     if ri_artifacts.result is None:
@@ -1232,6 +1254,7 @@ def main() -> int:
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
+                            prune_ss_oo=bool(args.prune_ss_oo),
                             tau=float(args.tau),
                         )
                     mari_curve = dict(mari_artifacts.curve)
