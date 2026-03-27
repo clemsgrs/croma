@@ -736,8 +736,8 @@ class BaseRobustnessIndex(ABC):
                 scored_entry=by_k[int(selected_k)],
             )
             if summarize_by_mean:
-                auc_mean, auc_std = cls._compute_mean_from_curve(curve)
-                result = replace(result, value=auc_mean, std=auc_std)
+                mean_val, mean_std = cls._compute_mean_from_curve(curve)
+                result = replace(result, value=mean_val, std=mean_std)
             if warn_selected_result:
                 cls._warn_undefined_occurrences(
                     dataset_name=dataset_name,
