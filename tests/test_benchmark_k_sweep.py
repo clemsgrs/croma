@@ -401,7 +401,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
         include_selected_result: bool,
         warn_selected_result: bool,
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         assert evaluation_design == "dataset_wide"
         assert include_selected_result is True
@@ -425,7 +425,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
         warn_selected_result: bool,
         tau: float,
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         assert evaluation_design == "dataset_wide"
         assert include_selected_result is True
@@ -586,7 +586,7 @@ def test_benchmark_can_select_different_confounder_k(
         warn_selected_result: bool,
         tau: float | None = None,
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         del include_selected_result, warn_selected_result
         return SimpleNamespace(

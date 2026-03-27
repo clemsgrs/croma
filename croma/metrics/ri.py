@@ -20,7 +20,7 @@ class RobustnessIndex(BaseRobustnessIndex):
         k_candidates: list[int] | tuple[int, ...],
         evaluation_design: str = "paired_2x2",
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> RobustnessResult:
         return cls._compute(
             features=features,
@@ -29,7 +29,7 @@ class RobustnessIndex(BaseRobustnessIndex):
             k_candidates=k_candidates,
             evaluation_design=evaluation_design,
             prune_ss_oo=prune_ss_oo,
-            summarize_by_auc=summarize_by_auc,
+            summarize_by_mean=summarize_by_mean,
         )
 
     @classmethod
@@ -42,7 +42,7 @@ class RobustnessIndex(BaseRobustnessIndex):
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = "paired_2x2",
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> dict[int, float]:
         return cls._compute_curve(
             features=features,
@@ -51,5 +51,5 @@ class RobustnessIndex(BaseRobustnessIndex):
             k_values=k_values,
             evaluation_design=evaluation_design,
             prune_ss_oo=prune_ss_oo,
-            summarize_by_auc=summarize_by_auc,
+            summarize_by_mean=summarize_by_mean,
         )

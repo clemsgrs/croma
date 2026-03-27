@@ -352,11 +352,11 @@ def test_prune_ss_oo_uses_k_max_not_knn_selected_k() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Tests for summarize_by_auc
+# Tests for summarize_by_mean
 # ---------------------------------------------------------------------------
 
 
-def test_summarize_by_auc_value_equals_curve_mean() -> None:
+def test_summarize_by_mean_value_equals_curve_mean() -> None:
     """result.value must equal the arithmetic mean of the RI curve values."""
     manifest = _make_manifest_four_confounders()
     features = _make_features_informative_neighbors()
@@ -368,7 +368,7 @@ def test_summarize_by_auc_value_equals_curve_mean() -> None:
         confounder_column="scanner_vendor",
         k_candidates=k_candidates,
         evaluation_design="dataset_wide",
-        summarize_by_auc=True,
+        summarize_by_mean=True,
     )
     curve = RI.compute_curve(
         features,
@@ -382,7 +382,7 @@ def test_summarize_by_auc_value_equals_curve_mean() -> None:
     assert result.value == pytest.approx(expected)
 
 
-def test_summarize_by_auc_std_equals_curve_std() -> None:
+def test_summarize_by_mean_std_equals_curve_std() -> None:
     """result.std must equal the std of the RI curve values."""
     manifest = _make_manifest_four_confounders()
     features = _make_features_informative_neighbors()
@@ -394,7 +394,7 @@ def test_summarize_by_auc_std_equals_curve_std() -> None:
         confounder_column="scanner_vendor",
         k_candidates=k_candidates,
         evaluation_design="dataset_wide",
-        summarize_by_auc=True,
+        summarize_by_mean=True,
     )
     curve = RI.compute_curve(
         features,
@@ -408,8 +408,8 @@ def test_summarize_by_auc_std_equals_curve_std() -> None:
     assert result.std == pytest.approx(expected_std)
 
 
-def test_summarize_by_auc_k_equals_kmax() -> None:
-    """result.k must equal max(k_candidates) when summarize_by_auc=True."""
+def test_summarize_by_mean_k_equals_kmax() -> None:
+    """result.k must equal max(k_candidates) when summarize_by_mean=True."""
     manifest = _make_manifest_four_confounders()
     features = _make_features_informative_neighbors()
     k_candidates = [2, 3, 4]
@@ -420,14 +420,14 @@ def test_summarize_by_auc_k_equals_kmax() -> None:
         confounder_column="scanner_vendor",
         k_candidates=k_candidates,
         evaluation_design="dataset_wide",
-        summarize_by_auc=True,
+        summarize_by_mean=True,
     )
 
     assert result.k == max(k_candidates)
 
 
-def test_summarize_by_auc_false_default_unchanged() -> None:
-    """summarize_by_auc=False (default) must give the same result as not passing it."""
+def test_summarize_by_mean_false_default_unchanged() -> None:
+    """summarize_by_mean=False (default) must give the same result as not passing it."""
     manifest = _make_manifest_four_confounders()
     features = _make_features_informative_neighbors()
 
@@ -437,7 +437,7 @@ def test_summarize_by_auc_false_default_unchanged() -> None:
         evaluation_design="dataset_wide",
     )
     result_default = RI.compute(features, manifest, **kwargs)
-    result_explicit_false = RI.compute(features, manifest, **kwargs, summarize_by_auc=False)
+    result_explicit_false = RI.compute(features, manifest, **kwargs, summarize_by_mean=False)
 
     assert result_default.value == pytest.approx(result_explicit_false.value)
     assert result_default.std == pytest.approx(result_explicit_false.std)

@@ -22,7 +22,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         tau: float = 0.2,
         evaluation_design: str = "paired_2x2",
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> RobustnessResult:
         if float(tau) <= 0.0:
             raise ValueError("tau must be > 0")
@@ -33,7 +33,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
             k_candidates=k_candidates,
             evaluation_design=evaluation_design,
             prune_ss_oo=prune_ss_oo,
-            summarize_by_auc=summarize_by_auc,
+            summarize_by_mean=summarize_by_mean,
             tau=float(tau),
         )
 
@@ -48,7 +48,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         tau: float = 0.2,
         evaluation_design: str = "paired_2x2",
         prune_ss_oo: bool = False,
-        summarize_by_auc: bool = False,
+        summarize_by_mean: bool = False,
     ) -> dict[int, float]:
         if float(tau) <= 0.0:
             raise ValueError("tau must be > 0")
@@ -59,6 +59,6 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
             k_values=k_values,
             evaluation_design=evaluation_design,
             prune_ss_oo=prune_ss_oo,
-            summarize_by_auc=summarize_by_auc,
+            summarize_by_mean=summarize_by_mean,
             tau=float(tau),
         )

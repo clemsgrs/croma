@@ -281,7 +281,7 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--summarize-by-auc",
+        "--summarize-by-mean",
         action="store_true",
         help=(
             "Summarize RI/MaRI as the mean over the full k-curve instead of "
@@ -760,7 +760,7 @@ def main() -> int:
                 k_values_param = [int(k) for k in k_values]
                 tau_value = float(args.tau)
                 prune_ss_oo_value = bool(args.prune_ss_oo)
-                summarize_by_auc_value = bool(args.summarize_by_auc)
+                summarize_by_mean_value = bool(args.summarize_by_mean)
 
                 keys = {
                     "knn_bio_curve": build_cache_key(
@@ -792,7 +792,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "mari_curve": build_cache_key(
@@ -805,7 +805,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "ri_summary": build_cache_key(
@@ -817,7 +817,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "ri_samples": build_cache_key(
@@ -829,7 +829,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "ri_samples_aligned": build_cache_key(
@@ -841,7 +841,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "ri_undefined_types": build_cache_key(
@@ -853,7 +853,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "mari_summary": build_cache_key(
@@ -866,7 +866,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "mari_samples": build_cache_key(
@@ -879,7 +879,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "mari_samples_aligned": build_cache_key(
@@ -892,7 +892,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "mari_undefined_types": build_cache_key(
@@ -904,7 +904,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_auc": summarize_by_auc_value,
+                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "ccmr_m_sweep": build_cache_key(
@@ -1141,7 +1141,7 @@ def main() -> int:
 
                 selected_k = (
                     max(k_values)
-                    if (args.prune_ss_oo or args.summarize_by_auc)
+                    if (args.prune_ss_oo or args.summarize_by_mean)
                     else _select_k_from_balanced_accuracy(
                         k_values=k_values,
                         scores=knn_bacc_by_k,
@@ -1189,7 +1189,7 @@ def main() -> int:
                             include_selected_result=True,
                             warn_selected_result=True,
                             prune_ss_oo=bool(args.prune_ss_oo),
-                            summarize_by_auc=bool(args.summarize_by_auc),
+                            summarize_by_mean=bool(args.summarize_by_mean),
                         )
                     ri_curve = dict(ri_artifacts.curve)
                     if ri_artifacts.result is None:
@@ -1279,7 +1279,7 @@ def main() -> int:
                             include_selected_result=True,
                             warn_selected_result=True,
                             prune_ss_oo=bool(args.prune_ss_oo),
-                            summarize_by_auc=bool(args.summarize_by_auc),
+                            summarize_by_mean=bool(args.summarize_by_mean),
                             tau=float(args.tau),
                         )
                     mari_curve = dict(mari_artifacts.curve)
