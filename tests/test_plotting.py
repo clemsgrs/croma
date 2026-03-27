@@ -2,7 +2,6 @@ import sys
 from pathlib import Path
 
 import numpy as np
-import matplotlib.figure
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -218,20 +217,6 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
         png_path = _png_export_path(out_path)
         assert png_path.exists()
         assert png_path.stat().st_size > 0
-
-
-def _sample_ccmr_distribution_rows(tmp_path: Path) -> list[dict]:
-    samples_path = tmp_path / "ccmr_samples_virchow2.npy"
-    np.save(samples_path, np.array([0.8, 0.9, 1.1, 1.2, 1.05], dtype=float))
-    return [
-        {
-            "model": "Virchow2",
-            "ccmr_samples_path": str(samples_path),
-            "ccmr_q_alpha": 0.85,
-            "ccmr_alpha": 0.10,
-            "ccmr": 1.05,
-        }
-    ]
 
 
 def test_plot_writes_matching_pdf_export(tmp_path: Path) -> None:

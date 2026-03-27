@@ -35,7 +35,7 @@ LEGEND_MAX_COLUMNS = 4
 MODEL_COLOR_MAP: dict[str, str] = {
     "Virchow2": "#ff7f0e",
     "Virchow": "#ffbb78",
-    "PRISM": "#ffbb78",
+    "PRISM": "#ff7f0e",
     "UNI2-h": "#2ca02c",
     "UNI": "#98df8a",
     "CONCHv1.5": "#d62728",
@@ -54,9 +54,9 @@ MODEL_COLOR_MAP: dict[str, str] = {
 }
 
 MODEL_FAMILY_MAP: dict[str, str] = {
-    "Virchow2": "virchow",
-    "Virchow": "virchow",
-    "PRISM": "virchow",
+    "Virchow2": "paige",
+    "Virchow": "paige",
+    "PRISM": "paige",
     "UNI2-h": "uni",
     "UNI": "uni",
     "CONCHv1.5": "conch",
@@ -75,7 +75,7 @@ MODEL_FAMILY_MAP: dict[str, str] = {
 }
 
 FAMILY_PALETTE: dict[str, list[str]] = {
-    "virchow": ["#996127", "#cf8f45"],
+    "paige": ["#996127", "#cf8f45"],
     "uni": ["#3f7f62", "#76a888"],
     "conch": ["#9e4d4d", "#ce7e74"],
     "phikon": ["#6274a8", "#8e9bc4"],
