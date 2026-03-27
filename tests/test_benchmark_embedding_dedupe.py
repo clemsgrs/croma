@@ -48,6 +48,7 @@ def _install_noop_plots(monkeypatch) -> None:
         "plot_ccmr_m_sweep_with_ltm",
         "plot_ccmr_sample_distributions",
         "plot_ccmr_vs_mari_scatter",
+        "plot_q_alpha_vs_ccmr_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",

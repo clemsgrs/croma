@@ -20,6 +20,7 @@ from plotting import (
     plot_ccmr_sample_distributions,
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
+    plot_q_alpha_vs_ccmr_scatter,
     plot_ri_mari_support,
     plot_ri_k_sweep,
 )
@@ -409,6 +410,17 @@ def test_selected_k_markers_are_highlighted(monkeypatch, tmp_path: Path) -> None
     assert "X" in markers
     assert "*" in markers
     assert 3 in star_x_values
+
+
+def test_plot_q_alpha_vs_ccmr_scatter_writes_png(tmp_path: Path) -> None:
+    rows = [
+        {"model": "Virchow2", "ccmr": 1.05, "ccmr_q_alpha": 0.85, "ccmr_alpha": 0.10},
+        {"model": "UNI", "ccmr": 0.92, "ccmr_q_alpha": 0.72, "ccmr_alpha": 0.10},
+    ]
+    out_path = tmp_path / "q_alpha_vs_ccmr_scatter.png"
+    plot_q_alpha_vs_ccmr_scatter(rows=rows, out_path=out_path)
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
 
 
 def test_confounder_plot_uses_display_name(tmp_path: Path) -> None:

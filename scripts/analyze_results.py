@@ -46,7 +46,7 @@ _THRESH_TAIL_GAP_LTM = 0.20
 _THRESH_K_SWEEP_RANGE = 0.15
 _THRESH_M_SWEEP_CCMR_GAIN = 0.08
 _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO = 2.0
-_THRESH_TAIL_SEVERITY_MEANINGFUL_GAP = 0.05
+_THRESH_TAIL_SEVERITY_MEANINGFUL_GAP = 0.10
 _THRESH_TIER1_MEDIAN_DELTA = 0.05
 _THRESH_TIER1_LT1_DELTA = 0.05
 _THRESH_TIER2_ROBUST_MEDIAN_FLOOR = 1.15
@@ -1132,6 +1132,100 @@ def _render_ccmr_subgroup_markdown(
             lines.extend(_render_tier_table(context_rows, tier="tier3"))
             lines.append("")
         lines.append("")
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("## Appendix: Status Definitions and Thresholds")
+    lines.append("")
+    lines.append(
+        "All per-sample CCMR values used in this report are computed at **m=1** "
+        f"(column `{_SUBGROUP_SCORE_COLUMN}`). "
+        "\"Rest\" refers to all other defined samples outside the subgroup."
+    )
+    lines.append("")
+    lines.append("### Broad Subgroup Weakness (Tier 1)")
+    lines.append("")
+    lines.append(
+        "Compares a subgroup's median CCMR to the rest. "
+        "A subgroup is flagged when its median delta vs rest "
+        f"<= **-{_THRESH_TIER1_MEDIAN_DELTA:.2f}** "
+        f"and its CCMR<1 fraction delta vs rest >= **{_THRESH_TIER1_LT1_DELTA:.2f}**."
+    )
+    lines.append("")
+    lines.append("| Status | Condition |")
+    lines.append("| --- | --- |")
+    lines.append(
+        "| `broad_weakness` | Flagged, and subgroup median < 1.0 while rest median >= 1.0 |"
+    )
+    lines.append(
+        "| `relative_weakness` | Flagged, and both subgroup and rest median >= 1.0 |"
+    )
+    lines.append(
+        "| `aggravated_weakness` | Flagged, and both subgroup and rest median < 1.0 |"
+    )
+    lines.append("| `neutral` | Not flagged |")
+    lines.append("")
+    lines.append("### Hidden Subgroup Pockets (Tier 2)")
+    lines.append("")
+    lines.append(
+        "Detects subgroups where the median looks healthy but a significant "
+        "fragile tail is hidden underneath. "
+        f"Requires N >= **{_THRESH_TIER2_MIN_SAMPLES}**. "
+        "A subgroup passes the \"pocket gate\" when all of:"
+    )
+    lines.append("")
+    lines.append(f"- Subgroup LTM@alpha <= **{_THRESH_TIER2_LTM_CEILING:.2f}**")
+    lines.append(
+        f"- Internal drop (median - LTM@alpha) >= **{_THRESH_TIER2_INTERNAL_DROP:.2f}**"
+    )
+    lines.append(f"- CCMR<1 fraction >= **{_THRESH_TIER2_LT1_FRAC_FLOOR:.2f}**")
+    lines.append(f"- CCMR<1 count >= **{_THRESH_TIER2_MIN_LT1_COUNT}**")
+    lines.append("")
+    lines.append("| Status | Condition |")
+    lines.append("| --- | --- |")
+    lines.append(
+        f"| `hidden_pocket` | Pocket gate passed and median >= "
+        f"**{_THRESH_TIER2_ROBUST_MEDIAN_FLOOR:.2f}** |"
+    )
+    lines.append("| `aggravated_weakness` | Pocket gate passed and median < 1.0 |")
+    lines.append(
+        f"| `internal_spread` | Median >= **{_THRESH_TIER2_ROBUST_MEDIAN_FLOOR:.2f}**, "
+        f"LTM@alpha >= 1.0, and drop >= **{_THRESH_TIER2_INTERNAL_DROP:.2f}** |"
+    )
+    lines.append("| `neutral` | None of the above |")
+    lines.append("")
+    lines.append("### Tail-Specific Fragility (Tier 3)")
+    lines.append("")
+    lines.append(
+        "Examines whether a subgroup is overrepresented in the global "
+        "lower tail and whether its tail samples are more severely affected."
+    )
+    lines.append("")
+    lines.append(
+        f"- **Enriched**: tail prevalence ratio >= "
+        f"**{_THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO:.1f}x** "
+        "(subgroup contributes disproportionately many tail samples)"
+    )
+    lines.append(
+        f"- **Severe**: tail mean CCMR delta vs rest <= "
+        f"**-{_THRESH_TAIL_SEVERITY_MEANINGFUL_GAP:.2f}** "
+        "(subgroup's tail samples are meaningfully worse than others')"
+    )
+    lines.append("")
+    lines.append("| Status | Condition |")
+    lines.append("| --- | --- |")
+    lines.append("| `tail_enriched_and_severe` | Enriched and severe |")
+    lines.append("| `tail_enriched` | Enriched only |")
+    lines.append("| `tail_severe` | Severe only |")
+    lines.append("| `neutral` | Neither |")
+    lines.append("")
+    lines.append(
+        "Severity label uses the same delta: "
+        f"<= **-{_THRESH_TAIL_SEVERITY_MEANINGFUL_GAP:.2f}** = \"more severe\", "
+        f">= **+{_THRESH_TAIL_SEVERITY_MEANINGFUL_GAP:.2f}** = \"not more severe\", "
+        "otherwise \"similar\"."
+    )
+    lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -1358,12 +1452,14 @@ def _write_report(
     top_df: pd.DataFrame,
     delta_df: pd.DataFrame,
     pearson: pd.DataFrame,
+    spearman: pd.DataFrame,
     top_k: int,
     action_flags_df: pd.DataFrame,
     k_sensitivity_df: pd.DataFrame,
     ccmr_m_sensitivity_df: pd.DataFrame,
 ) -> None:
     strong_corr = _strongest_corr_pairs(pearson, top_n=8)
+    strong_spearman = _strongest_corr_pairs(spearman, top_n=8)
     coverage_cols = [
         c
         for c in ("ri_undefined_frac", "mari_undefined_frac", "ccmr_undefined_frac")
@@ -1408,6 +1504,13 @@ def _write_report(
     lines.append("## Pearson Correlations (RI / MaRI / CCMR)")
     lines.append("")
     for m1, m2, val in strong_corr:
+        lines.append(
+            f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}"
+        )
+    lines.append("")
+    lines.append("## Spearman Correlations (RI / MaRI / CCMR)")
+    lines.append("")
+    for m1, m2, val in strong_spearman:
         lines.append(
             f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}"
         )
@@ -1619,6 +1722,7 @@ def main() -> int:
         top_df=top_df,
         delta_df=delta_df,
         pearson=pearson_corr,
+        spearman=spearman_corr,
         top_k=int(args.top_k),
         action_flags_df=action_flags_df,
         k_sensitivity_df=k_sensitivity_df,

@@ -42,6 +42,7 @@ from plotting import (
     plot_ccmr_m_sweep_with_ltm,
     plot_ccmr_sample_distributions,
     plot_ccmr_vs_mari_scatter,
+    plot_q_alpha_vs_ccmr_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
@@ -1609,6 +1610,9 @@ def main() -> int:
         plot_ri_mari_support(rows=rows, out_path=plots_dir / "ri_mari_support.png")
         plot_ccmr_vs_mari_scatter(
             rows=rows, out_path=plots_dir / "ccmr_vs_mari_scatter.png"
+        )
+        plot_q_alpha_vs_ccmr_scatter(
+            rows=rows, out_path=plots_dir / "q_alpha_vs_ccmr_scatter.png"
         )
         plot_ccmr_sample_distributions(
             rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png"

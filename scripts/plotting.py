@@ -1368,3 +1368,61 @@ def plot_ccmr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 7.0))
     _draw_ccmr_vs_mari_scatter(ax, rows)
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
+
+
+def _draw_q_alpha_vs_ccmr_scatter(ax, rows: list[dict]) -> None:
+    valid_rows = [
+        r
+        for r in rows
+        if "ccmr" in r
+        and "ccmr_q_alpha" in r
+        and np.isfinite(float(r["ccmr"]))
+        and np.isfinite(float(r["ccmr_q_alpha"]))
+    ]
+    if not valid_rows:
+        ax.set_visible(False)
+        return
+
+    alpha_pct_values = [
+        int(round(float(r["ccmr_alpha"]) * 100))
+        for r in valid_rows
+        if "ccmr_alpha" in r and np.isfinite(float(r["ccmr_alpha"]))
+    ]
+    alpha_pct = alpha_pct_values[0] if alpha_pct_values else 10
+
+    xs = np.asarray([float(r["ccmr"]) for r in valid_rows], dtype=float)
+    ys = np.asarray([float(r["ccmr_q_alpha"]) for r in valid_rows], dtype=float)
+
+    _style_axes(ax)
+    ax.axhline(y=1.0, linestyle="--", linewidth=1.1, color=REFERENCE_LINE_COLOR, zorder=1)
+    ax.axvline(x=1.0, linestyle="--", linewidth=1.1, color=REFERENCE_LINE_COLOR, zorder=1)
+
+    for row in sorted(valid_rows, key=lambda r: str(r["model"])):
+        model = str(row["model"])
+        x = float(row["ccmr"])
+        y = float(row["ccmr_q_alpha"])
+        ax.scatter(
+            [x],
+            [y],
+            s=90,
+            color=_color_for_model(model),
+            edgecolors="white",
+            linewidths=1.0,
+            zorder=3,
+            label=model,
+        )
+
+    all_vals = np.concatenate([xs, ys])
+    x_pad = max(0.1, (xs.max() - xs.min()) * 0.10) if xs.size > 0 else 0.5
+    y_pad = max(0.1, (ys.max() - ys.min()) * 0.10) if ys.size > 0 else 0.5
+    ax.set_xlim(max(0.0, float(xs.min()) - x_pad), float(xs.max()) + x_pad)
+    ax.set_ylim(max(0.0, float(ys.min()) - y_pad), float(ys.max()) + y_pad)
+    ax.set_xlabel("CCMR", fontsize=10.5)
+    ax.set_ylabel(f"Q{alpha_pct}", fontsize=10.5)
+    _set_panel_title(ax, f"Q{alpha_pct} vs CCMR")
+
+
+def plot_q_alpha_vs_ccmr_scatter(rows: list[dict], out_path: Path) -> None:
+    fig, ax = plt.subplots(figsize=(7.5, 7.0))
+    _draw_q_alpha_vs_ccmr_scatter(ax, rows)
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
