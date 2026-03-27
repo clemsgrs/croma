@@ -269,14 +269,14 @@ def _sharp_tail_only_per_sample_df() -> pd.DataFrame:
             sample_id="a1",
             label="tumor",
             confounder="RUMC",
-            ccmr_m1=0.30,
+            ccmr_m1=0.20,
         ),
         _per_sample_row(
             model="M_sharp",
             sample_id="a2",
             label="tumor",
             confounder="RUMC",
-            ccmr_m1=0.35,
+            ccmr_m1=0.25,
         ),
         _per_sample_row(
             model="M_sharp",
@@ -825,11 +825,11 @@ def test_tail_tier_distinguishes_enriched_and_severe_cases_independently() -> No
 
     markdown = ar._render_ccmr_subgroup_markdown(subgroup_df, context_df)
     assert (
-        "| stratum | tumor / RUMC | tail_enriched_and_severe | 0.500 | 0.250 | 2.0x | 0.325 | 0.400 | more severe |"
+        "| stratum | tumor / RUMC | tail_enriched_and_severe | 0.500 | 0.250 | 2.0x | 0.225 | 0.400 | more severe |"
         in markdown
     )
     assert (
-        "| label | tumor | tail_severe | 0.333 | 0.250 | 1.3x | 0.325 | 0.400 | more severe |"
+        "| label | tumor | tail_severe | 0.333 | 0.250 | 1.3x | 0.225 | 0.400 | more severe |"
         in markdown
     )
 
@@ -1241,6 +1241,7 @@ def test_report_adds_coverage_section_and_filters_coverage_and_rank_shift_from_a
         top_df=top_df,
         delta_df=delta_df,
         pearson=pearson,
+        spearman=pearson,
         top_k=1,
         action_flags_df=action_flags_df,
         k_sensitivity_df=pd.DataFrame(),
@@ -1249,6 +1250,7 @@ def test_report_adds_coverage_section_and_filters_coverage_and_rank_shift_from_a
 
     report = out_path.read_text(encoding="utf-8")
 
+    assert "## Spearman Correlations" in report
     assert "## Coverage Risk" in report
     assert "| Model | Undefined Frac | Coverage Risk |" in report
     assert "| M1 | 0.300 | yes |" in report
