@@ -91,7 +91,7 @@ def _print_table(table: pd.DataFrame) -> None:
 
 
 def _compute_correlations(df: pd.DataFrame) -> pd.DataFrame:
-    from scipy.stats import pearsonr  # type: ignore
+    from scipy.stats import pearsonr, spearmanr  # type: ignore
 
     rows = []
     for metric in ("ri", "mari"):
@@ -100,21 +100,38 @@ def _compute_correlations(df: pd.DataFrame) -> pd.DataFrame:
         mask = np.isfinite(x) & np.isfinite(y)
         n = int(mask.sum())
         if n >= 3:
-            r, p = pearsonr(x[mask], y[mask])
-            rows.append({"metric": metric, "r": round(float(r), 4), "p_value": round(float(p), 4), "n_models": n})
+            pr, pp = pearsonr(x[mask], y[mask])
+            sr, sp = spearmanr(x[mask], y[mask])
+            rows.append({
+                "metric": metric,
+                "pearson_r": round(float(pr), 4),
+                "pearson_p": round(float(pp), 4),
+                "spearman_r": round(float(sr), 4),
+                "spearman_p": round(float(sp), 4),
+                "n_models": n,
+            })
         else:
-            rows.append({"metric": metric, "r": float("nan"), "p_value": float("nan"), "n_models": n})
+            rows.append({
+                "metric": metric,
+                "pearson_r": float("nan"),
+                "pearson_p": float("nan"),
+                "spearman_r": float("nan"),
+                "spearman_p": float("nan"),
+                "n_models": n,
+            })
     return pd.DataFrame(rows)
 
 
 def _print_correlations(corr: pd.DataFrame) -> None:
-    print("\nPearson correlations (unpruned vs pruned):")
+    print("\nCorrelations (unpruned vs pruned):")
     for _, row in corr.iterrows():
         n = int(row["n_models"])
+        m = str(row["metric"])
         if n >= 3:
-            print(f"  r({row['metric']}, {row['metric']}_pruned) = {row['r']:.4f}  (p={row['p_value']:.4f},  n={n})")
+            print(f"  {m}: Pearson r={row['pearson_r']:.4f} (p={row['pearson_p']:.4f})  "
+                  f"Spearman r={row['spearman_r']:.4f} (p={row['spearman_p']:.4f})  n={n}")
         else:
-            print(f"  r({row['metric']}, {row['metric']}_pruned) = n/a  (need ≥3 models, got {n})")
+            print(f"  {m}: n/a  (need ≥3 models, got {n})")
 
 
 def _scatter_plot(
