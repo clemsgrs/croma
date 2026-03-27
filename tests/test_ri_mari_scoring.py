@@ -328,3 +328,117 @@ def test_prune_ss_oo_false_default_unchanged() -> None:
 
     assert result_default.value == pytest.approx(result_explicit_false.value)
     assert result_default.undefined_frac == pytest.approx(result_explicit_false.undefined_frac)
+
+
+def test_prune_ss_oo_uses_k_max_not_knn_selected_k() -> None:
+    """With prune_ss_oo=True, the selected k must always equal max(k_candidates),
+    regardless of which k would have been chosen by kNN biological accuracy."""
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+
+    k_candidates = [2, 3, 4]
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=k_candidates,
+        evaluation_design="dataset_wide",
+        prune_ss_oo=True,
+    )
+
+    assert result.k == max(k_candidates), (
+        f"Expected k={max(k_candidates)} (k_max) with prune_ss_oo=True, got k={result.k}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tests for summarize_by_auc
+# ---------------------------------------------------------------------------
+
+
+def test_summarize_by_auc_value_equals_curve_mean() -> None:
+    """result.value must equal the arithmetic mean of the RI curve values."""
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+    k_candidates = [2, 3, 4]
+
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=k_candidates,
+        evaluation_design="dataset_wide",
+        summarize_by_auc=True,
+    )
+    curve = RI.compute_curve(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_values=k_candidates,
+        evaluation_design="dataset_wide",
+    )
+
+    expected = float(np.mean(list(curve.values())))
+    assert result.value == pytest.approx(expected)
+
+
+def test_summarize_by_auc_std_equals_curve_std() -> None:
+    """result.std must equal the std of the RI curve values."""
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+    k_candidates = [2, 3, 4]
+
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=k_candidates,
+        evaluation_design="dataset_wide",
+        summarize_by_auc=True,
+    )
+    curve = RI.compute_curve(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_values=k_candidates,
+        evaluation_design="dataset_wide",
+    )
+
+    expected_std = float(np.std(list(curve.values())))
+    assert result.std == pytest.approx(expected_std)
+
+
+def test_summarize_by_auc_k_equals_kmax() -> None:
+    """result.k must equal max(k_candidates) when summarize_by_auc=True."""
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+    k_candidates = [2, 3, 4]
+
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=k_candidates,
+        evaluation_design="dataset_wide",
+        summarize_by_auc=True,
+    )
+
+    assert result.k == max(k_candidates)
+
+
+def test_summarize_by_auc_false_default_unchanged() -> None:
+    """summarize_by_auc=False (default) must give the same result as not passing it."""
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+
+    kwargs = dict(
+        confounder_column="scanner_vendor",
+        k_candidates=[2, 3, 4],
+        evaluation_design="dataset_wide",
+    )
+    result_default = RI.compute(features, manifest, **kwargs)
+    result_explicit_false = RI.compute(features, manifest, **kwargs, summarize_by_auc=False)
+
+    assert result_default.value == pytest.approx(result_explicit_false.value)
+    assert result_default.std == pytest.approx(result_explicit_false.std)
+    assert result_default.k == result_explicit_false.k

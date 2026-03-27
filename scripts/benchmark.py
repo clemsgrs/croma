@@ -280,6 +280,14 @@ def _parse_args() -> argparse.Namespace:
             "eliminating undefined samples caused by SS/OO dominance."
         ),
     )
+    parser.add_argument(
+        "--summarize-by-auc",
+        action="store_true",
+        help=(
+            "Summarize RI/MaRI as the mean over the full k-curve instead of "
+            "selecting a single k via kNN biological accuracy."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -752,6 +760,7 @@ def main() -> int:
                 k_values_param = [int(k) for k in k_values]
                 tau_value = float(args.tau)
                 prune_ss_oo_value = bool(args.prune_ss_oo)
+                summarize_by_auc_value = bool(args.summarize_by_auc)
 
                 keys = {
                     "knn_bio_curve": build_cache_key(
@@ -783,6 +792,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "mari_curve": build_cache_key(
@@ -795,6 +805,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "ri_summary": build_cache_key(
@@ -806,6 +817,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "ri_samples": build_cache_key(
@@ -817,6 +829,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "ri_samples_aligned": build_cache_key(
@@ -828,6 +841,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "ri_undefined_types": build_cache_key(
@@ -839,6 +853,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "mari_summary": build_cache_key(
@@ -851,6 +866,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "mari_samples": build_cache_key(
@@ -863,6 +879,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "mari_samples_aligned": build_cache_key(
@@ -875,6 +892,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "mari_undefined_types": build_cache_key(
@@ -886,6 +904,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_auc": summarize_by_auc_value,
                         },
                     ),
                     "ccmr_m_sweep": build_cache_key(
@@ -1120,9 +1139,13 @@ def main() -> int:
                         payload=_curve_payload(knn_confounder_bacc_by_k),
                     )
 
-                selected_k = _select_k_from_balanced_accuracy(
-                    k_values=k_values,
-                    scores=knn_bacc_by_k,
+                selected_k = (
+                    max(k_values)
+                    if (args.prune_ss_oo or args.summarize_by_auc)
+                    else _select_k_from_balanced_accuracy(
+                        k_values=k_values,
+                        scores=knn_bacc_by_k,
+                    )
                 )
                 selected_k_confounder = _select_k_from_balanced_accuracy(
                     k_values=k_values,
@@ -1166,6 +1189,7 @@ def main() -> int:
                             include_selected_result=True,
                             warn_selected_result=True,
                             prune_ss_oo=bool(args.prune_ss_oo),
+                            summarize_by_auc=bool(args.summarize_by_auc),
                         )
                     ri_curve = dict(ri_artifacts.curve)
                     if ri_artifacts.result is None:
@@ -1255,6 +1279,7 @@ def main() -> int:
                             include_selected_result=True,
                             warn_selected_result=True,
                             prune_ss_oo=bool(args.prune_ss_oo),
+                            summarize_by_auc=bool(args.summarize_by_auc),
                             tau=float(args.tau),
                         )
                     mari_curve = dict(mari_artifacts.curve)

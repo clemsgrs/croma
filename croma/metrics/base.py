@@ -1,6 +1,6 @@
 import warnings
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 import pandas as pd
@@ -535,6 +535,7 @@ class BaseRobustnessIndex(ABC):
         k_candidates: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
         prune_ss_oo: bool = False,
+        summarize_by_auc: bool = False,
         **kwargs: float,
     ) -> RobustnessResult:
         artifacts = cls._compute_artifacts(
@@ -546,6 +547,7 @@ class BaseRobustnessIndex(ABC):
             include_selected_result=True,
             warn_selected_result=True,
             prune_ss_oo=prune_ss_oo,
+            summarize_by_auc=summarize_by_auc,
             **kwargs,
         )
         if artifacts.result is None:
@@ -562,6 +564,7 @@ class BaseRobustnessIndex(ABC):
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
         prune_ss_oo: bool = False,
+        summarize_by_auc: bool = False,
         **kwargs: float,
     ) -> dict[int, float]:
         artifacts = cls._compute_artifacts(
@@ -573,6 +576,7 @@ class BaseRobustnessIndex(ABC):
             include_selected_result=False,
             warn_selected_result=False,
             prune_ss_oo=prune_ss_oo,
+            summarize_by_auc=summarize_by_auc,
             **kwargs,
         )
         return artifacts.curve
@@ -635,6 +639,11 @@ class BaseRobustnessIndex(ABC):
             evaluation_unit=evaluation_unit,
         )
 
+    @staticmethod
+    def _compute_auc_from_curve(curve: dict[int, float]) -> tuple[float, float]:
+        vals = [v for _, v in sorted(curve.items())]
+        return float(np.mean(vals)), float(np.std(vals))
+
     @classmethod
     def _compute_artifacts(
         cls,
@@ -648,6 +657,7 @@ class BaseRobustnessIndex(ABC):
         include_selected_result: bool = True,
         warn_selected_result: bool = False,
         prune_ss_oo: bool = False,
+        summarize_by_auc: bool = False,
         **kwargs: float,
     ) -> _RobustnessArtifacts:
         cls._validate_inputs(features, manifest)
@@ -672,10 +682,14 @@ class BaseRobustnessIndex(ABC):
             )
             evaluation_unit = "sample"
             if include_selected_result and selected_k is None:
-                selected_k = cls._select_dataset_wide_k(
-                    prepared=prepared,
-                    k_candidates=candidates,
-                    dataset_name=dataset_name,
+                selected_k = (
+                    max(candidates)
+                    if (prune_ss_oo or summarize_by_auc)
+                    else cls._select_dataset_wide_k(
+                        prepared=prepared,
+                        k_candidates=candidates,
+                        dataset_name=dataset_name,
+                    )
                 )
         else:
             subsets = cls._build_subsets(
@@ -692,11 +706,15 @@ class BaseRobustnessIndex(ABC):
             )
             evaluation_unit = "occurrence"
             if include_selected_result and selected_k is None:
-                selected_k = cls._select_subset_k(
-                    features=features,
-                    subsets=subsets,
-                    k_candidates=candidates,
-                    dataset_name=dataset_name,
+                selected_k = (
+                    max(candidates)
+                    if (prune_ss_oo or summarize_by_auc)
+                    else cls._select_subset_k(
+                        features=features,
+                        subsets=subsets,
+                        k_candidates=candidates,
+                        dataset_name=dataset_name,
+                    )
                 )
 
         curve = {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
@@ -717,6 +735,9 @@ class BaseRobustnessIndex(ABC):
                 k=int(selected_k),
                 scored_entry=by_k[int(selected_k)],
             )
+            if summarize_by_auc:
+                auc_mean, auc_std = cls._compute_auc_from_curve(curve)
+                result = replace(result, value=auc_mean, std=auc_std)
             if warn_selected_result:
                 cls._warn_undefined_occurrences(
                     dataset_name=dataset_name,
