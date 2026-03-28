@@ -652,6 +652,89 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
+def _draw_cumulative_mean_k_curve(
+    ax,
+    *,
+    rows: list[dict],
+    value_key: str,
+    ylabel: str,
+    title: str,
+) -> None:
+    """Draw cumulative mean of ``value_key`` over k for each model.
+
+    At x=k the y-value is ``mean(v_1, ..., v_k)`` (ascending k order), so the
+    rightmost point equals the arithmetic mean across all evaluated k values —
+    i.e. the value reported by ``--summarize-by-mean``.
+    """
+    if not rows:
+        return
+    by_model = _group_k_rows(rows)
+    models = sorted(by_model)
+    k_ticks = sorted({int(row["k"]) for row in rows})
+
+    # Compute all cumulative-mean values to set axis limits
+    all_cum_vals: list[float] = []
+    model_curves: list[tuple[str, np.ndarray, np.ndarray]] = []
+    for model in models:
+        model_rows = by_model[model]
+        ks = np.asarray([int(r["k"]) for r in model_rows], dtype=int)
+        vals = np.asarray([float(r[value_key]) for r in model_rows], dtype=float)
+        order = np.argsort(ks)
+        ks, vals = ks[order], vals[order]
+        cum_means = np.cumsum(vals) / np.arange(1, len(vals) + 1, dtype=float)
+        all_cum_vals.extend(cum_means.tolist())
+        model_curves.append((model, ks, cum_means))
+
+    _set_k_axis(ax, k_ticks)
+    ax.set_ylim(*_padded_unit_interval_limits(np.asarray(all_cum_vals, dtype=float)))
+    ax.set_ylabel(ylabel, fontsize=10.5)
+    _set_panel_title(ax, title)
+
+    for model, ks, cum_means in model_curves:
+        color = _color_for_model(model)
+        ax.plot(ks, cum_means, color=color, linewidth=1.8, alpha=0.95, label=model)
+        # Mark the endpoint (= reported summarize_by_mean value)
+        ax.scatter(
+            [ks[-1]],
+            [cum_means[-1]],
+            s=55,
+            color=color,
+            edgecolors="white",
+            linewidths=0.8,
+            zorder=4,
+        )
+
+
+def plot_ri_mari_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
+    """Two-panel plot (RI top, MaRI bottom) of cumulative means over k.
+
+    Intended for use with ``--summarize-by-mean``: each model's rightmost point
+    is exactly the value reported as its final RI / MaRI score.
+    """
+    fig, (ax_ri, ax_mari) = plt.subplots(2, 1, figsize=(9.0, 9.0), sharex=True)
+    _draw_cumulative_mean_k_curve(
+        ax_ri,
+        rows=rows,
+        value_key="ri",
+        ylabel="Cumulative mean RI",
+        title="RI – cumulative mean over k",
+    )
+    _draw_cumulative_mean_k_curve(
+        ax_mari,
+        rows=rows,
+        value_key="mari",
+        ylabel="Cumulative mean MaRI",
+        title="MaRI – cumulative mean over k",
+    )
+    _finalize_figure(
+        fig,
+        out_path=out_path,
+        legend_axes=[ax_ri, ax_mari],
+        hspace=0.32,
+        top=0.94,
+    )
+
+
 def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     support_rows = _support_plot_rows(rows)
     fig_height = max(3.4, 0.85 + 0.58 * max(len(support_rows), 1))

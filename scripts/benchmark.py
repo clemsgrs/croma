@@ -47,6 +47,7 @@ from plotting import (
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_mari_vs_ri_scatter,
+    plot_ri_mari_cumulative_mean_k_sweep,
     plot_ri_mari_sample_distributions,
     plot_ri_mari_support,
     plot_ri_k_sweep,
@@ -1756,6 +1757,11 @@ def main() -> int:
         )
         plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
         plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
+        if args.summarize_by_mean:
+            plot_ri_mari_cumulative_mean_k_sweep(
+                rows=k_sweep_rows,
+                out_path=plots_dir / "ri_mari_cumulative_mean_k_sweep.png",
+            )
         plot_ccmr_m_sweep_with_ltm(
             rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png"
         )
