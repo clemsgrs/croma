@@ -47,6 +47,7 @@ from plotting import (
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_mari_vs_ri_scatter,
+    plot_ri_mari_sample_distributions,
     plot_ri_mari_support,
     plot_ri_k_sweep,
 )
@@ -143,6 +144,9 @@ def _save_mari_sample_distribution(
     n_total_units: int,
     n_undefined_units: int,
     values: np.ndarray,
+    median_value: float = float("nan"),
+    q_alpha: float = float("nan"),
+    ltm_alpha: float = float("nan"),
 ) -> Path:
     out_path = _distribution_path(results_dir, "mari", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -159,6 +163,9 @@ def _save_mari_sample_distribution(
         "n_total_units": int(n_total_units),
         "n_undefined_units": int(n_undefined_units),
         "n_defined_units": int(arr.shape[0]),
+        "median_value": float(median_value),
+        "q_alpha": float(q_alpha),
+        "ltm_alpha": float(ltm_alpha),
         "distribution_path": str(out_path),
     }
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -176,6 +183,9 @@ def _save_ri_sample_distribution(
     n_total_units: int,
     n_undefined_units: int,
     values: np.ndarray,
+    median_value: float = float("nan"),
+    q_alpha: float = float("nan"),
+    ltm_alpha: float = float("nan"),
 ) -> Path:
     out_path = _distribution_path(results_dir, "ri", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -191,6 +201,9 @@ def _save_ri_sample_distribution(
         "n_total_units": int(n_total_units),
         "n_undefined_units": int(n_undefined_units),
         "n_defined_units": int(arr.shape[0]),
+        "median_value": float(median_value),
+        "q_alpha": float(q_alpha),
+        "ltm_alpha": float(ltm_alpha),
         "distribution_path": str(out_path),
     }
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
@@ -1559,6 +1572,9 @@ def main() -> int:
                     n_total_units=total_n,
                     n_undefined_units=mari_undefined_n,
                     values=mari_samples,
+                    median_value=float(mari_summary.get("median_value", float("nan"))),
+                    q_alpha=float(mari_summary.get("q_alpha", float("nan"))),
+                    ltm_alpha=float(mari_summary.get("ltm_alpha", float("nan"))),
                 )
                 saved_ri_dist_path = _save_ri_sample_distribution(
                     results_dir=results_dir,
@@ -1570,6 +1586,9 @@ def main() -> int:
                     n_total_units=total_n,
                     n_undefined_units=ri_undefined_n,
                     values=ri_samples,
+                    median_value=float(ri_summary.get("median_value", float("nan"))),
+                    q_alpha=float(ri_summary.get("q_alpha", float("nan"))),
+                    ltm_alpha=float(ri_summary.get("ltm_alpha", float("nan"))),
                 )
 
                 ccmr_result = ccmr_by_m[1]
@@ -1596,8 +1615,14 @@ def main() -> int:
                     "selected_k_confounder": int(selected_k_confounder),
                     "ri": float(ri_summary["value"]),
                     "ri_std": float(ri_summary["std"]),
+                    "ri_median": float(ri_summary.get("median_value", float("nan"))),
+                    "ri_q_alpha": float(ri_summary.get("q_alpha", float("nan"))),
+                    "ri_ltm_alpha": float(ri_summary.get("ltm_alpha", float("nan"))),
                     "mari": float(mari_summary["value"]),
                     "mari_std": float(mari_summary["std"]),
+                    "mari_median": float(mari_summary.get("median_value", float("nan"))),
+                    "mari_q_alpha": float(mari_summary.get("q_alpha", float("nan"))),
+                    "mari_ltm_alpha": float(mari_summary.get("ltm_alpha", float("nan"))),
                     "ri_undefined_frac": float(ri_summary["undefined_frac"]),
                     "ri_ss_dominated_undefined_frac": ri_ss_frac,
                     "ri_oo_dominated_undefined_frac": ri_oo_frac,
@@ -1753,6 +1778,17 @@ def main() -> int:
         plot_ccmr_sample_distributions(
             rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png"
         )
+        if args.prune_ss_oo:
+            plot_ri_mari_sample_distributions(
+                rows=rows,
+                metric="ri",
+                out_path=plots_dir / "ri_sample_distributions.png",
+            )
+            plot_ri_mari_sample_distributions(
+                rows=rows,
+                metric="mari",
+                out_path=plots_dir / "mari_sample_distributions.png",
+            )
 
     progress_write("\n[benchmark] === summary ===", enabled=progress_enabled)
     for model in models:

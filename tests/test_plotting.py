@@ -21,6 +21,7 @@ from plotting import (
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_q_alpha_vs_ccmr_scatter,
+    plot_ri_mari_sample_distributions,
     plot_ri_mari_support,
     plot_ri_k_sweep,
 )
@@ -733,3 +734,77 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
     assert len(title_y_positions) == 1
     assert len(subtitle_y_positions) == 1
     assert title_y_positions[0] - subtitle_y_positions[0] >= 0.045
+
+
+# ---------------------------------------------------------------------------
+# RI / MaRI sample distribution plots
+# ---------------------------------------------------------------------------
+
+
+def _sample_ri_distribution_rows(tmp_path: Path, metric: str = "ri") -> list[dict]:
+    by_model = {
+        "Virchow2": np.asarray([0.70, 0.82, 0.91, 0.95], dtype=float),
+        "UNI": np.asarray([0.45, 0.55, 0.63, 0.72], dtype=float),
+        "CONCH": np.asarray([0.60, 0.74, 0.80, 0.88], dtype=float),
+    }
+    rows: list[dict] = []
+    for model, values in by_model.items():
+        path = tmp_path / f"{model}.{metric}.npy"
+        np.save(path, values)
+        rows.append(
+            {
+                "model": model,
+                metric: {"Virchow2": 0.88, "UNI": 0.59, "CONCH": 0.76}[model],
+                f"{metric}_median": float(np.median(values)),
+                f"{metric}_q_alpha": float(np.percentile(values, 10)),
+                f"{metric}_samples_path": str(path),
+            }
+        )
+    return rows
+
+
+def test_plot_ri_sample_distributions_writes_png(tmp_path: Path) -> None:
+    rows = _sample_ri_distribution_rows(tmp_path, metric="ri")
+    out_path = tmp_path / "ri_sample_distributions.png"
+
+    plot_ri_mari_sample_distributions(rows=rows, metric="ri", out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_plot_mari_sample_distributions_writes_png(tmp_path: Path) -> None:
+    rows = _sample_ri_distribution_rows(tmp_path, metric="mari")
+    out_path = tmp_path / "mari_sample_distributions.png"
+
+    plot_ri_mari_sample_distributions(rows=rows, metric="mari", out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_plot_ri_sample_distributions_sorts_by_median(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import matplotlib.axes
+
+    model_label_order: list[str] = []
+    original_text = matplotlib.axes.Axes.text
+
+    def spy_text(self, x, y, s, *args, **kwargs):
+        text = str(s)
+        if text in {"Virchow2", "CONCH", "UNI"}:
+            model_label_order.append(text)
+        return original_text(self, x, y, s, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "text", spy_text)
+
+    rows = _sample_ri_distribution_rows(tmp_path, metric="ri")
+    plot_ri_mari_sample_distributions(
+        rows=rows,
+        metric="ri",
+        out_path=tmp_path / "ri_sample_distributions.png",
+    )
+
+    # Virchow2 has the highest median → should appear at the top (first label rendered)
+    assert model_label_order[0] == "Virchow2"

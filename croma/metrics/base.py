@@ -19,6 +19,7 @@ from croma.metrics.pairs import (
     resolve_manifest_subsets,
     validate_subset_manifest,
 )
+from croma.metrics.tail import compute_tail_metrics
 from croma.types import RobustnessResult
 
 EVALUATION_DESIGN_PAIRED_2X2 = "paired_2x2"
@@ -738,6 +739,18 @@ class BaseRobustnessIndex(ABC):
             if summarize_by_mean:
                 mean_val, mean_std = cls._compute_mean_from_curve(curve)
                 result = replace(result, value=mean_val, std=mean_std)
+            tail = compute_tail_metrics(result.sample_values, alpha=0.10)
+            median_val = (
+                float(np.median(result.sample_values))
+                if len(result.sample_values) > 0
+                else float("nan")
+            )
+            result = replace(
+                result,
+                median_value=median_val,
+                q_alpha=tail.q_alpha,
+                ltm_alpha=tail.ltm_alpha,
+            )
             if warn_selected_result:
                 cls._warn_undefined_occurrences(
                     dataset_name=dataset_name,
@@ -1170,6 +1183,18 @@ class BaseRobustnessIndex(ABC):
                 evaluation_unit="occurrence",
                 k=int(selected_k),
                 scored_entry=by_k[int(selected_k)],
+            )
+            tail = compute_tail_metrics(result.sample_values, alpha=0.10)
+            median_val = (
+                float(np.median(result.sample_values))
+                if len(result.sample_values) > 0
+                else float("nan")
+            )
+            result = replace(
+                result,
+                median_value=median_val,
+                q_alpha=tail.q_alpha,
+                ltm_alpha=tail.ltm_alpha,
             )
             if warn_selected_result:
                 cls._warn_undefined_occurrences(

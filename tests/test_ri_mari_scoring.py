@@ -456,3 +456,72 @@ def test_compute_mean_from_curve_returns_arithmetic_mean() -> None:
     mean_val, _ = BaseRobustnessIndex._compute_mean_from_curve(curve)
 
     assert mean_val == pytest.approx((0.4 + 0.6 + 0.8 + 0.6) / 4)
+
+
+# ---------------------------------------------------------------------------
+# Per-sample median and tail metrics
+# ---------------------------------------------------------------------------
+
+
+def test_per_sample_median_value_equals_numpy_median() -> None:
+    """result.median_value must equal np.median(result.sample_values)."""
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=[2, 3, 4],
+        evaluation_design="dataset_wide",
+    )
+
+    expected = float(np.median(result.sample_values))
+    assert result.median_value == pytest.approx(expected)
+
+
+def test_per_sample_q_alpha_from_tail_metrics() -> None:
+    """result.q_alpha must match compute_tail_metrics(result.sample_values).q_alpha."""
+    from croma.metrics.tail import compute_tail_metrics
+
+    manifest = _make_manifest_four_confounders()
+    features = _make_features_informative_neighbors()
+
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=[2, 3, 4],
+        evaluation_design="dataset_wide",
+    )
+
+    expected_q = compute_tail_metrics(result.sample_values, alpha=0.10).q_alpha
+    assert result.q_alpha == pytest.approx(expected_q)
+
+
+def test_per_sample_median_nan_when_no_defined_samples() -> None:
+    """When no sample is defined, result.median_value must be NaN."""
+    # All samples share the same label AND confounder → every neighbor is SS or OO
+    # → no defined per-sample RI values
+    manifest = pd.DataFrame(
+        {
+            "sample_id": [f"s{i}" for i in range(4)],
+            "image_path": [f"/tmp/{i}.png" for i in range(4)],
+            "label": ["A", "A", "A", "A"],
+            "scanner_vendor": ["V1", "V1", "V1", "V1"],
+            "slide_id": [f"slide-{i}" for i in range(4)],
+            "dataset": ["toy"] * 4,
+        }
+    )
+    features = np.eye(4, dtype=float)
+
+    result = RI.compute(
+        features,
+        manifest,
+        confounder_column="scanner_vendor",
+        k_candidates=[1, 2],
+        evaluation_design="dataset_wide",
+    )
+
+    assert len(result.sample_values) == 0
+    assert np.isnan(result.median_value)
