@@ -1379,8 +1379,6 @@ def plot_ri_mari_sample_distributions(
         Destination path for the output PNG.
     """
     samples_key = f"{metric}_samples_path"
-    median_key = f"{metric}_median"
-    q_alpha_key = f"{metric}_q_alpha"
     metric_label = metric.upper()
     alpha_pct = 10
 
@@ -1402,14 +1400,13 @@ def plot_ri_mari_sample_distributions(
         values = values[np.isfinite(values)]
         if len(values) < 2:
             continue
-        median_val = float(row.get(median_key, float(np.median(values))))
-        q_alpha = float(row.get(q_alpha_key, float("nan")))
+        # Always compute Q10 from loaded values — avoids n/a from stale cache entries
+        q_alpha = float(np.percentile(values, alpha_pct))
         model_data.append(
             {
                 "model": str(row["model"]),
                 "values": values,
                 "metric_val": float(row[metric]),
-                "median": median_val,
                 "q_alpha": q_alpha,
             }
         )
@@ -1419,7 +1416,7 @@ def plot_ri_mari_sample_distributions(
 
     model_data = sorted(
         model_data,
-        key=lambda d: (float(d["median"]), str(d["model"])),
+        key=lambda d: (float(d["metric_val"]), str(d["model"])),
         reverse=True,
     )
 
@@ -1538,7 +1535,7 @@ def plot_ri_mari_sample_distributions(
     info_ax.set_axis_off()
     info_ax.set_ylim(ax.get_ylim())
     info_ax.set_xlim(0.0, 1.0)
-    for label, x_pos in [(metric_label, 0.02), ("Median", 0.28), (f"Q{alpha_pct}", 0.58)]:
+    for label, x_pos in [(metric_label, 0.02), (f"Q{alpha_pct}", 0.52)]:
         info_ax.text(
             x_pos,
             float(len(model_data)) + 0.72,
@@ -1561,22 +1558,10 @@ def plot_ri_mari_sample_distributions(
             color=TEXT_COLOR,
             family="DejaVu Sans Mono",
         )
-        median_str = f"{float(d['median']):.3f}" if np.isfinite(d["median"]) else "n/a"
         info_ax.text(
-            0.28,
+            0.52,
             float(row_center),
-            median_str,
-            ha="left",
-            va="center",
-            fontsize=9.2,
-            color=TEXT_COLOR,
-            family="DejaVu Sans Mono",
-        )
-        q_str = f"{float(d['q_alpha']):.3f}" if np.isfinite(d["q_alpha"]) else "n/a"
-        info_ax.text(
-            0.58,
-            float(row_center),
-            q_str,
+            f"{float(d['q_alpha']):.3f}",
             ha="left",
             va="center",
             fontsize=9.2,

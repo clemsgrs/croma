@@ -783,7 +783,7 @@ def test_plot_mari_sample_distributions_writes_png(tmp_path: Path) -> None:
     assert _png_export_path(out_path).stat().st_size > 0
 
 
-def test_plot_ri_sample_distributions_sorts_by_median(
+def test_plot_ri_sample_distributions_sorts_by_metric_value(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
@@ -806,5 +806,5 @@ def test_plot_ri_sample_distributions_sorts_by_median(
         out_path=tmp_path / "ri_sample_distributions.png",
     )
 
-    # Virchow2 has the highest median → should appear at the top (first label rendered)
+    # Virchow2 has the highest metric_val (0.88) → should appear at the top (first label rendered)
     assert model_label_order[0] == "Virchow2"
