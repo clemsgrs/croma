@@ -19,7 +19,8 @@ from plotting import (
     plot_ccmr_m_sweep_with_ltm,
     plot_ccmr_sample_distributions,
     plot_knn_confounder_k_sweep,
-    plot_ri_mari_cumulative_mean_k_sweep,
+    plot_ri_cumulative_mean_k_sweep,
+    plot_mari_cumulative_mean_k_sweep,
     plot_mari_k_sweep,
     plot_q_alpha_vs_ccmr_scatter,
     plot_ri_mari_sample_distributions,
@@ -834,11 +835,21 @@ def _sample_cumulative_mean_rows() -> list[dict]:
     return rows
 
 
-def test_plot_ri_mari_cumulative_mean_k_sweep_writes_png(tmp_path: Path) -> None:
+def test_plot_ri_cumulative_mean_k_sweep_writes_png(tmp_path: Path) -> None:
     rows = _sample_cumulative_mean_rows()
-    out_path = tmp_path / "ri_mari_cumulative_mean_k_sweep.png"
+    out_path = tmp_path / "ri_cumulative_mean_k_sweep.png"
 
-    plot_ri_mari_cumulative_mean_k_sweep(rows=rows, out_path=out_path)
+    plot_ri_cumulative_mean_k_sweep(rows=rows, out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_plot_mari_cumulative_mean_k_sweep_writes_png(tmp_path: Path) -> None:
+    rows = _sample_cumulative_mean_rows()
+    out_path = tmp_path / "mari_cumulative_mean_k_sweep.png"
+
+    plot_mari_cumulative_mean_k_sweep(rows=rows, out_path=out_path)
 
     assert _png_export_path(out_path).exists()
     assert _png_export_path(out_path).stat().st_size > 0
@@ -847,7 +858,7 @@ def test_plot_ri_mari_cumulative_mean_k_sweep_writes_png(tmp_path: Path) -> None
 def test_cumulative_mean_last_point_equals_arithmetic_mean(
     monkeypatch, tmp_path: Path
 ) -> None:
-    """The endpoint of each model's curve must equal mean(ri) across all k values."""
+    """The endpoint of each model's RI curve must equal mean(ri) across all k values."""
     import matplotlib.axes
 
     scatter_calls: list[tuple[str, float, float]] = []
@@ -864,8 +875,8 @@ def test_cumulative_mean_last_point_equals_arithmetic_mean(
     monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
 
     rows = _sample_cumulative_mean_rows()
-    plot_ri_mari_cumulative_mean_k_sweep(
-        rows=rows, out_path=tmp_path / "ri_mari_cumulative_mean_k_sweep.png"
+    plot_ri_cumulative_mean_k_sweep(
+        rows=rows, out_path=tmp_path / "ri_cumulative_mean_k_sweep.png"
     )
 
     # Collect expected last-point values per model for RI panel
@@ -874,7 +885,7 @@ def test_cumulative_mean_last_point_equals_arithmetic_mean(
         by_model.setdefault(row["model"], []).append(row["ri"])
     for model, ri_vals in by_model.items():
         expected_endpoint = float(np.mean(ri_vals))
-        # Find the scatter call for RI panel at x=k_max=7
+        # Find the scatter call at x=k_max=7
         ri_endpoints = [y for title, x, y in scatter_calls if "RI" in title and x == 7]
         assert any(
             abs(y - expected_endpoint) < 1e-9 for y in ri_endpoints

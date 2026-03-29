@@ -705,34 +705,38 @@ def _draw_cumulative_mean_k_curve(
         )
 
 
-def plot_ri_mari_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
-    """Two-panel plot (RI top, MaRI bottom) of cumulative means over k.
+def plot_ri_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
+    """Single-panel cumulative mean RI over k.
 
     Intended for use with ``--summarize-by-mean``: each model's rightmost point
-    is exactly the value reported as its final RI / MaRI score.
+    is exactly the value reported as its final RI score.
     """
-    fig, (ax_ri, ax_mari) = plt.subplots(2, 1, figsize=(9.0, 9.0), sharex=True)
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
     _draw_cumulative_mean_k_curve(
-        ax_ri,
+        ax,
         rows=rows,
         value_key="ri",
         ylabel="Cumulative mean RI",
         title="RI – cumulative mean over k",
     )
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
+
+
+def plot_mari_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
+    """Single-panel cumulative mean MaRI over k.
+
+    Intended for use with ``--summarize-by-mean``: each model's rightmost point
+    is exactly the value reported as its final MaRI score.
+    """
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
     _draw_cumulative_mean_k_curve(
-        ax_mari,
+        ax,
         rows=rows,
         value_key="mari",
         ylabel="Cumulative mean MaRI",
         title="MaRI – cumulative mean over k",
     )
-    _finalize_figure(
-        fig,
-        out_path=out_path,
-        legend_axes=[ax_ri, ax_mari],
-        hspace=0.32,
-        top=0.94,
-    )
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
@@ -1483,14 +1487,16 @@ def plot_ri_mari_sample_distributions(
         values = values[np.isfinite(values)]
         if len(values) < 2:
             continue
-        # Always compute Q10 from loaded values — avoids n/a from stale cache entries
+        # Always compute Q10 and %<0.5 from loaded values — avoids n/a from stale cache
         q_alpha = float(np.percentile(values, alpha_pct))
+        lt05_frac = float(np.mean(values < 0.5))
         model_data.append(
             {
                 "model": str(row["model"]),
                 "values": values,
                 "metric_val": float(row[metric]),
                 "q_alpha": q_alpha,
+                "lt05_frac": lt05_frac,
             }
         )
 
@@ -1618,7 +1624,11 @@ def plot_ri_mari_sample_distributions(
     info_ax.set_axis_off()
     info_ax.set_ylim(ax.get_ylim())
     info_ax.set_xlim(0.0, 1.0)
-    for label, x_pos in [(metric_label, 0.02), (f"Q{alpha_pct}", 0.52)]:
+    for label, x_pos in [
+        (metric_label, 0.02),
+        (f"Q{alpha_pct}", 0.38),
+        ("%<0.5", 0.68),
+    ]:
         info_ax.text(
             x_pos,
             float(len(model_data)) + 0.72,
@@ -1642,9 +1652,19 @@ def plot_ri_mari_sample_distributions(
             family="DejaVu Sans Mono",
         )
         info_ax.text(
-            0.52,
+            0.38,
             float(row_center),
             f"{float(d['q_alpha']):.3f}",
+            ha="left",
+            va="center",
+            fontsize=9.2,
+            color=TEXT_COLOR,
+            family="DejaVu Sans Mono",
+        )
+        info_ax.text(
+            0.68,
+            float(row_center),
+            f"{100.0 * float(d['lt05_frac']):.1f}%",
             ha="left",
             va="center",
             fontsize=9.2,
