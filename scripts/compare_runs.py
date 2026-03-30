@@ -55,10 +55,10 @@ def _safe_filename(label: str) -> str:
 
 
 def _load_metrics(output_dir: Path) -> pd.DataFrame:
-    csvs = sorted(output_dir.glob("*/results/metrics.csv"))
-    if not csvs:
-        raise FileNotFoundError(f"No metrics.csv files found under {output_dir}")
-    return pd.concat([pd.read_csv(p) for p in csvs], ignore_index=True)
+    csv = output_dir / "results/metrics.csv"
+    if not csv.exists():
+        raise FileNotFoundError(f"No metrics.csv file found under {output_dir}")
+    return pd.read_csv(csv)
 
 
 def _join(df_a: pd.DataFrame, df_b: pd.DataFrame, *, label_b: str) -> pd.DataFrame:
