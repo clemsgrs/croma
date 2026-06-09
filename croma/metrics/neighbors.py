@@ -334,7 +334,8 @@ def _prepare_neighbors_with_meta(
             )
         coverage = _effective_k_coverage(valid_counts, target_k)
         hit_neighbor_cap = bool(n_neighbors >= n_samples - 1)
-        if coverage >= target_coverage or hit_neighbor_cap:
+        has_undefined = bool(np.any(valid_counts == 0))
+        if (coverage >= target_coverage and not has_undefined) or hit_neighbor_cap:
             meta = _NeighborPreparationMeta(
                 final_n_neighbors=int(n_neighbors),
                 coverage=float(coverage),
