@@ -19,8 +19,11 @@ from plotting import (
     plot_ccmr_m_sweep_with_ltm,
     plot_ccmr_sample_distributions,
     plot_knn_confounder_k_sweep,
+    plot_ri_cumulative_mean_k_sweep,
+    plot_mari_cumulative_mean_k_sweep,
     plot_mari_k_sweep,
     plot_q_alpha_vs_ccmr_scatter,
+    plot_ri_mari_sample_distributions,
     plot_ri_mari_support,
     plot_ri_k_sweep,
 )
@@ -733,3 +736,157 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
     assert len(title_y_positions) == 1
     assert len(subtitle_y_positions) == 1
     assert title_y_positions[0] - subtitle_y_positions[0] >= 0.045
+
+
+# ---------------------------------------------------------------------------
+# RI / MaRI sample distribution plots
+# ---------------------------------------------------------------------------
+
+
+def _sample_ri_distribution_rows(tmp_path: Path, metric: str = "ri") -> list[dict]:
+    by_model = {
+        "Virchow2": np.asarray([0.70, 0.82, 0.91, 0.95], dtype=float),
+        "UNI": np.asarray([0.45, 0.55, 0.63, 0.72], dtype=float),
+        "CONCH": np.asarray([0.60, 0.74, 0.80, 0.88], dtype=float),
+    }
+    rows: list[dict] = []
+    for model, values in by_model.items():
+        path = tmp_path / f"{model}.{metric}.npy"
+        np.save(path, values)
+        rows.append(
+            {
+                "model": model,
+                metric: {"Virchow2": 0.88, "UNI": 0.59, "CONCH": 0.76}[model],
+                f"{metric}_median": float(np.median(values)),
+                f"{metric}_q_alpha": float(np.percentile(values, 10)),
+                f"{metric}_samples_path": str(path),
+            }
+        )
+    return rows
+
+
+def test_plot_ri_sample_distributions_writes_png(tmp_path: Path) -> None:
+    rows = _sample_ri_distribution_rows(tmp_path, metric="ri")
+    out_path = tmp_path / "ri_sample_distributions.png"
+
+    plot_ri_mari_sample_distributions(rows=rows, metric="ri", out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_plot_mari_sample_distributions_writes_png(tmp_path: Path) -> None:
+    rows = _sample_ri_distribution_rows(tmp_path, metric="mari")
+    out_path = tmp_path / "mari_sample_distributions.png"
+
+    plot_ri_mari_sample_distributions(rows=rows, metric="mari", out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_plot_ri_sample_distributions_sorts_by_metric_value(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import matplotlib.axes
+
+    model_label_order: list[str] = []
+    original_text = matplotlib.axes.Axes.text
+
+    def spy_text(self, x, y, s, *args, **kwargs):
+        text = str(s)
+        if text in {"Virchow2", "CONCH", "UNI"}:
+            model_label_order.append(text)
+        return original_text(self, x, y, s, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "text", spy_text)
+
+    rows = _sample_ri_distribution_rows(tmp_path, metric="ri")
+    plot_ri_mari_sample_distributions(
+        rows=rows,
+        metric="ri",
+        out_path=tmp_path / "ri_sample_distributions.png",
+    )
+
+    # Virchow2 has the highest metric_val (0.88) → should appear at the top (first label rendered)
+    assert model_label_order[0] == "Virchow2"
+
+
+# ---------------------------------------------------------------------------
+# Cumulative mean k-sweep plots
+# ---------------------------------------------------------------------------
+
+
+def _sample_cumulative_mean_rows() -> list[dict]:
+    """Two models × four k values, with distinct RI/MaRI values per k."""
+    rows = []
+    for model, ri_vals, mari_vals in [
+        ("Virchow2", [0.50, 0.60, 0.65, 0.70], [0.55, 0.63, 0.68, 0.72]),
+        ("UNI",      [0.40, 0.45, 0.50, 0.55], [0.42, 0.48, 0.52, 0.58]),
+    ]:
+        for i, k in enumerate([1, 3, 5, 7]):
+            rows.append({
+                "model": model,
+                "k": k,
+                "ri": ri_vals[i],
+                "mari": mari_vals[i],
+                "selected_k": 7,
+            })
+    return rows
+
+
+def test_plot_ri_cumulative_mean_k_sweep_writes_png(tmp_path: Path) -> None:
+    rows = _sample_cumulative_mean_rows()
+    out_path = tmp_path / "ri_cumulative_mean_k_sweep.png"
+
+    plot_ri_cumulative_mean_k_sweep(rows=rows, out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_plot_mari_cumulative_mean_k_sweep_writes_png(tmp_path: Path) -> None:
+    rows = _sample_cumulative_mean_rows()
+    out_path = tmp_path / "mari_cumulative_mean_k_sweep.png"
+
+    plot_mari_cumulative_mean_k_sweep(rows=rows, out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def test_cumulative_mean_last_point_equals_arithmetic_mean(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The endpoint of each model's RI curve must equal mean(ri) across all k values."""
+    import matplotlib.axes
+
+    scatter_calls: list[tuple[str, float, float]] = []
+    original_scatter = matplotlib.axes.Axes.scatter
+
+    def spy_scatter(self, x, y, **kwargs):
+        # Only capture endpoint dots (s=55, not the larger selection markers)
+        if kwargs.get("s") == 55:
+            for xi, yi in zip(x, y):
+                title = self.get_title()
+                scatter_calls.append((title, float(xi), float(yi)))
+        return original_scatter(self, x, y, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+
+    rows = _sample_cumulative_mean_rows()
+    plot_ri_cumulative_mean_k_sweep(
+        rows=rows, out_path=tmp_path / "ri_cumulative_mean_k_sweep.png"
+    )
+
+    # Collect expected last-point values per model for RI panel
+    by_model = {}
+    for row in rows:
+        by_model.setdefault(row["model"], []).append(row["ri"])
+    for model, ri_vals in by_model.items():
+        expected_endpoint = float(np.mean(ri_vals))
+        # Find the scatter call at x=k_max=7
+        ri_endpoints = [y for title, x, y in scatter_calls if "RI" in title and x == 7]
+        assert any(
+            abs(y - expected_endpoint) < 1e-9 for y in ri_endpoints
+        ), f"{model}: expected RI endpoint {expected_endpoint}, got {ri_endpoints}"

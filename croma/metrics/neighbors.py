@@ -105,6 +105,61 @@ def _filter_neighbors_excluding_same_slide(
     return out_idx, out_dist, valid_counts
 
 
+def _filter_neighbors_informative_only(
+    raw_neighbors: np.ndarray,
+    slide_ids: np.ndarray,
+    labels: np.ndarray,
+    centers: np.ndarray,
+    kmax: int,
+    raw_distances: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Like _filter_neighbors_excluding_same_slide but also skips SS and OO neighbours.
+
+    SS = same label AND same center (contributes nothing to RI/MaRI score).
+    OO = other label AND other center (also contributes nothing).
+    Only SO (same label, other center) and OS (other label, same center) slots are kept.
+    """
+    target_k = int(kmax)
+    if target_k <= 0:
+        raise ValueError("kmax must be > 0")
+
+    n_samples = int(len(slide_ids))
+    if int(raw_neighbors.shape[0]) != n_samples:
+        raise ValueError("raw_neighbors row count must match number of samples")
+    if raw_distances is not None and raw_distances.shape != raw_neighbors.shape:
+        raise ValueError("raw_distances must have the same shape as raw_neighbors")
+
+    out_idx = np.full((n_samples, target_k), -1, dtype=int)
+    out_dist = np.full((n_samples, target_k), np.inf, dtype=float)
+    valid_counts = np.zeros(n_samples, dtype=int)
+
+    for i in range(n_samples):
+        vals: list[int] = []
+        dists: list[float] = []
+        for pos, j in enumerate(raw_neighbors[i].tolist()):
+            idx = int(j)
+            if idx == i:
+                continue
+            if slide_ids[idx] == slide_ids[i]:
+                continue
+            same_label = labels[idx] == labels[i]
+            same_center = centers[idx] == centers[i]
+            if same_label == same_center:  # SS (both True) or OO (both False)
+                continue
+            vals.append(idx)
+            if raw_distances is not None:
+                dists.append(float(raw_distances[i, pos]))
+            if len(vals) == target_k:
+                break
+        if vals:
+            out_idx[i, : len(vals)] = np.asarray(vals, dtype=int)
+            if raw_distances is not None:
+                out_dist[i, : len(dists)] = np.asarray(dists, dtype=float)
+        valid_counts[i] = int(len(vals))
+
+    return out_idx, out_dist, valid_counts
+
+
 def _filter_query_neighbors_excluding_same_slide(
     raw_neighbors: np.ndarray,
     query_indices: np.ndarray,
@@ -225,9 +280,11 @@ def _prepare_neighbors(
     features: np.ndarray,
     slide_ids: np.ndarray,
     kmax: int,
+    labels: np.ndarray | None = None,
+    centers: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     neigh_idx, neigh_dist, valid_counts, _meta = _prepare_neighbors_with_meta(
-        features, slide_ids, kmax
+        features, slide_ids, kmax, labels=labels, centers=centers
     )
     return neigh_idx, neigh_dist, valid_counts
 
@@ -236,6 +293,8 @@ def _prepare_neighbors_with_meta(
     features: np.ndarray,
     slide_ids: np.ndarray,
     kmax: int,
+    labels: np.ndarray | None = None,
+    centers: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, _NeighborPreparationMeta]:
     if int(kmax) <= 0:
         raise ValueError("kmax must be > 0")
@@ -244,6 +303,8 @@ def _prepare_neighbors_with_meta(
         raise RuntimeError("Need at least two samples to compute neighbors")
     if int(len(slide_ids)) != n_samples:
         raise ValueError("slide_ids length must match features row count")
+
+    prune_uninformative = labels is not None and centers is not None
 
     target_k = int(kmax)
     target_coverage = float(_TARGET_EFFECTIVE_K_COVERAGE)
@@ -255,15 +316,26 @@ def _prepare_neighbors_with_meta(
         nn = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine")
         nn.fit(features)
         distances, neigh = nn.kneighbors(features)
-        neigh_idx, neigh_dist, valid_counts = _filter_neighbors_excluding_same_slide(
-            raw_neighbors=neigh,
-            raw_distances=distances,
-            slide_ids=slide_ids,
-            kmax=target_k,
-        )
+        if prune_uninformative:
+            neigh_idx, neigh_dist, valid_counts = _filter_neighbors_informative_only(
+                raw_neighbors=neigh,
+                raw_distances=distances,
+                slide_ids=slide_ids,
+                labels=labels,
+                centers=centers,
+                kmax=target_k,
+            )
+        else:
+            neigh_idx, neigh_dist, valid_counts = _filter_neighbors_excluding_same_slide(
+                raw_neighbors=neigh,
+                raw_distances=distances,
+                slide_ids=slide_ids,
+                kmax=target_k,
+            )
         coverage = _effective_k_coverage(valid_counts, target_k)
         hit_neighbor_cap = bool(n_neighbors >= n_samples - 1)
-        if coverage >= target_coverage or hit_neighbor_cap:
+        has_undefined = bool(np.any(valid_counts == 0))
+        if (coverage >= target_coverage and not has_undefined) or hit_neighbor_cap:
             meta = _NeighborPreparationMeta(
                 final_n_neighbors=int(n_neighbors),
                 coverage=float(coverage),

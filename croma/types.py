@@ -23,6 +23,10 @@ class RobustnessResult:
     mixed_undefined_frac: float = 0.0
     evaluation_design: str = "paired_2x2"
     evaluation_unit: str = "occurrence"
+    alpha: float = 0.10
+    median_value: float = float("nan")
+    q_alpha: float = float("nan")
+    ltm_alpha: float = float("nan")
 
 
 @dataclass(frozen=True)

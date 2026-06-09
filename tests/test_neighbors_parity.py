@@ -6,6 +6,72 @@ import pytest
 from croma.metrics import neighbors as nb
 
 
+def test_prepare_neighbors_no_undefined_samples_with_pruning() -> None:
+    """Regression: hard samples (tight SS cluster) must not remain undefined
+    when --prune-ss-oo is active. The old stopping condition (coverage >= 90%)
+    would exit while those samples still had valid_counts == 0 because their
+    only SO/OS neighbors were far away. The fix requires valid_counts > 0 for
+    all samples before stopping.
+
+    Setup:
+    - 100 hard samples: label=0, center=0, tightly clustered at unit vector e_0.
+      Their k-nearest neighbours at small n_neighbors are all SS (same label,
+      same center) → valid_counts == 0 after pruning.
+    - 900 easy samples: spread across other (label, center) combinations at
+      random positions, so they quickly accumulate SO/OS neighbours.
+
+    At n_neighbors = 65 (initial buffer), 900/1000 = 90 % coverage is already
+    reached, which would trigger the old exit. The hard 100 still have
+    valid_counts == 0 at that point. The new stopping condition continues
+    until the hard samples' SO/OS neighbours enter the search window.
+    """
+    rng = np.random.default_rng(42)
+    d = 50
+    n_hard = 100  # label=0, center=0, clustered at e_0
+    n_easy = 900  # diverse, random positions
+
+    # Hard samples: tightly clustered at e_0
+    hard_feats = np.zeros((n_hard, d))
+    hard_feats[:, 0] = 1.0
+    hard_feats += rng.standard_normal((n_hard, d)) * 1e-4
+    hard_labels = np.zeros(n_hard, dtype=int)
+    hard_centers = np.zeros(n_hard, dtype=int)
+    hard_slides = np.array([f"slide-hard-{i}" for i in range(n_hard)])
+
+    # Easy samples: 225 per (label, center) combo that is NOT (0, 0)
+    easy_combos = [(0, 1), (1, 0), (0, 2), (1, 2)]
+    easy_feats_list, easy_labels_list, easy_centers_list, easy_slides_list = [], [], [], []
+    for lbl, ctr in easy_combos:
+        n = n_easy // len(easy_combos)
+        feats = rng.standard_normal((n, d))
+        feats /= np.linalg.norm(feats, axis=1, keepdims=True)
+        easy_feats_list.append(feats)
+        easy_labels_list.append(np.full(n, lbl, dtype=int))
+        easy_centers_list.append(np.full(n, ctr, dtype=int))
+        easy_slides_list.extend([f"slide-easy-{lbl}-{ctr}-{i}" for i in range(n)])
+
+    features = np.vstack([hard_feats, *easy_feats_list])
+    labels = np.concatenate([hard_labels, *easy_labels_list])
+    centers = np.concatenate([hard_centers, *easy_centers_list])
+    slide_ids = np.array(hard_slides.tolist() + easy_slides_list)
+
+    # Normalise all features to unit vectors (cosine metric)
+    features = features / np.linalg.norm(features, axis=1, keepdims=True)
+
+    _, _, valid_counts, meta = nb._prepare_neighbors_with_meta(
+        features=features,
+        slide_ids=slide_ids,
+        kmax=1,
+        labels=labels,
+        centers=centers,
+    )
+
+    assert np.all(valid_counts > 0), (
+        f"{np.sum(valid_counts == 0)} samples have valid_counts == 0 after "
+        f"_prepare_neighbors_with_meta with pruning"
+    )
+
+
 def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
     raw_neighbors = np.array(
         [

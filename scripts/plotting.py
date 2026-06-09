@@ -652,6 +652,93 @@ def plot_mari_k_sweep(rows: list[dict], out_path: Path) -> None:
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
+def _draw_cumulative_mean_k_curve(
+    ax,
+    *,
+    rows: list[dict],
+    value_key: str,
+    ylabel: str,
+    title: str,
+) -> None:
+    """Draw cumulative mean of ``value_key`` over k for each model.
+
+    At x=k the y-value is ``mean(v_1, ..., v_k)`` (ascending k order), so the
+    rightmost point equals the arithmetic mean across all evaluated k values —
+    i.e. the value reported by ``--summarize-by-mean``.
+    """
+    if not rows:
+        return
+    by_model = _group_k_rows(rows)
+    models = sorted(by_model)
+    k_ticks = sorted({int(row["k"]) for row in rows})
+
+    # Compute all cumulative-mean values to set axis limits
+    all_cum_vals: list[float] = []
+    model_curves: list[tuple[str, np.ndarray, np.ndarray]] = []
+    for model in models:
+        model_rows = by_model[model]
+        ks = np.asarray([int(r["k"]) for r in model_rows], dtype=int)
+        vals = np.asarray([float(r[value_key]) for r in model_rows], dtype=float)
+        order = np.argsort(ks)
+        ks, vals = ks[order], vals[order]
+        cum_means = np.cumsum(vals) / np.arange(1, len(vals) + 1, dtype=float)
+        all_cum_vals.extend(cum_means.tolist())
+        model_curves.append((model, ks, cum_means))
+
+    _set_k_axis(ax, k_ticks)
+    ax.set_ylim(*_padded_unit_interval_limits(np.asarray(all_cum_vals, dtype=float)))
+    ax.set_ylabel(ylabel, fontsize=10.5)
+    _set_panel_title(ax, title)
+
+    for model, ks, cum_means in model_curves:
+        color = _color_for_model(model)
+        ax.plot(ks, cum_means, color=color, linewidth=1.8, alpha=0.95, label=model)
+        # Mark the endpoint (= reported summarize_by_mean value)
+        ax.scatter(
+            [ks[-1]],
+            [cum_means[-1]],
+            s=55,
+            color=color,
+            edgecolors="white",
+            linewidths=0.8,
+            zorder=4,
+        )
+
+
+def plot_ri_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
+    """Single-panel cumulative mean RI over k.
+
+    Intended for use with ``--summarize-by-mean``: each model's rightmost point
+    is exactly the value reported as its final RI score.
+    """
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+    _draw_cumulative_mean_k_curve(
+        ax,
+        rows=rows,
+        value_key="ri",
+        ylabel="Cumulative mean RI",
+        title="RI – cumulative mean over k",
+    )
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
+
+
+def plot_mari_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
+    """Single-panel cumulative mean MaRI over k.
+
+    Intended for use with ``--summarize-by-mean``: each model's rightmost point
+    is exactly the value reported as its final MaRI score.
+    """
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+    _draw_cumulative_mean_k_curve(
+        ax,
+        rows=rows,
+        value_key="mari",
+        ylabel="Cumulative mean MaRI",
+        title="MaRI – cumulative mean over k",
+    )
+    _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
+
+
 def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     support_rows = _support_plot_rows(rows)
     fig_height = max(3.4, 0.85 + 0.58 * max(len(support_rows), 1))
@@ -1346,6 +1433,256 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
         0.5,
         0.928,
         f"(sorted by CCMR; dotted: $Q_{{{alpha_pct}}}$; shaded: CCMR < 1)",
+        ha="center",
+        va="center",
+        fontsize=10.0,
+        color=REFERENCE_LINE_COLOR,
+    )
+    _finalize_figure(
+        fig,
+        out_path=out_path,
+        legend_axes=[ax, info_ax],
+        add_legend=False,
+        left=0.165,
+        right=0.94,
+        top=0.885,
+        bottom=0.095,
+        wspace=0.01,
+    )
+
+
+def plot_ri_mari_sample_distributions(
+    rows: list[dict], metric: str, out_path: Path
+) -> None:
+    """Plot per-sample RI or MaRI distributions across models (ridge-line style).
+
+    Parameters
+    ----------
+    rows:
+        List of per-model summary dicts as produced by benchmark.py.
+    metric:
+        Either ``"ri"`` or ``"mari"``.
+    out_path:
+        Destination path for the output PNG.
+    """
+    samples_key = f"{metric}_samples_path"
+    metric_label = metric.upper()
+    alpha_pct = 10
+
+    valid_rows = [
+        r
+        for r in rows
+        if samples_key in r
+        and np.isfinite(float(r.get(metric, float("nan"))))
+    ]
+    if not valid_rows:
+        return
+
+    model_data = []
+    for row in valid_rows:
+        path = Path(str(row[samples_key]))
+        if not path.exists():
+            continue
+        values = np.load(path)
+        values = values[np.isfinite(values)]
+        if len(values) < 2:
+            continue
+        # Always compute Q10 and %<0.5 from loaded values — avoids n/a from stale cache
+        q_alpha = float(np.percentile(values, alpha_pct))
+        lt05_frac = float(np.mean(values < 0.5))
+        model_data.append(
+            {
+                "model": str(row["model"]),
+                "values": values,
+                "metric_val": float(row[metric]),
+                "q_alpha": q_alpha,
+                "lt05_frac": lt05_frac,
+            }
+        )
+
+    if not model_data:
+        return
+
+    model_data = sorted(
+        model_data,
+        key=lambda d: (float(d["metric_val"]), str(d["model"])),
+        reverse=True,
+    )
+
+    fig_height = max(5.5, 1.0 + 0.70 * max(1, len(model_data)))
+    fig, (ax, info_ax) = plt.subplots(
+        1,
+        2,
+        figsize=(13.6, fig_height),
+        gridspec_kw={"width_ratios": [5.35, 1.45]},
+    )
+
+    all_values = np.concatenate([d["values"] for d in model_data])
+    x_min = max(0.0, float(np.nanpercentile(all_values, 1)) - 0.05)
+    x_max = min(1.0, float(np.nanpercentile(all_values, 99)) + 0.05)
+    x_grid = np.linspace(x_min, x_max, 512)
+
+    _style_axes(ax)
+    ax.spines["left"].set_visible(False)
+    ax.set_yticks([])
+
+    # Shade the fragile region (RI/MaRI < 0.5 = more OS than SO neighbors)
+    shade_right = min(0.5, x_max)
+    if shade_right > x_min:
+        ax.axvspan(x_min, shade_right, color=FRAGILE_SHADE_COLOR, alpha=0.55, zorder=1)
+    ax.axvline(
+        x=0.5,
+        linestyle="--",
+        linewidth=1.1,
+        color=REFERENCE_LINE_COLOR,
+        zorder=2,
+        alpha=0.75,
+    )
+
+    row_centers = np.arange(len(model_data), 0, -1, dtype=float)
+    amplitude = 0.72
+
+    rendered_rows = []
+    for d in model_data:
+        values = d["values"]
+        try:
+            density = gaussian_kde(values, bw_method="scott")(x_grid)
+        except Exception:
+            density = None
+
+        if density is None:
+            counts, edges = np.histogram(values, bins=40, density=True)
+            centers_hist = 0.5 * (edges[:-1] + edges[1:])
+            y_values = counts
+            x_values = centers_hist
+        else:
+            y_values = density
+            x_values = x_grid
+        peak = float(np.nanmax(y_values)) if len(y_values) > 0 else 0.0
+        rendered_rows.append(
+            (d, np.asarray(x_values, dtype=float), density, np.asarray(y_values, dtype=float), peak)
+        )
+
+    for row_center, rendered in zip(row_centers, rendered_rows):
+        d, x_values, density, y_values, peak = rendered
+        color = _color_for_model(d["model"])
+        scale = amplitude / max(peak, 1e-9)
+        y_curve = row_center + y_values * scale
+        ax.hlines(
+            y=row_center,
+            xmin=x_min,
+            xmax=x_max,
+            color=SPINE_COLOR,
+            linewidth=0.7,
+            alpha=0.7,
+            zorder=1,
+        )
+        ax.fill_between(
+            x_values,
+            row_center,
+            y_curve,
+            color=color,
+            alpha=0.18,
+            linewidth=0.0,
+            zorder=2,
+        )
+        if density is None:
+            ax.step(x_values, y_curve, where="mid", color=color, linewidth=1.5, alpha=0.90, zorder=3)
+        else:
+            ax.plot(x_values, y_curve, color=color, linewidth=1.7, alpha=0.95, zorder=3)
+
+        q = float(d["q_alpha"])
+        if np.isfinite(q) and x_min <= q <= x_max:
+            ax.vlines(
+                x=q,
+                ymin=row_center - 0.18,
+                ymax=row_center + amplitude,
+                color=color,
+                linestyle=":",
+                linewidth=1.2,
+                alpha=0.95,
+                zorder=4,
+            )
+
+        ax.text(
+            -0.02,
+            row_center,
+            str(d["model"]),
+            transform=ax.get_yaxis_transform(),
+            ha="right",
+            va="center",
+            fontsize=10.0,
+            color=TEXT_COLOR,
+            weight="semibold",
+        )
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(0.5, float(len(model_data)) + 0.95)
+    ax.set_xlabel(f"Per-sample {metric_label}", fontsize=10.5)
+    ax.set_ylabel("")
+
+    info_ax.set_axis_off()
+    info_ax.set_ylim(ax.get_ylim())
+    info_ax.set_xlim(0.0, 1.0)
+    for label, x_pos in [
+        (metric_label, 0.02),
+        (f"Q{alpha_pct}", 0.38),
+        ("%<0.5", 0.68),
+    ]:
+        info_ax.text(
+            x_pos,
+            float(len(model_data)) + 0.72,
+            label,
+            ha="left",
+            va="center",
+            fontsize=9.0,
+            color=TEXT_COLOR,
+            weight="semibold",
+            family="DejaVu Sans Mono",
+        )
+    for row_center, d in zip(row_centers, model_data):
+        info_ax.text(
+            0.02,
+            float(row_center),
+            f"{float(d['metric_val']):.3f}",
+            ha="left",
+            va="center",
+            fontsize=9.2,
+            color=TEXT_COLOR,
+            family="DejaVu Sans Mono",
+        )
+        info_ax.text(
+            0.38,
+            float(row_center),
+            f"{float(d['q_alpha']):.3f}",
+            ha="left",
+            va="center",
+            fontsize=9.2,
+            color=TEXT_COLOR,
+            family="DejaVu Sans Mono",
+        )
+        info_ax.text(
+            0.68,
+            float(row_center),
+            f"{100.0 * float(d['lt05_frac']):.1f}%",
+            ha="left",
+            va="center",
+            fontsize=9.2,
+            color=TEXT_COLOR,
+            family="DejaVu Sans Mono",
+        )
+
+    fig.suptitle(
+        f"Per-sample {metric_label} distributions",
+        fontsize=15,
+        weight="semibold",
+        y=0.982,
+        color=TEXT_COLOR,
+    )
+    fig.text(
+        0.5,
+        0.928,
+        f"(sorted by median; dotted: $Q_{{{alpha_pct}}}$; shaded: {metric_label} < 0.5)",
         ha="center",
         va="center",
         fontsize=10.0,
