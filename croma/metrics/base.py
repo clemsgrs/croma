@@ -785,6 +785,88 @@ class BaseRobustnessIndex(ABC):
             slide_ids=df["slide_id"].astype(str).to_numpy(),
         )
 
+    @staticmethod
+    def _typed_neighbor_distances_from_neighbors(
+        *,
+        labels: np.ndarray,
+        centers: np.ndarray,
+        neigh_idx: np.ndarray,
+        neigh_dist: np.ndarray,
+        valid_counts: np.ndarray,
+        k: int,
+    ) -> np.ndarray:
+        """Cosine distances to the SO/OS neighbours within each sample's top-k set.
+
+        Mirrors the SO/OS masking in ``_score_all_k_from_neighbors`` so the distances match
+        exactly the typed evidence MaRI weights at this ``k``. Operates on already-prepared
+        neighbours so callers can reuse a neighbour cache instead of re-preparing.
+        """
+        k = int(k)
+        if k <= 0 or len(labels) <= 1:
+            return np.empty(0, dtype=float)
+        actual_cols = min(k, int(neigh_idx.shape[1]))
+        if actual_cols <= 0:
+            return np.empty(0, dtype=float)
+        col = np.arange(actual_cols)[np.newaxis, :]
+        eff_k = np.minimum(valid_counts, k)
+        slot_valid = (col < eff_k[:, np.newaxis]) & (
+            neigh_idx[:, :actual_cols] >= 0
+        )
+        safe_idx = np.where(slot_valid, neigh_idx[:, :actual_cols], 0)
+        same_label = labels[safe_idx] == labels[:, np.newaxis]
+        same_center = centers[safe_idx] == centers[:, np.newaxis]
+        typed = slot_valid & (same_label != same_center)  # SO or OS
+        return np.asarray(neigh_dist[:, :actual_cols][typed], dtype=float)
+
+    @classmethod
+    def _typed_neighbor_distances_for_prepared(
+        cls, prepared: _PreparedSubsetInputs, k: int
+    ) -> np.ndarray:
+        """As above, preparing neighbours from a ``_PreparedSubsetInputs`` first."""
+        if int(k) <= 0 or len(prepared.labels) <= 1:
+            return np.empty(0, dtype=float)
+        neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
+            prepared.features, prepared.slide_ids, int(k)
+        )
+        return cls._typed_neighbor_distances_from_neighbors(
+            labels=prepared.labels,
+            centers=prepared.centers,
+            neigh_idx=neigh_idx,
+            neigh_dist=neigh_dist,
+            valid_counts=valid_counts,
+            k=int(k),
+        )
+
+    @classmethod
+    def _collect_typed_neighbor_distances(
+        cls,
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        confounder_column: str,
+        k: int,
+        evaluation_design: str,
+    ) -> np.ndarray:
+        """Pool the typed (SO/OS) neighbour distances at ``k`` for the given design."""
+        df = cls._normalize_manifest_inputs(
+            manifest, confounder_column=confounder_column
+        )
+        design = _normalize_evaluation_design(evaluation_design)
+        if design == EVALUATION_DESIGN_DATASET_WIDE:
+            prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
+            return cls._typed_neighbor_distances_for_prepared(prepared, int(k))
+
+        subsets = cls._build_subsets(df=df, dataset_name=cls._infer_dataset_name(df))
+        chunks = [
+            cls._typed_neighbor_distances_for_prepared(prepared, int(k))
+            for subset in subsets
+            if (prepared := cls._prepare_subset_inputs(features=features, subset=subset))
+            is not None
+        ]
+        return (
+            np.concatenate(chunks) if chunks else np.empty(0, dtype=float)
+        )
+
     @classmethod
     def _select_dataset_wide_k(
         cls,
@@ -806,6 +888,72 @@ class BaseRobustnessIndex(ABC):
             slide_ids=prepared.slide_ids,
             k_values=valid_candidates,
             warn_context=f"{dataset_name} dataset-wide k-selection",
+        )
+        return _select_k_from_balanced_accuracy(
+            k_values=valid_candidates, scores=scores
+        )
+
+    @classmethod
+    def _prepare_dataset_wide_neighbor_cache(
+        cls,
+        *,
+        features: np.ndarray,
+        df: pd.DataFrame,
+        k_values: list[int] | tuple[int, ...],
+        prune_ss_oo: bool = False,
+        assume_normalized: bool = False,
+    ) -> _PreparedNeighborSubset:
+        """Prepare the single whole-dataset neighbour cache once for reuse.
+
+        The returned cache carries the prepared neighbours and the factorized
+        ``labels``/``centers`` so kNN curves, RI/MaRI scoring, k-selection, and the tau-scale
+        check can all share one neighbour preparation instead of repeating it.
+        """
+        prepared = cls._prepare_dataset_wide_inputs(
+            features=features, df=df, assume_normalized=assume_normalized
+        )
+        candidates = _normalize_k_values(k_values)
+        kmax = int(max(candidates))
+        neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
+            prepared.features,
+            prepared.slide_ids,
+            kmax,
+            labels=prepared.labels if prune_ss_oo else None,
+            centers=prepared.centers if prune_ss_oo else None,
+        )
+        return _PreparedNeighborSubset(
+            subset_id=prepared.subset_id,
+            source_indices=prepared.source_indices,
+            labels=prepared.labels,
+            centers=prepared.centers,
+            slide_ids=prepared.slide_ids,
+            neigh_idx=neigh_idx,
+            neigh_dist=neigh_dist,
+            valid_counts=valid_counts,
+        )
+
+    @classmethod
+    def _select_dataset_wide_k_from_prepared(
+        cls,
+        *,
+        prepared_neighbors: _PreparedNeighborSubset,
+        k_candidates: list[int],
+        dataset_name: str,
+    ) -> int:
+        valid_candidates = [
+            int(k)
+            for k in k_candidates
+            if int(k) < len(prepared_neighbors.source_indices)
+        ]
+        if not valid_candidates:
+            raise RuntimeError(
+                f"{dataset_name}: dataset-wide k-selection failed because no valid k candidates remain"
+            )
+        scores = _balanced_accuracy_by_k_from_prepared_neighbors(
+            labels=prepared_neighbors.labels,
+            neigh_idx=prepared_neighbors.neigh_idx,
+            valid_counts=prepared_neighbors.valid_counts,
+            k_values=valid_candidates,
         )
         return _select_k_from_balanced_accuracy(
             k_values=valid_candidates, scores=scores
@@ -846,12 +994,55 @@ class BaseRobustnessIndex(ABC):
             labels=prepared.labels if prune_ss_oo else None,
             centers=prepared.centers if prune_ss_oo else None,
         )
-        all_k_results = cls._score_all_k_from_neighbors(
+        prepared_neighbors = _PreparedNeighborSubset(
+            subset_id=prepared.subset_id,
+            source_indices=prepared.source_indices,
             labels=prepared.labels,
             centers=prepared.centers,
+            slide_ids=prepared.slide_ids,
             neigh_idx=neigh_idx,
             neigh_dist=neigh_dist,
             valid_counts=valid_counts,
+        )
+        return cls._score_dataset_wide_by_k_from_prepared(
+            prepared_neighbors=prepared_neighbors,
+            k_values=candidates,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+
+    @classmethod
+    def _score_dataset_wide_by_k_from_prepared(
+        cls,
+        *,
+        prepared_neighbors: _PreparedNeighborSubset,
+        k_values: list[int] | tuple[int, ...],
+        dataset_name: str,
+        **kwargs: float,
+    ) -> dict[
+        int,
+        tuple[
+            float,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            np.ndarray,
+            float,
+            float,
+            float,
+            float,
+        ],
+    ]:
+        candidates = _normalize_k_values(k_values)
+        all_k_results = cls._score_all_k_from_neighbors(
+            labels=prepared_neighbors.labels,
+            centers=prepared_neighbors.centers,
+            neigh_idx=prepared_neighbors.neigh_idx,
+            neigh_dist=prepared_neighbors.neigh_dist,
+            valid_counts=prepared_neighbors.valid_counts,
             k_values=candidates,
             **kwargs,
         )
@@ -873,9 +1064,11 @@ class BaseRobustnessIndex(ABC):
             ],
         ] = {}
         occurrence_subsets = np.full(
-            len(prepared.source_indices), prepared.subset_id, dtype=object
+            len(prepared_neighbors.source_indices),
+            prepared_neighbors.subset_id,
+            dtype=object,
         ).astype(str)
-        occurrence_sources = prepared.source_indices.astype(int)
+        occurrence_sources = prepared_neighbors.source_indices.astype(int)
         for k in candidates:
             pooled, per_sample, informative_mask, undefined_type, _so_arr, _os_arr = (
                 all_k_results[int(k)]
@@ -1200,6 +1393,77 @@ class BaseRobustnessIndex(ABC):
                 cls._warn_undefined_occurrences(
                     dataset_name=dataset_name,
                     evaluation_unit="occurrence",
+                    undefined_frac=result.undefined_frac,
+                    ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
+                    oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
+                    mixed_undefined_frac=result.mixed_undefined_frac,
+                )
+        return _RobustnessArtifacts(curve=curve, result=result)
+
+    @classmethod
+    def _compute_artifacts_from_prepared_dataset_wide(
+        cls,
+        *,
+        prepared_neighbors: _PreparedNeighborSubset,
+        dataset_name: str,
+        k_values: list[int] | tuple[int, ...],
+        selected_k: int | None = None,
+        include_selected_result: bool = True,
+        warn_selected_result: bool = False,
+        summarize_by_mean: bool = False,
+        **kwargs: float,
+    ) -> _RobustnessArtifacts:
+        """Dataset-wide artifacts from a shared neighbour cache (mirror of the paired path)."""
+        candidates = _normalize_k_values(k_values)
+        by_k = cls._score_dataset_wide_by_k_from_prepared(
+            prepared_neighbors=prepared_neighbors,
+            k_values=candidates,
+            dataset_name=dataset_name,
+            **kwargs,
+        )
+        if include_selected_result and selected_k is None:
+            selected_k = cls._select_dataset_wide_k_from_prepared(
+                prepared_neighbors=prepared_neighbors,
+                k_candidates=candidates,
+                dataset_name=dataset_name,
+            )
+        curve = {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
+        result: RobustnessResult | None = None
+        if include_selected_result:
+            if selected_k is None:
+                raise RuntimeError(
+                    "selected_k must be resolved when include_selected_result=True"
+                )
+            if int(selected_k) not in by_k:
+                raise RuntimeError(
+                    f"selected_k={selected_k} is not available in scored-by-k results"
+                )
+            result = cls._build_result_from_by_k_entry(
+                dataset_name=dataset_name,
+                evaluation_design=EVALUATION_DESIGN_DATASET_WIDE,
+                evaluation_unit="sample",
+                k=int(selected_k),
+                scored_entry=by_k[int(selected_k)],
+            )
+            if summarize_by_mean:
+                mean_val, mean_std = cls._compute_mean_from_curve(curve)
+                result = replace(result, value=mean_val, std=mean_std)
+            tail = compute_tail_metrics(result.sample_values, alpha=0.10)
+            median_val = (
+                float(np.median(result.sample_values))
+                if len(result.sample_values) > 0
+                else float("nan")
+            )
+            result = replace(
+                result,
+                median_value=median_val,
+                q_alpha=tail.q_alpha,
+                ltm_alpha=tail.ltm_alpha,
+            )
+            if warn_selected_result:
+                cls._warn_undefined_occurrences(
+                    dataset_name=dataset_name,
+                    evaluation_unit="sample",
                     undefined_frac=result.undefined_frac,
                     ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
                     oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,

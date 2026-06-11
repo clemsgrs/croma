@@ -15,8 +15,9 @@ from plotting import (
     _png_export_path,
     _support_plot_rows,
     plot_bio_vs_confounder_scatter,
-    plot_ccmr_ltm_comparison,
-    plot_ccmr_m_sweep_with_ltm,
+    plot_ccmr_ltm_bars,
+    plot_ccmr_ltm_scatter,
+    plot_ccmr_m_sweep,
     plot_ccmr_sample_distributions,
     plot_knn_confounder_k_sweep,
     plot_ri_cumulative_mean_k_sweep,
@@ -198,7 +199,7 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
             "bio_vs_confounder_scatter.png",
         ),
         (
-            plot_ccmr_m_sweep_with_ltm,
+            plot_ccmr_m_sweep,
             {"rows": _sample_ccmr_m_rows()},
             "ccmr_m_sweep.png",
         ),
@@ -308,7 +309,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_ccmr_m_sweep_with_ltm(
+    plot_ccmr_m_sweep(
         rows=_sample_ccmr_m_rows(), out_path=tmp_path / "ccmr_m_sweep.png"
     )
 
@@ -376,15 +377,15 @@ def test_support_plot_uses_bottom_legend_for_thresholds(
     assert legend_calls[0]["ncol"] == 3
 
 
-def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(
+def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
 
     points: list[tuple[float, float]] = []
-    ltm_heights: list[float] = []
+    hlines: list[float] = []
     original_scatter = matplotlib.axes.Axes.scatter
-    original_bar = matplotlib.axes.Axes.bar
+    original_axhline = matplotlib.axes.Axes.axhline
 
     def spy_scatter(self, x, y, *args, **kwargs):
         xx = np.asarray(x, dtype=float)
@@ -393,6 +394,40 @@ def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(
             points.append((float(xx[0]), float(yy[0])))
         return original_scatter(self, x, y, *args, **kwargs)
 
+    def spy_axhline(self, y=0, *args, **kwargs):
+        hlines.append(float(y))
+        return original_axhline(self, y, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    monkeypatch.setattr(matplotlib.axes.Axes, "axhline", spy_axhline)
+
+    rows = _sample_ccmr_ltm_rows() + [
+        {"model": "Bad", "ccmr": float("nan"), "ccmr_ltm_alpha": 0.5, "ccmr_alpha": 0.1}
+    ]
+    out_path = tmp_path / "ccmr_ltm_scatter.png"
+    plot_ccmr_ltm_scatter(rows=rows, out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    # The NaN-CCMR "Bad" row is filtered; the three valid points are plotted.
+    assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)} == set(points)
+    # A horizontal CCMR=1 robustness threshold is drawn (not a y=x diagonal).
+    assert hlines == [1.0]
+
+
+def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
+    monkeypatch, tmp_path: Path
+) -> None:
+    import matplotlib.axes
+
+    ltm_heights: list[float] = []
+    hlines: list[float] = []
+    figure_legend_calls: list[dict] = []
+    axes_legend_calls: list[dict] = []
+    original_bar = matplotlib.axes.Axes.bar
+    original_axhline = matplotlib.axes.Axes.axhline
+    original_figure_legend = matplotlib.figure.Figure.legend
+    original_axes_legend = matplotlib.axes.Axes.legend
+
     def spy_bar(self, x, height, *args, **kwargs):
         if "LTM@" in str(kwargs.get("label", "")):
             ltm_heights.extend(
@@ -400,29 +435,9 @@ def test_plot_ccmr_ltm_comparison_filters_invalid_rows_and_sorts_descending(
             )
         return original_bar(self, x, height, *args, **kwargs)
 
-    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
-    monkeypatch.setattr(matplotlib.axes.Axes, "bar", spy_bar)
-
-    rows = _sample_ccmr_ltm_rows() + [
-        {"model": "Bad", "ccmr": float("nan"), "ccmr_ltm_alpha": 0.5, "ccmr_alpha": 0.1}
-    ]
-    out_path = tmp_path / "ccmr_ltm_comparison.png"
-    plot_ccmr_ltm_comparison(rows=rows, out_path=out_path)
-
-    assert _png_export_path(out_path).exists()
-    assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)}.issubset(set(points))
-    assert ltm_heights == sorted(ltm_heights, reverse=True)
-
-
-def test_ccmr_ltm_comparison_uses_local_bar_legend_only(
-    monkeypatch, tmp_path: Path
-) -> None:
-    import matplotlib.axes
-
-    figure_legend_calls: list[dict] = []
-    axes_legend_calls: list[dict] = []
-    original_figure_legend = matplotlib.figure.Figure.legend
-    original_axes_legend = matplotlib.axes.Axes.legend
+    def spy_axhline(self, y=0, *args, **kwargs):
+        hlines.append(float(y))
+        return original_axhline(self, y, *args, **kwargs)
 
     def spy_figure_legend(self, *args, **kwargs):
         figure_legend_calls.append(dict(kwargs))
@@ -432,18 +447,21 @@ def test_ccmr_ltm_comparison_uses_local_bar_legend_only(
         axes_legend_calls.append(dict(kwargs))
         return original_axes_legend(self, *args, **kwargs)
 
+    monkeypatch.setattr(matplotlib.axes.Axes, "bar", spy_bar)
+    monkeypatch.setattr(matplotlib.axes.Axes, "axhline", spy_axhline)
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_ccmr_ltm_comparison(
-        rows=_sample_ccmr_ltm_rows(),
-        out_path=tmp_path / "ccmr_ltm_comparison.png",
-    )
+    out_path = tmp_path / "ccmr_ltm_bars.png"
+    plot_ccmr_ltm_bars(rows=_sample_ccmr_ltm_rows(), out_path=out_path)
 
+    assert _png_export_path(out_path).exists()
+    assert ltm_heights == sorted(ltm_heights, reverse=True)
+    assert hlines == [1.0]
+    # A single local (axes-level) legend, no figure-level legend.
     assert not figure_legend_calls
     assert len(axes_legend_calls) == 1
-    legend_kwargs = axes_legend_calls[0]
-    assert legend_kwargs.get("loc") in {"upper right", "upper left"}
+    assert axes_legend_calls[0].get("loc") in {"upper right", "upper left"}
 
 
 def test_selected_k_markers_are_highlighted(monkeypatch, tmp_path: Path) -> None:
@@ -594,7 +612,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_ccmr_m_sweep_with_ltm(
+    plot_ccmr_m_sweep(
         rows=_sample_ccmr_m_rows(), out_path=tmp_path / "ccmr_m_sweep.png"
     )
 
@@ -619,7 +637,7 @@ def test_ccmr_m_sweep_uses_human_friendly_m_ticks(
 
     monkeypatch.setattr(matplotlib.axes.Axes, "set_xticks", spy_set_xticks)
 
-    plot_ccmr_m_sweep_with_ltm(
+    plot_ccmr_m_sweep(
         rows=_sample_ccmr_m_rows() + [
             {"model": "Virchow2", "m": 20, "ccmr": 1.05, "ccmr_ltm_alpha": 0.82},
             {"model": "UNI", "m": 20, "ccmr": 1.00, "ccmr_ltm_alpha": 0.78},

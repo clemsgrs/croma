@@ -834,8 +834,9 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
-    fig, (ax_ccmr, ax_ltm) = plt.subplots(2, 1, figsize=(9.0, 8.0), sharex=True)
+def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
+    """Single-panel pooled CCMR(m) trajectory per model, with the CCMR=1 threshold."""
+    fig, ax = plt.subplots(figsize=(9.0, 5.0))
     ccmr_rows = [
         r
         for r in rows
@@ -845,8 +846,7 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
         and np.isfinite(float(r["ccmr"]))
     ]
     if not ccmr_rows:
-        for ax in (ax_ccmr, ax_ltm):
-            ax.set_visible(False)
+        ax.set_visible(False)
         _finalize_figure(fig, out_path=out_path, add_legend=False)
         return
 
@@ -860,59 +860,42 @@ def plot_ccmr_m_sweep_with_ltm(rows: list[dict], out_path: Path) -> None:
     m_all = sorted({int(row["m"]) for row in ccmr_rows})
     m_min, m_max = m_all[0], m_all[-1]
 
-    def _configure_ax(
-        ax: plt.Axes, ylabel: str, title: str, values: np.ndarray
-    ) -> None:
-        _style_axes(ax)
-        ax.axhline(
-            y=1.0,
-            linestyle="--",
-            linewidth=1.1,
-            color=REFERENCE_LINE_COLOR,
-            zorder=1,
-            alpha=0.8,
-        )
-        ax.set_ylabel(ylabel, fontsize=10.5)
-        _set_panel_title(ax, title)
-        finite = values[np.isfinite(values)]
-        vmin = float(np.nanmin(finite)) if finite.size > 0 else 0.0
-        vmax = float(np.nanmax(finite)) if finite.size > 0 else 1.0
-        span = vmax - vmin
-        pad = max(0.05, span * 0.10) if span > 1e-9 else max(0.1, abs(vmin) * 0.10)
-        ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
-
-    ccmr_values = np.asarray([float(r["ccmr"]) for r in ccmr_rows], dtype=float)
-    ltm_values = np.asarray(
-        [float(r["ccmr_ltm_alpha"]) for r in ccmr_rows if "ccmr_ltm_alpha" in r],
-        dtype=float,
+    _style_axes(ax)
+    ax.axhline(
+        y=1.0,
+        linestyle="--",
+        linewidth=1.1,
+        color=REFERENCE_LINE_COLOR,
+        zorder=1,
+        alpha=0.8,
     )
-    _configure_ax(ax_ccmr, "CCMR", "CCMR over m", ccmr_values)
-    if ltm_values.size > 0:
-        _configure_ax(ax_ltm, "LTM", "LTM over m", ltm_values)
+    ax.set_ylabel("CCMR", fontsize=10.5)
+    _set_panel_title(ax, "CCMR over m")
+    ccmr_values = np.asarray([float(r["ccmr"]) for r in ccmr_rows], dtype=float)
+    finite = ccmr_values[np.isfinite(ccmr_values)]
+    vmin = float(np.nanmin(finite)) if finite.size > 0 else 0.0
+    vmax = float(np.nanmax(finite)) if finite.size > 0 else 1.0
+    span = vmax - vmin
+    pad = max(0.05, span * 0.10) if span > 1e-9 else max(0.1, abs(vmin) * 0.10)
+    ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
 
     for model in sorted(by_model):
         model_rows = by_model[model]
         color = _color_for_model(model)
         ms = np.asarray([int(r["m"]) for r in model_rows], dtype=int)
         vals = np.asarray([float(r["ccmr"]) for r in model_rows], dtype=float)
-        ax_ccmr.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, label=model)
-        if "ccmr_ltm_alpha" in model_rows[0]:
-            ltms = np.asarray(
-                [float(r["ccmr_ltm_alpha"]) for r in model_rows], dtype=float
-            )
-            ax_ltm.plot(ms, ltms, color=color, linewidth=1.8, alpha=0.95, label=model)
+        ax.plot(ms, vals, color=color, linewidth=1.8, alpha=0.95, label=model)
 
     tick_positions = _human_friendly_integer_ticks(m_all, max_ticks=6)
-    ax_ltm.set_xticks(tick_positions)
-    ax_ltm.set_xlim(m_min - 0.5, m_max + 0.5)
-    ax_ltm.set_xlabel("m", fontsize=10.5)
+    ax.set_xticks(tick_positions)
+    ax.set_xlim(m_min - 0.5, m_max + 0.5)
+    ax.set_xlabel("m", fontsize=10.5)
 
     _finalize_figure(
         fig,
         out_path=out_path,
-        legend_axes=[ax_ccmr, ax_ltm],
-        hspace=0.26,
-        bottom=0.18,
+        legend_axes=[ax],
+        bottom=0.26,
         legend_y=0.012,
         legend_ncol=4,
         legend_fontsize=8.4,
@@ -979,28 +962,29 @@ def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
     return float(lo), float(hi)
 
 
-def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(12.9, 5.55))
-    scatter_ax, bar_ax = axes
+def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
+    """CCMR vs LTM scatter with a horizontal CCMR=1 robustness threshold.
+
+    The threshold line (not a y=x diagonal) makes the claim non-tautological: every
+    model's fragile decile falling below it is an empirical fact, since LTM <= median
+    CCMR by construction would only force points below the diagonal, not below 1.
+    """
+    fig, ax = plt.subplots(figsize=(6.6, 5.55))
     valid_rows = _valid_ccmr_ltm_rows(rows)
 
     if not valid_rows:
-        scatter_ax.set_visible(False)
-        bar_ax.set_visible(False)
-        _finalize_figure(fig, out_path=out_path, legend_axes=[scatter_ax, bar_ax])
+        ax.set_visible(False)
+        _finalize_figure(fig, out_path=out_path, legend_axes=[ax])
         return
 
     label_ltm = _ltm_label(valid_rows)
-
-    # Left: CCMR vs LTM scatter.
     xs = np.asarray([float(r["ccmr"]) for r in valid_rows], dtype=float)
     ys = np.asarray([float(r["ltm"]) for r in valid_rows], dtype=float)
     lim_lo, lim_hi = _padded_positive_limits(np.concatenate([xs, ys]))
 
-    _style_axes(scatter_ax)
-    scatter_ax.plot(
-        [lim_lo, lim_hi],
-        [lim_lo, lim_hi],
+    _style_axes(ax)
+    ax.axhline(
+        y=1.0,
         linestyle="--",
         linewidth=1.1,
         color=REFERENCE_LINE_COLOR,
@@ -1008,7 +992,7 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     )
     for row in sorted(valid_rows, key=lambda r: str(r["model"])):
         model = str(row["model"])
-        scatter_ax.scatter(
+        ax.scatter(
             [float(row["ccmr"])],
             [float(row["ltm"])],
             s=90,
@@ -1017,13 +1001,35 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
             linewidths=1.0,
             zorder=3,
         )
-    scatter_ax.set_xlim(lim_lo, lim_hi)
-    scatter_ax.set_ylim(lim_lo, lim_hi)
-    scatter_ax.set_xlabel("CCMR", fontsize=10.5)
-    scatter_ax.set_ylabel(label_ltm, fontsize=10.5)
-    _set_panel_title(scatter_ax, f"CCMR vs {label_ltm}")
+    ax.set_xlim(lim_lo, lim_hi)
+    ax.set_ylim(lim_lo, lim_hi)
+    ax.set_xlabel("CCMR", fontsize=10.5)
+    ax.set_ylabel(label_ltm, fontsize=10.5)
+    _set_panel_title(ax, f"CCMR vs {label_ltm}")
 
-    # Right: sorted CCMR/LTM bars to compare rank and tail-gap by model.
+    _finalize_figure(
+        fig,
+        out_path=out_path,
+        legend_axes=[ax],
+        add_legend=False,
+        left=0.12,
+        right=0.97,
+        top=0.92,
+        bottom=0.12,
+    )
+
+
+def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
+    """Per-model CCMR/LTM bars sorted by LTM, with a CCMR=1 threshold line."""
+    fig, ax = plt.subplots(figsize=(7.4, 5.55))
+    valid_rows = _valid_ccmr_ltm_rows(rows)
+
+    if not valid_rows:
+        ax.set_visible(False)
+        _finalize_figure(fig, out_path=out_path, legend_axes=[ax])
+        return
+
+    label_ltm = _ltm_label(valid_rows)
     ranked_rows = sorted(
         valid_rows, key=lambda r: (float(r["ltm"]), str(r["model"])), reverse=True
     )
@@ -1034,8 +1040,8 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
     x = np.arange(len(ranked_rows), dtype=float)
     width = 0.38
 
-    _style_axes(bar_ax, grid_axis="y")
-    bar_ax.axhline(
+    _style_axes(ax, grid_axis="y")
+    ax.axhline(
         y=1.0,
         linestyle="--",
         linewidth=1.1,
@@ -1043,7 +1049,7 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
         zorder=1,
         alpha=0.75,
     )
-    bar_ax.bar(
+    ax.bar(
         x - width / 2.0,
         ccmr_vals,
         width=width,
@@ -1054,7 +1060,7 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
         label="CCMR",
         zorder=3,
     )
-    bar_ax.bar(
+    ax.bar(
         x + width / 2.0,
         ltm_vals,
         width=width,
@@ -1065,22 +1071,21 @@ def plot_ccmr_ltm_comparison(rows: list[dict], out_path: Path) -> None:
         label=label_ltm,
         zorder=3,
     )
-    bar_ax.set_xticks(x)
-    bar_ax.set_xticklabels(model_names, rotation=24, ha="right", rotation_mode="anchor")
-    bar_ax.tick_params(axis="x", labelsize=8.8, pad=4)
-    bar_ax.set_ylabel("Score", fontsize=10.5)
-    _set_panel_title(bar_ax, f"Sorted by {label_ltm}")
+    ax.set_xticks(x)
+    ax.set_xticklabels(model_names, rotation=24, ha="right", rotation_mode="anchor")
+    ax.tick_params(axis="x", labelsize=8.8, pad=4)
+    ax.set_ylabel("Score", fontsize=10.5)
+    _set_panel_title(ax, f"Sorted by {label_ltm}")
     y_lo, y_hi = _padded_positive_limits(np.concatenate([ccmr_vals, ltm_vals]))
-    bar_ax.set_ylim(y_lo, y_hi)
-    bar_ax.legend(frameon=False, loc="upper right", fontsize=9.0)
+    ax.set_ylim(y_lo, y_hi)
+    ax.legend(frameon=False, loc="upper right", fontsize=9.0)
 
     _finalize_figure(
         fig,
         out_path=out_path,
-        legend_axes=[scatter_ax, bar_ax],
-        wspace=0.20,
+        legend_axes=[ax],
         add_legend=False,
-        left=0.07,
+        left=0.10,
         right=0.985,
         top=0.90,
         bottom=0.18,

@@ -91,8 +91,9 @@ def _install_noop_plots(monkeypatch) -> None:
 
     plot_names = [
         "plot_bio_vs_confounder_scatter",
-        "plot_ccmr_ltm_comparison",
-        "plot_ccmr_m_sweep_with_ltm",
+        "plot_ccmr_ltm_bars",
+        "plot_ccmr_ltm_scatter",
+        "plot_ccmr_m_sweep",
         "plot_ccmr_sample_distributions",
         "plot_ccmr_vs_mari_scatter",
         "plot_q_alpha_vs_ccmr_scatter",
@@ -289,7 +290,8 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
         results_dir / "per_sample_metrics.csv",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
-        plots_dir / "ccmr_ltm_comparison.png",
+        plots_dir / "ccmr_ltm_bars.png",
+        plots_dir / "ccmr_ltm_scatter.png",
         plots_dir / "ri_mari_support.png",
     ):
         assert path.exists(), f"Missing output: {path}"
@@ -392,18 +394,14 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
 
     def fake_ri_compute_artifacts(
         *,
-        features: np.ndarray,
-        manifest: pd.DataFrame,
-        confounder_column: str,
+        prepared_neighbors: object,
+        dataset_name: str,
         k_values: list[int],
-        evaluation_design: str,
         selected_k: int,
         include_selected_result: bool,
         warn_selected_result: bool,
-        prune_ss_oo: bool = False,
         summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
-        assert evaluation_design == "dataset_wide"
         assert include_selected_result is True
         assert warn_selected_result is True
         result = _FakeRobustnessResult(
@@ -415,19 +413,15 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
 
     def fake_mari_compute_artifacts(
         *,
-        features: np.ndarray,
-        manifest: pd.DataFrame,
-        confounder_column: str,
+        prepared_neighbors: object,
+        dataset_name: str,
         k_values: list[int],
-        evaluation_design: str,
         selected_k: int,
         include_selected_result: bool,
         warn_selected_result: bool,
         tau: float,
-        prune_ss_oo: bool = False,
         summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
-        assert evaluation_design == "dataset_wide"
         assert include_selected_result is True
         assert warn_selected_result is True
         result = _FakeRobustnessResult(
@@ -456,8 +450,16 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
 
     _install_fake_registry_and_embed(monkeypatch, models=[model])
     _install_noop_plots(monkeypatch)
-    monkeypatch.setattr(bm.RI, "_compute_artifacts", fake_ri_compute_artifacts)
-    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_mari_compute_artifacts)
+    monkeypatch.setattr(
+        bm.RI,
+        "_compute_artifacts_from_prepared_dataset_wide",
+        fake_ri_compute_artifacts,
+    )
+    monkeypatch.setattr(
+        bm.MaRI,
+        "_compute_artifacts_from_prepared_dataset_wide",
+        fake_mari_compute_artifacts,
+    )
     monkeypatch.setattr(bm.CCMR, "compute", fake_ccmr_compute)
 
     assert (
