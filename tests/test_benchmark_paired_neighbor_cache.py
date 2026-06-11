@@ -63,8 +63,9 @@ def _install_noop_plots(monkeypatch) -> None:
 
     for name in (
         "plot_bio_vs_confounder_scatter",
-        "plot_ccmr_ltm_comparison",
-        "plot_ccmr_m_sweep_with_ltm",
+        "plot_ccmr_ltm_bars",
+        "plot_ccmr_ltm_scatter",
+        "plot_ccmr_m_sweep",
         "plot_ccmr_sample_distributions",
         "plot_ccmr_vs_mari_scatter",
         "plot_q_alpha_vs_ccmr_scatter",
@@ -250,3 +251,117 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(
     assert set(per_sample_df["subset"]) == {"pair1", "pair2"}
     assert set(per_sample_df["source_sample_index"]) == set(range(8))
     assert set(metrics_df["evaluation_design"]) == {"paired_2x2"}
+
+
+def _dataset_wide_manifest() -> pd.DataFrame:
+    rows = []
+    for i in range(8):
+        rows.append(
+            {
+                "sample_id": f"s{i}",
+                "image_path": f"/tmp/s{i}.png",
+                "label": "A" if i % 2 == 0 else "B",
+                "scanner_vendor": "V1" if i < 4 else "V2",
+                "slide_id": f"sl{i}",
+                "dataset": "toy",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """RI, MaRI and the tau-scale check must reuse a single dataset-wide neighbour cache.
+
+    Per model on a cold cache the only neighbour preparations are the two (unpruned) kNN
+    curves plus one shared RI/MaRI/tau cache -> 3 calls. Before the shared cache RI, MaRI
+    and the tau check each prepared their own (5 calls); this pins the reuse.
+    """
+    manifest_path = tmp_path / "toy.csv"
+    _dataset_wide_manifest().to_csv(manifest_path, index=False)
+    output_dir = tmp_path / "out"
+
+    def fake_registry() -> dict:
+        return {"M1": object()}
+
+    def fake_embed_manifest(
+        manifest_path: Path,
+        output_path: Path,
+        spec: object,
+        batch_size: int,
+        num_workers: int,
+        device_arg: str,
+        **kwargs: object,
+    ) -> tuple[Path, tuple[int, int]]:
+        manifest_df = pd.read_csv(manifest_path, dtype=str)
+        base = {"A": [1.0, 0.0], "B": [0.0, 1.0]}
+        conf_offset = {"V1": 0.0, "V2": 0.25}
+        conf_col = "confounder" if "confounder" in manifest_df.columns else "scanner_vendor"
+        arr = np.asarray(
+            [
+                base[row["label"]] + [conf_offset[row[conf_col]], 0.0]
+                for _, row in manifest_df.iterrows()
+            ],
+            dtype=float,
+        )
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(output_path, arr)
+        output_path.with_suffix(".npy.json").write_text(
+            json.dumps(
+                {
+                    "manifest": str(manifest_path),
+                    "manifest_fingerprint": bm.manifest_fingerprint(manifest_df),
+                    "model_id": "fake",
+                    "extract": "cls",
+                    "mixed_precision": False,
+                    "n_samples": int(arr.shape[0]),
+                    "embedding_dim": int(arr.shape[1]),
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+
+    neighbor_prepare_calls = {"count": 0}
+    original_prepare = nb._prepare_neighbors_with_meta
+
+    def wrapped_prepare(*args, **kwargs):
+        neighbor_prepare_calls["count"] += 1
+        return original_prepare(*args, **kwargs)
+
+    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
+    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
+    monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
+    _install_noop_plots(monkeypatch)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "benchmark.py",
+            "--manifest",
+            str(manifest_path),
+            "--models",
+            "M1",
+            "--output-dir",
+            str(output_dir),
+            "--confounder-column",
+            "scanner_vendor",
+            "--evaluation-design",
+            "dataset_wide",
+            "--k-max",
+            "3",
+            "--progress",
+            "off",
+        ],
+    )
+
+    assert bm.main() == 0
+    # 2 unpruned kNN curves (bio + confounder) + 1 shared RI/MaRI/tau cache.
+    assert neighbor_prepare_calls["count"] == 3
+
+    metrics_df = pd.read_csv(
+        output_dir / manifest_path.stem / "results" / "metrics.csv"
+    )
+    assert set(metrics_df["evaluation_design"]) == {"dataset_wide"}

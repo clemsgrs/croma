@@ -17,6 +17,7 @@ from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from croma.alignment import build_embedding_source_manifest
 from croma import CCMR, MaRI, RI
 from croma.confounders import infer_confounder_display_name
+from croma.metrics.tau import TauAssessment, assess_tau
 from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
     _select_k_from_balanced_accuracy,
@@ -38,8 +39,9 @@ from metrics_io import (
 from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
     plot_bio_vs_confounder_scatter,
-    plot_ccmr_ltm_comparison,
-    plot_ccmr_m_sweep_with_ltm,
+    plot_ccmr_ltm_bars,
+    plot_ccmr_ltm_scatter,
+    plot_ccmr_m_sweep,
     plot_ccmr_sample_distributions,
     plot_ccmr_vs_mari_scatter,
     plot_q_alpha_vs_ccmr_scatter,
@@ -638,6 +640,39 @@ def _compute_ccmr_by_m(
     )
 
 
+def _tau_summary_lines(
+    tau: float, assessments: dict[str, TauAssessment]
+) -> list[str]:
+    """Concise dataset-level summary of how the chosen tau matches each model's typed scale."""
+    if not assessments:
+        return []
+    lines: list[str] = []
+    recommended = [
+        float(a.recommended_tau)
+        for a in assessments.values()
+        if np.isfinite(a.recommended_tau)
+    ]
+    if recommended:
+        lines.append(
+            f"[benchmark] tau={float(tau):g}; per-model principled tau "
+            f"(median typed-neighbour distance) in "
+            f"[{min(recommended):.3g}, {max(recommended):.3g}]"
+        )
+    off = sorted(
+        model
+        for model, a in assessments.items()
+        if a.regime in ("too_sharp", "too_flat")
+    )
+    if off:
+        lines.append(
+            f"[benchmark] tau={float(tau):g} is off-scale for {len(off)}/"
+            f"{len(assessments)} model(s): {', '.join(off)} "
+            "(too small -> winner-take-all; too large -> MaRI collapses to RI; "
+            "see MaRI.recommend_tau / MaRI.compute warn_tau)"
+        )
+    return lines
+
+
 def main() -> int:
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
@@ -691,6 +726,7 @@ def main() -> int:
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
     ccmr_m_sweep_rows: list[dict] = []
+    tau_assessments: dict[str, TauAssessment] = {}
     per_sample_writer = StreamingMetricsWriter(
         csv_path=per_sample_csv, json_path=per_sample_json
     )
@@ -1166,6 +1202,7 @@ def main() -> int:
                 eval_features: np.ndarray | None = None
                 eval_features_norm: np.ndarray | None = None
                 paired_subset_cache = None
+                dataset_wide_cache = None
 
                 def _ensure_eval_features() -> np.ndarray:
                     nonlocal features_full, eval_features
@@ -1198,6 +1235,25 @@ def main() -> int:
                             prune_ss_oo=bool(args.prune_ss_oo),
                         )
                     return paired_subset_cache
+
+                def _ensure_dataset_wide_cache():
+                    nonlocal dataset_wide_cache
+                    if evaluation_design != "dataset_wide":
+                        raise RuntimeError(
+                            "dataset-wide cache is only available for dataset_wide evaluation"
+                        )
+                    if dataset_wide_cache is None:
+                        df_norm = RI._normalize_manifest_inputs(
+                            eval_manifest, confounder_column=confounder_column
+                        )
+                        dataset_wide_cache = RI._prepare_dataset_wide_neighbor_cache(
+                            features=_ensure_eval_features_norm(),
+                            df=df_norm,
+                            k_values=k_values,
+                            prune_ss_oo=bool(args.prune_ss_oo),
+                            assume_normalized=True,
+                        )
+                    return dataset_wide_cache
 
                 knn_was_cached = (
                     knn_bacc_by_k is not None and knn_confounder_bacc_by_k is not None
@@ -1282,16 +1338,13 @@ def main() -> int:
                             warn_selected_result=True,
                         )
                     else:
-                        ri_artifacts = RI._compute_artifacts(
-                            features=_ensure_eval_features_norm(),
-                            manifest=eval_manifest,
-                            confounder_column=confounder_column,
+                        ri_artifacts = RI._compute_artifacts_from_prepared_dataset_wide(
+                            prepared_neighbors=_ensure_dataset_wide_cache(),
+                            dataset_name=dataset_name,
                             k_values=k_values,
-                            evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
-                            prune_ss_oo=bool(args.prune_ss_oo),
                             summarize_by_mean=bool(args.summarize_by_mean),
                         )
                     ri_curve = dict(ri_artifacts.curve)
@@ -1372,16 +1425,13 @@ def main() -> int:
                             tau=float(args.tau),
                         )
                     else:
-                        mari_artifacts = MaRI._compute_artifacts(
-                            features=_ensure_eval_features_norm(),
-                            manifest=eval_manifest,
-                            confounder_column=confounder_column,
+                        mari_artifacts = MaRI._compute_artifacts_from_prepared_dataset_wide(
+                            prepared_neighbors=_ensure_dataset_wide_cache(),
+                            dataset_name=dataset_name,
                             k_values=k_values,
-                            evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
-                            prune_ss_oo=bool(args.prune_ss_oo),
                             summarize_by_mean=bool(args.summarize_by_mean),
                             tau=float(args.tau),
                         )
@@ -1735,12 +1785,57 @@ def main() -> int:
                     ticker.log(
                         f"[benchmark] undefined samples: {', '.join(undef_parts)}"
                     )
+                if not all_cache_hit:
+                    # On a recompute the neighbours are already in hand; assess whether the
+                    # chosen tau sits on this model's typed-neighbour distance scale, reusing
+                    # the prepared paired-subset cache so no extra neighbour pass is incurred.
+                    try:
+                        if evaluation_design == "paired_2x2":
+                            typed_chunks = [
+                                MaRI._typed_neighbor_distances_from_neighbors(
+                                    labels=ps.labels,
+                                    centers=ps.centers,
+                                    neigh_idx=ps.neigh_idx,
+                                    neigh_dist=ps.neigh_dist,
+                                    valid_counts=ps.valid_counts,
+                                    k=int(selected_k),
+                                )
+                                for ps in _ensure_paired_subset_cache()
+                            ]
+                            typed_dist = (
+                                np.concatenate(typed_chunks)
+                                if typed_chunks
+                                else np.empty(0, dtype=float)
+                            )
+                        else:
+                            ps = _ensure_dataset_wide_cache()
+                            typed_dist = MaRI._typed_neighbor_distances_from_neighbors(
+                                labels=ps.labels,
+                                centers=ps.centers,
+                                neigh_idx=ps.neigh_idx,
+                                neigh_dist=ps.neigh_dist,
+                                valid_counts=ps.valid_counts,
+                                k=int(selected_k),
+                            )
+                        assessment = assess_tau(float(args.tau), typed_dist)
+                        tau_assessments[str(model)] = assessment
+                        if assessment.regime in ("too_sharp", "too_flat"):
+                            ticker.log(
+                                f"[benchmark] tau={float(args.tau):g} off-scale "
+                                f"({assessment.regime}); recommended "
+                                f"~{assessment.recommended_tau:.3g}"
+                            )
+                    except Exception as exc:  # noqa: BLE001
+                        ticker.log(f"[benchmark] tau scale check skipped: {exc}")
             except Exception as exc:  # noqa: BLE001
                 metrics_status[model] = "failed"
                 failures.append(f"{model}: metrics failed ({exc})")
                 ticker.log(f"[benchmark] metrics failed: {exc}")
 
     per_sample_writer.close()
+
+    for line in _tau_summary_lines(float(args.tau), tau_assessments):
+        progress_write(line, enabled=progress_enabled)
 
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
@@ -1767,11 +1862,14 @@ def main() -> int:
                 rows=k_sweep_rows,
                 out_path=plots_dir / "mari_cumulative_mean_k_sweep.png",
             )
-        plot_ccmr_m_sweep_with_ltm(
+        plot_ccmr_m_sweep(
             rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png"
         )
-        plot_ccmr_ltm_comparison(
-            rows=rows, out_path=plots_dir / "ccmr_ltm_comparison.png"
+        plot_ccmr_ltm_scatter(
+            rows=rows, out_path=plots_dir / "ccmr_ltm_scatter.png"
+        )
+        plot_ccmr_ltm_bars(
+            rows=rows, out_path=plots_dir / "ccmr_ltm_bars.png"
         )
         plot_bio_vs_confounder_scatter(
             rows=rows, out_path=plots_dir / "bio_vs_confounder_scatter.png"
