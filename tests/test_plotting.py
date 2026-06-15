@@ -123,11 +123,13 @@ def _sample_support_rows() -> list[dict]:
     return [
         {
             "model": "Virchow2",
+            "k": 3,
             "ri_undefined_frac": 0.12,
             "mari_undefined_frac": 0.12,
         },
         {
             "model": "UNI",
+            "k": 6,
             "ri_undefined_frac": 0.35,
             "mari_undefined_frac": 0.35,
         },
@@ -317,7 +319,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert len(figure_legend_calls) == 1
     legend_kwargs = figure_legend_calls[0]
     assert legend_kwargs.get("loc") == "lower center"
-    assert int(legend_kwargs.get("ncol", 0)) == 4
+    assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
 def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_worst_first_order() -> None:
@@ -340,25 +342,28 @@ def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_wo
     assert indexed["Phikon"]["defined_frac"] == pytest.approx(0.20)
     assert indexed["Phikon"]["status"] == "critical"
     assert indexed["UNI"]["label"] == "65%"
+    assert indexed["Virchow2"]["kstar"] == 3
+    assert indexed["UNI"]["kstar"] == 6
+    assert indexed["CONCH"]["kstar"] is None  # no k provided -> annotation omitted
 
 
-def test_support_plot_uses_bottom_legend_for_thresholds(
+def test_support_plot_uses_single_colour_without_threshold_legend(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """The support plot uses a single neutral colour and no status legend.
+
+    Severity is conveyed by bar length, the inline percentage labels, and the
+    worst-first ordering, so the green/amber/red threshold legend was removed.
+    """
     import matplotlib.figure
 
-    legend_calls: list[dict[str, object]] = []
+    legend_labels: list[str] = []
     original_legend = matplotlib.figure.Figure.legend
 
     def spy_legend(self, *args, **kwargs):
         handles = list(args[0]) if args else list(kwargs.get("handles", []))
-        labels = [str(getattr(handle, "get_label", lambda: "")()) for handle in handles]
-        legend_calls.append(
-            {
-                "labels": labels,
-                "loc": kwargs.get("loc"),
-                "ncol": kwargs.get("ncol"),
-            }
+        legend_labels.extend(
+            str(getattr(handle, "get_label", lambda: "")()) for handle in handles
         )
         return original_legend(self, *args, **kwargs)
 
@@ -368,13 +373,10 @@ def test_support_plot_uses_bottom_legend_for_thresholds(
     plot_ri_mari_support(rows=_sample_support_rows(), out_path=out_path)
 
     assert _png_export_path(out_path).exists()
-    assert legend_calls
-    labels = legend_calls[0]["labels"]
-    assert "Defined <25%" in labels
-    assert "Defined <50%" in labels
-    assert "Defined >=50%" in labels
-    assert legend_calls[0]["loc"] == "lower center"
-    assert legend_calls[0]["ncol"] == 3
+    # No threshold legend is emitted any more.
+    assert "Defined <25%" not in legend_labels
+    assert "Defined <50%" not in legend_labels
+    assert "Defined >=50%" not in legend_labels
 
 
 def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
@@ -620,7 +622,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert len(figure_legend_calls) == 1
     legend_kwargs = figure_legend_calls[0]
     assert legend_kwargs.get("loc") == "lower center"
-    assert int(legend_kwargs.get("ncol", 0)) == 4
+    assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
 def test_ccmr_m_sweep_uses_human_friendly_m_ticks(
@@ -883,8 +885,8 @@ def test_cumulative_mean_last_point_equals_arithmetic_mean(
     original_scatter = matplotlib.axes.Axes.scatter
 
     def spy_scatter(self, x, y, **kwargs):
-        # Only capture endpoint dots (s=55, not the larger selection markers)
-        if kwargs.get("s") == 55:
+        # Only capture endpoint dots (s=42, not the larger selection markers)
+        if kwargs.get("s") == 42:
             for xi, yi in zip(x, y):
                 title = self.get_title()
                 scatter_calls.append((title, float(xi), float(yi)))

@@ -8,7 +8,11 @@ for p in (ROOT, ROOT / "scripts"):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from benchmark import _tau_summary_lines
+from benchmark import (
+    _tau_assessment_from_payload,
+    _tau_assessment_to_payload,
+    _tau_summary_lines,
+)
 from croma.metrics.tau import TauAssessment
 
 
@@ -61,3 +65,18 @@ def test_undetermined_excluded_from_recommended_range() -> None:
     lines = _tau_summary_lines(0.2, assessments)
     assert "0.25" in lines[0]
     assert "nan" not in lines[0].lower()
+
+
+def test_tau_assessment_payload_round_trips() -> None:
+    original = _assessment("too_flat", 0.0358)
+    restored = _tau_assessment_from_payload(_tau_assessment_to_payload(original))
+    assert restored == original
+
+
+def test_tau_assessment_from_payload_rejects_incomplete_or_invalid() -> None:
+    assert _tau_assessment_from_payload(None) is None
+    assert _tau_assessment_from_payload({}) is None
+    # Missing a required field.
+    payload = _tau_assessment_to_payload(_assessment("too_sharp", 0.5))
+    payload.pop("regime")
+    assert _tau_assessment_from_payload(payload) is None

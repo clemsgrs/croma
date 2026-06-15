@@ -246,7 +246,16 @@ def _parse_args() -> argparse.Namespace:
         default=25,
         help="Maximum k for dense benchmark sweeps; benchmark evaluates all integer k in 1..k_max (default 25).",
     )
-    parser.add_argument("--tau", type=float, default=0.2, help="MaRI tau.")
+    parser.add_argument(
+        "--tau",
+        type=float,
+        default=None,
+        help=(
+            "MaRI temperature. Default (omit): per-model auto -- each model uses its own "
+            "median typed-neighbour distance at the operating k, the principled on-scale "
+            "value. Pass a float to override with a single fixed tau for all models."
+        ),
+    )
     parser.add_argument(
         "--ccmr-m-max",
         type=int,
@@ -573,6 +582,49 @@ def _summary_from_payload(payload: dict) -> dict | None:
         return None
 
 
+def _tau_assessment_to_payload(assessment: TauAssessment) -> dict:
+    return {
+        "tau": float(assessment.tau),
+        "n_typed": int(assessment.n_typed),
+        "median_typed_distance": float(assessment.median_typed_distance),
+        "recommended_tau": float(assessment.recommended_tau),
+        "low": float(assessment.low),
+        "high": float(assessment.high),
+        "factor": float(assessment.factor),
+        "regime": str(assessment.regime),
+    }
+
+
+def _tau_assessment_from_payload(payload: dict | None) -> TauAssessment | None:
+    if not isinstance(payload, dict):
+        return None
+    required = (
+        "tau",
+        "n_typed",
+        "median_typed_distance",
+        "recommended_tau",
+        "low",
+        "high",
+        "factor",
+        "regime",
+    )
+    if any(key not in payload for key in required):
+        return None
+    try:
+        return TauAssessment(
+            tau=float(payload["tau"]),
+            n_typed=int(payload["n_typed"]),
+            median_typed_distance=float(payload["median_typed_distance"]),
+            recommended_tau=float(payload["recommended_tau"]),
+            low=float(payload["low"]),
+            high=float(payload["high"]),
+            factor=float(payload["factor"]),
+            regime=str(payload["regime"]),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _ccmr_result_to_payload(result: CCMRResult, m: int) -> dict:
     return {
         "m": int(m),
@@ -641,17 +693,31 @@ def _compute_ccmr_by_m(
 
 
 def _tau_summary_lines(
-    tau: float, assessments: dict[str, TauAssessment]
+    tau: float | None, assessments: dict[str, TauAssessment]
 ) -> list[str]:
-    """Concise dataset-level summary of how the chosen tau matches each model's typed scale."""
+    """Concise dataset-level summary of how the chosen tau matches each model's typed scale.
+
+    ``tau is None`` means per-model auto mode: each model already uses its own principled
+    tau, so we report the range rather than flagging a single value as off-scale.
+    """
     if not assessments:
         return []
     lines: list[str] = []
+    used = [
+        float(a.tau) for a in assessments.values() if np.isfinite(a.tau)
+    ]
     recommended = [
         float(a.recommended_tau)
         for a in assessments.values()
         if np.isfinite(a.recommended_tau)
     ]
+    if tau is None:
+        if used:
+            lines.append(
+                "[benchmark] tau=auto (per-model median typed-neighbour distance) in "
+                f"[{min(used):.3g}, {max(used):.3g}]"
+            )
+        return lines
     if recommended:
         lines.append(
             f"[benchmark] tau={float(tau):g}; per-model principled tau "
@@ -886,7 +952,13 @@ def main() -> int:
                 }
 
                 k_values_param = [int(k) for k in k_values]
-                tau_value = float(args.tau)
+                # MaRI cache component for tau. In auto mode the numeric tau is not known
+                # until the operating k and neighbours are resolved, but it is fully
+                # determined by the other key components (embedding/manifest fingerprints,
+                # k-config, evaluation design), so a stable "auto" sentinel is a correct
+                # cache key: it can only collide across runs that would produce the same
+                # per-model tau anyway. An explicit override keys on its numeric value.
+                tau_value = float(args.tau) if args.tau is not None else "auto"
                 prune_ss_oo_value = bool(args.prune_ss_oo)
                 summarize_by_mean_value = bool(args.summarize_by_mean)
                 use_median_k_value = bool(args.use_median_k)
@@ -1003,6 +1075,20 @@ def main() -> int:
                             "use_median_k": use_median_k_value,
                         },
                     ),
+                    "tau_assessment": build_cache_key(
+                        artifact_name="tau_assessment",
+                        model=model,
+                        input_fingerprint=input_fp,
+                        params={
+                            "evaluation_design": evaluation_design,
+                            "k_values": k_values_param,
+                            "tau": tau_value,
+                            "confounder_column": confounder_column,
+                            "prune_ss_oo": prune_ss_oo_value,
+                            "summarize_by_mean": summarize_by_mean_value,
+                            "use_median_k": use_median_k_value,
+                        },
+                    ),
                     "mari_samples": build_cache_key(
                         artifact_name="mari_samples",
                         model=model,
@@ -1100,10 +1186,17 @@ def main() -> int:
                 ccmr_by_m: dict[int, dict] | None = None
                 ccmr_samples: np.ndarray | None = None
                 ccmr_samples_aligned_by_m: np.ndarray | None = None
+                cached_tau_assessment: TauAssessment | None = None
 
                 all_cache_hit = not bool(args.recompute_metrics)
 
                 if not args.recompute_metrics:
+                    # Read independently of all_cache_hit: a missing tau assessment
+                    # (e.g. cache written before this artifact existed) must not force a
+                    # full metrics recompute, only a tau-scale re-check on demand.
+                    cached_tau_assessment = _tau_assessment_from_payload(
+                        cache.get_json(key=keys["tau_assessment"])
+                    )
                     knn_bacc_by_k = _curve_from_payload(
                         cache.get_json(key=keys["knn_bio_curve"]),
                         expected_k_values=k_values,
@@ -1405,6 +1498,47 @@ def main() -> int:
                     and mari_samples_aligned is not None
                     and mari_undefined_types is not None
                 )
+
+                # Resolve the MaRI temperature for this model. Explicit --tau overrides;
+                # otherwise use the per-model principled value (median typed-neighbour
+                # distance at the operating k), which puts exp(-d/tau) on this model's own
+                # distance scale. On a full cache hit we recover the tau actually used from
+                # the cached tau assessment, so no extra neighbour pass is incurred.
+                if args.tau is not None:
+                    model_tau = float(args.tau)
+                elif mari_was_cached and cached_tau_assessment is not None:
+                    model_tau = float(cached_tau_assessment.tau)
+                else:
+                    if evaluation_design == "paired_2x2":
+                        _td_chunks = [
+                            MaRI._typed_neighbor_distances_from_neighbors(
+                                labels=ps.labels,
+                                centers=ps.centers,
+                                neigh_idx=ps.neigh_idx,
+                                neigh_dist=ps.neigh_dist,
+                                valid_counts=ps.valid_counts,
+                                k=int(selected_k),
+                            )
+                            for ps in _ensure_paired_subset_cache()
+                        ]
+                        _typed_for_tau = (
+                            np.concatenate(_td_chunks)
+                            if _td_chunks
+                            else np.empty(0, dtype=float)
+                        )
+                    else:
+                        _ps = _ensure_dataset_wide_cache()
+                        _typed_for_tau = MaRI._typed_neighbor_distances_from_neighbors(
+                            labels=_ps.labels,
+                            centers=_ps.centers,
+                            neigh_idx=_ps.neigh_idx,
+                            neigh_dist=_ps.neigh_dist,
+                            valid_counts=_ps.valid_counts,
+                            k=int(selected_k),
+                        )
+                    _finite_tau = _typed_for_tau[np.isfinite(_typed_for_tau)]
+                    model_tau = float(np.median(_finite_tau)) if _finite_tau.size else 0.2
+
                 ticker.start("MaRI")
                 if (
                     mari_curve is None
@@ -1422,7 +1556,7 @@ def main() -> int:
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
-                            tau=float(args.tau),
+                            tau=model_tau,
                         )
                     else:
                         mari_artifacts = MaRI._compute_artifacts_from_prepared_dataset_wide(
@@ -1433,7 +1567,7 @@ def main() -> int:
                             include_selected_result=True,
                             warn_selected_result=True,
                             summarize_by_mean=bool(args.summarize_by_mean),
-                            tau=float(args.tau),
+                            tau=model_tau,
                         )
                     mari_curve = dict(mari_artifacts.curve)
                     if mari_artifacts.result is None:
@@ -1559,7 +1693,7 @@ def main() -> int:
                             "confounder_display_name": confounder_display_name,
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
-                            "tau": float(args.tau),
+                            "tau": model_tau,
                             "k_max": int(k_max),
                             "k_values": str(k_values_sig),
                             "ccmr_search": str(ccmr_search_sig),
@@ -1619,7 +1753,7 @@ def main() -> int:
                     dataset=dataset_name,
                     evaluation_design=evaluation_design,
                     evaluation_unit=evaluation_unit,
-                    tau=float(args.tau),
+                    tau=model_tau,
                     selected_k=int(selected_k),
                     n_total_units=total_n,
                     n_undefined_units=mari_undefined_n,
@@ -1657,7 +1791,7 @@ def main() -> int:
                     "k_max": int(k_max),
                     "evaluation_design": evaluation_design,
                     "evaluation_unit": evaluation_unit,
-                    "tau": float(args.tau),
+                    "tau": model_tau,
                     "k_values": k_values_sig,
                     "ccmr_search": ccmr_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
@@ -1711,7 +1845,7 @@ def main() -> int:
                     evaluation_design=evaluation_design,
                     evaluation_unit=evaluation_unit,
                     selected_k=int(ri_summary["k"]),
-                    tau=float(args.tau),
+                    tau=model_tau,
                     ccmr_alpha=float(args.ccmr_alpha),
                     ccmr_search_sig=str(ccmr_search_sig),
                     ri_samples_aligned=np.asarray(ri_samples_aligned, dtype=float),
@@ -1748,7 +1882,7 @@ def main() -> int:
                             "confounder_display_name": confounder_display_name,
                             "evaluation_design": evaluation_design,
                             "evaluation_unit": evaluation_unit,
-                            "tau": float(args.tau),
+                            "tau": model_tau,
                             "k_max": int(k_max),
                             "k_values": k_values_sig,
                             "ccmr_search": ccmr_search_sig,
@@ -1817,16 +1951,30 @@ def main() -> int:
                                 valid_counts=ps.valid_counts,
                                 k=int(selected_k),
                             )
-                        assessment = assess_tau(float(args.tau), typed_dist)
+                        assessment = assess_tau(model_tau, typed_dist)
                         tau_assessments[str(model)] = assessment
+                        cache.put_json(
+                            key=keys["tau_assessment"],
+                            payload=_tau_assessment_to_payload(assessment),
+                        )
                         if assessment.regime in ("too_sharp", "too_flat"):
                             ticker.log(
-                                f"[benchmark] tau={float(args.tau):g} off-scale "
+                                f"[benchmark] tau={model_tau:g} off-scale "
                                 f"({assessment.regime}); recommended "
                                 f"~{assessment.recommended_tau:.3g}"
                             )
                     except Exception as exc:  # noqa: BLE001
                         ticker.log(f"[benchmark] tau scale check skipped: {exc}")
+                elif cached_tau_assessment is not None:
+                    # Full metrics cache hit: surface the tau-scale assessment cached by an
+                    # earlier recompute so the run still reports it without a neighbour pass.
+                    tau_assessments[str(model)] = cached_tau_assessment
+                    if cached_tau_assessment.regime in ("too_sharp", "too_flat"):
+                        ticker.log(
+                            f"[benchmark] tau={model_tau:g} off-scale "
+                            f"({cached_tau_assessment.regime}, cached); recommended "
+                            f"~{cached_tau_assessment.recommended_tau:.3g}"
+                        )
             except Exception as exc:  # noqa: BLE001
                 metrics_status[model] = "failed"
                 failures.append(f"{model}: metrics failed ({exc})")
@@ -1834,7 +1982,9 @@ def main() -> int:
 
     per_sample_writer.close()
 
-    for line in _tau_summary_lines(float(args.tau), tau_assessments):
+    for line in _tau_summary_lines(
+        float(args.tau) if args.tau is not None else None, tau_assessments
+    ):
         progress_write(line, enabled=progress_enabled)
 
     if rows:
