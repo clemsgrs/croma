@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from croma import CCMR, MaRI, RI
+from croma.metrics.ccmr import CCMR_HEADLINE_M
 from croma.alignment import (
     build_embedding_source_manifest,
     expand_features_to_manifest,
@@ -121,7 +122,10 @@ def main() -> None:
 
     ccmr_parser = sub.add_parser("ccmr", parents=[shared], help="Compute CCMR.")
     ccmr_parser.add_argument(
-        "--m", type=int, default=1, help="Number of SO/OS neighbors to average (>=1)."
+        "--m",
+        type=int,
+        default=CCMR_HEADLINE_M,
+        help="Number of SO/OS neighbors to average (>=1).",
     )
     ccmr_parser.add_argument(
         "--alpha",

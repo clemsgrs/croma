@@ -172,10 +172,12 @@ def _sample_ccmr_ltm_rows() -> list[dict]:
 
 
 def _sample_ccmr_distribution_rows(tmp_path: Path) -> list[dict]:
+    # CCMR is the signed margin in (-1, 1); per-sample arrays straddle 0 so the
+    # "%<0" fragile-fraction column is exercised (Virchow2 25%, UNI 75%).
     by_model = {
-        "Virchow2": np.asarray([0.82, 1.10, 1.32, 1.45], dtype=float),
-        "UNI": np.asarray([0.60, 0.84, 0.93, 1.20], dtype=float),
-        "CONCH": np.asarray([1.02, 1.18, 1.28, 1.35], dtype=float),
+        "Virchow2": np.asarray([-0.10, 0.10, 0.32, 0.45], dtype=float),
+        "UNI": np.asarray([-0.30, -0.15, -0.05, 0.20], dtype=float),
+        "CONCH": np.asarray([0.02, 0.18, 0.28, 0.35], dtype=float),
     }
     rows: list[dict] = []
     for model, values in by_model.items():
@@ -412,8 +414,8 @@ def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
     assert _png_export_path(out_path).exists()
     # The NaN-CCMR "Bad" row is filtered; the three valid points are plotted.
     assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)} == set(points)
-    # A horizontal CCMR=1 robustness threshold is drawn (not a y=x diagonal).
-    assert hlines == [1.0]
+    # A horizontal CCMR=0 robustness threshold is drawn (not a y=x diagonal).
+    assert hlines == [0.0]
 
 
 def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
@@ -459,7 +461,7 @@ def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
 
     assert _png_export_path(out_path).exists()
     assert ltm_heights == sorted(ltm_heights, reverse=True)
-    assert hlines == [1.0]
+    assert hlines == [0.0]
     # A single local (axes-level) legend, no figure-level legend.
     assert not figure_legend_calls
     assert len(axes_legend_calls) == 1
@@ -745,7 +747,7 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
     joined = "\n".join(annotation_texts)
     assert "CCMR" in joined
     assert "Q10" in joined
-    assert "%<1" in joined
+    assert "%<0" in joined
     assert "1.550" in joined
     assert "0.820" in joined
     assert "25.0%" in joined

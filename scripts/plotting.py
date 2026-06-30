@@ -792,7 +792,7 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
 
 
 def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
-    """Single-panel pooled CCMR(m) trajectory per model, with the CCMR=1 threshold."""
+    """Single-panel pooled CCMR(m) trajectory per model, with the CCMR=0 threshold."""
     fig, ax = plt.subplots(figsize=(COL_DOUBLE, 4.6))
     ccmr_rows = [
         r
@@ -819,7 +819,7 @@ def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
 
     _style_axes(ax)
     ax.axhline(
-        y=1.0,
+        y=0.0,
         linestyle="--",
         linewidth=plotstyle.LW_REFERENCE,
         color=REFERENCE_LINE_COLOR,
@@ -834,7 +834,7 @@ def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
     vmax = float(np.nanmax(finite)) if finite.size > 0 else 1.0
     span = vmax - vmin
     pad = max(0.05, span * 0.10) if span > 1e-9 else max(0.1, abs(vmin) * 0.10)
-    ax.set_ylim(max(0.0, vmin - pad), vmax + pad)
+    ax.set_ylim(vmin - pad, vmax + pad)
 
     for model in sorted(by_model, key=lambda m: (model_sort_key(m), m)):
         model_rows = by_model[model]
@@ -890,11 +890,16 @@ def _ltm_label(valid_rows: list[dict]) -> str:
     return "LTM(CCMR)"
 
 
-def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
+def _padded_signed_limits(values: np.ndarray) -> tuple[float, float]:
+    """Padded limits for a signed quantity (e.g. the CCMR margin in ``(-1, 1)``).
+
+    The lower bound is not clamped to 0, so fragile models with negative margins
+    are not clipped.
+    """
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
     if arr.size == 0:
-        return 0.0, 1.0
+        return -1.0, 1.0
     vmin = float(np.nanmin(arr))
     vmax = float(np.nanmax(arr))
     span = float(vmax - vmin)
@@ -902,7 +907,7 @@ def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
         pad = max(0.1, abs(vmin) * 0.10, 0.05)
     else:
         pad = max(0.1, span * 0.10)
-    lo = max(0.0, vmin - pad)
+    lo = vmin - pad
     hi = vmax + pad
     if hi <= lo:
         hi = lo + 1.0
@@ -910,11 +915,11 @@ def _padded_positive_limits(values: np.ndarray) -> tuple[float, float]:
 
 
 def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
-    """CCMR vs LTM scatter with a horizontal CCMR=1 robustness threshold.
+    """CCMR vs LTM scatter with a horizontal CCMR=0 robustness threshold.
 
     The threshold line (not a y=x diagonal) makes the claim non-tautological: every
     model's fragile decile falling below it is an empirical fact, since LTM <= median
-    CCMR by construction would only force points below the diagonal, not below 1.
+    CCMR by construction would only force points below the diagonal, not below 0.
     """
     fig, ax = plt.subplots(figsize=(COL_ONEHALF, 5.6))
     valid_rows = _valid_ccmr_ltm_rows(rows)
@@ -927,7 +932,7 @@ def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
     label_ltm = _ltm_label(valid_rows)
     xs = np.asarray([float(r["ccmr"]) for r in valid_rows], dtype=float)
     ys = np.asarray([float(r["ltm"]) for r in valid_rows], dtype=float)
-    lim = _padded_positive_limits(np.concatenate([xs, ys]))
+    lim = _padded_signed_limits(np.concatenate([xs, ys]))
 
     _draw_model_scatter(
         ax,
@@ -939,14 +944,14 @@ def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
         title=f"CCMR vs {label_ltm}",
         xlim=lim,
         ylim=lim,
-        hline=1.0,
+        hline=0.0,
     )
 
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
-    """Per-model CCMR/LTM bars sorted by LTM, with a CCMR=1 threshold line."""
+    """Per-model CCMR/LTM bars sorted by LTM, with a CCMR=0 threshold line."""
     fig, ax = plt.subplots(figsize=(COL_DOUBLE, 4.6))
     valid_rows = _valid_ccmr_ltm_rows(rows)
 
@@ -968,7 +973,7 @@ def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
 
     _style_axes(ax, grid_axis="y")
     ax.axhline(
-        y=1.0,
+        y=0.0,
         linestyle="--",
         linewidth=plotstyle.LW_REFERENCE,
         color=REFERENCE_LINE_COLOR,
@@ -1002,7 +1007,7 @@ def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
     ax.tick_params(axis="x", labelsize=plotstyle.FS_TICK, pad=4)
     ax.set_ylabel("Score")
     _set_panel_title(ax, f"Sorted by {label_ltm}")
-    y_lo, y_hi = _padded_positive_limits(np.concatenate([ccmr_vals, ltm_vals]))
+    y_lo, y_hi = _padded_signed_limits(np.concatenate([ccmr_vals, ltm_vals]))
     ax.set_ylim(y_lo, y_hi)
     ax.legend(frameon=False, loc="upper right", fontsize=plotstyle.FS_ANNOT)
 
@@ -1051,8 +1056,8 @@ def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict]) -> None:
         ylabel="CCMR",
         title="CCMR vs MaRI",
         xlim=_padded_unit_interval_limits(xs),
-        ylim=(max(0.0, float(ys.min()) - y_pad), float(ys.max()) + y_pad),
-        hline=1.0,
+        ylim=(float(ys.min()) - y_pad, float(ys.max()) + y_pad),
+        hline=0.0,
         vline=0.5,
     )
 
@@ -1088,7 +1093,7 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
                 "alpha": alpha,
                 "alpha_pct": alpha_pct,
                 "ccmr": float(row["ccmr"]),
-                "lt1_frac": float(np.mean(values < 1.0)),
+                "neg_frac": float(np.mean(values < 0.0)),
             }
         )
 
@@ -1102,7 +1107,7 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
         reverse=True,
     )
     all_values = np.concatenate([d["values"] for d in model_data])
-    x_min = max(0.0, float(np.nanpercentile(all_values, 1)) - 0.1)
+    x_min = float(np.nanpercentile(all_values, 1)) - 0.1
     x_max = float(np.nanpercentile(all_values, 99)) + 0.1
     x_grid = np.linspace(x_min, x_max, 512)
 
@@ -1113,12 +1118,12 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
     ax.grid(False)
     ax.set_yticks([])
 
-    # Shade the fragile region (CCMR < 1.0)
-    shade_right = min(1.0, x_max)
+    # Shade the fragile region (CCMR < 0)
+    shade_right = min(0.0, x_max)
     if shade_right > x_min:
         ax.axvspan(x_min, shade_right, color=FRAGILE_SHADE_COLOR, alpha=0.55, zorder=1)
     ax.axvline(
-        x=1.0,
+        x=0.0,
         linestyle="--",
         linewidth=plotstyle.LW_REFERENCE,
         color=REFERENCE_LINE_COLOR,
@@ -1255,7 +1260,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
         # Right edges of the numeric columns (right-aligned so digits line up).
         col_x = (0.26, 0.62, 0.99)
         header_y = float(len(valid_rows)) + 0.72
-        for label, x_pos in zip(("CCMR", f"Q{alpha_pct}", "%<1"), col_x):
+        for label, x_pos in zip(("CCMR", f"Q{alpha_pct}", "%<0"), col_x):
             info_ax.text(
                 x_pos,
                 header_y,
@@ -1280,7 +1285,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
                     "model": str(row["model"]),
                     "ccmr": float(row["ccmr"]),
                     "q_alpha": float(row["ccmr_q_alpha"]),
-                    "lt1_frac": float(np.mean(values < 1.0)),
+                    "neg_frac": float(np.mean(values < 0.0)),
                 }
             )
         model_data = sorted(
@@ -1293,7 +1298,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
             cells = (
                 f"{float(row['ccmr']):.{PREC_METRIC}f}",
                 f"{float(row['q_alpha']):.{PREC_METRIC}f}",
-                f"{100.0 * float(row['lt1_frac']):.{PREC_PERCENT}f}%",
+                f"{100.0 * float(row['neg_frac']):.{PREC_PERCENT}f}%",
             )
             for value, x_pos in zip(cells, col_x):
                 info_ax.text(
@@ -1315,7 +1320,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
     fig.text(
         0.5,
         0.935,
-        f"sorted by CCMR; dotted: $Q_{{{alpha_pct}}}$; shaded: CCMR < 1",
+        f"sorted by CCMR; dotted: $Q_{{{alpha_pct}}}$; shaded: CCMR < 0",
         ha="center",
         va="center",
         fontsize=plotstyle.FS_ANNOT,
@@ -1628,10 +1633,10 @@ def _draw_q_alpha_vs_ccmr_scatter(ax, rows: list[dict]) -> None:
         xlabel="CCMR",
         ylabel=f"Q{alpha_pct}",
         title=f"Q{alpha_pct} vs CCMR",
-        xlim=(max(0.0, float(xs.min()) - x_pad), float(xs.max()) + x_pad),
-        ylim=(max(0.0, float(ys.min()) - y_pad), float(ys.max()) + y_pad),
-        hline=1.0,
-        vline=1.0,
+        xlim=(float(xs.min()) - x_pad, float(xs.max()) + x_pad),
+        ylim=(float(ys.min()) - y_pad, float(ys.max()) + y_pad),
+        hline=0.0,
+        vline=0.0,
     )
 
 

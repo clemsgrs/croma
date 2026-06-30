@@ -27,6 +27,15 @@ from croma.types import CCMRResult
 
 logger = logging.getLogger("croma")
 
+# Headline per-type averaging radius. ``m=1`` is the single-neighbour estimate and
+# is maximally sensitive to one outlier neighbour; ``m=5`` is the smallest window
+# that removes single-neighbour dominance (no neighbour exceeds 20% of the estimate)
+# while staying in the local typed shell. The pooled-median model ranking and the
+# biology-/confounder-dominant sign are invariant across the m-sweep (Spearman
+# >= 0.99), so m only affects per-sample magnitudes and tail statistics; m=1 and the
+# full sweep are reported as sensitivity. See paper/sections/ccmr.tex.
+CCMR_HEADLINE_M = 5
+
 
 @dataclass(frozen=True)
 class _CCMRSearchMeta:
@@ -39,18 +48,30 @@ def _compute_sample_ccmr(
     so_dists: np.ndarray,
     os_dists: np.ndarray,
 ) -> np.ndarray:
+    """Per-sample CCMR as a signed, normalized margin in ``(-1, 1)``.
+
+    ``CCMR_i = (d_OS - d_SO) / (d_OS + d_SO)`` where ``d_SO``/``d_OS`` are the
+    mean cosine distances to the ``m`` nearest ``SO``/``OS`` neighbors. The sign
+    reports which typed neighbor is closer and the magnitude how decisively:
+    ``> 0`` is biology-dominant (robust), ``< 0`` confounder-dominant (fragile),
+    ``0`` an exactly contested boundary. Equivalently, the same-confounder
+    impostor accounts for a fraction ``(1 + CCMR_i) / 2`` of the total typed
+    distance ``d_OS + d_SO`` and the biological match the remaining
+    ``(1 - CCMR_i) / 2``.
+    """
     has_inf_so = np.any(np.isinf(so_dists), axis=1)
     has_inf_os = np.any(np.isinf(os_dists), axis=1)
     undefined = has_inf_so | has_inf_os
 
     mean_so = np.mean(so_dists, axis=1)
     mean_os = np.mean(os_dists, axis=1)
+    denom = mean_os + mean_so
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        ccmr = mean_os / mean_so
+        ccmr = (mean_os - mean_so) / denom
 
     ccmr[undefined] = np.nan
-    ccmr[mean_so == 0.0] = np.nan
+    ccmr[denom == 0.0] = np.nan
     return ccmr
 
 
@@ -207,7 +228,7 @@ class CrossConfounderMarginRatio:
         *,
         confounder_column: str,
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        m: int | list[int] | tuple[int, ...] = 1,
+        m: int | list[int] | tuple[int, ...] = CCMR_HEADLINE_M,
         alpha: float = 0.10,
         start_k: int = 200,
         k_growth_factor: float = 2.0,

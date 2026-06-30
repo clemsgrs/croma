@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from croma.confounders import infer_confounder_display_name
+from croma.metrics.ccmr import CCMR_HEADLINE_M
 
 try:
     from croma.metrics.tail import compute_tail_metrics
@@ -47,16 +48,22 @@ _THRESH_K_SWEEP_RANGE = 0.15
 _THRESH_M_SWEEP_CCMR_GAIN = 0.08
 _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO = 2.0
 _THRESH_TAIL_SEVERITY_MEANINGFUL_GAP = 0.10
+# CCMR is now the signed normalized margin in (-1, 1); the robustness threshold is 0.
+# Absolute-level gates below are expressed in margin units (the ratio-era anchors
+# 1.15 and 0.90 map through (r-1)/(r+1) to ~0.07 and ~-0.05). Delta/drop heuristics
+# are left numerically unchanged and now read in margin units.
 _THRESH_TIER1_MEDIAN_DELTA = 0.05
-_THRESH_TIER1_LT1_DELTA = 0.05
-_THRESH_TIER2_ROBUST_MEDIAN_FLOOR = 1.15
-_THRESH_TIER2_LTM_CEILING = 0.90
-_THRESH_TIER2_INTERNAL_DROP = 0.25
-_THRESH_TIER2_LT1_FRAC_FLOOR = 0.15
+_THRESH_TIER1_NEG_DELTA = 0.05
+_THRESH_TIER2_ROBUST_MEDIAN_FLOOR = 0.07
+_THRESH_TIER2_LTM_CEILING = -0.05
+# Drop is a within-subgroup difference (median - LTM); the margin compresses such
+# differences vs the ratio era, so the 0.25 ratio threshold is lowered to 0.10.
+_THRESH_TIER2_INTERNAL_DROP = 0.10
+_THRESH_TIER2_NEG_FRAC_FLOOR = 0.15
 _THRESH_TIER2_MIN_SAMPLES = 10
-_THRESH_TIER2_MIN_LT1_COUNT = 3
+_THRESH_TIER2_MIN_NEG_COUNT = 3
 
-_SUBGROUP_SCORE_COLUMN = "ccmr_m1"
+_SUBGROUP_SCORE_COLUMN = f"ccmr_m{int(CCMR_HEADLINE_M)}"
 _SUBGROUP_MIN_HEADLINE_SAMPLES = 2
 _SUBGROUP_SCOPE_ORDER = ("stratum", "label", "confounder")
 _SUBGROUP_SCOPE_TO_COLUMNS = {
@@ -334,10 +341,10 @@ def _empty_subgroup_df() -> pd.DataFrame:
             "median_ccmr",
             "rest_median_ccmr",
             "median_ccmr_delta_vs_rest",
-            "ccmr_lt1_frac",
-            "ccmr_lt1_count",
-            "rest_ccmr_lt1_frac",
-            "ccmr_lt1_frac_delta_vs_rest",
+            "ccmr_neg_frac",
+            "ccmr_neg_count",
+            "rest_ccmr_neg_frac",
+            "ccmr_neg_frac_delta_vs_rest",
             "subgroup_q_alpha",
             "subgroup_ltm_alpha",
             "internal_tail_drop",
@@ -434,7 +441,7 @@ def _subgroup_report_sort(df: pd.DataFrame) -> pd.DataFrame:
         "_tail_signal",
         "tail_prevalence",
         "mean_ccmr",
-        "ccmr_lt1_frac",
+        "ccmr_neg_frac",
         "tail_mean_ccmr",
         "label",
         "confounder",
@@ -491,19 +498,19 @@ def _tier1_status(
     median_ccmr: float,
     rest_median_ccmr: float,
     median_delta: float,
-    ccmr_lt1_delta: float,
+    ccmr_neg_delta: float,
 ) -> str:
     if n_samples < _SUBGROUP_MIN_HEADLINE_SAMPLES:
         return "insufficient_support"
     if (
         median_delta <= -_THRESH_TIER1_MEDIAN_DELTA
-        and ccmr_lt1_delta >= _THRESH_TIER1_LT1_DELTA
+        and ccmr_neg_delta >= _THRESH_TIER1_NEG_DELTA
     ):
-        if median_ccmr < 1.0 and rest_median_ccmr >= 1.0:
+        if median_ccmr < 0.0 and rest_median_ccmr >= 0.0:
             return "broad_weakness"
-        if median_ccmr >= 1.0 and rest_median_ccmr >= 1.0:
+        if median_ccmr >= 0.0 and rest_median_ccmr >= 0.0:
             return "relative_weakness"
-        if median_ccmr < 1.0 and rest_median_ccmr < 1.0:
+        if median_ccmr < 0.0 and rest_median_ccmr < 0.0:
             return "aggravated_weakness"
     return "neutral"
 
@@ -514,24 +521,24 @@ def _tier2_status(
     median_ccmr: float,
     subgroup_ltm_alpha: float,
     internal_tail_drop: float,
-    ccmr_lt1_frac: float,
-    ccmr_lt1_count: int,
+    ccmr_neg_frac: float,
+    ccmr_neg_count: int,
 ) -> str:
     if n_samples < _THRESH_TIER2_MIN_SAMPLES:
         return "insufficient_support"
     pocket_gate = (
         subgroup_ltm_alpha <= _THRESH_TIER2_LTM_CEILING
         and internal_tail_drop >= _THRESH_TIER2_INTERNAL_DROP
-        and ccmr_lt1_frac >= _THRESH_TIER2_LT1_FRAC_FLOOR
-        and ccmr_lt1_count >= _THRESH_TIER2_MIN_LT1_COUNT
+        and ccmr_neg_frac >= _THRESH_TIER2_NEG_FRAC_FLOOR
+        and ccmr_neg_count >= _THRESH_TIER2_MIN_NEG_COUNT
     )
-    if pocket_gate and median_ccmr < 1.0:
+    if pocket_gate and median_ccmr < 0.0:
         return "aggravated_weakness"
     if pocket_gate and median_ccmr >= _THRESH_TIER2_ROBUST_MEDIAN_FLOOR:
         return "hidden_pocket"
     if (
         median_ccmr >= _THRESH_TIER2_ROBUST_MEDIAN_FLOOR
-        and subgroup_ltm_alpha >= 1.0
+        and subgroup_ltm_alpha >= 0.0
         and internal_tail_drop >= _THRESH_TIER2_INTERNAL_DROP
     ):
         return "internal_spread"
@@ -592,7 +599,7 @@ def _sort_tier_rows(df: pd.DataFrame, *, tier: str) -> pd.DataFrame:
         sort_cols = [
             "_status_order",
             "median_ccmr_delta_vs_rest",
-            "ccmr_lt1_frac_delta_vs_rest",
+            "ccmr_neg_frac_delta_vs_rest",
             "_scope_order",
             "subgroup_name",
         ]
@@ -662,9 +669,9 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
             "Median CCMR",
             "Rest Median",
             "Median Delta",
-            "CCMR<1 Frac",
-            "Rest CCMR<1 Frac",
-            "CCMR<1 Delta",
+            "CCMR<0 Frac",
+            "Rest CCMR<0 Frac",
+            "CCMR<0 Delta",
         ]
         rows = [
             [
@@ -674,9 +681,9 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
                 _fmt_float(row["median_ccmr"]),
                 _fmt_float(row["rest_median_ccmr"]),
                 _fmt_float(row["median_ccmr_delta_vs_rest"]),
-                _fmt_float(row["ccmr_lt1_frac"]),
-                _fmt_float(row["rest_ccmr_lt1_frac"]),
-                _fmt_float(row["ccmr_lt1_frac_delta_vs_rest"]),
+                _fmt_float(row["ccmr_neg_frac"]),
+                _fmt_float(row["rest_ccmr_neg_frac"]),
+                _fmt_float(row["ccmr_neg_frac_delta_vs_rest"]),
             ]
             for _, row in sorted_rows.iterrows()
         ]
@@ -687,8 +694,8 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
             "Subgroup",
             "Status",
             "N",
-            "CCMR<1 Frac",
-            "CCMR<1 Count",
+            "CCMR<0 Frac",
+            "CCMR<0 Count",
             "Median CCMR",
             "Subgroup LTM@alpha",
             "Drop",
@@ -699,8 +706,8 @@ def _render_tier_table(scoped_rows: pd.DataFrame, *, tier: str) -> list[str]:
                 str(row["subgroup_name"]),
                 str(row["tier2_status"]),
                 str(int(row["n_samples"])),
-                _fmt_float(row["ccmr_lt1_frac"]),
-                str(int(row["ccmr_lt1_count"])),
+                _fmt_float(row["ccmr_neg_frac"]),
+                str(int(row["ccmr_neg_count"])),
                 _fmt_float(row["median_ccmr"]),
                 _fmt_float(row["subgroup_ltm_alpha"]),
                 _fmt_float(row["internal_tail_drop"]),
@@ -852,7 +859,7 @@ def _build_ccmr_subgroup_analysis(
         if len(defined) == 0:
             context_row["skipped"] = True
             context_row["skip_reason"] = (
-                "Skipped: no defined CCMR(m=1) samples are available for this context."
+                f"Skipped: no defined CCMR(m={int(CCMR_HEADLINE_M)}) samples are available for this context."
             )
             context_rows.append(context_row)
             continue
@@ -905,8 +912,8 @@ def _build_ccmr_subgroup_analysis(
                 group_frac = float(n_samples / n_defined)
                 mean_ccmr = float(subgroup[_SUBGROUP_SCORE_COLUMN].mean())
                 median_ccmr = float(subgroup[_SUBGROUP_SCORE_COLUMN].median())
-                ccmr_lt1_frac = float((subgroup[_SUBGROUP_SCORE_COLUMN] < 1.0).mean())
-                ccmr_lt1_count = int((subgroup[_SUBGROUP_SCORE_COLUMN] < 1.0).sum())
+                ccmr_neg_frac = float((subgroup[_SUBGROUP_SCORE_COLUMN] < 0.0).mean())
+                ccmr_neg_count = int((subgroup[_SUBGROUP_SCORE_COLUMN] < 0.0).sum())
                 tail_prevalence = float(tail_count / n_samples)
                 tail_prevalence_ratio = (
                     float(tail_prevalence / context_tail_prevalence)
@@ -935,8 +942,8 @@ def _build_ccmr_subgroup_analysis(
                     if len(rest) > 0
                     else float("nan")
                 )
-                rest_ccmr_lt1_frac = (
-                    float((rest[_SUBGROUP_SCORE_COLUMN] < 1.0).mean())
+                rest_ccmr_neg_frac = (
+                    float((rest[_SUBGROUP_SCORE_COLUMN] < 0.0).mean())
                     if len(rest) > 0
                     else float("nan")
                 )
@@ -955,9 +962,9 @@ def _build_ccmr_subgroup_analysis(
                     if np.isfinite(rest_median_ccmr)
                     else float("nan")
                 )
-                ccmr_lt1_frac_delta_vs_rest = (
-                    float(ccmr_lt1_frac - rest_ccmr_lt1_frac)
-                    if np.isfinite(rest_ccmr_lt1_frac)
+                ccmr_neg_frac_delta_vs_rest = (
+                    float(ccmr_neg_frac - rest_ccmr_neg_frac)
+                    if np.isfinite(rest_ccmr_neg_frac)
                     else float("nan")
                 )
                 tail_mean_ccmr_delta_vs_rest = (
@@ -979,7 +986,7 @@ def _build_ccmr_subgroup_analysis(
                     median_ccmr=median_ccmr,
                     rest_median_ccmr=rest_median_ccmr,
                     median_delta=median_ccmr_delta_vs_rest,
-                    ccmr_lt1_delta=ccmr_lt1_frac_delta_vs_rest,
+                    ccmr_neg_delta=ccmr_neg_frac_delta_vs_rest,
                 )
                 tail_severity_label = _tail_severity_label(
                     tail_count=tail_count,
@@ -991,8 +998,8 @@ def _build_ccmr_subgroup_analysis(
                     median_ccmr=median_ccmr,
                     subgroup_ltm_alpha=float(subgroup_tail_metrics.ltm_alpha),
                     internal_tail_drop=internal_tail_drop,
-                    ccmr_lt1_frac=ccmr_lt1_frac,
-                    ccmr_lt1_count=ccmr_lt1_count,
+                    ccmr_neg_frac=ccmr_neg_frac,
+                    ccmr_neg_count=ccmr_neg_count,
                 )
                 tier3_status = _tier3_status(
                     n_samples=n_samples,
@@ -1025,10 +1032,10 @@ def _build_ccmr_subgroup_analysis(
                         "median_ccmr": median_ccmr,
                         "rest_median_ccmr": rest_median_ccmr,
                         "median_ccmr_delta_vs_rest": median_ccmr_delta_vs_rest,
-                        "ccmr_lt1_frac": ccmr_lt1_frac,
-                        "ccmr_lt1_count": ccmr_lt1_count,
-                        "rest_ccmr_lt1_frac": rest_ccmr_lt1_frac,
-                        "ccmr_lt1_frac_delta_vs_rest": ccmr_lt1_frac_delta_vs_rest,
+                        "ccmr_neg_frac": ccmr_neg_frac,
+                        "ccmr_neg_count": ccmr_neg_count,
+                        "rest_ccmr_neg_frac": rest_ccmr_neg_frac,
+                        "ccmr_neg_frac_delta_vs_rest": ccmr_neg_frac_delta_vs_rest,
                         "subgroup_q_alpha": float(subgroup_tail_metrics.q_alpha),
                         "subgroup_ltm_alpha": float(subgroup_tail_metrics.ltm_alpha),
                         "internal_tail_drop": internal_tail_drop,
@@ -1088,7 +1095,7 @@ def _render_ccmr_subgroup_markdown(
 ) -> str:
     lines: list[str] = ["# Model-Specific CCMR Subgroup Analysis", ""]
     if len(context_df) == 0:
-        lines.append("- No per-sample CCMR(m=1) contexts available.")
+        lines.append(f"- No per-sample CCMR(m={int(CCMR_HEADLINE_M)}) contexts available.")
         return "\n".join(lines) + "\n"
 
     grouped_models = context_df.groupby("model", sort=True, dropna=False)
@@ -1138,7 +1145,7 @@ def _render_ccmr_subgroup_markdown(
     lines.append("## Appendix: Status Definitions and Thresholds")
     lines.append("")
     lines.append(
-        "All per-sample CCMR values used in this report are computed at **m=1** "
+        f"All per-sample CCMR values used in this report are computed at **m={int(CCMR_HEADLINE_M)}** "
         f"(column `{_SUBGROUP_SCORE_COLUMN}`). "
         "\"Rest\" refers to all other defined samples outside the subgroup."
     )
@@ -1149,19 +1156,19 @@ def _render_ccmr_subgroup_markdown(
         "Compares a subgroup's median CCMR to the rest. "
         "A subgroup is flagged when its median delta vs rest "
         f"<= **-{_THRESH_TIER1_MEDIAN_DELTA:.2f}** "
-        f"and its CCMR<1 fraction delta vs rest >= **{_THRESH_TIER1_LT1_DELTA:.2f}**."
+        f"and its CCMR<0 fraction delta vs rest >= **{_THRESH_TIER1_NEG_DELTA:.2f}**."
     )
     lines.append("")
     lines.append("| Status | Condition |")
     lines.append("| --- | --- |")
     lines.append(
-        "| `broad_weakness` | Flagged, and subgroup median < 1.0 while rest median >= 1.0 |"
+        "| `broad_weakness` | Flagged, and subgroup median < 0.0 while rest median >= 0.0 |"
     )
     lines.append(
-        "| `relative_weakness` | Flagged, and both subgroup and rest median >= 1.0 |"
+        "| `relative_weakness` | Flagged, and both subgroup and rest median >= 0.0 |"
     )
     lines.append(
-        "| `aggravated_weakness` | Flagged, and both subgroup and rest median < 1.0 |"
+        "| `aggravated_weakness` | Flagged, and both subgroup and rest median < 0.0 |"
     )
     lines.append("| `neutral` | Not flagged |")
     lines.append("")
@@ -1178,8 +1185,8 @@ def _render_ccmr_subgroup_markdown(
     lines.append(
         f"- Internal drop (median - LTM@alpha) >= **{_THRESH_TIER2_INTERNAL_DROP:.2f}**"
     )
-    lines.append(f"- CCMR<1 fraction >= **{_THRESH_TIER2_LT1_FRAC_FLOOR:.2f}**")
-    lines.append(f"- CCMR<1 count >= **{_THRESH_TIER2_MIN_LT1_COUNT}**")
+    lines.append(f"- CCMR<0 fraction >= **{_THRESH_TIER2_NEG_FRAC_FLOOR:.2f}**")
+    lines.append(f"- CCMR<0 count >= **{_THRESH_TIER2_MIN_NEG_COUNT}**")
     lines.append("")
     lines.append("| Status | Condition |")
     lines.append("| --- | --- |")
@@ -1187,10 +1194,10 @@ def _render_ccmr_subgroup_markdown(
         f"| `hidden_pocket` | Pocket gate passed and median >= "
         f"**{_THRESH_TIER2_ROBUST_MEDIAN_FLOOR:.2f}** |"
     )
-    lines.append("| `aggravated_weakness` | Pocket gate passed and median < 1.0 |")
+    lines.append("| `aggravated_weakness` | Pocket gate passed and median < 0.0 |")
     lines.append(
         f"| `internal_spread` | Median >= **{_THRESH_TIER2_ROBUST_MEDIAN_FLOOR:.2f}**, "
-        f"LTM@alpha >= 1.0, and drop >= **{_THRESH_TIER2_INTERNAL_DROP:.2f}** |"
+        f"LTM@alpha >= 0.0, and drop >= **{_THRESH_TIER2_INTERNAL_DROP:.2f}** |"
     )
     lines.append("| `neutral` | None of the above |")
     lines.append("")

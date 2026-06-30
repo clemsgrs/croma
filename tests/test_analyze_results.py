@@ -13,6 +13,16 @@ if str(SCRIPTS) not in sys.path:
 import analyze_results as ar
 
 
+def _m(ratio: float) -> float:
+    """Map a legacy distance ratio to the signed CCMR margin in (-1, 1).
+
+    CCMR is now ``(d_OS - d_SO) / (d_OS + d_SO) = (r - 1) / (r + 1)``. Test
+    fixtures keep readable ratio literals; ``_per_sample_row`` converts them so
+    the synthetic per-sample scores are margin-valued (threshold 0).
+    """
+    return (ratio - 1.0) / (ratio + 1.0)
+
+
 def _metrics_rows(
     models: list[str],
     *,
@@ -64,7 +74,9 @@ def _per_sample_row(
         "confounder": confounder,
         "ccmr_alpha": 0.25,
         "ccmr_search": "start=200;growth=2;alpha=0.25",
-        "ccmr_m1": float(ccmr_m1),
+        # Emit the production headline per-sample column (m=CCMR_HEADLINE_M); the
+        # `ccmr_m1` kwarg is just the test's per-sample value, not the column name.
+        ar._SUBGROUP_SCORE_COLUMN: float(_m(ccmr_m1)),
     }
 
 
@@ -485,14 +497,18 @@ def test_build_ccmr_subgroup_analysis_highlights_tumor_fragility() -> None:
         & (subgroup_df["label"] == "normal")
     ].iloc[0]
 
-    assert float(tumor_row["mean_ccmr"]) == pytest.approx(0.85)
-    assert float(tumor_row["rest_mean_ccmr"]) == pytest.approx(1.10)
-    assert float(tumor_row["mean_ccmr_delta_vs_rest"]) == pytest.approx(-0.25)
+    tumor_m = np.array([_m(v) for v in (0.40, 0.50, 0.90, 1.60)])
+    normal_m = np.array([_m(v) for v in (0.50, 1.20, 1.30, 1.40)])
+    assert float(tumor_row["mean_ccmr"]) == pytest.approx(float(tumor_m.mean()))
+    assert float(tumor_row["rest_mean_ccmr"]) == pytest.approx(float(normal_m.mean()))
+    assert float(tumor_row["mean_ccmr_delta_vs_rest"]) == pytest.approx(
+        float(tumor_m.mean() - normal_m.mean())
+    )
     assert float(tumor_row["tail_prevalence"]) == pytest.approx(0.50)
     assert float(tumor_row["tail_share"]) == pytest.approx(1.0)
     assert float(tumor_row["group_frac"]) == pytest.approx(0.50)
-    assert float(tumor_row["rest_ccmr_lt1_frac"]) == pytest.approx(0.25)
-    assert float(tumor_row["ccmr_lt1_frac_delta_vs_rest"]) == pytest.approx(0.50)
+    assert float(tumor_row["rest_ccmr_neg_frac"]) == pytest.approx(0.25)
+    assert float(tumor_row["ccmr_neg_frac_delta_vs_rest"]) == pytest.approx(0.50)
     assert float(normal_row["tail_prevalence"]) == pytest.approx(0.0)
 
     markdown = ar._render_ccmr_subgroup_markdown(subgroup_df, context_df)
@@ -546,7 +562,7 @@ def test_exact_tail_membership_uses_alpha_and_sample_id_tiebreak() -> None:
     assert float(normal_rumc["tail_count"]) == pytest.approx(0.0)
 
 
-def test_ccmr_lt1_frac_and_tail_prevalence_stay_distinct() -> None:
+def test_ccmr_neg_frac_and_tail_prevalence_stay_distinct() -> None:
     subgroup_df, _context_df = ar._build_ccmr_subgroup_analysis(
         _binary_camelyon_like_per_sample_df()
     )
@@ -557,7 +573,7 @@ def test_ccmr_lt1_frac_and_tail_prevalence_stay_distinct() -> None:
         & (subgroup_df["label"] == "tumor")
     ].iloc[0]
 
-    assert float(tumor_row["ccmr_lt1_frac"]) == pytest.approx(0.75)
+    assert float(tumor_row["ccmr_neg_frac"]) == pytest.approx(0.75)
     assert float(tumor_row["tail_prevalence"]) == pytest.approx(0.50)
 
 
@@ -572,7 +588,7 @@ def test_subgroup_rows_include_tier_metrics_and_statuses() -> None:
         "rest_median_ccmr",
         "median_ccmr_delta_vs_rest",
         "tier1_status",
-        "ccmr_lt1_count",
+        "ccmr_neg_count",
         "subgroup_q_alpha",
         "subgroup_ltm_alpha",
         "internal_tail_drop",
@@ -586,8 +602,14 @@ def test_subgroup_rows_include_tier_metrics_and_statuses() -> None:
         & (subgroup_df["scope"] == "label")
         & (subgroup_df["label"] == "tumor")
     ].iloc[0]
-    assert float(fragile_tumor["rest_median_ccmr"]) == pytest.approx(1.25)
-    assert float(fragile_tumor["median_ccmr_delta_vs_rest"]) == pytest.approx(-0.55)
+    fragile_tumor_m = np.array([_m(v) for v in (0.40, 0.50, 0.90, 1.60)])
+    fragile_normal_m = np.array([_m(v) for v in (0.50, 1.20, 1.30, 1.40)])
+    assert float(fragile_tumor["rest_median_ccmr"]) == pytest.approx(
+        float(np.median(fragile_normal_m))
+    )
+    assert float(fragile_tumor["median_ccmr_delta_vs_rest"]) == pytest.approx(
+        float(np.median(fragile_tumor_m) - np.median(fragile_normal_m))
+    )
     assert fragile_tumor["tier1_status"] == "broad_weakness"
     assert fragile_tumor["tail_severity_label"] == "no_rest_tail"
     assert fragile_tumor["tier3_status"] == "tail_enriched"
@@ -605,8 +627,14 @@ def test_subgroup_rows_include_tier_metrics_and_statuses() -> None:
     borderline_tumor_row = borderline_tumor[
         (borderline_tumor["scope"] == "label") & (borderline_tumor["label"] == "tumor")
     ].iloc[0]
-    assert float(borderline_tumor_row["median_ccmr"]) == pytest.approx(1.15)
-    assert float(borderline_tumor_row["rest_median_ccmr"]) == pytest.approx(1.45)
+    borderline_tumor_m = np.array([_m(v) for v in (0.40, 0.50, 1.10, 1.20, 1.40, 1.50)])
+    borderline_normal_m = np.array([_m(v) for v in (0.60, 1.30, 1.60, 1.70)])
+    assert float(borderline_tumor_row["median_ccmr"]) == pytest.approx(
+        float(np.median(borderline_tumor_m))
+    )
+    assert float(borderline_tumor_row["rest_median_ccmr"]) == pytest.approx(
+        float(np.median(borderline_normal_m))
+    )
     assert borderline_tumor_row["tier1_status"] == "relative_weakness"
 
     tier2_df, _ = ar._build_ccmr_subgroup_analysis(_tier2_supported_per_sample_df())
@@ -623,10 +651,19 @@ def test_subgroup_rows_include_tier_metrics_and_statuses() -> None:
         & (tier2_df["confounder"] == "UMCU")
     ].iloc[0]
 
-    assert float(hidden_row["subgroup_ltm_alpha"]) == pytest.approx(0.8333333333)
-    assert float(hidden_row["internal_tail_drop"]) == pytest.approx(0.4416666667)
-    assert float(hidden_row["ccmr_lt1_frac"]) == pytest.approx(0.3)
-    assert int(hidden_row["ccmr_lt1_count"]) == 3
+    # Replicate the builder's subgroup LTM/drop (compute_tail_metrics at alpha=0.25)
+    # on the margin-valued hidden-pocket stratum (tumor, RUMC).
+    hp_m = np.array(
+        [_m(v) for v in (0.70, 0.85, 0.95, 1.20, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50)]
+    )
+    hp_q = np.percentile(hp_m, 25)
+    hp_ltm = float(hp_m[hp_m <= hp_q].mean())
+    assert float(hidden_row["subgroup_ltm_alpha"]) == pytest.approx(hp_ltm)
+    assert float(hidden_row["internal_tail_drop"]) == pytest.approx(
+        float(np.median(hp_m) - hp_ltm)
+    )
+    assert float(hidden_row["ccmr_neg_frac"]) == pytest.approx(0.3)
+    assert int(hidden_row["ccmr_neg_count"]) == 3
     assert hidden_row["tier2_status"] == "hidden_pocket"
     assert aggravated_row["tier2_status"] == "aggravated_weakness"
 
@@ -657,36 +694,38 @@ def test_markdown_suppresses_borderline_tail_overrepresentation_below_twofold() 
 
 
 def test_tier2_requires_support_and_breadth_beyond_median_vs_ltm() -> None:
+    # CCMR is the signed margin; robustness threshold is 0, the robust-median floor
+    # ~0.07 and the LTM ceiling ~-0.05 (ratio-era 1.15/0.90 mapped through (r-1)/(r+1)).
     assert (
         ar._tier2_status(
             n_samples=8,
-            median_ccmr=1.30,
-            subgroup_ltm_alpha=0.70,
+            median_ccmr=0.30,
+            subgroup_ltm_alpha=-0.30,
             internal_tail_drop=0.60,
-            ccmr_lt1_frac=0.25,
-            ccmr_lt1_count=3,
+            ccmr_neg_frac=0.25,
+            ccmr_neg_count=3,
         )
         == "insufficient_support"
     )
     assert (
         ar._tier2_status(
             n_samples=12,
-            median_ccmr=1.30,
-            subgroup_ltm_alpha=0.70,
+            median_ccmr=0.13,
+            subgroup_ltm_alpha=-0.10,
             internal_tail_drop=0.60,
-            ccmr_lt1_frac=1.0 / 12.0,
-            ccmr_lt1_count=1,
+            ccmr_neg_frac=1.0 / 12.0,
+            ccmr_neg_count=1,
         )
         == "neutral"
     )
     assert (
         ar._tier2_status(
             n_samples=12,
-            median_ccmr=1.10,
-            subgroup_ltm_alpha=0.70,
+            median_ccmr=0.04,
+            subgroup_ltm_alpha=-0.10,
             internal_tail_drop=0.40,
-            ccmr_lt1_frac=0.25,
-            ccmr_lt1_count=3,
+            ccmr_neg_frac=0.25,
+            ccmr_neg_count=3,
         )
         == "neutral"
     )
@@ -696,44 +735,44 @@ def test_tier2_status_distinguishes_hidden_spread_and_aggravated_weakness() -> N
     assert (
         ar._tier2_status(
             n_samples=12,
-            median_ccmr=1.25,
-            subgroup_ltm_alpha=0.80,
+            median_ccmr=0.20,
+            subgroup_ltm_alpha=-0.10,
             internal_tail_drop=0.45,
-            ccmr_lt1_frac=0.25,
-            ccmr_lt1_count=3,
+            ccmr_neg_frac=0.25,
+            ccmr_neg_count=3,
         )
         == "hidden_pocket"
     )
     assert (
         ar._tier2_status(
             n_samples=12,
-            median_ccmr=1.35,
-            subgroup_ltm_alpha=1.10,
+            median_ccmr=0.25,
+            subgroup_ltm_alpha=0.10,
             internal_tail_drop=0.25,
-            ccmr_lt1_frac=0.0,
-            ccmr_lt1_count=0,
+            ccmr_neg_frac=0.0,
+            ccmr_neg_count=0,
         )
         == "internal_spread"
     )
     assert (
         ar._tier2_status(
             n_samples=12,
-            median_ccmr=0.80,
-            subgroup_ltm_alpha=0.55,
+            median_ccmr=-0.20,
+            subgroup_ltm_alpha=-0.30,
             internal_tail_drop=0.25,
-            ccmr_lt1_frac=0.40,
-            ccmr_lt1_count=5,
+            ccmr_neg_frac=0.40,
+            ccmr_neg_count=5,
         )
         == "aggravated_weakness"
     )
     assert (
         ar._tier2_status(
             n_samples=12,
-            median_ccmr=1.20,
-            subgroup_ltm_alpha=0.95,
-            internal_tail_drop=0.10,
-            ccmr_lt1_frac=0.25,
-            ccmr_lt1_count=3,
+            median_ccmr=0.15,
+            subgroup_ltm_alpha=-0.10,
+            internal_tail_drop=0.08,
+            ccmr_neg_frac=0.25,
+            ccmr_neg_count=3,
         )
         == "neutral"
     )
@@ -743,40 +782,40 @@ def test_tier1_status_distinguishes_broad_relative_and_aggravated_weakness() -> 
     assert (
         ar._tier1_status(
             n_samples=4,
-            median_ccmr=0.85,
-            rest_median_ccmr=1.10,
+            median_ccmr=-0.10,
+            rest_median_ccmr=0.10,
             median_delta=-0.25,
-            ccmr_lt1_delta=0.10,
+            ccmr_neg_delta=0.10,
         )
         == "broad_weakness"
     )
     assert (
         ar._tier1_status(
             n_samples=4,
-            median_ccmr=1.15,
-            rest_median_ccmr=1.35,
+            median_ccmr=0.07,
+            rest_median_ccmr=0.20,
             median_delta=-0.20,
-            ccmr_lt1_delta=0.10,
+            ccmr_neg_delta=0.10,
         )
         == "relative_weakness"
     )
     assert (
         ar._tier1_status(
             n_samples=4,
-            median_ccmr=0.75,
-            rest_median_ccmr=0.90,
+            median_ccmr=-0.15,
+            rest_median_ccmr=-0.08,
             median_delta=-0.15,
-            ccmr_lt1_delta=0.10,
+            ccmr_neg_delta=0.10,
         )
         == "aggravated_weakness"
     )
     assert (
         ar._tier1_status(
             n_samples=4,
-            median_ccmr=1.10,
-            rest_median_ccmr=0.90,
+            median_ccmr=0.10,
+            rest_median_ccmr=-0.10,
             median_delta=-0.10,
-            ccmr_lt1_delta=0.10,
+            ccmr_neg_delta=0.10,
         )
         == "neutral"
     )
@@ -793,11 +832,11 @@ def test_markdown_renders_three_tier_tables_per_context() -> None:
     assert "#### Hidden Subgroup Pockets" in markdown
     assert "#### Tail-Specific Fragility" in markdown
     assert (
-        "| Scope | Subgroup | Status | Median CCMR | Rest Median | Median Delta | CCMR<1 Frac | Rest CCMR<1 Frac | CCMR<1 Delta |"
+        "| Scope | Subgroup | Status | Median CCMR | Rest Median | Median Delta | CCMR<0 Frac | Rest CCMR<0 Frac | CCMR<0 Delta |"
         in markdown
     )
     assert (
-        "| Scope | Subgroup | Status | N | CCMR<1 Frac | CCMR<1 Count | Median CCMR | Subgroup LTM@alpha | Drop |"
+        "| Scope | Subgroup | Status | N | CCMR<0 Frac | CCMR<0 Count | Median CCMR | Subgroup LTM@alpha | Drop |"
         in markdown
     )
     assert (
@@ -805,15 +844,15 @@ def test_markdown_renders_three_tier_tables_per_context() -> None:
         in markdown
     )
     assert (
-        "| stratum | tumor / RUMC | hidden_pocket | 10 | 0.300 | 3 | 1.275 | 0.833 | 0.442 |"
+        "| stratum | tumor / RUMC | hidden_pocket | 10 | 0.300 | 3 | 0.121 | -0.094 | 0.215 |"
         in markdown
     )
     assert (
-        "| stratum | tumor / UMCU | aggravated_weakness | 10 | 0.700 | 7 | 0.875 | 0.550 | 0.325 |"
+        "| stratum | tumor / UMCU | aggravated_weakness | 10 | 0.700 | 7 | -0.067 | -0.294 | 0.227 |"
         in markdown
     )
     assert (
-        "| stratum | normal / RUMC | internal_spread | 10 | 0.000 | 0 | 1.355 | 1.073 | 0.282 |"
+        "| stratum | normal / RUMC | internal_spread | 10 | 0.000 | 0 | 0.151 | 0.035 | 0.116 |"
         in markdown
     )
 
@@ -825,11 +864,11 @@ def test_tail_tier_distinguishes_enriched_and_severe_cases_independently() -> No
 
     markdown = ar._render_ccmr_subgroup_markdown(subgroup_df, context_df)
     assert (
-        "| stratum | tumor / RUMC | tail_enriched_and_severe | 0.500 | 0.250 | 2.0x | 0.225 | 0.400 | more severe |"
+        "| stratum | tumor / RUMC | tail_enriched_and_severe | 0.500 | 0.250 | 2.0x | -0.633 | -0.429 | more severe |"
         in markdown
     )
     assert (
-        "| label | tumor | tail_severe | 0.333 | 0.250 | 1.3x | 0.225 | 0.400 | more severe |"
+        "| label | tumor | tail_severe | 0.333 | 0.250 | 1.3x | -0.633 | -0.429 | more severe |"
         in markdown
     )
 

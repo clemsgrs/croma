@@ -17,6 +17,7 @@ from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from croma.alignment import build_embedding_source_manifest
 from croma import CCMR, MaRI, RI
 from croma.confounders import infer_confounder_display_name
+from croma.metrics.ccmr import CCMR_HEADLINE_M
 from croma.metrics.tau import TauAssessment, assess_tau
 from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
@@ -777,6 +778,8 @@ def main() -> int:
     k_max = int(args.k_max)
     k_values = _resolve_sweep_k_values(k_max)
     ccmr_m_values = list(range(1, int(args.ccmr_m_max) + 1))
+    # Headline m must be inside the swept range; clamp down if the sweep is shorter.
+    ccmr_headline_m = min(int(CCMR_HEADLINE_M), max(ccmr_m_values))
     k_values_sig = k_values_signature(k_values)
     ccmr_search_sig = ccmr_search_signature(
         start_k=int(args.ccmr_start_k),
@@ -1143,13 +1146,14 @@ def main() -> int:
                             "confounder_column": confounder_column,
                         },
                     ),
-                    "ccmr_m1_samples": build_cache_key(
-                        artifact_name="ccmr_m1_samples",
+                    "ccmr_headline_samples": build_cache_key(
+                        artifact_name="ccmr_headline_samples",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
                             "m_max": int(args.ccmr_m_max),
+                            "headline_m": int(ccmr_headline_m),
                             "start_k": int(args.ccmr_start_k),
                             "k_growth_factor": float(args.ccmr_k_growth_factor),
                             "alpha": float(args.ccmr_alpha),
@@ -1275,7 +1279,7 @@ def main() -> int:
                         cache.get_json(key=keys["ccmr_m_sweep"]),
                         expected_m_values=ccmr_m_values,
                     )
-                    ccmr_samples = cache.get_npy(key=keys["ccmr_m1_samples"])
+                    ccmr_samples = cache.get_npy(key=keys["ccmr_headline_samples"])
                     ccmr_samples_aligned_by_m = cache.get_npy(
                         key=keys["ccmr_samples_aligned_by_m"]
                     )
@@ -1654,7 +1658,7 @@ def main() -> int:
                             "Failed to serialize ccmr m-sweep cache payload"
                         )
                     ccmr_samples = np.asarray(
-                        ccmr_results[1].sample_values, dtype=float
+                        ccmr_results[ccmr_headline_m].sample_values, dtype=float
                     )
                     ccmr_samples_aligned_by_m = np.column_stack(
                         [
@@ -1668,7 +1672,7 @@ def main() -> int:
                         key=keys["ccmr_m_sweep"],
                         payload={"by_m": {str(k): v for k, v in ccmr_by_m.items()}},
                     )
-                    cache.put_npy(key=keys["ccmr_m1_samples"], values=ccmr_samples)
+                    cache.put_npy(key=keys["ccmr_headline_samples"], values=ccmr_samples)
                     cache.put_npy(
                         key=keys["ccmr_samples_aligned_by_m"],
                         values=ccmr_samples_aligned_by_m,
@@ -1777,7 +1781,7 @@ def main() -> int:
                     ltm_alpha=float(ri_summary.get("ltm_alpha", float("nan"))),
                 )
 
-                ccmr_result = ccmr_by_m[1]
+                ccmr_result = ccmr_by_m[ccmr_headline_m]
                 ccmr_dist_path = _distribution_path(results_dir, "ccmr", model)
                 ccmr_dist_path.parent.mkdir(parents=True, exist_ok=True)
                 np.save(ccmr_dist_path, ccmr_samples)
