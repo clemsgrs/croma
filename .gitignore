@@ -214,3 +214,12 @@ paper/
 resources/
 output/
 AGENTS.md
+CLAUDE.md
+.tasks/
+TODO.md
+WRAP-UP.html
+feedback.html
+pathorob-ri.png
+# paper-reproduction tooling (operates on the git-ignored paper/ and output/ trees)
+scripts/experiments/
+scripts/render_one.py

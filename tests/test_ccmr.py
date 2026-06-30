@@ -7,6 +7,7 @@ import pytest
 from croma import CCMR
 import croma.metrics.ccmr as ccmr_mod
 from croma.metrics.ccmr import (
+    CCMR_HEADLINE_M,
     CrossConfounderMarginRatio,
     _compute_sample_ccmr,
 )
@@ -64,14 +65,15 @@ def _compute_ccmr(**kwargs):
 
 class TestComputeSampleCCMR:
 
-    def test_basic_ratio(self) -> None:
+    def test_basic_margin(self) -> None:
+        # CCMR is the signed normalized margin (d_OS - d_SO) / (d_OS + d_SO).
         so_dists = np.array([[0.1], [0.3]])
         os_dists = np.array([[0.3], [0.1]])
 
         ccmr = _compute_sample_ccmr(so_dists, os_dists)
 
-        assert ccmr[0] == pytest.approx(3.0)
-        assert ccmr[1] == pytest.approx(1.0 / 3.0)
+        assert ccmr[0] == pytest.approx(0.5)  # (0.3 - 0.1) / (0.3 + 0.1)
+        assert ccmr[1] == pytest.approx(-0.5)  # (0.1 - 0.3) / (0.1 + 0.3)
 
     def test_inf_produces_nan(self) -> None:
         so_dists = np.array([[0.1], [np.inf]])
@@ -88,6 +90,14 @@ class TestCCMRCompute:
     def test_default_k_growth_factor_is_two(self) -> None:
         sig = inspect.signature(CrossConfounderMarginRatio.compute)
         assert sig.parameters["k_growth_factor"].default == 2.0
+
+    def test_headline_m_default_is_five(self) -> None:
+        # The headline averaging radius is m=5: the smallest window that removes
+        # single-neighbour outlier sensitivity while staying in the local typed
+        # shell (model ranking and sign are m-invariant; see paper ccmr.tex).
+        assert CCMR_HEADLINE_M == 5
+        sig = inspect.signature(CrossConfounderMarginRatio.compute)
+        assert sig.parameters["m"].default == CCMR_HEADLINE_M
 
     def test_compute_list_m_matches_individual_compute(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -164,14 +174,14 @@ class TestCCMRCompute:
         assert result.undefined_frac == pytest.approx(0.0)
         assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
 
-    def test_so_closer_yields_ccmr_above_one_dataset_wide(self) -> None:
+    def test_so_closer_yields_ccmr_above_zero_dataset_wide(self) -> None:
         features, manifest = _toy_features_so_closer()
         result = _compute_ccmr(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
         )
-        assert result.value > 1.0
+        assert result.value > 0.0
 
-    def test_os_closer_yields_ccmr_below_one(self) -> None:
+    def test_os_closer_yields_ccmr_below_zero(self) -> None:
         manifest = _make_manifest(
             n=8,
             labels=["A", "A", "B", "B", "A", "A", "B", "B"],
@@ -193,7 +203,7 @@ class TestCCMRCompute:
         result = _compute_ccmr(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
         )
-        assert result.value < 1.0
+        assert result.value < 0.0
 
     def test_all_same_label_and_center_are_undefined(self) -> None:
         manifest = _make_manifest(

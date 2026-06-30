@@ -123,11 +123,13 @@ def _sample_support_rows() -> list[dict]:
     return [
         {
             "model": "Virchow2",
+            "k": 3,
             "ri_undefined_frac": 0.12,
             "mari_undefined_frac": 0.12,
         },
         {
             "model": "UNI",
+            "k": 6,
             "ri_undefined_frac": 0.35,
             "mari_undefined_frac": 0.35,
         },
@@ -170,10 +172,12 @@ def _sample_ccmr_ltm_rows() -> list[dict]:
 
 
 def _sample_ccmr_distribution_rows(tmp_path: Path) -> list[dict]:
+    # CCMR is the signed margin in (-1, 1); per-sample arrays straddle 0 so the
+    # "%<0" fragile-fraction column is exercised (Virchow2 25%, UNI 75%).
     by_model = {
-        "Virchow2": np.asarray([0.82, 1.10, 1.32, 1.45], dtype=float),
-        "UNI": np.asarray([0.60, 0.84, 0.93, 1.20], dtype=float),
-        "CONCH": np.asarray([1.02, 1.18, 1.28, 1.35], dtype=float),
+        "Virchow2": np.asarray([-0.10, 0.10, 0.32, 0.45], dtype=float),
+        "UNI": np.asarray([-0.30, -0.15, -0.05, 0.20], dtype=float),
+        "CONCH": np.asarray([0.02, 0.18, 0.28, 0.35], dtype=float),
     }
     rows: list[dict] = []
     for model, values in by_model.items():
@@ -317,7 +321,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert len(figure_legend_calls) == 1
     legend_kwargs = figure_legend_calls[0]
     assert legend_kwargs.get("loc") == "lower center"
-    assert int(legend_kwargs.get("ncol", 0)) == 4
+    assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
 def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_worst_first_order() -> None:
@@ -340,25 +344,28 @@ def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_wo
     assert indexed["Phikon"]["defined_frac"] == pytest.approx(0.20)
     assert indexed["Phikon"]["status"] == "critical"
     assert indexed["UNI"]["label"] == "65%"
+    assert indexed["Virchow2"]["kstar"] == 3
+    assert indexed["UNI"]["kstar"] == 6
+    assert indexed["CONCH"]["kstar"] is None  # no k provided -> annotation omitted
 
 
-def test_support_plot_uses_bottom_legend_for_thresholds(
+def test_support_plot_uses_single_colour_without_threshold_legend(
     monkeypatch, tmp_path: Path
 ) -> None:
+    """The support plot uses a single neutral colour and no status legend.
+
+    Severity is conveyed by bar length, the inline percentage labels, and the
+    worst-first ordering, so the green/amber/red threshold legend was removed.
+    """
     import matplotlib.figure
 
-    legend_calls: list[dict[str, object]] = []
+    legend_labels: list[str] = []
     original_legend = matplotlib.figure.Figure.legend
 
     def spy_legend(self, *args, **kwargs):
         handles = list(args[0]) if args else list(kwargs.get("handles", []))
-        labels = [str(getattr(handle, "get_label", lambda: "")()) for handle in handles]
-        legend_calls.append(
-            {
-                "labels": labels,
-                "loc": kwargs.get("loc"),
-                "ncol": kwargs.get("ncol"),
-            }
+        legend_labels.extend(
+            str(getattr(handle, "get_label", lambda: "")()) for handle in handles
         )
         return original_legend(self, *args, **kwargs)
 
@@ -368,13 +375,10 @@ def test_support_plot_uses_bottom_legend_for_thresholds(
     plot_ri_mari_support(rows=_sample_support_rows(), out_path=out_path)
 
     assert _png_export_path(out_path).exists()
-    assert legend_calls
-    labels = legend_calls[0]["labels"]
-    assert "Defined <25%" in labels
-    assert "Defined <50%" in labels
-    assert "Defined >=50%" in labels
-    assert legend_calls[0]["loc"] == "lower center"
-    assert legend_calls[0]["ncol"] == 3
+    # No threshold legend is emitted any more.
+    assert "Defined <25%" not in legend_labels
+    assert "Defined <50%" not in legend_labels
+    assert "Defined >=50%" not in legend_labels
 
 
 def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
@@ -410,8 +414,8 @@ def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
     assert _png_export_path(out_path).exists()
     # The NaN-CCMR "Bad" row is filtered; the three valid points are plotted.
     assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)} == set(points)
-    # A horizontal CCMR=1 robustness threshold is drawn (not a y=x diagonal).
-    assert hlines == [1.0]
+    # A horizontal CCMR=0 robustness threshold is drawn (not a y=x diagonal).
+    assert hlines == [0.0]
 
 
 def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
@@ -457,7 +461,7 @@ def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
 
     assert _png_export_path(out_path).exists()
     assert ltm_heights == sorted(ltm_heights, reverse=True)
-    assert hlines == [1.0]
+    assert hlines == [0.0]
     # A single local (axes-level) legend, no figure-level legend.
     assert not figure_legend_calls
     assert len(axes_legend_calls) == 1
@@ -620,7 +624,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert len(figure_legend_calls) == 1
     legend_kwargs = figure_legend_calls[0]
     assert legend_kwargs.get("loc") == "lower center"
-    assert int(legend_kwargs.get("ncol", 0)) == 4
+    assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
 def test_ccmr_m_sweep_uses_human_friendly_m_ticks(
@@ -743,7 +747,7 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
     joined = "\n".join(annotation_texts)
     assert "CCMR" in joined
     assert "Q10" in joined
-    assert "%<1" in joined
+    assert "%<0" in joined
     assert "1.550" in joined
     assert "0.820" in joined
     assert "25.0%" in joined
@@ -883,8 +887,8 @@ def test_cumulative_mean_last_point_equals_arithmetic_mean(
     original_scatter = matplotlib.axes.Axes.scatter
 
     def spy_scatter(self, x, y, **kwargs):
-        # Only capture endpoint dots (s=55, not the larger selection markers)
-        if kwargs.get("s") == 55:
+        # Only capture endpoint dots (s=42, not the larger selection markers)
+        if kwargs.get("s") == 42:
             for xi, yi in zip(x, y):
                 title = self.get_title()
                 scatter_calls.append((title, float(xi), float(yi)))
