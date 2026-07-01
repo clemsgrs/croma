@@ -8,16 +8,47 @@ build-backend = "hatchling.build"
 # name = "croma-metrics"
 name = "croma"
 version = "0.1.0"
-description = "Robustness metrics for pathology foundation models: counts, margins, and cross-confounder ratios."
+description = "Metrics-only library for pathology foundation model robustness: RI, MaRI, and CRoMa."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
+authors = [
+  { name = "Clément Grisi", email = "clement.grisi@radboudumc.nl" },
+  { name = "Jeroen van der Laak" },
+  { name = "Geert Litjens" },
+]
+keywords = [
+  "pathology",
+  "foundation-models",
+  "robustness",
+  "representation-learning",
+  "metrics",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: Scientific/Engineering :: Medical Science Apps.",
+]
 dependencies = [
   "numpy>=1.24",
   "pandas>=2.0",
   "scikit-learn>=1.3",
   "tqdm>=4.66",
 ]
+
+[project.urls]
+Homepage = "https://github.com/clemsgrs/croma"
+Repository = "https://github.com/clemsgrs/croma"
+Issues = "https://github.com/clemsgrs/croma/issues"
+Changelog = "https://github.com/clemsgrs/croma/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # Extra deps for reproducing the paper (data prep, embedding, plotting pipeline).

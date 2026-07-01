@@ -15,13 +15,24 @@ cross-confounder margin metric).
 
 - **Renamed the flagship metric CCMR → CRoMa.** The Cross-Confounder Margin Ratio
   (`CCMR`) is now the Cross-confounder Robustness Margin (`CRoMa`), and the library
-  is named after it. This is a **name change, not a behaviour change**: the
+  is named after it. This is a **name-only change, not a behaviour change**: the
   computation is identical and no reported value changes. "Ratio" was inaccurate —
   the metric is a signed, normalized margin in `(-1, 1)` (neutral at 0), not a
   ratio in `[0, ∞)` — and the new name shares "Robustness" with RI and MaRI.
   Casing disambiguates the homonym: `croma` (all-lowercase) is always the library,
   `CRoMa` (mixed case) is always the metric. This is a clean break with no `CCMR`
   compatibility shims. See `docs/adr/0001-rename-ccmr-to-croma.md`.
+- **Renamed the optional extra `[bench]` → `[repro]`.** The extra that pulls in the
+  paper-reproduction stack (data prep, embedding, plotting) is now installed with
+  `pip install "croma[repro]"`. This is a name-only change; the dependency set is
+  unchanged.
+- **Adopted a src layout.** The package now lives under `src/croma/` so that the
+  installed wheel — rather than the working tree — is exercised by tests and by
+  `import croma`. Only the `croma` package ships in the wheel; `scripts/`, `tests/`,
+  and `paper/` are excluded from the distribution.
+- **Reset the version to `0.1.0`** for the first public, metrics-only release. The
+  public API is the leanest surface: `RI`, `MaRI`, `CRoMa`,
+  `expand_features_to_manifest`, and `__version__`.
 
 ### Added
 

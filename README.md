@@ -21,7 +21,7 @@ The package also comes with optional benchmarking utilities for multi-model eval
 
 ## Install
 
-Core package:
+Core package (if the bare `croma` name is unavailable on PyPI, use the fallback `croma-metrics`):
 
 ```bash
 pip install croma
