@@ -208,7 +208,6 @@ __marimo__/
 
 # custom
 data/
-docs/
 tasks/
 paper/
 resources/
@@ -220,6 +219,5 @@ TODO.md
 WRAP-UP.html
 feedback.html
 pathorob-ri.png
-# paper-reproduction tooling (operates on the git-ignored paper/ and output/ trees)
-scripts/experiments/
+# render helper operates on the git-ignored paper/ tree
 scripts/render_one.py

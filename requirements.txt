@@ -1,5 +1,0 @@
-# Full development + benchmarking environment.
-# For library users: pip install mari
-# For benchmarking: pip install "mari[bench]"
-# For development:  pip install "mari[bench,dev]"
--e ".[bench,dev]"
