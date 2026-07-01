@@ -22,6 +22,17 @@ cross-confounder margin metric).
   Casing disambiguates the homonym: `croma` (all-lowercase) is always the library,
   `CRoMa` (mixed case) is always the metric. This is a clean break with no `CCMR`
   compatibility shims. See `docs/adr/0001-rename-ccmr-to-croma.md`.
+- **Widened the one-time `ccmr` → `croma` migration script** beyond its original
+  header-only design. In addition to renaming legacy `ccmr*` CSV column headers,
+  `scripts/experiments/migrate_ccmr_columns.py` now also rewrites the `ccmr`
+  identifier where it survives as a **cell value** (metric labels like `ccmr` /
+  `ccmr_m5` and comparison keys like `ccmr_vs_ri`, using the same leading-token
+  rule) and renames affected CSV **filenames** (e.g.
+  `model_specific_ccmr_subgroups.csv` → `model_specific_croma_subgroups.csv`).
+  This remains a pure identifier change with **no recompute** — every number is
+  preserved, and cells that merely contain `ccmr` as a substring (e.g. paths) are
+  left byte-for-byte unchanged. The migration stays idempotent. Accepted as a
+  documented exception in `docs/adr/0001-rename-ccmr-to-croma.md`.
 - **Renamed the optional extra `[bench]` → `[repro]`.** The extra that pulls in the
   paper-reproduction stack (data prep, embedding, plotting) is now installed with
   `pip install "croma[repro]"`. This is a name-only change; the dependency set is

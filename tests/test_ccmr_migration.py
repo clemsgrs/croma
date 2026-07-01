@@ -139,3 +139,126 @@ def test_migrate_directory_reports_changed_files(tmp_path: Path) -> None:
     changed = mig.migrate_directory(tmp_path)
     assert legacy in changed
     assert unrelated not in changed  # no ccmr* columns -> untouched
+
+
+# --------------------------------------------------------------------------- #
+# Value-level cell migration                                                   #
+# --------------------------------------------------------------------------- #
+
+
+def _write_analysis_csv(path: Path) -> None:
+    """Synthetic analysis CSV whose *cells* carry the metric identifier.
+
+    Mirrors files like model_ranks / correlation_* / top_models_by_metric, where
+    the metric name appears as a comparison key (``ccmr_vs_ri``) or a metric label
+    (``ccmr``, ``ccmr_m5``). One column holds a filesystem path that merely
+    *contains* ``ccmr`` as a substring and must be left untouched.
+    """
+    df = pd.DataFrame(
+        [
+            {"metric": "ccmr", "pair": "ccmr_vs_ri", "rho": 0.91, "src": "output/ccmr/a.csv"},
+            {"metric": "ccmr_m5", "pair": "ccmr_vs_mari", "rho": 0.82, "src": "output/accmr.csv"},
+            {"metric": "ri", "pair": "mari_vs_ri", "rho": 0.55, "src": "output/ri/b.csv"},
+        ]
+    )
+    df.to_csv(path, index=False)
+
+
+def test_migrate_csv_values_renames_metric_label_and_key_cells(tmp_path: Path) -> None:
+    csv_path = tmp_path / "model_ranks.csv"
+    _write_analysis_csv(csv_path)
+
+    changed = mig.migrate_csv_values(csv_path)
+    assert changed is True
+
+    after = pd.read_csv(csv_path)
+    # metric-label column: whole-cell token and ccmr_<suffix> both rewritten.
+    assert list(after["metric"]) == ["croma", "croma_m5", "ri"]
+    # comparison-key column: leading ccmr token rewritten, non-ccmr key preserved.
+    assert list(after["pair"]) == ["croma_vs_ri", "croma_vs_mari", "mari_vs_ri"]
+
+
+def test_migrate_csv_values_preserves_nontarget_cells(tmp_path: Path) -> None:
+    csv_path = tmp_path / "model_ranks.csv"
+    _write_analysis_csv(csv_path)
+    before = pd.read_csv(csv_path)
+
+    mig.migrate_csv_values(csv_path)
+    after = pd.read_csv(csv_path)
+
+    # A path that merely *contains* ccmr as a substring is untouched (not a whole
+    # cell token, and does not begin with ``ccmr_``).
+    assert list(after["src"]) == list(before["src"])
+    # Unrelated numeric column untouched byte-for-byte.
+    pd.testing.assert_series_equal(before["rho"], after["rho"], check_names=False)
+
+
+def test_rename_filename_leading_token_rule() -> None:
+    assert mig.rename_filename("model_specific_ccmr_subgroups.csv") == (
+        "model_specific_croma_subgroups.csv"
+    )
+    assert mig.rename_filename("ccmr_report.csv") == "croma_report.csv"
+    # No ccmr token -> unchanged.
+    assert mig.rename_filename("model_ranks.csv") == "model_ranks.csv"
+    # ccmr embedded inside a longer word is not a token -> unchanged.
+    assert mig.rename_filename("accmrx.csv") == "accmrx.csv"
+
+
+def test_migrate_filename_renames_file_on_disk(tmp_path: Path) -> None:
+    src = tmp_path / "model_specific_ccmr_subgroups.csv"
+    pd.DataFrame([{"model": "x", "ri": 1.0}]).to_csv(src, index=False)
+
+    new_path = mig.migrate_filename(src)
+    assert new_path == tmp_path / "model_specific_croma_subgroups.csv"
+    assert new_path.exists()
+    assert not src.exists()
+
+    # A file without ccmr in the name is left alone.
+    other = tmp_path / "model_ranks.csv"
+    pd.DataFrame([{"model": "x", "ri": 1.0}]).to_csv(other, index=False)
+    assert mig.migrate_filename(other) is None
+    assert other.exists()
+
+
+def test_value_and_filename_migration_is_idempotent(tmp_path: Path) -> None:
+    csv_path = tmp_path / "model_specific_ccmr_subgroups.csv"
+    _write_analysis_csv(csv_path)
+
+    # First pass: values rewritten and file renamed.
+    assert mig.migrate_csv_values(csv_path) is True
+    new_path = mig.migrate_filename(csv_path)
+    assert new_path is not None
+    after_first = new_path.read_bytes()
+
+    # Second pass on the migrated file: no-op, byte-for-byte identical.
+    assert mig.migrate_csv_values(new_path) is False
+    assert mig.migrate_filename(new_path) is None
+    assert new_path.read_bytes() == after_first
+
+
+def test_combined_header_value_filename_directory_walk(tmp_path: Path) -> None:
+    # (1) header-only legacy file
+    header_file = tmp_path / "metrics.csv"
+    _write_legacy_csv(header_file)
+    # (2) value + filename legacy file
+    value_file = tmp_path / "model_specific_ccmr_subgroups.csv"
+    _write_analysis_csv(value_file)
+
+    changed = mig.migrate_directory(tmp_path)
+
+    # Header file migrated in place (name unchanged).
+    assert header_file in changed
+    header_after = pd.read_csv(header_file)
+    assert "croma" in header_after.columns
+    assert "ccmr" not in header_after.columns
+
+    # Value file: renamed on disk and cells rewritten.
+    renamed = tmp_path / "model_specific_croma_subgroups.csv"
+    assert renamed in changed
+    assert not value_file.exists()
+    value_after = pd.read_csv(renamed)
+    assert list(value_after["metric"]) == ["croma", "croma_m5", "ri"]
+    assert list(value_after["pair"]) == ["croma_vs_ri", "croma_vs_mari", "mari_vs_ri"]
+
+    # Second walk is a complete no-op.
+    assert mig.migrate_directory(tmp_path) == []
