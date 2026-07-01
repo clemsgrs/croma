@@ -1,18 +1,18 @@
-"""Correlate CCMR (and RI/MaRI) with downstream APD across models.
+"""Correlate CRoMa (and RI/MaRI) with downstream APD across models.
 
-Answers feedback concern #2 ("does CCMR predict a downstream robustness
+Answers feedback concern #2 ("does CRoMa predict a downstream robustness
 outcome?"): join the faithful representation metrics with PathoROB's Average
 Performance Drop and report rank correlation across models, per dataset and
 pooled.
 
 Hypothesis (pre-registered): a more confounder-robust representation (higher
-CCMR) gives a downstream probe fewer exploitable shortcuts, so it suffers a
+CRoMa) gives a downstream probe fewer exploitable shortcuts, so it suffers a
 smaller drop -> APD closer to 0. APD is negative, so we expect a POSITIVE
-Spearman(CCMR, APD), strongest for the OOD probe (cross-centre generalisation,
-the conceptual sibling of CCMR's cross-confounder contrast).
+Spearman(CRoMa, APD), strongest for the OOD probe (cross-centre generalisation,
+the conceptual sibling of CRoMa's cross-confounder contrast).
 
 RI/MaRI are reported alongside purely as a sanity check that APD is a sensible
-yardstick — no claim that CCMR predicts APD better than RI.
+yardstick — no claim that CRoMa predicts APD better than RI.
 """
 import sys
 from pathlib import Path
@@ -33,10 +33,10 @@ DATASETS = ["camelyon", "tcga_4x4", "tolkach", "prostate"]
 # single-centre OOD arm cannot be pooled into a cross-benchmark APD_OOD statistic (see the
 # `prostate` caveat above). `headline` is that 3-benchmark pool; `pooled` is all four.
 HEADLINE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
-METRICS = ["ccmr", "ri", "mari"]
+METRICS = ["croma", "ri", "mari"]
 
 # Canonical faithful (n=20,400) metric dirs — the exact CSVs the paper's tables and
-# figures read, with CCMR already on the signed-margin scale the paper defines. The
+# figures read, with CRoMa already on the signed-margin scale the paper defines. The
 # `dataset` column there holds the dir name, so we override it with the APD key below.
 METRIC_DIR = {
     "camelyon": "output/faithful/pathorob-camelyon-faithful",
@@ -52,13 +52,13 @@ def load_joined(apd_csv):
     for ds in DATASETS:
         m = pd.read_csv(REPO / METRIC_DIR[ds] / "results/metrics.csv")
         m["dataset"] = ds  # align with APD's dataset key (CSV stores the dir name)
-        # Defensive: the canonical dirs are already signed-margin CCMR; only convert
+        # Defensive: the canonical dirs are already signed-margin CRoMa; only convert
         # if a legacy ratio-scale CSV (any value > 1) is ever pointed at here.
-        if m["ccmr"].max() > 1.0:
-            m["ccmr"] = (m["ccmr"] - 1.0) / (m["ccmr"] + 1.0)
+        if m["croma"].max() > 1.0:
+            m["croma"] = (m["croma"] - 1.0) / (m["croma"] + 1.0)
         frames.append(m)
     faith = pd.concat(frames, ignore_index=True)
-    df = apd.merge(faith[["dataset", "model", *METRICS, "ccmr_ltm_alpha"]], on=["dataset", "model"], how="inner")
+    df = apd.merge(faith[["dataset", "model", *METRICS, "croma_ltm_alpha"]], on=["dataset", "model"], how="inner")
     missing = set(zip(apd["dataset"], apd["model"])) - set(zip(df["dataset"], df["model"]))
     if missing:
         print(f"[warn] {len(missing)} (dataset,model) APD rows had no faithful metric and were dropped: {sorted(missing)}")

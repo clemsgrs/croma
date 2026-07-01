@@ -1,14 +1,14 @@
 """Emit a LaTeX macro file of derived per-benchmark scalars cited inline in the paper.
 
-Inline prose numbers (the pooled-CCMR span, counts of confounder-dominant models,
+Inline prose numbers (the pooled-CRoMa span, counts of confounder-dominant models,
 the best lower-tail mean, ...) were historically hand-typed, which let them drift
 from the auto-generated result tables (e.g. a span upper bound truncated 0.195->0.19
 while ``generate_results_table.py`` rounded the same value to 0.20). This script
 derives those scalars from the same ``metrics.csv`` the tables are built from and
-writes them as ``\\newcommand`` macros, so the prose can cite ``\\CamelyonCcmrSpan``
+writes them as ``\\newcommand`` macros, so the prose can cite ``\\CamelyonCromaSpan``
 instead of a literal. Run it whenever the faithful metrics are regenerated.
 
-Scale safety (see the ratio-vs-margin provenance hazard): CCMR is stored as the
+Scale safety (see the ratio-vs-margin provenance hazard): CRoMa is stored as the
 signed margin in ``(-1, 1)`` in the canonical dirs, but some older dirs hold the raw
 ratio ``d_OS / d_SO`` in ``(0, inf)``. Each benchmark's scale is auto-detected and a
 ratio column is transformed to the margin via ``(r - 1) / (r + 1)`` before any
@@ -38,7 +38,7 @@ BENCHMARKS: list[tuple[str, str]] = [
 ]
 
 # SS-shell (local-entanglement) scalars for concern 6. Sourced from the typed-neighbour
-# -rank experiment summary, which carries per-model CCMR, SS-shell exit depth, and the
+# -rank experiment summary, which carries per-model CRoMa, SS-shell exit depth, and the
 # fixed-k SS-pocket prevalence (fraction with no typed neighbour among the k nearest).
 SS_SHELL_SUMMARY = (
     "Camelyon",
@@ -47,7 +47,7 @@ SS_SHELL_SUMMARY = (
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
 # Uncertainty scalars for concerns 3 (UQ) and 6 (redundancy). Sourced from the
-# bootstrap_uncertainty experiment: per-model pooled-median CCMR CIs + rank stability
+# bootstrap_uncertainty experiment: per-model pooled-median CRoMa CIs + rank stability
 # (CSV) and the cross-model Spearman correlations with bootstrap CIs (JSON).
 UNCERTAINTY_SUMMARY = (
     "Camelyon",
@@ -57,13 +57,13 @@ UNCERTAINTY_SUMMARY = (
 
 # Downstream-validation scalars: the APD<->metric rank correlations that fill
 # tab:apd-correlation and the prostate second-organ paragraph in apd_validation.tex.
-# Sourced from apd_ccmr_correlation.py's output so the table cells and inline rhos cannot
+# Sourced from apd_croma_correlation.py's output so the table cells and inline rhos cannot
 # drift from the recomputed correlations. `headline` (the three faithful benchmarks, 48
 # pairs) is the table's "pooled" column; the all-four `pooled` scope is deliberately NOT
 # exported -- prostate's single-centre OOD must not enter a pooled APD_OOD statistic.
 APD_CORRELATION_CSV = "output/apd/apd_correlation.csv"
 APD_TARGET_MACRO = {"apd_id": "Id", "apd_ood": "Ood"}
-APD_METRIC_MACRO = {"ccmr": "Ccmr", "ri": "Ri", "mari": "Mari"}
+APD_METRIC_MACRO = {"croma": "Croma", "ri": "Ri", "mari": "Mari"}
 APD_SCOPE_MACRO = {
     "camelyon": "Camelyon",
     "tcga_4x4": "Tcga",
@@ -74,7 +74,7 @@ APD_SCOPE_MACRO = {
 APD_RANGE_BENCHMARKS = ["camelyon", "tcga_4x4", "tolkach"]
 
 
-def _detect_scale(ccmr: pd.Series) -> str:
+def _detect_scale(croma: pd.Series) -> str:
     """Return ``"margin"`` or ``"ratio"`` from the value range.
 
     Margin lives in ``(-1, 1)`` (neutral at 0); ratio lives in ``(0, inf)`` (neutral
@@ -82,17 +82,17 @@ def _detect_scale(ccmr: pd.Series) -> str:
     ratio; an all-``[0, 1]`` column (every model biology-dominant) is ambiguous and
     defaults to margin, the paper's canonical scale.
     """
-    if (ccmr < 0.0).any():
+    if (croma < 0.0).any():
         return "margin"
-    if (ccmr > 1.0 + 1e-9).any():
+    if (croma > 1.0 + 1e-9).any():
         return "ratio"
     return "margin"
 
 
-def _to_margin(ccmr: pd.Series, scale: str) -> pd.Series:
+def _to_margin(croma: pd.Series, scale: str) -> pd.Series:
     if scale == "ratio":
-        return (ccmr - 1.0) / (ccmr + 1.0)
-    return ccmr
+        return (croma - 1.0) / (croma + 1.0)
+    return croma
 
 
 def _num(value: float, decimals: int = 2) -> str:
@@ -104,28 +104,28 @@ def _num(value: float, decimals: int = 2) -> str:
 
 
 def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[list[str], str]:
-    raw = df["ccmr"].astype(float)
+    raw = df["croma"].astype(float)
     scale = scale_override if scale_override != "auto" else _detect_scale(raw)
-    ccmr = _to_margin(raw, scale)
-    ltm = df["ccmr_ltm_alpha"].astype(float) if "ccmr_ltm_alpha" in df else None
+    croma = _to_margin(raw, scale)
+    ltm = df["croma_ltm_alpha"].astype(float) if "croma_ltm_alpha" in df else None
 
-    lo, hi = float(ccmr.min()), float(ccmr.max())
+    lo, hi = float(croma.min()), float(croma.max())
     # Each scalar: (macro-suffix, body). Add a line here to expose a new value.
     specs = [
-        ("CcmrSpan", f"{_num(lo)}--{_num(hi)}"),
-        ("CcmrMin", _num(lo)),
-        ("CcmrMax", _num(hi)),
-        ("CcmrConfounderDominant", str(int((ccmr < 0.0).sum()))),
-        ("NModels", str(int(len(ccmr)))),
+        ("CromaSpan", f"{_num(lo)}--{_num(hi)}"),
+        ("CromaMin", _num(lo)),
+        ("CromaMax", _num(hi)),
+        ("CromaConfounderDominant", str(int((croma < 0.0).sum()))),
+        ("NModels", str(int(len(croma)))),
     ]
     if ltm is not None:
-        specs.append(("CcmrLtmMax", _num(float(ltm.max()))))  # best (least-negative) tail
+        specs.append(("CromaLtmMax", _num(float(ltm.max()))))  # best (least-negative) tail
 
-    # Leader bundle: the model with the highest (least-negative) CCMR. Lets prose cite the
-    # leader's own scalars (name, CCMR, biological k-NN accuracy, support) without drift.
-    leader = df.loc[ccmr.idxmax()]
+    # Leader bundle: the model with the highest (least-negative) CRoMa. Lets prose cite the
+    # leader's own scalars (name, CRoMa, biological k-NN accuracy, support) without drift.
+    leader = df.loc[croma.idxmax()]
     specs.append(("BestModel", str(leader["model"])))
-    specs.append(("BestCcmr", _num(hi)))  # == CcmrMax, named for prose readability
+    specs.append(("BestCroma", _num(hi)))  # == CromaMax, named for prose readability
     if "bio_knn_bacc" in df:
         specs.append(("BestBioBacc", _num(float(leader["bio_knn_bacc"]), decimals=3)))
     if "ri_undefined_frac" in df:
@@ -144,25 +144,25 @@ def _pct(value: float) -> str:
 def _ss_shell_macros(prefix: str, df: pd.DataFrame) -> list[str]:
     """SS-shell local-entanglement scalars (concern 6) from the typed-rank summary.
 
-    Quotes the prevalence at the highest-CCMR (leader) and least-entangled models to
-    make the "even CCMR leaders are locally SS-saturated" point, plus the rank
+    Quotes the prevalence at the highest-CRoMa (leader) and least-entangled models to
+    make the "even CRoMa leaders are locally SS-saturated" point, plus the rank
     correlations that establish "related, not redundant" rather than independence.
     """
     from scipy.stats import spearmanr
 
     pocket_col = f"ss_pocket_frac_k{SS_POCKET_K}"
-    sub = df[df["ccmr"].notna()].copy()
-    leader = sub.loc[sub["ccmr"].idxmax()]
+    sub = df[df["croma"].notna()].copy()
+    leader = sub.loc[sub["croma"].idxmax()]
     least = sub.loc[sub[pocket_col].idxmin()]
-    depth_rho, _ = spearmanr(sub["ccmr"], sub["ss_depth_med"])
-    pocket_rho, _ = spearmanr(sub["ccmr"], sub[pocket_col])
+    depth_rho, _ = spearmanr(sub["croma"], sub["ss_depth_med"])
+    pocket_rho, _ = spearmanr(sub["croma"], sub[pocket_col])
     specs = [
         ("SsPocketK", str(SS_POCKET_K)),
         ("SsLeaderModel", str(leader["model"])),
         ("SsLeaderPocketFrac", _pct(float(leader[pocket_col]))),
         ("SsLeastPocketFrac", _pct(float(least[pocket_col]))),
-        ("SsDepthCcmrRho", _num(float(depth_rho))),
-        ("SsPocketCcmrRho", _num(float(pocket_rho))),
+        ("SsDepthCromaRho", _num(float(depth_rho))),
+        ("SsPocketCromaRho", _num(float(pocket_rho))),
     ]
     return [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
 
@@ -175,32 +175,32 @@ def _ci(lo: float, hi: float) -> str:
 def _uncertainty_macros(prefix: str, summary: dict, df: pd.DataFrame) -> list[str]:
     """Bootstrap UQ + redundancy scalars (concerns 3 and 6).
 
-    Exposes the cross-model rank correlations with CIs (CCMR vs RI/MaRI, and RI vs
-    MaRI to make the ``CCMR is the least rank-redundant of the three'' point), the
-    headline-leader CCMR with its CI, the size of the top rank-tie cluster (models
+    Exposes the cross-model rank correlations with CIs (CRoMa vs RI/MaRI, and RI vs
+    MaRI to make the ``CRoMa is the least rank-redundant of the three'' point), the
+    headline-leader CRoMa with its CI, the size of the top rank-tie cluster (models
     whose 95% rank interval includes rank 1), and the closest adjacent-pair win
     probability (the coin-flip that shows nearby point estimates are statistical
     ties). All sourced from the bootstrap experiment so prose cannot drift.
     """
     corr = summary["correlations"]
-    leader = df.sort_values("ccmr", ascending=False).iloc[0]
+    leader = df.sort_values("croma", ascending=False).iloc[0]
     top_tie_n = int((df["rank_lo"] == 1).sum())
     adj = summary.get("adjacent_pair_win", [])
     closest = min(adj, key=lambda d: abs(d["p_higher_beats_lower"] - 0.5)) if adj else None
     specs = [
-        ("CcmrVsRiRho", _num(float(corr["ccmr_vs_ri"]["rho"]))),
-        ("CcmrVsRiCi", _ci(float(corr["ccmr_vs_ri"]["lo"]), float(corr["ccmr_vs_ri"]["hi"]))),
-        ("CcmrVsMariRho", _num(float(corr["ccmr_vs_mari"]["rho"]))),
-        ("CcmrVsMariCi", _ci(float(corr["ccmr_vs_mari"]["lo"]), float(corr["ccmr_vs_mari"]["hi"]))),
+        ("CromaVsRiRho", _num(float(corr["croma_vs_ri"]["rho"]))),
+        ("CromaVsRiCi", _ci(float(corr["croma_vs_ri"]["lo"]), float(corr["croma_vs_ri"]["hi"]))),
+        ("CromaVsMariRho", _num(float(corr["croma_vs_mari"]["rho"]))),
+        ("CromaVsMariCi", _ci(float(corr["croma_vs_mari"]["lo"]), float(corr["croma_vs_mari"]["hi"]))),
         ("RiVsMariRho", _num(float(corr["ri_vs_mari"]["rho"]))),
-        ("CcmrLeaderModel", str(leader["model"])),
-        ("CcmrLeaderVal", _num(float(leader["ccmr"]))),
-        ("CcmrLeaderCi", _ci(float(leader["ccmr_lo"]), float(leader["ccmr_hi"]))),
-        ("CcmrTopTieN", str(top_tie_n)),
-        ("CcmrNBoot", str(int(summary["n_boot"]))),
+        ("CromaLeaderModel", str(leader["model"])),
+        ("CromaLeaderVal", _num(float(leader["croma"]))),
+        ("CromaLeaderCi", _ci(float(leader["croma_lo"]), float(leader["croma_hi"]))),
+        ("CromaTopTieN", str(top_tie_n)),
+        ("CromaNBoot", str(int(summary["n_boot"]))),
     ]
     if closest is not None:
-        specs.append(("CcmrClosestPairWinProb", _num(float(closest["p_higher_beats_lower"]))))
+        specs.append(("CromaClosestPairWinProb", _num(float(closest["p_higher_beats_lower"]))))
     return [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
 
 
@@ -208,7 +208,7 @@ def _apd_bare(value: float) -> str:
     """Bare 2-dp number (no math delimiters) so a macro nests inside ``$\\rho=...$``.
 
     Normalises a spurious ``-0.00`` to ``0.00``; the math minus is supplied by the
-    surrounding ``$...$`` in prose (e.g. prostate's ``$\\rho=\\ApdOodCcmrProstate$``).
+    surrounding ``$...$`` in prose (e.g. prostate's ``$\\rho=\\ApdOodCromaProstate$``).
     """
     body = f"{value:.2f}"
     if float(body) == 0.0:
@@ -219,7 +219,7 @@ def _apd_bare(value: float) -> str:
 def _apd_macros(df: pd.DataFrame) -> list[str]:
     """APD<->metric Spearman cells for tab:apd-correlation + the prostate paragraph.
 
-    One ``\\Apd{Id,Ood}{Ccmr,Ri,Mari}{Camelyon,Tcga,Tolkach,Pooled,Prostate}`` macro per
+    One ``\\Apd{Id,Ood}{Croma,Ri,Mari}{Camelyon,Tcga,Tolkach,Pooled,Prostate}`` macro per
     cell, plus a ``\\Apd{...}Range`` (``$lo$--$hi$`` over the three faithful benchmarks)
     for the inline ``per benchmark'' ranges.
     """
@@ -243,7 +243,7 @@ def _apd_macros(df: pd.DataFrame) -> list[str]:
 def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) -> str:
     out = [
         "% AUTO-GENERATED by scripts/experiments/generate_paper_values.py -- do not edit by hand.",
-        "% Re-run after regenerating the faithful metrics; cite e.g. \\CamelyonCcmrSpan in prose.",
+        "% Re-run after regenerating the faithful metrics; cite e.g. \\CamelyonCromaSpan in prose.",
     ]
     for prefix, rel in benchmarks:
         path = root / rel
@@ -295,7 +295,7 @@ def main() -> None:
     p.add_argument("--root", type=Path, default=Path.cwd(), help="Repo root for resolving metrics paths.")
     p.add_argument("--out", type=Path, default=Path("paper/sections/generated_values.tex"))
     p.add_argument("--scale", choices=["auto", "margin", "ratio"], default="auto",
-                   help="Input CCMR scale; 'auto' detects per benchmark (default).")
+                   help="Input CRoMa scale; 'auto' detects per benchmark (default).")
     args = p.parse_args()
 
     tex = build(BENCHMARKS, args.root, args.scale)

@@ -12,9 +12,9 @@ It implements three complementary metrics:
 
 - `RI`: Robustness Index
 - `MaRI`: Margin-aware Robustness Index
-- `CCMR`: Cross-Confounder Margin Ratio
+- `CRoMa`: Cross-confounder Robustness Margin
 
-`croma` provides a clean implementation of RI together with MaRI -- its margin-aware extension -- as well as a new robustness metric, CCMR -- which overcomes some of the limitations of RI/MaRI and enables tail-aware analysis for more detailed robustness characterization. RI was originally introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study.
+`croma` provides a clean implementation of RI together with MaRI -- its margin-aware extension -- as well as a new robustness metric, CRoMa -- which overcomes some of the limitations of RI/MaRI and enables tail-aware analysis for more detailed robustness characterization. RI was originally introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study.
 
 
 The package also comes with optional benchmarking utilities for multi-model evaluation.
@@ -38,7 +38,7 @@ pip install "croma[repro]"
 ```python
 import numpy as np
 import pandas as pd
-from croma import CCMR, MaRI, RI
+from croma import CRoMa, MaRI, RI
 
 manifest = pd.read_csv("manifest.csv")
 features = np.load("embeddings.npy")
@@ -60,7 +60,7 @@ mari = MaRI.compute(
     tau=0.2,
 )
 
-ccmr = CCMR.compute(
+croma = CRoMa.compute(
     features,
     manifest,
     confounder_column="confounder",
@@ -94,10 +94,10 @@ croma mari \
   --tau 0.2
 ```
 
-Compute CCMR:
+Compute CRoMa:
 
 ```bash
-croma ccmr \
+croma croma \
   --manifest /path/to/manifest.csv \
   --embeddings /path/to/embeddings.npy \
   --confounder-column confounder \
@@ -150,4 +150,4 @@ Optional:
 - [Metric usage](docs/metrics.md)
 - [Paired evaluation and PathoROB-style inputs](docs/paired_evaluation.md)
 - [Benchmarking and analysis](docs/benchmarking.md)
-- [CCMR subgroup analysis design](docs/ccmr-breakdown.md)
+- [CRoMa subgroup analysis design](docs/croma-breakdown.md)

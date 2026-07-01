@@ -30,7 +30,7 @@ class RobustnessResult:
 
 
 @dataclass(frozen=True)
-class CCMRResult:
+class CRoMaResult:
     dataset: str
     m: int
     value: float

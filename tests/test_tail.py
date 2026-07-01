@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from croma import CCMR
+from croma import CRoMa
 from croma.metrics.tail import TailMetrics, compute_tail_metrics
 
 
@@ -59,9 +59,9 @@ class TestComputeTailMetrics:
             result.alpha = 0.5  # type: ignore[misc]
 
 
-class TestCCMRTailIntegration:
+class TestCRoMaTailIntegration:
 
-    def test_ccmr_result_has_tail_fields(self) -> None:
+    def test_croma_result_has_tail_fields(self) -> None:
         manifest = pd.DataFrame(
             {
                 "sample_id": [f"s{i}" for i in range(8)],
@@ -86,7 +86,7 @@ class TestCCMRTailIntegration:
             dtype=float,
         )
 
-        result = CCMR.compute(
+        result = CRoMa.compute(
             features=features,
             manifest=manifest,
             confounder_column="scanner_vendor",
@@ -126,7 +126,7 @@ class TestCCMRTailIntegration:
             dtype=float,
         )
 
-        result = CCMR.compute(
+        result = CRoMa.compute(
             features=features,
             manifest=manifest,
             confounder_column="scanner_vendor",

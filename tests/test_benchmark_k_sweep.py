@@ -91,12 +91,12 @@ def _install_noop_plots(monkeypatch) -> None:
 
     plot_names = [
         "plot_bio_vs_confounder_scatter",
-        "plot_ccmr_ltm_bars",
-        "plot_ccmr_ltm_scatter",
-        "plot_ccmr_m_sweep",
-        "plot_ccmr_sample_distributions",
-        "plot_ccmr_vs_mari_scatter",
-        "plot_q_alpha_vs_ccmr_scatter",
+        "plot_croma_ltm_bars",
+        "plot_croma_ltm_scatter",
+        "plot_croma_m_sweep",
+        "plot_croma_sample_distributions",
+        "plot_croma_vs_mari_scatter",
+        "plot_q_alpha_vs_croma_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
@@ -286,19 +286,19 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
     for path in (
         results_dir / "metrics.csv",
         results_dir / "k_sweep_metrics.csv",
-        results_dir / "ccmr_m_sweep_metrics.csv",
+        results_dir / "croma_m_sweep_metrics.csv",
         results_dir / "per_sample_metrics.csv",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
-        plots_dir / "ccmr_ltm_bars.png",
-        plots_dir / "ccmr_ltm_scatter.png",
+        plots_dir / "croma_ltm_bars.png",
+        plots_dir / "croma_ltm_scatter.png",
         plots_dir / "ri_mari_support.png",
     ):
         assert path.exists(), f"Missing output: {path}"
 
     for path in (
         plots_dir / "benchmark_6panel_summary.png",
-        plots_dir / "ccmr_trend_quadrants.png",
+        plots_dir / "croma_trend_quadrants.png",
     ):
         assert not path.exists(), f"Deprecated plot should not be written: {path}"
 
@@ -370,7 +370,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
             self.evaluation_design = "dataset_wide"
             self.evaluation_unit = "sample"
 
-    class _FakeCCMRResult:
+    class _FakeCRoMaResult:
         def __init__(self, m: int, values: list[float]) -> None:
             aligned = np.asarray(values, dtype=float)
             informative = np.isfinite(aligned)
@@ -431,7 +431,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
         )
         return SimpleNamespace(curve={int(k): 0.5 for k in k_values}, result=result)
 
-    def fake_ccmr_compute(
+    def fake_croma_compute(
         *,
         features: np.ndarray,
         manifest: pd.DataFrame,
@@ -441,11 +441,11 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
         alpha: float,
         start_k: int,
         k_growth_factor: float,
-    ) -> dict[int, _FakeCCMRResult]:
+    ) -> dict[int, _FakeCRoMaResult]:
         assert evaluation_design == "dataset_wide"
         return {
-            1: _FakeCCMRResult(1, [1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0]),
-            2: _FakeCCMRResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
+            1: _FakeCRoMaResult(1, [1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0]),
+            2: _FakeCRoMaResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
         }
 
     _install_fake_registry_and_embed(monkeypatch, models=[model])
@@ -460,7 +460,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
         "_compute_artifacts_from_prepared_dataset_wide",
         fake_mari_compute_artifacts,
     )
-    monkeypatch.setattr(bm.CCMR, "compute", fake_ccmr_compute)
+    monkeypatch.setattr(bm.CRoMa, "compute", fake_croma_compute)
 
     assert (
         _run_benchmark(
@@ -468,7 +468,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
             manifest_path=manifest_path,
             output_dir=output_dir,
             models=[model],
-            extra_args=["--ccmr-m-max", "2"],
+            extra_args=["--croma-m-max", "2"],
         )
         == 0
     )
@@ -502,8 +502,8 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
     assert per_sample_df["mari_undefined_type"].tolist() == [0, 3, 0, 1, 0, 0, 2, 0]
     assert np.isnan(per_sample_df.loc[1, "ri"])
     assert np.isnan(per_sample_df.loc[3, "mari"])
-    assert np.isnan(per_sample_df.loc[2, "ccmr_m1"])
-    assert np.isnan(per_sample_df.loc[5, "ccmr_m2"])
+    assert np.isnan(per_sample_df.loc[2, "croma_m1"])
+    assert np.isnan(per_sample_df.loc[5, "croma_m2"])
 
 
 def test_benchmark_k_max_uses_full_range(

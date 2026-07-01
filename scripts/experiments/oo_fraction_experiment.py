@@ -1,6 +1,6 @@
 """Top-k neighbourhood composition: does OO dominate the immediate neighbourhood?
 
-Objection to CCMR: by reading only SO and OS typed neighbours it "ignores" the SS
+Objection to CRoMa: by reading only SO and OS typed neighbours it "ignores" the SS
 and OO neighbours. The SS half of that objection is already answered (SS dominates the
 immediate neighbourhood, which is exactly why typed neighbours are reached deep; see
 typed_neighbor_rank_experiment.py). This script answers the OO half: it measures, for
@@ -10,11 +10,11 @@ other confounder), pooled across samples and models.
 Type definitions (consistent with the manuscript and the rank experiment):
   SS = same label,  same confounder      OO = other label, other confounder
   SO = same label,  other confounder     OS = other label, same confounder
-Self and same-slide neighbours are excluded (as in CCMR), which is the conservative
+Self and same-slide neighbours are excluded (as in CRoMa), which is the conservative
 choice: it removes guaranteed-SS same-slide tiles and so gives OO its best chance to
 look large.
 
-If OO stays a small minority across the immediate neighbourhood, the "CCMR ignores
+If OO stays a small minority across the immediate neighbourhood, the "CRoMa ignores
 informative OO neighbours" objection is closed with evidence: there is little OO signal
 to ignore near each sample.
 """

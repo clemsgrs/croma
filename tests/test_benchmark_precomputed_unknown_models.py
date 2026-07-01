@@ -44,12 +44,12 @@ def _install_noop_plots(monkeypatch) -> None:
 
     for name in (
         "plot_bio_vs_confounder_scatter",
-        "plot_ccmr_ltm_bars",
-        "plot_ccmr_ltm_scatter",
-        "plot_ccmr_m_sweep",
-        "plot_ccmr_sample_distributions",
-        "plot_ccmr_vs_mari_scatter",
-        "plot_q_alpha_vs_ccmr_scatter",
+        "plot_croma_ltm_bars",
+        "plot_croma_ltm_scatter",
+        "plot_croma_m_sweep",
+        "plot_croma_sample_distributions",
+        "plot_croma_vs_mari_scatter",
+        "plot_q_alpha_vs_croma_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",

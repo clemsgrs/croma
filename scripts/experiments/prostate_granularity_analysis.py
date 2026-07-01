@@ -9,9 +9,9 @@ coarse benign-vs-tumour binary?
   4-class          output/prostate-shift-4class-kirumc-paired      (6 grade-pairs, 480/cell)
 
 Outputs (printed + CSV under the 4-class results dir):
-  1. per-model CCMR / RI / MaRI / support across the three settings;
+  1. per-model CRoMa / RI / MaRI / support across the three settings;
   2. rank-stability: Spearman of model rankings between settings, per metric
-     (pre-registered expectation: RI most reordered, CCMR least);
+     (pre-registered expectation: RI most reordered, CRoMa least);
   3. per-grade-pair breakdown of the 4-class run (pooled over models) -- where the
      confounder dominance actually concentrates, which the binary cannot resolve.
 
@@ -44,15 +44,15 @@ PAIR_LABEL = {
 
 
 def _to_margin(s: pd.Series) -> pd.Series:
-    """Signed-margin CCMR is canonical here; convert only a stray ratio-scale column."""
+    """Signed-margin CRoMa is canonical here; convert only a stray ratio-scale column."""
     return (s - 1.0) / (s + 1.0) if float(s.max()) > 1.0 else s
 
 
 def _load_metrics(rel: str) -> pd.DataFrame:
     m = pd.read_csv(REPO / rel / "results/metrics.csv")
-    m = m[["model", "ccmr", "ri", "mari", "ri_undefined_frac", "bio_knn_bacc",
+    m = m[["model", "croma", "ri", "mari", "ri_undefined_frac", "bio_knn_bacc",
            "confounder_knn_bacc"]].copy()
-    m["ccmr"] = _to_margin(m["ccmr"].astype(float))
+    m["croma"] = _to_margin(m["croma"].astype(float))
     m["support"] = 1.0 - m["ri_undefined_frac"].astype(float)
     return m.drop(columns="ri_undefined_frac")
 
@@ -60,16 +60,16 @@ def _load_metrics(rel: str) -> pd.DataFrame:
 def per_model_table() -> pd.DataFrame:
     frames = {k: _load_metrics(v).set_index("model") for k, v in SETTINGS.items()}
     out = pd.DataFrame(index=frames["fourclass"].index)
-    for metric in ("ccmr", "ri", "mari", "support"):
+    for metric in ("croma", "ri", "mari", "support"):
         for setting in SETTINGS:
             out[f"{metric}_{setting}"] = frames[setting][metric]
-    # sort by the fully-defined 4-class CCMR (house style: CCMR is primary, k-free)
-    return out.sort_values("ccmr_fourclass", ascending=False)
+    # sort by the fully-defined 4-class CRoMa (house style: CRoMa is primary, k-free)
+    return out.sort_values("croma_fourclass", ascending=False)
 
 
 def rank_stability(tbl: pd.DataFrame) -> pd.DataFrame:
     rows = []
-    for metric in ("ccmr", "ri", "mari"):
+    for metric in ("croma", "ri", "mari"):
         for a, b in (("natbin", "gradebal"), ("natbin", "fourclass"), ("gradebal", "fourclass")):
             sub = tbl[[f"{metric}_{a}", f"{metric}_{b}"]].dropna()
             rho, p = spearmanr(sub.iloc[:, 0], sub.iloc[:, 1])
@@ -86,7 +86,7 @@ def per_pair_breakdown() -> pd.DataFrame:
         mari_def = g[g["mari_defined"]]
         rows.append(dict(
             pair=PAIR_LABEL.get(subset, subset),
-            ccmr_m5=round(float(g["ccmr_m5"].mean()), 3),            # mean per-sample margin, m=5
+            croma_m5=round(float(g["croma_m5"].mean()), 3),            # mean per-sample margin, m=5
             ri=round(float(ri_def["ri"].mean()), 3) if len(ri_def) else np.nan,
             mari=round(float(mari_def["mari"].mean()), 3) if len(mari_def) else np.nan,
             support=round(float(g["ri_defined"].mean()), 3),
@@ -104,8 +104,8 @@ def main() -> int:
     pd.set_option("display.width", 200, "display.max_columns", 40,
                   "display.float_format", lambda x: f"{x:.3f}")
 
-    print("===== per-model CCMR / support across granularities (sorted by 4-class CCMR) =====")
-    show = tbl[["ccmr_natbin", "ccmr_gradebal", "ccmr_fourclass",
+    print("===== per-model CRoMa / support across granularities (sorted by 4-class CRoMa) =====")
+    show = tbl[["croma_natbin", "croma_gradebal", "croma_fourclass",
                 "support_natbin", "support_gradebal", "support_fourclass"]]
     print(show.to_string())
 
@@ -120,9 +120,9 @@ def main() -> int:
     print(pp.to_string(index=False))
     pp.to_csv(OUT_DIR / "granularity_per_pair.csv", index=False)
 
-    bvg = pp[pp["kind"] == "benign-vs-grade"]["ccmr_m5"].mean()
-    gvg = pp[pp["kind"] == "grade-vs-grade"]["ccmr_m5"].mean()
-    print(f"\nmean CCMR(m=5): benign-vs-grade={bvg:.3f}  grade-vs-grade={gvg:.3f}")
+    bvg = pp[pp["kind"] == "benign-vs-grade"]["croma_m5"].mean()
+    gvg = pp[pp["kind"] == "grade-vs-grade"]["croma_m5"].mean()
+    print(f"\nmean CRoMa(m=5): benign-vs-grade={bvg:.3f}  grade-vs-grade={gvg:.3f}")
     print(f"wrote {OUT_DIR/'granularity_comparison.csv'} and {OUT_DIR/'granularity_per_pair.csv'}")
     return 0
 

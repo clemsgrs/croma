@@ -21,7 +21,7 @@
 # run (TCGA included) is kept ONLY for the pretraining-overlap test (tab:pretraining-overlap).
 #
 # Hyperparameters pinned to the rest of the paper (tau=0.2, k_max=25, m<=20,
-# CCMR search start=200/growth=2/alpha=0.1 -- all benchmark.py defaults).
+# CRoMa search start=200/growth=2/alpha=0.1 -- all benchmark.py defaults).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."   # repo root: .../croma

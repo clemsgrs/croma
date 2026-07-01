@@ -1,7 +1,7 @@
 """Cluster bootstrap utilities for uncertainty quantification on the headline
-robustness statistics (CCMR, and equally RI/MaRI).
+robustness statistics (CRoMa, and equally RI/MaRI).
 
-The per-sample CCMR values are not independent: tiles drawn from the same slide
+The per-sample CRoMa values are not independent: tiles drawn from the same slide
 share tissue, staining and scanner, so an i.i.d. sample-level resample would
 understate uncertainty. We therefore resample at the *slide* (cluster) level --
 draw slides with replacement and pool all of their tiles -- which is the honest

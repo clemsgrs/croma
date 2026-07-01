@@ -15,9 +15,9 @@ import extract_embeddings as ee
 from model_registry import ModelSpec, _build_model_registry, _parse_models
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
 from croma.alignment import build_embedding_source_manifest
-from croma import CCMR, MaRI, RI
+from croma import CRoMa, MaRI, RI
 from croma.confounders import infer_confounder_display_name
-from croma.metrics.ccmr import CCMR_HEADLINE_M
+from croma.metrics.croma import CROMA_HEADLINE_M
 from croma.metrics.tau import TauAssessment, assess_tau
 from croma.metrics.neighbors import (
     _knn_balanced_accuracy_by_k,
@@ -28,11 +28,11 @@ from croma.metrics.pairs import (
     resolve_manifest_subsets,
     retain_complete_subset_memberships,
 )
-from croma.types import CCMRResult
+from croma.types import CRoMaResult
 from metrics_cache import MetricsArtifactCache, build_cache_key
 from metrics_io import (
     StreamingMetricsWriter,
-    ccmr_search_signature,
+    croma_search_signature,
     k_values_signature,
     save_metrics,
     safe_model_name,
@@ -40,12 +40,12 @@ from metrics_io import (
 from progress_utils import model_block, progress_write, resolve_progress_mode
 from plotting import (
     plot_bio_vs_confounder_scatter,
-    plot_ccmr_ltm_bars,
-    plot_ccmr_ltm_scatter,
-    plot_ccmr_m_sweep,
-    plot_ccmr_sample_distributions,
-    plot_ccmr_vs_mari_scatter,
-    plot_q_alpha_vs_ccmr_scatter,
+    plot_croma_ltm_bars,
+    plot_croma_ltm_scatter,
+    plot_croma_m_sweep,
+    plot_croma_sample_distributions,
+    plot_croma_vs_mari_scatter,
+    plot_q_alpha_vs_croma_scatter,
     plot_knn_bio_k_sweep,
     plot_knn_confounder_k_sweep,
     plot_mari_cumulative_mean_k_sweep,
@@ -239,7 +239,7 @@ def _parse_args() -> argparse.Namespace:
         "--evaluation-design",
         default="paired_2x2",
         choices=["paired_2x2", "dataset_wide"],
-        help="Evaluation design for RI/MaRI/CCMR.",
+        help="Evaluation design for RI/MaRI/CRoMa.",
     )
     parser.add_argument(
         "--k-max",
@@ -258,28 +258,28 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--ccmr-m-max",
+        "--croma-m-max",
         type=int,
         default=20,
-        help="Maximum m for CCMR sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
+        help="Maximum m for CRoMa sweep. All integers 1..m_max are evaluated at no extra search cost (default 20).",
     )
     parser.add_argument(
-        "--ccmr-start-k",
+        "--croma-start-k",
         type=int,
         default=200,
-        help="Initial k for CCMR iterative neighbor search (default 200).",
+        help="Initial k for CRoMa iterative neighbor search (default 200).",
     )
     parser.add_argument(
-        "--ccmr-k-growth-factor",
+        "--croma-k-growth-factor",
         type=float,
         default=2.0,
-        help="Geometric growth factor for CCMR iterative k search (>1, default 2.0).",
+        help="Geometric growth factor for CRoMa iterative k search (>1, default 2.0).",
     )
     parser.add_argument(
-        "--ccmr-alpha",
+        "--croma-alpha",
         type=float,
         default=0.10,
-        help="Tail percentile alpha used for CCMR Q_alpha/LTM_alpha reporting (default 0.10).",
+        help="Tail percentile alpha used for CRoMa Q_alpha/LTM_alpha reporting (default 0.10).",
     )
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--num-workers", type=int, default=4)
@@ -406,16 +406,16 @@ def _build_per_sample_rows(
     evaluation_unit: str,
     selected_k: int,
     tau: float,
-    ccmr_alpha: float,
-    ccmr_search_sig: str,
+    croma_alpha: float,
+    croma_search_sig: str,
     ri_samples_aligned: np.ndarray,
     mari_samples_aligned: np.ndarray,
     ri_defined_mask: np.ndarray,
     mari_defined_mask: np.ndarray,
     ri_undefined_types: np.ndarray,
     mari_undefined_types: np.ndarray,
-    ccmr_samples_aligned_by_m: np.ndarray,
-    ccmr_m_values: list[int],
+    croma_samples_aligned_by_m: np.ndarray,
+    croma_m_values: list[int],
 ) -> list[dict]:
     rows: list[dict] = []
     if ri_samples_aligned.shape != mari_samples_aligned.shape:
@@ -424,9 +424,9 @@ def _build_per_sample_rows(
         raise RuntimeError(
             "Aligned metric arrays must match the aligned evaluation manifest row count"
         )
-    if ccmr_samples_aligned_by_m.shape != (len(aligned_manifest), len(ccmr_m_values)):
+    if croma_samples_aligned_by_m.shape != (len(aligned_manifest), len(croma_m_values)):
         raise RuntimeError(
-            "Aligned CCMR array must match the aligned evaluation manifest row count and m sweep"
+            "Aligned CRoMa array must match the aligned evaluation manifest row count and m sweep"
         )
 
     for occurrence_index, sample_row in aligned_manifest.reset_index(
@@ -450,8 +450,8 @@ def _build_per_sample_rows(
             "confounder": str(sample_row["confounder"]),
             "k": int(selected_k),
             "tau": float(tau),
-            "ccmr_alpha": float(ccmr_alpha),
-            "ccmr_search": str(ccmr_search_sig),
+            "croma_alpha": float(croma_alpha),
+            "croma_search": str(croma_search_sig),
             "ri": float(ri_samples_aligned[occurrence_index]),
             "mari": float(mari_samples_aligned[occurrence_index]),
             "ri_defined": bool(ri_defined_mask[occurrence_index]),
@@ -459,9 +459,9 @@ def _build_per_sample_rows(
             "ri_undefined_type": int(ri_undefined_types[occurrence_index]),
             "mari_undefined_type": int(mari_undefined_types[occurrence_index]),
         }
-        for m_pos, m in enumerate(ccmr_m_values):
-            record[f"ccmr_m{int(m)}"] = float(
-                ccmr_samples_aligned_by_m[occurrence_index, m_pos]
+        for m_pos, m in enumerate(croma_m_values):
+            record[f"croma_m{int(m)}"] = float(
+                croma_samples_aligned_by_m[occurrence_index, m_pos]
             )
         rows.append(record)
     return rows
@@ -626,31 +626,31 @@ def _tau_assessment_from_payload(payload: dict | None) -> TauAssessment | None:
         return None
 
 
-def _ccmr_result_to_payload(result: CCMRResult, m: int) -> dict:
+def _croma_result_to_payload(result: CRoMaResult, m: int) -> dict:
     return {
         "m": int(m),
-        "ccmr": float(result.value),
-        "ccmr_std": float(result.std),
-        "ccmr_undefined_frac": float(result.undefined_frac),
-        "ccmr_k_start": int(result.k_start),
-        "ccmr_k_final": int(result.k_final),
-        "ccmr_retries": int(result.retries),
-        "ccmr_alpha": float(result.alpha),
-        "ccmr_q_alpha": float(result.q_alpha),
-        "ccmr_ltm_alpha": float(result.ltm_alpha),
+        "croma": float(result.value),
+        "croma_std": float(result.std),
+        "croma_undefined_frac": float(result.undefined_frac),
+        "croma_k_start": int(result.k_start),
+        "croma_k_final": int(result.k_final),
+        "croma_retries": int(result.retries),
+        "croma_alpha": float(result.alpha),
+        "croma_q_alpha": float(result.q_alpha),
+        "croma_ltm_alpha": float(result.ltm_alpha),
     }
 
 
-def _ccmr_payload_from_results(results: dict[int, CCMRResult]) -> dict:
+def _croma_payload_from_results(results: dict[int, CRoMaResult]) -> dict:
     return {
         "by_m": {
-            str(int(m)): _ccmr_result_to_payload(result=res, m=int(m))
+            str(int(m)): _croma_result_to_payload(result=res, m=int(m))
             for m, res in sorted(results.items(), key=lambda kv: int(kv[0]))
         }
     }
 
 
-def _ccmr_payload_to_by_m(
+def _croma_payload_to_by_m(
     payload: dict, *, expected_m_values: list[int]
 ) -> dict[int, dict] | None:
     if not isinstance(payload, dict):
@@ -667,28 +667,28 @@ def _ccmr_payload_to_by_m(
     return by_m
 
 
-def _compute_ccmr_by_m(
+def _compute_croma_by_m(
     *,
     features: np.ndarray,
     manifest: pd.DataFrame,
     confounder_column: str,
     evaluation_design: str,
     m_values: list[int],
-    ccmr_start_k: int,
-    ccmr_k_growth_factor: float,
-    ccmr_alpha: float,
-) -> dict[int, CCMRResult]:
+    croma_start_k: int,
+    croma_k_growth_factor: float,
+    croma_alpha: float,
+) -> dict[int, CRoMaResult]:
     return cast(
-        dict[int, CCMRResult],
-        CCMR.compute(
+        dict[int, CRoMaResult],
+        CRoMa.compute(
             features=features,
             manifest=manifest,
             confounder_column=confounder_column,
             evaluation_design=evaluation_design,
             m=[int(m) for m in m_values],
-            alpha=float(ccmr_alpha),
-            start_k=int(ccmr_start_k),
-            k_growth_factor=float(ccmr_k_growth_factor),
+            alpha=float(croma_alpha),
+            start_k=int(croma_start_k),
+            k_growth_factor=float(croma_k_growth_factor),
         ),
     )
 
@@ -743,14 +743,14 @@ def _tau_summary_lines(
 def main() -> int:
     args = _parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
-    if int(args.ccmr_start_k) < 1:
-        raise ValueError("--ccmr-start-k must be >= 1")
-    if float(args.ccmr_k_growth_factor) <= 1.0:
-        raise ValueError("--ccmr-k-growth-factor must be > 1")
-    if float(args.ccmr_alpha) <= 0.0 or float(args.ccmr_alpha) > 1.0:
-        raise ValueError("--ccmr-alpha must be in (0, 1]")
-    if int(args.ccmr_m_max) < 1:
-        raise ValueError("--ccmr-m-max must be >= 1")
+    if int(args.croma_start_k) < 1:
+        raise ValueError("--croma-start-k must be >= 1")
+    if float(args.croma_k_growth_factor) <= 1.0:
+        raise ValueError("--croma-k-growth-factor must be > 1")
+    if float(args.croma_alpha) <= 0.0 or float(args.croma_alpha) > 1.0:
+        raise ValueError("--croma-alpha must be in (0, 1]")
+    if int(args.croma_m_max) < 1:
+        raise ValueError("--croma-m-max must be >= 1")
 
     registry = _build_model_registry()
     models = _resolve_models(args.models, registry)
@@ -768,8 +768,8 @@ def main() -> int:
     metrics_json = results_dir / "metrics.json"
     k_sweep_csv = results_dir / "k_sweep_metrics.csv"
     k_sweep_json = results_dir / "k_sweep_metrics.json"
-    ccmr_m_sweep_csv = results_dir / "ccmr_m_sweep_metrics.csv"
-    ccmr_m_sweep_json = results_dir / "ccmr_m_sweep_metrics.json"
+    croma_m_sweep_csv = results_dir / "croma_m_sweep_metrics.csv"
+    croma_m_sweep_json = results_dir / "croma_m_sweep_metrics.json"
     per_sample_csv = _per_sample_metrics_path(results_dir)
     per_sample_json = _per_sample_metrics_json_path(results_dir)
 
@@ -777,14 +777,14 @@ def main() -> int:
 
     k_max = int(args.k_max)
     k_values = _resolve_sweep_k_values(k_max)
-    ccmr_m_values = list(range(1, int(args.ccmr_m_max) + 1))
+    croma_m_values = list(range(1, int(args.croma_m_max) + 1))
     # Headline m must be inside the swept range; clamp down if the sweep is shorter.
-    ccmr_headline_m = min(int(CCMR_HEADLINE_M), max(ccmr_m_values))
+    croma_headline_m = min(int(CROMA_HEADLINE_M), max(croma_m_values))
     k_values_sig = k_values_signature(k_values)
-    ccmr_search_sig = ccmr_search_signature(
-        start_k=int(args.ccmr_start_k),
-        k_growth_factor=float(args.ccmr_k_growth_factor),
-        alpha=float(args.ccmr_alpha),
+    croma_search_sig = croma_search_signature(
+        start_k=int(args.croma_start_k),
+        k_growth_factor=float(args.croma_k_growth_factor),
+        alpha=float(args.croma_alpha),
     )
     dataset_name = str(args.manifest.stem)
 
@@ -794,7 +794,7 @@ def main() -> int:
     evaluation_design = str(args.evaluation_design)
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
-    ccmr_m_sweep_rows: list[dict] = []
+    croma_m_sweep_rows: list[dict] = []
     tau_assessments: dict[str, TauAssessment] = {}
     per_sample_writer = StreamingMetricsWriter(
         csv_path=per_sample_csv, json_path=per_sample_json
@@ -1133,43 +1133,43 @@ def main() -> int:
                             "use_median_k": use_median_k_value,
                         },
                     ),
-                    "ccmr_m_sweep": build_cache_key(
-                        artifact_name="ccmr_m_sweep",
+                    "croma_m_sweep": build_cache_key(
+                        artifact_name="croma_m_sweep",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
-                            "m_max": int(args.ccmr_m_max),
-                            "start_k": int(args.ccmr_start_k),
-                            "k_growth_factor": float(args.ccmr_k_growth_factor),
-                            "alpha": float(args.ccmr_alpha),
+                            "m_max": int(args.croma_m_max),
+                            "start_k": int(args.croma_start_k),
+                            "k_growth_factor": float(args.croma_k_growth_factor),
+                            "alpha": float(args.croma_alpha),
                             "confounder_column": confounder_column,
                         },
                     ),
-                    "ccmr_headline_samples": build_cache_key(
-                        artifact_name="ccmr_headline_samples",
+                    "croma_headline_samples": build_cache_key(
+                        artifact_name="croma_headline_samples",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
-                            "m_max": int(args.ccmr_m_max),
-                            "headline_m": int(ccmr_headline_m),
-                            "start_k": int(args.ccmr_start_k),
-                            "k_growth_factor": float(args.ccmr_k_growth_factor),
-                            "alpha": float(args.ccmr_alpha),
+                            "m_max": int(args.croma_m_max),
+                            "headline_m": int(croma_headline_m),
+                            "start_k": int(args.croma_start_k),
+                            "k_growth_factor": float(args.croma_k_growth_factor),
+                            "alpha": float(args.croma_alpha),
                             "confounder_column": confounder_column,
                         },
                     ),
-                    "ccmr_samples_aligned_by_m": build_cache_key(
-                        artifact_name="ccmr_samples_aligned_by_m",
+                    "croma_samples_aligned_by_m": build_cache_key(
+                        artifact_name="croma_samples_aligned_by_m",
                         model=model,
                         input_fingerprint=input_fp,
                         params={
                             "evaluation_design": evaluation_design,
-                            "m_max": int(args.ccmr_m_max),
-                            "start_k": int(args.ccmr_start_k),
-                            "k_growth_factor": float(args.ccmr_k_growth_factor),
-                            "alpha": float(args.ccmr_alpha),
+                            "m_max": int(args.croma_m_max),
+                            "start_k": int(args.croma_start_k),
+                            "k_growth_factor": float(args.croma_k_growth_factor),
+                            "alpha": float(args.croma_alpha),
                             "confounder_column": confounder_column,
                         },
                     ),
@@ -1187,9 +1187,9 @@ def main() -> int:
                 mari_samples: np.ndarray | None = None
                 mari_samples_aligned: np.ndarray | None = None
                 mari_undefined_types: np.ndarray | None = None
-                ccmr_by_m: dict[int, dict] | None = None
-                ccmr_samples: np.ndarray | None = None
-                ccmr_samples_aligned_by_m: np.ndarray | None = None
+                croma_by_m: dict[int, dict] | None = None
+                croma_samples: np.ndarray | None = None
+                croma_samples_aligned_by_m: np.ndarray | None = None
                 cached_tau_assessment: TauAssessment | None = None
 
                 all_cache_hit = not bool(args.recompute_metrics)
@@ -1275,20 +1275,20 @@ def main() -> int:
                     ):
                         all_cache_hit = False
 
-                    ccmr_by_m = _ccmr_payload_to_by_m(
-                        cache.get_json(key=keys["ccmr_m_sweep"]),
-                        expected_m_values=ccmr_m_values,
+                    croma_by_m = _croma_payload_to_by_m(
+                        cache.get_json(key=keys["croma_m_sweep"]),
+                        expected_m_values=croma_m_values,
                     )
-                    ccmr_samples = cache.get_npy(key=keys["ccmr_headline_samples"])
-                    ccmr_samples_aligned_by_m = cache.get_npy(
-                        key=keys["ccmr_samples_aligned_by_m"]
+                    croma_samples = cache.get_npy(key=keys["croma_headline_samples"])
+                    croma_samples_aligned_by_m = cache.get_npy(
+                        key=keys["croma_samples_aligned_by_m"]
                     )
                     if (
-                        ccmr_by_m is None
-                        or ccmr_samples is None
+                        croma_by_m is None
+                        or croma_samples is None
                         or not _npy_matches_shape(
-                            ccmr_samples_aligned_by_m,
-                            (len(aligned_manifest), len(ccmr_m_values)),
+                            croma_samples_aligned_by_m,
+                            (len(aligned_manifest), len(croma_m_values)),
                         )
                     ):
                         all_cache_hit = False
@@ -1628,68 +1628,68 @@ def main() -> int:
                         )
                 ticker.done("MaRI", cached=mari_was_cached)
 
-                ccmr_was_cached = (
-                    ccmr_by_m is not None
-                    and ccmr_samples is not None
-                    and ccmr_samples_aligned_by_m is not None
+                croma_was_cached = (
+                    croma_by_m is not None
+                    and croma_samples is not None
+                    and croma_samples_aligned_by_m is not None
                 )
-                ticker.start("CCMR")
+                ticker.start("CRoMa")
                 if (
-                    ccmr_by_m is None
-                    or ccmr_samples is None
-                    or ccmr_samples_aligned_by_m is None
+                    croma_by_m is None
+                    or croma_samples is None
+                    or croma_samples_aligned_by_m is None
                 ):
-                    ccmr_results = _compute_ccmr_by_m(
+                    croma_results = _compute_croma_by_m(
                         features=_ensure_eval_features(),
                         manifest=eval_manifest,
                         confounder_column=confounder_column,
                         evaluation_design=evaluation_design,
-                        m_values=ccmr_m_values,
-                        ccmr_start_k=int(args.ccmr_start_k),
-                        ccmr_k_growth_factor=float(args.ccmr_k_growth_factor),
-                        ccmr_alpha=float(args.ccmr_alpha),
+                        m_values=croma_m_values,
+                        croma_start_k=int(args.croma_start_k),
+                        croma_k_growth_factor=float(args.croma_k_growth_factor),
+                        croma_alpha=float(args.croma_alpha),
                     )
-                    ccmr_by_m = _ccmr_payload_to_by_m(
-                        _ccmr_payload_from_results(ccmr_results),
-                        expected_m_values=ccmr_m_values,
+                    croma_by_m = _croma_payload_to_by_m(
+                        _croma_payload_from_results(croma_results),
+                        expected_m_values=croma_m_values,
                     )
-                    if ccmr_by_m is None:
+                    if croma_by_m is None:
                         raise RuntimeError(
-                            "Failed to serialize ccmr m-sweep cache payload"
+                            "Failed to serialize croma m-sweep cache payload"
                         )
-                    ccmr_samples = np.asarray(
-                        ccmr_results[ccmr_headline_m].sample_values, dtype=float
+                    croma_samples = np.asarray(
+                        croma_results[croma_headline_m].sample_values, dtype=float
                     )
-                    ccmr_samples_aligned_by_m = np.column_stack(
+                    croma_samples_aligned_by_m = np.column_stack(
                         [
                             np.asarray(
-                                ccmr_results[int(m)].sample_values_aligned, dtype=float
+                                croma_results[int(m)].sample_values_aligned, dtype=float
                             )
-                            for m in ccmr_m_values
+                            for m in croma_m_values
                         ]
                     )
                     cache.put_json(
-                        key=keys["ccmr_m_sweep"],
-                        payload={"by_m": {str(k): v for k, v in ccmr_by_m.items()}},
+                        key=keys["croma_m_sweep"],
+                        payload={"by_m": {str(k): v for k, v in croma_by_m.items()}},
                     )
-                    cache.put_npy(key=keys["ccmr_headline_samples"], values=ccmr_samples)
+                    cache.put_npy(key=keys["croma_headline_samples"], values=croma_samples)
                     cache.put_npy(
-                        key=keys["ccmr_samples_aligned_by_m"],
-                        values=ccmr_samples_aligned_by_m,
+                        key=keys["croma_samples_aligned_by_m"],
+                        values=croma_samples_aligned_by_m,
                     )
                 else:
-                    ccmr_samples = np.asarray(ccmr_samples, dtype=float)
-                    if ccmr_samples_aligned_by_m is not None:
-                        ccmr_samples_aligned_by_m = np.asarray(
-                            ccmr_samples_aligned_by_m, dtype=float
+                    croma_samples = np.asarray(croma_samples, dtype=float)
+                    if croma_samples_aligned_by_m is not None:
+                        croma_samples_aligned_by_m = np.asarray(
+                            croma_samples_aligned_by_m, dtype=float
                         )
-                ticker.done("CCMR", cached=ccmr_was_cached)
+                ticker.done("CRoMa", cached=croma_was_cached)
 
                 evaluation_unit = str(ri_summary["evaluation_unit"])
-                ccmr_m_rows_for_model: list[dict] = []
-                for m in ccmr_m_values:
-                    payload = ccmr_by_m[int(m)]
-                    ccmr_m_rows_for_model.append(
+                croma_m_rows_for_model: list[dict] = []
+                for m in croma_m_values:
+                    payload = croma_by_m[int(m)]
+                    croma_m_rows_for_model.append(
                         {
                             "dataset": dataset_name,
                             "model": str(model),
@@ -1700,39 +1700,39 @@ def main() -> int:
                             "tau": model_tau,
                             "k_max": int(k_max),
                             "k_values": str(k_values_sig),
-                            "ccmr_search": str(ccmr_search_sig),
+                            "croma_search": str(croma_search_sig),
                             "m": int(payload["m"]),
-                            "ccmr": float(payload["ccmr"]),
-                            "ccmr_std": float(payload["ccmr_std"]),
-                            "ccmr_undefined_frac": float(
-                                payload["ccmr_undefined_frac"]
+                            "croma": float(payload["croma"]),
+                            "croma_std": float(payload["croma_std"]),
+                            "croma_undefined_frac": float(
+                                payload["croma_undefined_frac"]
                             ),
-                            "ccmr_k_start": int(payload["ccmr_k_start"]),
-                            "ccmr_k_final": int(payload["ccmr_k_final"]),
-                            "ccmr_retries": int(payload["ccmr_retries"]),
-                            "ccmr_alpha": float(payload["ccmr_alpha"]),
-                            "ccmr_q_alpha": float(payload["ccmr_q_alpha"]),
-                            "ccmr_ltm_alpha": float(payload["ccmr_ltm_alpha"]),
+                            "croma_k_start": int(payload["croma_k_start"]),
+                            "croma_k_final": int(payload["croma_k_final"]),
+                            "croma_retries": int(payload["croma_retries"]),
+                            "croma_alpha": float(payload["croma_alpha"]),
+                            "croma_q_alpha": float(payload["croma_q_alpha"]),
+                            "croma_ltm_alpha": float(payload["croma_ltm_alpha"]),
                             "embedding_path": str(output_path),
                         }
                     )
 
-                m_sorted = sorted(ccmr_m_values)
-                ccmr_curve = [float(ccmr_by_m[m]["ccmr"]) for m in m_sorted]
-                finite_curve = [c for c in ccmr_curve if np.isfinite(c)]
+                m_sorted = sorted(croma_m_values)
+                croma_curve = [float(croma_by_m[m]["croma"]) for m in m_sorted]
+                finite_curve = [c for c in croma_curve if np.isfinite(c)]
                 if len(m_sorted) > 1:
                     _trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
-                    ccmr_auc = float(
-                        _trapz(ccmr_curve, m_sorted) / (m_sorted[-1] - m_sorted[0])
+                    croma_auc = float(
+                        _trapz(croma_curve, m_sorted) / (m_sorted[-1] - m_sorted[0])
                     )
                 else:
-                    ccmr_auc = ccmr_curve[0] if ccmr_curve else float("nan")
-                ccmr_min_val = (
+                    croma_auc = croma_curve[0] if croma_curve else float("nan")
+                croma_min_val = (
                     float(min(finite_curve)) if finite_curve else float("nan")
                 )
-                ccmr_delta = (
-                    float(ccmr_curve[-1] - ccmr_curve[0])
-                    if len(ccmr_curve) > 1
+                croma_delta = (
+                    float(croma_curve[-1] - croma_curve[0])
+                    if len(croma_curve) > 1
                     else 0.0
                 )
 
@@ -1781,10 +1781,10 @@ def main() -> int:
                     ltm_alpha=float(ri_summary.get("ltm_alpha", float("nan"))),
                 )
 
-                ccmr_result = ccmr_by_m[ccmr_headline_m]
-                ccmr_dist_path = _distribution_path(results_dir, "ccmr", model)
-                ccmr_dist_path.parent.mkdir(parents=True, exist_ok=True)
-                np.save(ccmr_dist_path, ccmr_samples)
+                croma_result = croma_by_m[croma_headline_m]
+                croma_dist_path = _distribution_path(results_dir, "croma", model)
+                croma_dist_path.parent.mkdir(parents=True, exist_ok=True)
+                np.save(croma_dist_path, croma_samples)
 
                 row = {
                     "dataset": dataset_name,
@@ -1797,7 +1797,7 @@ def main() -> int:
                     "evaluation_unit": evaluation_unit,
                     "tau": model_tau,
                     "k_values": k_values_sig,
-                    "ccmr_search": ccmr_search_sig,
+                    "croma_search": croma_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
                     "confounder_knn_bacc": float(
                         knn_confounder_bacc_by_k[int(selected_k_confounder)]
@@ -1823,20 +1823,20 @@ def main() -> int:
                     "mari_mixed_undefined_frac": mari_mixed_frac,
                     "ri_samples_path": str(saved_ri_dist_path),
                     "mari_samples_path": str(saved_dist_path),
-                    "ccmr": float(ccmr_result["ccmr"]),
-                    "ccmr_std": float(ccmr_result["ccmr_std"]),
-                    "ccmr_m": int(ccmr_result["m"]),
-                    "ccmr_undefined_frac": float(ccmr_result["ccmr_undefined_frac"]),
-                    "ccmr_k_start": int(ccmr_result["ccmr_k_start"]),
-                    "ccmr_k_final": int(ccmr_result["ccmr_k_final"]),
-                    "ccmr_retries": int(ccmr_result["ccmr_retries"]),
-                    "ccmr_alpha": float(ccmr_result["ccmr_alpha"]),
-                    "ccmr_q_alpha": float(ccmr_result["ccmr_q_alpha"]),
-                    "ccmr_ltm_alpha": float(ccmr_result["ccmr_ltm_alpha"]),
-                    "ccmr_auc": ccmr_auc,
-                    "ccmr_min": ccmr_min_val,
-                    "ccmr_delta": ccmr_delta,
-                    "ccmr_samples_path": str(ccmr_dist_path),
+                    "croma": float(croma_result["croma"]),
+                    "croma_std": float(croma_result["croma_std"]),
+                    "croma_m": int(croma_result["m"]),
+                    "croma_undefined_frac": float(croma_result["croma_undefined_frac"]),
+                    "croma_k_start": int(croma_result["croma_k_start"]),
+                    "croma_k_final": int(croma_result["croma_k_final"]),
+                    "croma_retries": int(croma_result["croma_retries"]),
+                    "croma_alpha": float(croma_result["croma_alpha"]),
+                    "croma_q_alpha": float(croma_result["croma_q_alpha"]),
+                    "croma_ltm_alpha": float(croma_result["croma_ltm_alpha"]),
+                    "croma_auc": croma_auc,
+                    "croma_min": croma_min_val,
+                    "croma_delta": croma_delta,
+                    "croma_samples_path": str(croma_dist_path),
                     "embedding_path": str(output_path),
                 }
                 rows.append(row)
@@ -1850,8 +1850,8 @@ def main() -> int:
                     evaluation_unit=evaluation_unit,
                     selected_k=int(ri_summary["k"]),
                     tau=model_tau,
-                    ccmr_alpha=float(args.ccmr_alpha),
-                    ccmr_search_sig=str(ccmr_search_sig),
+                    croma_alpha=float(args.croma_alpha),
+                    croma_search_sig=str(croma_search_sig),
                     ri_samples_aligned=np.asarray(ri_samples_aligned, dtype=float),
                     mari_samples_aligned=np.asarray(mari_samples_aligned, dtype=float),
                     ri_defined_mask=np.isfinite(
@@ -1862,10 +1862,10 @@ def main() -> int:
                     ),
                     ri_undefined_types=np.asarray(ri_undefined_types, dtype=int),
                     mari_undefined_types=np.asarray(mari_undefined_types, dtype=int),
-                    ccmr_samples_aligned_by_m=np.asarray(
-                        ccmr_samples_aligned_by_m, dtype=float
+                    croma_samples_aligned_by_m=np.asarray(
+                        croma_samples_aligned_by_m, dtype=float
                     ),
-                    ccmr_m_values=ccmr_m_values,
+                    croma_m_values=croma_m_values,
                 )
                 model_per_sample_rows = sorted(
                     model_per_sample_rows, key=lambda row: int(row["occurrence_index"])
@@ -1889,7 +1889,7 @@ def main() -> int:
                             "tau": model_tau,
                             "k_max": int(k_max),
                             "k_values": k_values_sig,
-                            "ccmr_search": ccmr_search_sig,
+                            "croma_search": croma_search_sig,
                             "k": int(k),
                             "knn_bacc": float(knn_bacc_by_k[int(k)]),
                             "knn_confounder_bacc": float(
@@ -1902,7 +1902,7 @@ def main() -> int:
                             "embedding_path": str(output_path),
                         }
                     )
-                ccmr_m_sweep_rows.extend(ccmr_m_rows_for_model)
+                croma_m_sweep_rows.extend(croma_m_rows_for_model)
 
                 metrics_status[model] = "cached" if all_cache_hit else "ok"
                 if all_cache_hit:
@@ -1910,15 +1910,15 @@ def main() -> int:
                 else:
                     ticker.log("[benchmark] metrics cache miss: partial/full recompute")
                 ticker.log(
-                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CCMR={row['ccmr']:.4f}"
+                    f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CRoMa={row['croma']:.4f}"
                 )
                 undef_parts = []
                 if row["ri_undefined_frac"] > 0.0:
                     undef_parts.append(f"RI={100*row['ri_undefined_frac']:.1f}%")
                 if row["mari_undefined_frac"] > 0.0:
                     undef_parts.append(f"MaRI={100*row['mari_undefined_frac']:.1f}%")
-                if row["ccmr_undefined_frac"] > 0.0:
-                    undef_parts.append(f"CCMR={100*row['ccmr_undefined_frac']:.1f}%")
+                if row["croma_undefined_frac"] > 0.0:
+                    undef_parts.append(f"CRoMa={100*row['croma_undefined_frac']:.1f}%")
                 if undef_parts:
                     ticker.log(
                         f"[benchmark] undefined samples: {', '.join(undef_parts)}"
@@ -1995,9 +1995,9 @@ def main() -> int:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
         save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
         save_metrics(
-            rows=ccmr_m_sweep_rows,
-            csv_path=ccmr_m_sweep_csv,
-            json_path=ccmr_m_sweep_json,
+            rows=croma_m_sweep_rows,
+            csv_path=croma_m_sweep_csv,
+            json_path=croma_m_sweep_json,
         )
         plot_knn_bio_k_sweep(
             rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png"
@@ -2016,14 +2016,14 @@ def main() -> int:
                 rows=k_sweep_rows,
                 out_path=plots_dir / "mari_cumulative_mean_k_sweep.png",
             )
-        plot_ccmr_m_sweep(
-            rows=ccmr_m_sweep_rows, out_path=plots_dir / "ccmr_m_sweep.png"
+        plot_croma_m_sweep(
+            rows=croma_m_sweep_rows, out_path=plots_dir / "croma_m_sweep.png"
         )
-        plot_ccmr_ltm_scatter(
-            rows=rows, out_path=plots_dir / "ccmr_ltm_scatter.png"
+        plot_croma_ltm_scatter(
+            rows=rows, out_path=plots_dir / "croma_ltm_scatter.png"
         )
-        plot_ccmr_ltm_bars(
-            rows=rows, out_path=plots_dir / "ccmr_ltm_bars.png"
+        plot_croma_ltm_bars(
+            rows=rows, out_path=plots_dir / "croma_ltm_bars.png"
         )
         plot_bio_vs_confounder_scatter(
             rows=rows, out_path=plots_dir / "bio_vs_confounder_scatter.png"
@@ -2032,14 +2032,14 @@ def main() -> int:
             rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png"
         )
         plot_ri_mari_support(rows=rows, out_path=plots_dir / "ri_mari_support.png")
-        plot_ccmr_vs_mari_scatter(
-            rows=rows, out_path=plots_dir / "ccmr_vs_mari_scatter.png"
+        plot_croma_vs_mari_scatter(
+            rows=rows, out_path=plots_dir / "croma_vs_mari_scatter.png"
         )
-        plot_q_alpha_vs_ccmr_scatter(
-            rows=rows, out_path=plots_dir / "q_alpha_vs_ccmr_scatter.png"
+        plot_q_alpha_vs_croma_scatter(
+            rows=rows, out_path=plots_dir / "q_alpha_vs_croma_scatter.png"
         )
-        plot_ccmr_sample_distributions(
-            rows=rows, out_path=plots_dir / "ccmr_sample_distributions.png"
+        plot_croma_sample_distributions(
+            rows=rows, out_path=plots_dir / "croma_sample_distributions.png"
         )
         if args.prune_ss_oo:
             plot_ri_mari_sample_distributions(
@@ -2065,10 +2065,10 @@ def main() -> int:
     progress_write(f"[benchmark] k_sweep_csv={k_sweep_csv}", enabled=progress_enabled)
     progress_write(f"[benchmark] k_sweep_json={k_sweep_json}", enabled=progress_enabled)
     progress_write(
-        f"[benchmark] ccmr_m_sweep_csv={ccmr_m_sweep_csv}", enabled=progress_enabled
+        f"[benchmark] croma_m_sweep_csv={croma_m_sweep_csv}", enabled=progress_enabled
     )
     progress_write(
-        f"[benchmark] ccmr_m_sweep_json={ccmr_m_sweep_json}", enabled=progress_enabled
+        f"[benchmark] croma_m_sweep_json={croma_m_sweep_json}", enabled=progress_enabled
     )
     progress_write(f"[benchmark] plots_dir={plots_dir}", enabled=progress_enabled)
 

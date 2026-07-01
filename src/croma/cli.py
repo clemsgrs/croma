@@ -4,8 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
-from croma import CCMR, MaRI, RI
-from croma.metrics.ccmr import CCMR_HEADLINE_M
+from croma import CRoMa, MaRI, RI
+from croma.metrics.croma import CROMA_HEADLINE_M
 from croma.alignment import (
     build_embedding_source_manifest,
     expand_features_to_manifest,
@@ -53,7 +53,7 @@ def _load_eval_features(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Compute RI, MaRI, and CCMR metrics, or prepare aligned embedding inputs."
+        description="Compute RI, MaRI, and CRoMa metrics, or prepare aligned embedding inputs."
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -120,30 +120,30 @@ def main() -> None:
         "--out", required=True, help="Path to output manifest-aligned NPY embeddings."
     )
 
-    ccmr_parser = sub.add_parser("ccmr", parents=[shared], help="Compute CCMR.")
-    ccmr_parser.add_argument(
+    croma_parser = sub.add_parser("croma", parents=[shared], help="Compute CRoMa.")
+    croma_parser.add_argument(
         "--m",
         type=int,
-        default=CCMR_HEADLINE_M,
+        default=CROMA_HEADLINE_M,
         help="Number of SO/OS neighbors to average (>=1).",
     )
-    ccmr_parser.add_argument(
+    croma_parser.add_argument(
         "--alpha",
         type=float,
         default=0.10,
         help="Tail percentile for Q_alpha and LTM_alpha (default 0.10).",
     )
-    ccmr_parser.add_argument(
+    croma_parser.add_argument(
         "--start-k",
         type=int,
         default=200,
-        help="Initial k for iterative CCMR neighbor search (default 200).",
+        help="Initial k for iterative CRoMa neighbor search (default 200).",
     )
-    ccmr_parser.add_argument(
+    croma_parser.add_argument(
         "--k-growth-factor",
         type=float,
         default=2.0,
-        help="Geometric growth factor for CCMR iterative k search (>1, default 2.0).",
+        help="Geometric growth factor for CRoMa iterative k search (>1, default 2.0).",
     )
 
     args = parser.parse_args()
@@ -198,8 +198,8 @@ def main() -> None:
         confounder_column=str(args.confounder_column),
     )
 
-    if args.command == "ccmr":
-        result = CCMR.compute(
+    if args.command == "croma":
+        result = CRoMa.compute(
             features=features,
             manifest=manifest,
             confounder_column=str(args.confounder_column),

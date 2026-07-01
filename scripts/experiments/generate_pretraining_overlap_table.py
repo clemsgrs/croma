@@ -1,8 +1,8 @@
-"""Supplementary table: per-model CCMR on the TCGA cohort vs the non-TCGA cohorts
+"""Supplementary table: per-model CRoMa on the TCGA cohort vs the non-TCGA cohorts
 of Tolkach-ESCA, isolating the pretraining-domain-overlap confound.
 
 Tolkach-ESCA mixes one TCGA cohort (VALSET3_TCGA) with three non-TCGA cohorts,
-so the per-sample CCMR gap between them is a within-dataset test for an
+so the per-sample CRoMa gap between them is a within-dataset test for an
 in-distribution advantage. Sorted by the TCGA-favouring gap (descending); the
 TCGA-only-pretrained Midnight-12k is the extreme outlier.
 
@@ -15,11 +15,11 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from croma.metrics.ccmr import CCMR_HEADLINE_M  # noqa: E402
+from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 PER_SAMPLE = Path("output/pathorob-tolkach-esca/results/per_sample_metrics.csv")
 TCGA_CENTER = "VALSET3_TCGA"
-HEADLINE_COL = f"ccmr_m{int(CCMR_HEADLINE_M)}"
+HEADLINE_COL = f"croma_m{int(CROMA_HEADLINE_M)}"
 OUT = Path("paper/sections/supp_pretraining_overlap.tex")
 
 
@@ -39,7 +39,7 @@ def build() -> str:
         r"\small",
         r"\begin{tabular}{lcccc}",
         r"\hline",
-        r"Model & \code{CCMR} (TCGA) & \code{CCMR} (non-TCGA) & gap & ratio \\",
+        r"Model & \code{CRoMa} (TCGA) & \code{CRoMa} (non-TCGA) & gap & ratio \\",
         r"\hline",
     ]
     for _, x in r.iterrows():
@@ -52,7 +52,7 @@ def build() -> str:
         r"\hline",
         r"\end{tabular}",
         r"\caption{\textbf{The pretraining-domain-overlap confound, localised within "
-        rf"Tolkach-ESCA.}} Median per-sample $\mcode{{CCMR}}(m{{=}}{int(CCMR_HEADLINE_M)})$ on the TCGA cohort "
+        rf"Tolkach-ESCA.}} Median per-sample $\mcode{{CRoMa}}(m{{=}}{int(CROMA_HEADLINE_M)})$ on the TCGA cohort "
         r"(\texttt{VALSET3\_TCGA}) versus the three non-TCGA cohorts, per model, sorted by the "
         r"TCGA-favouring gap. Every model scores somewhat higher on the TCGA cohort---it is "
         r"intrinsically cleaner---but \code{Midnight-12k}, pretrained \emph{exclusively} on "

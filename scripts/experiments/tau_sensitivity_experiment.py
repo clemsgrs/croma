@@ -15,7 +15,7 @@ k* (the same k* the benchmark selected, read from metrics.csv):
      differs by the *same* reordering at every tau. So the MaRI reshuffle is a stable
      property of margin-awareness, not a knob-tuning accident.
 
-MaRI and RI values are computed by calling the production CCMR/RI metric code
+MaRI and RI values are computed by calling the production CRoMa/RI metric code
 (`MaRI.compute`, `RI.compute`, dataset_wide), verified to reproduce metrics.csv
 (Virchow2: RI 0.814118, MaRI@0.2 0.845230).
 """

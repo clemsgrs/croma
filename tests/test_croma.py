@@ -4,12 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from croma import CCMR
-import croma.metrics.ccmr as ccmr_mod
-from croma.metrics.ccmr import (
-    CCMR_HEADLINE_M,
-    CrossConfounderMarginRatio,
-    _compute_sample_ccmr,
+from croma import CRoMa
+import croma.metrics.croma as croma_mod
+from croma.metrics.croma import (
+    CROMA_HEADLINE_M,
+    CrossConfounderRobustnessMargin,
+    _compute_sample_croma,
 )
 
 
@@ -59,49 +59,49 @@ def _toy_features_so_closer() -> tuple[np.ndarray, pd.DataFrame]:
     return features, manifest
 
 
-def _compute_ccmr(**kwargs):
-    return CCMR.compute(confounder_column="scanner_vendor", **kwargs)
+def _compute_croma(**kwargs):
+    return CRoMa.compute(confounder_column="scanner_vendor", **kwargs)
 
 
-class TestComputeSampleCCMR:
+class TestComputeSampleCRoMa:
 
     def test_basic_margin(self) -> None:
-        # CCMR is the signed normalized margin (d_OS - d_SO) / (d_OS + d_SO).
+        # CRoMa is the signed normalized margin (d_OS - d_SO) / (d_OS + d_SO).
         so_dists = np.array([[0.1], [0.3]])
         os_dists = np.array([[0.3], [0.1]])
 
-        ccmr = _compute_sample_ccmr(so_dists, os_dists)
+        croma = _compute_sample_croma(so_dists, os_dists)
 
-        assert ccmr[0] == pytest.approx(0.5)  # (0.3 - 0.1) / (0.3 + 0.1)
-        assert ccmr[1] == pytest.approx(-0.5)  # (0.1 - 0.3) / (0.1 + 0.3)
+        assert croma[0] == pytest.approx(0.5)  # (0.3 - 0.1) / (0.3 + 0.1)
+        assert croma[1] == pytest.approx(-0.5)  # (0.1 - 0.3) / (0.1 + 0.3)
 
     def test_inf_produces_nan(self) -> None:
         so_dists = np.array([[0.1], [np.inf]])
         os_dists = np.array([[0.3], [0.2]])
 
-        ccmr = _compute_sample_ccmr(so_dists, os_dists)
+        croma = _compute_sample_croma(so_dists, os_dists)
 
-        assert np.isfinite(ccmr[0])
-        assert np.isnan(ccmr[1])
+        assert np.isfinite(croma[0])
+        assert np.isnan(croma[1])
 
 
-class TestCCMRCompute:
+class TestCRoMaCompute:
 
     def test_default_k_growth_factor_is_two(self) -> None:
-        sig = inspect.signature(CrossConfounderMarginRatio.compute)
+        sig = inspect.signature(CrossConfounderRobustnessMargin.compute)
         assert sig.parameters["k_growth_factor"].default == 2.0
 
     def test_headline_m_default_is_five(self) -> None:
         # The headline averaging radius is m=5: the smallest window that removes
         # single-neighbour outlier sensitivity while staying in the local typed
-        # shell (model ranking and sign are m-invariant; see paper ccmr.tex).
-        assert CCMR_HEADLINE_M == 5
-        sig = inspect.signature(CrossConfounderMarginRatio.compute)
-        assert sig.parameters["m"].default == CCMR_HEADLINE_M
+        # shell (model ranking and sign are m-invariant; see paper croma.tex).
+        assert CROMA_HEADLINE_M == 5
+        sig = inspect.signature(CrossConfounderRobustnessMargin.compute)
+        assert sig.parameters["m"].default == CROMA_HEADLINE_M
 
     def test_compute_list_m_matches_individual_compute(self) -> None:
         features, manifest = _toy_features_so_closer()
-        by_m = _compute_ccmr(
+        by_m = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -109,10 +109,10 @@ class TestCCMRCompute:
         )
         assert isinstance(by_m, dict)
 
-        single_m1 = _compute_ccmr(
+        single_m1 = _compute_croma(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
         )
-        single_m2 = _compute_ccmr(
+        single_m2 = _compute_croma(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=2
         )
 
@@ -133,14 +133,14 @@ class TestCCMRCompute:
     ) -> None:
         features, manifest = _toy_features_so_closer()
         calls = {"n": 0}
-        original = ccmr_mod._iterative_typed_neighbor_search
+        original = croma_mod._iterative_typed_neighbor_search
 
         def wrapped(**kwargs):
             calls["n"] += 1
             return original(**kwargs)
 
-        monkeypatch.setattr(ccmr_mod, "_iterative_typed_neighbor_search", wrapped)
-        by_m = _compute_ccmr(
+        monkeypatch.setattr(croma_mod, "_iterative_typed_neighbor_search", wrapped)
+        by_m = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -157,7 +157,7 @@ class TestCCMRCompute:
         if evaluation_design == "paired_2x2":
             manifest = manifest.copy()
             manifest["subset"] = "pair0"
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design=evaluation_design,
@@ -174,14 +174,14 @@ class TestCCMRCompute:
         assert result.undefined_frac == pytest.approx(0.0)
         assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
 
-    def test_so_closer_yields_ccmr_above_zero_dataset_wide(self) -> None:
+    def test_so_closer_yields_croma_above_zero_dataset_wide(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
         )
         assert result.value > 0.0
 
-    def test_os_closer_yields_ccmr_below_zero(self) -> None:
+    def test_os_closer_yields_croma_below_zero(self) -> None:
         manifest = _make_manifest(
             n=8,
             labels=["A", "A", "B", "B", "A", "A", "B", "B"],
@@ -200,7 +200,7 @@ class TestCCMRCompute:
             ],
             dtype=float,
         )
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
         )
         assert result.value < 0.0
@@ -213,7 +213,7 @@ class TestCCMRCompute:
         )
         features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
 
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
         )
 
@@ -241,7 +241,7 @@ class TestCCMRCompute:
             dtype=float,
         )
 
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -259,7 +259,7 @@ class TestCCMRCompute:
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -300,12 +300,12 @@ class TestCCMRCompute:
             query_indices = kwargs["query_indices"]
             return np.zeros((len(query_indices),), dtype=bool)
 
-        monkeypatch.setattr(ccmr_mod, "NearestNeighbors", _FakeNN)
+        monkeypatch.setattr(croma_mod, "NearestNeighbors", _FakeNN)
         monkeypatch.setattr(
-            ccmr_mod, "_scan_typed_neighbors_for_query_rows", _never_define
+            croma_mod, "_scan_typed_neighbors_for_query_rows", _never_define
         )
 
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -362,12 +362,12 @@ class TestCCMRCompute:
                 out[:] = True
             return out
 
-        monkeypatch.setattr(ccmr_mod, "NearestNeighbors", _FakeNN)
+        monkeypatch.setattr(croma_mod, "NearestNeighbors", _FakeNN)
         monkeypatch.setattr(
-            ccmr_mod, "_scan_typed_neighbors_for_query_rows", _define_half_then_all
+            croma_mod, "_scan_typed_neighbors_for_query_rows", _define_half_then_all
         )
 
-        result = _compute_ccmr(
+        result = _compute_croma(
             features=features,
             manifest=manifest,
             evaluation_design="dataset_wide",
@@ -382,14 +382,14 @@ class TestCCMRCompute:
     def test_invalid_evaluation_design_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="evaluation_design"):
-            _compute_ccmr(
+            _compute_croma(
                 features=features, manifest=manifest, evaluation_design="auto", m=1
             )
 
     def test_paired_requires_subset_metadata(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="subset"):
-            _compute_ccmr(
+            _compute_croma(
                 features=features,
                 manifest=manifest,
                 evaluation_design="paired_2x2",
@@ -399,7 +399,7 @@ class TestCCMRCompute:
     def test_m_zero_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="m must be >= 1"):
-            _compute_ccmr(
+            _compute_croma(
                 features=features,
                 manifest=manifest,
                 evaluation_design="dataset_wide",
@@ -409,7 +409,7 @@ class TestCCMRCompute:
     def test_growth_factor_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="k_growth_factor"):
-            _compute_ccmr(
+            _compute_croma(
                 features=features,
                 manifest=manifest,
                 evaluation_design="dataset_wide",
@@ -420,7 +420,7 @@ class TestCCMRCompute:
     def test_start_k_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="start_k"):
-            _compute_ccmr(
+            _compute_croma(
                 features=features,
                 manifest=manifest,
                 evaluation_design="dataset_wide",
@@ -429,9 +429,9 @@ class TestCCMRCompute:
             )
 
     def test_api_alias(self) -> None:
-        assert CCMR is CrossConfounderMarginRatio
+        assert CRoMa is CrossConfounderRobustnessMargin
 
     def test_manual_kmax_not_supported(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(TypeError):
-            _compute_ccmr(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]
+            _compute_croma(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]

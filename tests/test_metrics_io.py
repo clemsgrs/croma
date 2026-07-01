@@ -16,8 +16,8 @@ def test_k_values_signature_is_sorted_and_unique() -> None:
     assert mio.k_values_signature([7, 3, 7, 5]) == "3,5,7"
 
 
-def test_ccmr_search_signature_is_stable() -> None:
-    sig = mio.ccmr_search_signature(
+def test_croma_search_signature_is_stable() -> None:
+    sig = mio.croma_search_signature(
         start_k=200,
         k_growth_factor=1.5,
         alpha=0.10,
@@ -25,8 +25,8 @@ def test_ccmr_search_signature_is_stable() -> None:
     assert sig == "start=200;growth=1.5;alpha=0.1"
 
 
-def test_ccmr_search_signature_alpha_format_is_deterministic() -> None:
-    sig = mio.ccmr_search_signature(
+def test_croma_search_signature_alpha_format_is_deterministic() -> None:
+    sig = mio.croma_search_signature(
         start_k=320,
         k_growth_factor=1.75,
         alpha=0.125,

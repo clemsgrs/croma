@@ -18,7 +18,7 @@ The two findings it backs in the manuscript:
       neighbours are *systematically* closer than unfavorable (OS) ones, the asymmetry
       accumulates instead of cancelling and MaRI rises above RI (e.g. UNI2-h), and vice
       versa (e.g. Midnight-12k). Pooled MaRI carries a weak global directional-margin
-      signal; the per-sample margin story is left to CCMR (deep search, near-full coverage).
+      signal; the per-sample margin story is left to CRoMa (deep search, near-full coverage).
 
 Contested counts come from the same core neighbour helpers the benchmark uses
 (_prepare_neighbors), so "defined" matches metrics.csv exactly.

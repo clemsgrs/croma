@@ -324,7 +324,7 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
         ],
         [
             "cli.py",
-            "ccmr",
+            "croma",
             "--manifest",
             "m.csv",
             "--embeddings",

@@ -2,7 +2,7 @@
 
 Mirrors the hand-authored Camelyon table (``paper/sections/results_table.tex``,
 ``tab:main-results``) so every benchmark gets an identically-structured table with
-zero manual entry. Sorted by pooled CCMR (headline m); per-column best in bold.
+zero manual entry. Sorted by pooled CRoMa (headline m); per-column best in bold.
 
 Usage:
   python scripts/experiments/generate_results_table.py \
@@ -19,7 +19,7 @@ from pathlib import Path
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from croma.metrics.ccmr import CCMR_HEADLINE_M  # noqa: E402
+from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 # column -> (header, decimals, percent)
 COLS = [
@@ -27,8 +27,8 @@ COLS = [
     ("bio_knn_bacc", "bio bacc", 3, False),
     ("ri", r"\code{RI}", 3, False),
     ("mari", r"\code{MaRI}", 3, False),
-    ("ccmr", r"\code{CCMR}", 2, False),
-    ("ccmr_ltm_alpha", r"$\mcode{LTM}_{10\%}$", 2, False),
+    ("croma", r"\code{CRoMa}", 2, False),
+    ("croma_ltm_alpha", r"$\mcode{LTM}_{10\%}$", 2, False),
     ("support", "support", 1, True),
 ]
 
@@ -43,13 +43,13 @@ def _fmt(value: float, decimals: int, percent: bool, bold: bool) -> str:
     return f"\\textbf{{{body}}}" if bold else body
 
 
-def _load_ccmr_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
-    """Per-model (lo, hi) CCMR CI from the sibling bootstrap_uncertainty.csv, if any."""
+def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
+    """Per-model (lo, hi) CRoMa CI from the sibling bootstrap_uncertainty.csv, if any."""
     ci_path = metrics_csv.parent / "bootstrap_uncertainty.csv"
     if not ci_path.exists():
         return None
     ci = pd.read_csv(ci_path).set_index("model")
-    return {m: (float(r["ccmr_lo"]), float(r["ccmr_hi"])) for m, r in ci.iterrows()}
+    return {m: (float(r["croma_lo"]), float(r["croma_hi"])) for m, r in ci.iterrows()}
 
 
 def build_table(
@@ -57,9 +57,9 @@ def build_table(
 ) -> str:
     df = pd.read_csv(metrics_csv)
     df["support"] = (1.0 - df["ri_undefined_frac"]) * 100.0
-    df = df.sort_values("ccmr", ascending=False).reset_index(drop=True)
+    df = df.sort_values("croma", ascending=False).reset_index(drop=True)
 
-    ccmr_ci = _load_ccmr_ci(metrics_csv) if with_ci else None
+    croma_ci = _load_croma_ci(metrics_csv) if with_ci else None
     confounder = df["confounder_display_name"].iloc[0]
     n_models = len(df)
     # per-column best (highest is best for every reported column, incl. support)
@@ -81,8 +81,8 @@ def build_table(
         for col, _, dec, pct in COLS:
             is_best = col != "k" and abs(row[col] - best[col]) < 1e-9
             cell = _fmt(row[col], dec, pct, is_best)
-            if col == "ccmr" and ccmr_ci is not None and row["model"] in ccmr_ci:
-                lo, hi = ccmr_ci[row["model"]]
+            if col == "croma" and croma_ci is not None and row["model"] in croma_ci:
+                lo, hi = croma_ci[row["model"]]
                 cell += rf"\,{{\scriptsize$[{lo:.2f}, {hi:.2f}]$}}"
             cells.append(cell)
         lines.append(" & ".join(cells) + r" \\")
@@ -90,15 +90,15 @@ def build_table(
         r"\hline",
         r"\end{tabular}",
         rf"\caption{{\textbf{{Main quantitative results on {name}.}} The {n_models} "
-        rf"{model_type} foundation models, sorted by pooled \code{{CCMR}} ($m{{=}}{int(CCMR_HEADLINE_M)}$). "
+        rf"{model_type} foundation models, sorted by pooled \code{{CRoMa}} ($m{{=}}{int(CROMA_HEADLINE_M)}$). "
         r"Columns are as defined in Table~\ref{tab:main-results} (operating point "
         r"$k^\star$; biological $k$-NN balanced accuracy at $k^\star$; pooled \code{RI} and "
-        rf"\code{{MaRI}} at $k^\star$; pooled \code{{CCMR}} at $m{{=}}{int(CCMR_HEADLINE_M)}$; lower-tail mean "
-        r"$\mcode{LTM}_{10\%}$ of \code{CCMR}; and \emph{support}, the fraction of samples "
+        rf"\code{{MaRI}} at $k^\star$; pooled \code{{CRoMa}} at $m{{=}}{int(CROMA_HEADLINE_M)}$; lower-tail mean "
+        r"$\mcode{LTM}_{10\%}$ of \code{CRoMa}; and \emph{support}, the fraction of samples "
         rf"on which \code{{RI}}/\code{{MaRI}} are defined). Confounder: {confounder}. "
         r"Per-column best is in bold."
         + (
-            r" \code{CCMR} brackets are 95\% slide-level cluster-bootstrap confidence "
+            r" \code{CRoMa} brackets are 95\% slide-level cluster-bootstrap confidence "
             r"intervals on the pooled median; overlapping intervals near the top indicate "
             r"a statistical tie (Supplementary Table~\ref{tab:bootstrap-uncertainty})."
             if with_ci
@@ -120,7 +120,7 @@ def main() -> None:
     p.add_argument("--model-type", default="tile-level",
                    help='Model-modality phrase for the caption (e.g. "slide-level").')
     p.add_argument("--with-ci", action="store_true",
-                   help="Render bootstrap CCMR CIs in-table from sibling bootstrap_uncertainty.csv.")
+                   help="Render bootstrap CRoMa CIs in-table from sibling bootstrap_uncertainty.csv.")
     args = p.parse_args()
 
     tex = build_table(args.metrics, args.name, args.label, args.model_type, args.with_ci)
