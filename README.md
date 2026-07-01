@@ -1,7 +1,7 @@
 # croma
 
 <p align="center">
-  <a href="https://pypi.org/project/cross-margin/"><img src="https://img.shields.io/pypi/v/cross-margin.svg" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/croma/"><img src="https://img.shields.io/pypi/v/croma.svg" alt="PyPI version"></a>
   <a href="https://github.com/psf/black"><img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: Black"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/clemsgrs/croma.svg" alt="License"></a>
 </p>
@@ -24,13 +24,13 @@ The package also comes with optional benchmarking utilities for multi-model eval
 Core package:
 
 ```bash
-pip install cross-margin
+pip install croma
 ```
 
-With benchmark utilities:
+With paper-reproduction utilities:
 
 ```bash
-pip install "cross-margin[bench]"
+pip install "croma[repro]"
 ```
 
 ## Python Quickstart
@@ -107,7 +107,7 @@ croma ccmr \
 
 ## Benchmarking
 
-`cross-margin` also includes an optional benchmarking pipeline for comparing multiple foundation models on the same manifest. The benchmark handles embedding extraction, metric computation, cached re-runs, and summary artifact generation in a single workflow.
+`croma` also includes an optional benchmarking pipeline for comparing multiple foundation models on the same manifest. The benchmark handles embedding extraction, metric computation, cached re-runs, and summary artifact generation in a single workflow.
 
 Run it with:
 

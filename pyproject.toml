@@ -3,9 +3,12 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cross-margin"
-version = "1.0.0"
-description = "Margin-aware robustness metrics for pathology foundation models."
+# Distribution name. Target is the bare `croma` (pending PyPI name acquisition);
+# if that name is unavailable, fall back to the reserved `croma-metrics`:
+# name = "croma-metrics"
+name = "croma"
+version = "0.1.0"
+description = "Robustness metrics for pathology foundation models: counts, margins, and cross-confounder ratios."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -17,8 +20,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Full benchmarking + data preparation + plotting pipeline.
-bench = [
+# Extra deps for reproducing the paper (data prep, embedding, plotting pipeline).
+repro = [
   "rich>=13.0",
   "huggingface_hub>=0.24",
   "pyarrow>=14.0",
@@ -39,7 +42,7 @@ dev = [
 croma = "croma.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["croma"]
+packages = ["src/croma"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
