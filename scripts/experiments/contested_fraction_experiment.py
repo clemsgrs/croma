@@ -25,15 +25,12 @@ Contested counts come from the same core neighbour helpers the benchmark uses
 """
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[2]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+from _neighbor_analysis import REPO, list_models, load_embedding, load_meta
 
 from croma.metrics.neighbors import _prepare_neighbors
 
@@ -43,9 +40,7 @@ MANIFEST = ROOT / "embedding_source_manifest.csv"
 METRICS = ROOT / "results" / "metrics.csv"
 
 df = pd.read_csv(MANIFEST)
-labels = pd.factorize(df["label"])[0].astype(int)
-centers = pd.factorize(df["confounder"])[0].astype(int)
-slide = df["slide_id"].astype(str).to_numpy()
+labels, centers, slide = load_meta(df)
 n = len(df)
 
 mdf = pd.read_csv(METRICS).set_index("model")
@@ -53,13 +48,12 @@ kstar = mdf["k"].astype(int).to_dict()
 ri_pooled = mdf["ri"].astype(float).to_dict()
 mari_pooled = mdf["mari"].astype(float).to_dict()
 
-models = sorted(p.stem for p in EMB.glob("*.npy"))
+models = list_models(EMB)
 print(f"{n} samples, {len(models)} models\n")
 
 rows = []
 for model in models:
-    X = np.load(EMB / f"{model}.npy").astype(np.float64)
-    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+    X = load_embedding(EMB / f"{model}.npy")
     k = int(kstar[model])
     nidx, ndist, vc = _prepare_neighbors(X, slide, k)
     so = np.zeros(n, int)

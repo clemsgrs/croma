@@ -21,15 +21,12 @@ MaRI and RI values are computed by calling the production CRoMa/RI metric code
 """
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[2]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+from _neighbor_analysis import REPO, list_models, load_embedding
 
 from croma import MaRI, RI
 
@@ -55,7 +52,7 @@ _metrics = pd.read_csv(METRICS).set_index("model")
 kstar = _metrics["k"].astype(int).to_dict()
 tau_auto = _metrics["tau"].astype(float)  # per-model auto tau (median typed-neighbour dist)
 TAU_MIN, TAU_MED, TAU_MAX = float(tau_auto.min()), float(tau_auto.median()), float(tau_auto.max())
-models = sorted(p.stem for p in EMB.glob("*.npy"))
+models = list_models(EMB)
 print(f"{len(df)} samples, {len(models)} models, taus={TAUS}\n")
 
 # The MaRI(tau) curves are deterministic from the embeddings; reuse the cached
@@ -79,7 +76,7 @@ if _cache_ok:
     }
 else:
     for model in models:
-        X = np.load(EMB / f"{model}.npy").astype(np.float64)
+        X = load_embedding(EMB / f"{model}.npy", np.float64, normalize=False)
         k = int(kstar[model])
         ri_vals[model] = float(
             RI.compute(

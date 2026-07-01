@@ -26,15 +26,12 @@ concern 6 raises). The CRoMa-vs-SS-depth scatter is the twin of fig:croma-vs-mar
 """
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[2]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+from _neighbor_analysis import list_models, load_embedding, load_meta
 
 ROOT = Path("output/faithful/pathorob-camelyon-faithful")
 EMB = ROOT / "embeddings"
@@ -45,9 +42,7 @@ ALPHA = 0.10  # bottom decile, matches reported LTM_10%
 SS_DEPTH_K = (10, 25, 50)  # fixed reference k for SS-pocket prevalence (k*-free)
 
 df = pd.read_csv(MANIFEST)
-labels = pd.factorize(df["label"])[0].astype(np.int16)
-conf = pd.factorize(df["confounder"])[0].astype(np.int16)
-slide = pd.factorize(df["slide_id"])[0].astype(np.int32)
+labels, conf, slide = load_meta(df, compact=True)
 n = len(df)
 
 # pooled CRoMa (signed margin) per model for the SS-depth complementarity scatter
@@ -56,7 +51,7 @@ if METRICS.exists():
     _m = pd.read_csv(METRICS)
     croma_by_model = dict(zip(_m["model"].astype(str), _m["croma"].astype(float)))
 
-models = sorted(p.stem for p in EMB.glob("*.npy"))
+models = list_models(EMB)
 print(f"{n} samples, {len(models)} models\n")
 
 self_idx = np.arange(n)
@@ -68,8 +63,7 @@ pooled_pre_ss = 0  # SS neighbours strictly closer than the first typed neighbou
 pooled_pre_total = 0  # all (SS or OO) neighbours strictly closer than the first typed
 
 for model in models:
-    X = np.load(EMB / f"{model}.npy").astype(np.float32)
-    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+    X = load_embedding(EMB / f"{model}.npy", np.float32)
     D = 1.0 - X @ X.T  # cosine distance, (n, n)
 
     order = np.argsort(D, axis=1, kind="stable")  # ascending; col 0 is self

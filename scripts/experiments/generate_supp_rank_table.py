@@ -5,13 +5,11 @@ Fuses the two stories into one table, sorted by the headline pooled CRoMa:
   - tail cleanliness: nearest-OS rank for the CRoMa bottom decile vs the rest
 """
 
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
+from _paper_tables import CROMA_HEADLINE_M
 
 ROOT = Path("output/faithful/pathorob-camelyon-faithful")
 rank = pd.read_csv(ROOT / "typed_neighbor_rank_summary.csv").set_index("model")

@@ -14,14 +14,13 @@ Usage: python scripts/experiments/generate_uncertainty_supp_table.py
 """
 
 import json
-import sys
 from pathlib import Path
 
 import pandas as pd
 
+from _paper_tables import CROMA_HEADLINE_M, scriptsize_ci
+
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 # (display name, benchmark dir) -- Camelyon included for the correlation summary only.
 SUMMARY_ORDER = [
@@ -49,7 +48,7 @@ def _corr_cell(corr: dict, key: str, with_ci: bool = True) -> str:
     if c is None:
         return "---"
     if with_ci:
-        return f"${c['rho']:.2f}$ {{\\scriptsize$[{c['lo']:.2f}, {c['hi']:.2f}]$}}"
+        return f"${c['rho']:.2f}$ " + scriptsize_ci(c["lo"], c["hi"])
     return f"${c['rho']:.2f}$"
 
 
@@ -111,9 +110,11 @@ def per_model_table(name: str, rel: str) -> list[str]:
         r"\hline",
     ]
     for _, r in df.iterrows():
+        croma_ci = scriptsize_ci(r["croma_lo"], r["croma_hi"])
+        rank_ci = rf"{{\scriptsize$[{int(r['rank_lo'])}, {int(r['rank_hi'])}]$}}"
         lines.append(
-            f"{r['model']} & ${r['croma']:.2f}$ {{\\scriptsize$[{r['croma_lo']:.2f}, {r['croma_hi']:.2f}]$}} "
-            f"& {int(r['point_rank'])} {{\\scriptsize$[{int(r['rank_lo'])}, {int(r['rank_hi'])}]$}} \\\\"
+            f"{r['model']} & ${r['croma']:.2f}$ {croma_ci} "
+            f"& {int(r['point_rank'])} {rank_ci} \\\\"
         )
     n_boot = summary.get("n_boot", "?")
     n_slides = summary.get("n_slides", "?")

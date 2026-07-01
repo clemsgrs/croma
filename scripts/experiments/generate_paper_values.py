@@ -26,6 +26,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from _paper_tables import bare_num as _apd_bare, ci_bracket as _ci, num_math as _num, pct_round as _pct
+
 # macro prefix (LaTeX commands take letters only -> spell digits out) -> metrics.csv
 BENCHMARKS: list[tuple[str, str]] = [
     ("Camelyon", "output/faithful/pathorob-camelyon-faithful/results/metrics.csv"),
@@ -95,14 +97,6 @@ def _to_margin(croma: pd.Series, scale: str) -> pd.Series:
     return croma
 
 
-def _num(value: float, decimals: int = 2) -> str:
-    """Math-mode literal, e.g. ``$-0.46$``; ``-0.00`` is normalised to ``$0.00$``."""
-    body = f"{value:.{decimals}f}"
-    if float(body) == 0.0:
-        body = f"{0.0:.{decimals}f}"  # strip a spurious leading minus
-    return f"${body}$"
-
-
 def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[list[str], str]:
     raw = df["croma"].astype(float)
     scale = scale_override if scale_override != "auto" else _detect_scale(raw)
@@ -136,11 +130,6 @@ def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[lis
     return lines, scale
 
 
-def _pct(value: float) -> str:
-    r"""Percent literal, e.g. ``70\%`` (rounded to a whole percent)."""
-    return rf"{int(round(value * 100))}\%"
-
-
 def _ss_shell_macros(prefix: str, df: pd.DataFrame) -> list[str]:
     """SS-shell local-entanglement scalars (concern 6) from the typed-rank summary.
 
@@ -165,11 +154,6 @@ def _ss_shell_macros(prefix: str, df: pd.DataFrame) -> list[str]:
         ("SsPocketCromaRho", _num(float(pocket_rho))),
     ]
     return [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
-
-
-def _ci(lo: float, hi: float) -> str:
-    """Bracketed CI literal in math mode, e.g. ``$[0.17, 0.23]$``."""
-    return rf"$[{lo:.2f}, {hi:.2f}]$"
 
 
 def _uncertainty_macros(prefix: str, summary: dict, df: pd.DataFrame) -> list[str]:
@@ -202,18 +186,6 @@ def _uncertainty_macros(prefix: str, summary: dict, df: pd.DataFrame) -> list[st
     if closest is not None:
         specs.append(("CromaClosestPairWinProb", _num(float(closest["p_higher_beats_lower"]))))
     return [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
-
-
-def _apd_bare(value: float) -> str:
-    """Bare 2-dp number (no math delimiters) so a macro nests inside ``$\\rho=...$``.
-
-    Normalises a spurious ``-0.00`` to ``0.00``; the math minus is supplied by the
-    surrounding ``$...$`` in prose (e.g. prostate's ``$\\rho=\\ApdOodCromaProstate$``).
-    """
-    body = f"{value:.2f}"
-    if float(body) == 0.0:
-        body = f"{0.0:.2f}"
-    return body
 
 
 def _apd_macros(df: pd.DataFrame) -> list[str]:

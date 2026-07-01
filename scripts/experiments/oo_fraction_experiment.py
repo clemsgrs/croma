@@ -20,15 +20,12 @@ to ignore near each sample.
 """
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[2]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+from _neighbor_analysis import list_models, load_embedding, load_meta
 
 ROOT = Path("output/faithful/pathorob-camelyon-faithful")
 EMB = ROOT / "embeddings"
@@ -39,12 +36,10 @@ K_GRID = [3, 5, 10, 20, 30, 50, 75, 100, 150, 200]
 COL_CAP = 400  # leading sorted columns scanned to collect up to max(K_GRID) valid ones
 
 df = pd.read_csv(MANIFEST)
-labels = pd.factorize(df["label"])[0].astype(np.int16)
-conf = pd.factorize(df["confounder"])[0].astype(np.int16)
-slide = pd.factorize(df["slide_id"])[0].astype(np.int32)
+labels, conf, slide = load_meta(df, compact=True)
 n = len(df)
 
-models = sorted(p.stem for p in EMB.glob("*.npy"))
+models = list_models(EMB)
 print(f"{n} samples, {len(models)} models\n")
 
 self_idx = np.arange(n)
@@ -52,8 +47,7 @@ self_idx = np.arange(n)
 pooled = {t: {k: [] for k in K_GRID} for t in ("SS", "SO", "OS", "OO")}
 
 for model in models:
-    X = np.load(EMB / f"{model}.npy").astype(np.float32)
-    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+    X = load_embedding(EMB / f"{model}.npy", np.float32)
     D = 1.0 - X @ X.T
     order = np.argsort(D, axis=1, kind="stable")[:, :COL_CAP]  # (n, COL_CAP)
 
