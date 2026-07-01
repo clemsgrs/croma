@@ -33,6 +33,14 @@ cross-confounder margin metric).
   preserved, and cells that merely contain `ccmr` as a substring (e.g. paths) are
   left byte-for-byte unchanged. The migration stays idempotent. Accepted as a
   documented exception in `docs/adr/0001-rename-ccmr-to-croma.md`.
+- **Extended the `ccmr` → `croma` migration to JSON result artifacts.**
+  `scripts/experiments/migrate_ccmr_columns.py` now also rewrites the `ccmr`
+  identifier in JSON files read by the paper figure generators (e.g.
+  `metrics.json`, `k_sweep_metrics.json`): legacy dict keys (`ccmr`, `ccmr_std`,
+  …) recursively through nested dicts/lists, whole-token string values (e.g.
+  `"metric": "ccmr"`), and `ccmr`-named `.json` filenames. Numbers/bools/null and
+  substring-only occurrences (paths) are preserved; the pass stays value-preserving
+  and idempotent.
 - **Renamed the optional extra `[bench]` → `[repro]`.** The extra that pulls in the
   paper-reproduction stack (data prep, embedding, plotting) is now installed with
   `pip install "croma[repro]"`. This is a name-only change; the dependency set is

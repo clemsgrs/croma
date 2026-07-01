@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -259,6 +260,198 @@ def test_combined_header_value_filename_directory_walk(tmp_path: Path) -> None:
     value_after = pd.read_csv(renamed)
     assert list(value_after["metric"]) == ["croma", "croma_m5", "ri"]
     assert list(value_after["pair"]) == ["croma_vs_ri", "croma_vs_mari", "mari_vs_ri"]
+
+    # Second walk is a complete no-op.
+    assert mig.migrate_directory(tmp_path) == []
+
+
+# --------------------------------------------------------------------------- #
+# JSON artifact migration                                                      #
+# --------------------------------------------------------------------------- #
+
+
+def _legacy_json_obj() -> dict:
+    """Synthetic JSON result artifact carrying legacy ``ccmr`` keys/values.
+
+    Mirrors files like ``metrics.json`` / ``k_sweep_metrics.json``: legacy keys at
+    the top level and nested (inside a list of dicts and inside nested dicts),
+    whole-string metric-token values, a path value that merely *contains* ``ccmr``
+    as a substring, and assorted non-string scalars that must be preserved exactly.
+    """
+    return {
+        "ccmr": 0.123456789,
+        "ccmr_std": 0.05,
+        "ri": 0.42,
+        "metric": "ccmr",
+        "flag": "ccmr_m_sweep_gain_high",
+        "note": "ri_vs_mari",
+        "samples_path": "output/ccmr/samples.csv",
+        "count": 400,
+        "converged": True,
+        "missing": None,
+        "nested": {
+            "ccmr_search": {"start": 200, "growth": 2},
+            "ccmr_ltm_alpha": -0.35,
+            "ri_delta": 0.03,
+        },
+        "rows": [
+            {"ccmr": 0.5, "ccmr_m5": 0.111, "model": "resnet"},
+            {"ccmr": -0.9, "ccmr_m5": 0.222, "model": "vit"},
+        ],
+    }
+
+
+def test_migrate_json_value_renames_keys_at_top_and_nested() -> None:
+    out = mig.migrate_json_value(_legacy_json_obj())
+
+    # Top-level keys renamed; non-ccmr keys untouched.
+    assert "croma" in out and "ccmr" not in out
+    assert "croma_std" in out and "ccmr_std" not in out
+    assert "ri" in out
+
+    # Nested dict keys renamed.
+    assert "croma_search" in out["nested"]
+    assert "croma_ltm_alpha" in out["nested"]
+    assert "ccmr_search" not in out["nested"]
+    assert out["nested"]["ri_delta"] == 0.03
+
+    # Keys inside a list of dicts renamed.
+    for row in out["rows"]:
+        assert "croma" in row and "ccmr" not in row
+        assert "croma_m5" in row and "ccmr_m5" not in row
+        assert "model" in row
+
+
+def test_migrate_json_value_renames_whole_string_token_values() -> None:
+    out = mig.migrate_json_value(_legacy_json_obj())
+    # whole-string value that is exactly ``ccmr`` -> ``croma``
+    assert out["metric"] == "croma"
+    # whole-string value beginning with ``ccmr_`` -> leading token rewritten
+    assert out["flag"] == "croma_m_sweep_gain_high"
+    # non-ccmr string value untouched
+    assert out["note"] == "ri_vs_mari"
+
+
+def test_migrate_json_value_preserves_substring_and_scalars() -> None:
+    src = _legacy_json_obj()
+    out = mig.migrate_json_value(src)
+
+    # A path value that merely *contains* ccmr as a substring is untouched.
+    assert out["samples_path"] == "output/ccmr/samples.csv"
+
+    # Non-string scalars preserved exactly (numeric equality after transform).
+    assert out["croma"] == src["ccmr"]
+    assert out["croma"] == 0.123456789
+    assert out["count"] == 400 and isinstance(out["count"], int)
+    assert out["converged"] is True
+    assert out["missing"] is None
+    assert out["nested"]["croma_ltm_alpha"] == -0.35
+    assert out["rows"][1]["croma"] == -0.9
+
+    # The source object is not mutated in place.
+    assert "ccmr" in src
+
+
+def test_migrate_json_value_preserves_key_order() -> None:
+    obj = {"ccmr": 1, "ri": 2, "ccmr_std": 3, "mari": 4}
+    out = mig.migrate_json_value(obj)
+    assert list(out.keys()) == ["croma", "ri", "croma_std", "mari"]
+
+
+def test_migrate_json_rewrites_file_and_preserves_numbers(tmp_path: Path) -> None:
+    json_path = tmp_path / "metrics.json"
+    src = _legacy_json_obj()
+    json_path.write_text(json.dumps(src, indent=2), encoding="utf-8")
+
+    changed = mig.migrate_json(json_path)
+    assert changed is True
+
+    after = json.loads(json_path.read_text(encoding="utf-8"))
+    assert after["croma"] == src["ccmr"]
+    assert after["metric"] == "croma"
+    assert after["flag"] == "croma_m_sweep_gain_high"
+    assert after["samples_path"] == "output/ccmr/samples.csv"
+    assert after["nested"]["croma_ltm_alpha"] == -0.35
+    assert after["rows"][0]["croma_m5"] == 0.111
+
+
+def test_migrate_json_is_idempotent(tmp_path: Path) -> None:
+    json_path = tmp_path / "metrics.json"
+    json_path.write_text(json.dumps(_legacy_json_obj(), indent=2), encoding="utf-8")
+
+    assert mig.migrate_json(json_path) is True
+    first = json_path.read_bytes()
+
+    # Second run is a no-op and leaves the file byte-for-byte identical.
+    assert mig.migrate_json(json_path) is False
+    assert json_path.read_bytes() == first
+
+
+def test_migrate_json_leaves_non_ccmr_file_untouched(tmp_path: Path) -> None:
+    json_path = tmp_path / "clean.json"
+    obj = {"ri": 0.1, "mari": 0.2, "note": "ri_vs_mari"}
+    json_path.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    before = json_path.read_bytes()
+
+    assert mig.migrate_json(json_path) is False
+    assert json_path.read_bytes() == before
+
+
+def test_json_filename_rename() -> None:
+    assert mig.rename_filename("ccmr_m_sweep_metrics.json") == (
+        "croma_m_sweep_metrics.json"
+    )
+    # No ccmr token -> unchanged.
+    assert mig.rename_filename("k_sweep_metrics.json") == "k_sweep_metrics.json"
+
+
+def test_migrate_filename_renames_json_on_disk(tmp_path: Path) -> None:
+    src = tmp_path / "ccmr_m_sweep_metrics.json"
+    src.write_text(json.dumps({"ccmr": 1.0}), encoding="utf-8")
+
+    new_path = mig.migrate_filename(src)
+    assert new_path == tmp_path / "croma_m_sweep_metrics.json"
+    assert new_path.exists() and not src.exists()
+
+    other = tmp_path / "metrics.json"
+    other.write_text(json.dumps({"ccmr": 1.0}), encoding="utf-8")
+    assert mig.migrate_filename(other) is None
+    assert other.exists()
+
+
+def test_combined_csv_and_json_directory_walk(tmp_path: Path) -> None:
+    # CSV: header + value + filename legacy files
+    header_file = tmp_path / "metrics.csv"
+    _write_legacy_csv(header_file)
+    value_file = tmp_path / "model_specific_ccmr_subgroups.csv"
+    _write_analysis_csv(value_file)
+    # JSON: key/value legacy file (name unchanged) + filename legacy file
+    json_file = tmp_path / "metrics.json"
+    json_file.write_text(json.dumps(_legacy_json_obj(), indent=2), encoding="utf-8")
+    json_named = tmp_path / "ccmr_m_sweep_metrics.json"
+    json_named.write_text(json.dumps(_legacy_json_obj(), indent=2), encoding="utf-8")
+
+    changed = mig.migrate_directory(tmp_path)
+
+    # CSV header file migrated in place.
+    assert header_file in changed
+    assert "croma" in pd.read_csv(header_file).columns
+
+    # CSV value file renamed + cells rewritten.
+    csv_renamed = tmp_path / "model_specific_croma_subgroups.csv"
+    assert csv_renamed in changed
+    assert list(pd.read_csv(csv_renamed)["metric"]) == ["croma", "croma_m5", "ri"]
+
+    # JSON key/value file migrated in place.
+    assert json_file in changed
+    after = json.loads(json_file.read_text(encoding="utf-8"))
+    assert after["croma"] == 0.123456789
+    assert after["metric"] == "croma"
+
+    # JSON renamed on disk.
+    json_renamed = tmp_path / "croma_m_sweep_metrics.json"
+    assert json_renamed in changed
+    assert not json_named.exists()
 
     # Second walk is a complete no-op.
     assert mig.migrate_directory(tmp_path) == []

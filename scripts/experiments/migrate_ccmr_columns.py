@@ -26,12 +26,26 @@ widened -- as an accepted, documented exception (see
 - rename affected **CSV filenames**, replacing the ``ccmr`` token in the basename
   with ``croma``.
 
+**JSON result artifacts.** The paper's figure generators also read JSON result
+files (e.g. ``metrics.json``, ``k_sweep_metrics.json``,
+``croma_m_sweep_metrics.json``), which still carry the legacy identifier. The same
+leading-token rule is therefore applied to JSON too, covering:
+
+- **dict keys** that are exactly ``ccmr`` or begin with ``ccmr_`` (e.g. ``ccmr``,
+  ``ccmr_std``, ``ccmr_search``, ``ccmr_ltm_alpha``), recursively through nested
+  dicts and lists, preserving key order;
+- **whole-token string values** that are exactly ``ccmr`` or begin with ``ccmr_``
+  (e.g. ``"metric": "ccmr"``, ``"flag": "ccmr_m_sweep_gain_high"``), leaving
+  substring occurrences (paths) and all non-string scalars untouched; and
+- affected **JSON filenames** (e.g.
+  ``ccmr_m_sweep_metrics.json`` -> ``croma_m_sweep_metrics.json``).
+
 This is still a pure identifier change: **no value is ever recomputed or
 perturbed**, only the stale ``ccmr`` identifier is rewritten.
 
-It is safe to run repeatedly: a CSV whose columns/cells are already ``croma*`` (or
-which has no ``ccmr`` token at all) and whose filename carries no ``ccmr`` token is
-left byte-for-byte unchanged.
+It is safe to run repeatedly: a CSV/JSON whose columns/cells/keys/values are already
+``croma*`` (or which has no ``ccmr`` token at all) and whose filename carries no
+``ccmr`` token is left unchanged.
 
 The canonical set of legacy headline columns handled is::
 
@@ -52,8 +66,10 @@ from __future__ import annotations
 import argparse
 import csv
 import io
+import json
 import re
 from pathlib import Path
+from typing import Any
 
 # Canonical legacy headline columns (documentation / reference). The renaming rule
 # below is prefix-based so it also covers per-radius ``ccmr_m<k>`` columns.
@@ -120,12 +136,12 @@ def rename_cell(value: str) -> str:
 
 
 def rename_filename(name: str) -> str:
-    """Rewrite the ``ccmr`` token in a CSV basename to ``croma``.
+    """Rewrite the ``ccmr`` token in a CSV/JSON basename to ``croma``.
 
     The token is matched on non-alphanumeric boundaries, so ``ccmr`` appearing as a
-    delimited token (``model_specific_ccmr_subgroups.csv``, ``ccmr_report.csv``) is
-    rewritten while ``ccmr`` embedded in a longer word (``accmrx.csv``) and names
-    with no ``ccmr`` token are returned unchanged.
+    delimited token (``model_specific_ccmr_subgroups.csv``,
+    ``ccmr_m_sweep_metrics.json``) is rewritten while ``ccmr`` embedded in a longer
+    word (``accmrx.csv``) and names with no ``ccmr`` token are returned unchanged.
     """
     return _FILENAME_TOKEN_RE.sub(_NEW_PREFIX, name)
 
@@ -212,6 +228,58 @@ def migrate_csv_values(path: Path) -> bool:
     return True
 
 
+def migrate_json_value(value: Any) -> Any:
+    """Recursively rewrite legacy ``ccmr`` identifiers in a parsed JSON value.
+
+    Returns a transformed *copy* (the input is not mutated). Using the same
+    leading-token rule as the CSV passes (:func:`_rename_leading_token`):
+
+    - every **dict key** that is exactly ``ccmr`` or begins with ``ccmr_`` has its
+      leading token rewritten to ``croma``; key order is preserved (the renamed key
+      keeps its position) and the rule is applied recursively through nested dicts
+      and lists;
+    - every **string value** whose entire value is exactly ``ccmr`` or begins with
+      ``ccmr_`` has its leading token rewritten; a string that merely *contains*
+      ``ccmr`` as a substring (e.g. a filesystem path) is left unchanged;
+    - all non-string scalars (numbers, bools, ``None``) are returned unchanged.
+    """
+    if isinstance(value, dict):
+        return {
+            _rename_leading_token(k) if isinstance(k, str) else k: migrate_json_value(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [migrate_json_value(v) for v in value]
+    if isinstance(value, str):
+        return _rename_leading_token(value)
+    return value
+
+
+def migrate_json(path: Path) -> bool:
+    """Rewrite legacy ``ccmr`` identifiers in a JSON file ``path`` in place.
+
+    Loads the JSON document, applies :func:`migrate_json_value` (renaming ``ccmr``
+    dict keys and whole-token string values, leaving numbers/bools/null and
+    substring occurrences untouched), and rewrites the file only if the transform
+    changed something.
+
+    Returns ``True`` if the file was modified, ``False`` if it was already migrated
+    (or carried no ``ccmr`` identifier) and left untouched.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        original = f.read()
+
+    data = json.loads(original)
+    migrated = migrate_json_value(data)
+    if migrated == data:
+        return False
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(migrated, f, indent=2)
+        f.write("\n")
+    return True
+
+
 def migrate_filename(path: Path) -> Path | None:
     """Rename ``path`` so its basename's ``ccmr`` token becomes ``croma``.
 
@@ -227,21 +295,27 @@ def migrate_filename(path: Path) -> Path | None:
 
 
 def migrate_directory(directory: Path) -> list[Path]:
-    """Migrate every ``*.csv`` under ``directory`` recursively.
+    """Migrate every ``*.csv`` and ``*.json`` under ``directory`` recursively.
 
-    Applies the header rename, the cell-value rename, and the filename rename to
-    each CSV. Returns the list of files that were actually modified (reported under
-    their final, possibly renamed, path).
+    For each CSV, applies the header rename, the cell-value rename, and the filename
+    rename. For each JSON, applies the key/value rename (:func:`migrate_json`) and
+    the filename rename. Returns the list of files that were actually modified
+    (reported under their final, possibly renamed, path).
     """
     changed: list[Path] = []
-    for path in sorted(directory.rglob("*.csv")):
+    paths = sorted(list(directory.rglob("*.csv")) + list(directory.rglob("*.json")))
+    for path in paths:
         if not path.is_file():
             continue
         touched = False
-        if migrate_csv(path):
-            touched = True
-        if migrate_csv_values(path):
-            touched = True
+        if path.suffix == ".csv":
+            if migrate_csv(path):
+                touched = True
+            if migrate_csv_values(path):
+                touched = True
+        elif path.suffix == ".json":
+            if migrate_json(path):
+                touched = True
         new_path = migrate_filename(path)
         if new_path is not None:
             touched = True
@@ -254,14 +328,15 @@ def migrate_directory(directory: Path) -> list[Path]:
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Rename legacy ccmr result identifiers to croma in place: column "
-            "headers, known cell values, and affected CSV filenames."
+            "Rename legacy ccmr result identifiers to croma in place: CSV column "
+            "headers and cell values, JSON keys and whole-token string values, and "
+            "affected CSV/JSON filenames."
         )
     )
     parser.add_argument(
         "directory",
         type=Path,
-        help="Directory to walk for result CSVs (recursively).",
+        help="Directory to walk for result CSVs and JSONs (recursively).",
     )
     args = parser.parse_args()
 
@@ -271,11 +346,11 @@ def main() -> None:
 
     changed = migrate_directory(directory)
     if changed:
-        print(f"migrated {len(changed)} CSV file(s):")
+        print(f"migrated {len(changed)} file(s):")
         for path in changed:
             print(f"  {path}")
     else:
-        print("no CSV files needed migration (already croma, or no ccmr identifier)")
+        print("no files needed migration (already croma, or no ccmr identifier)")
 
 
 if __name__ == "__main__":
