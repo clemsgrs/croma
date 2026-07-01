@@ -23,7 +23,7 @@ from croma.metrics.pairs import (
     validate_subset_manifest,
 )
 from croma.metrics.tail import compute_tail_metrics
-from croma.types import CCMRResult
+from croma.types import CRoMaResult
 
 logger = logging.getLogger("croma")
 
@@ -33,31 +33,31 @@ logger = logging.getLogger("croma")
 # while staying in the local typed shell. The pooled-median model ranking and the
 # biology-/confounder-dominant sign are invariant across the m-sweep (Spearman
 # >= 0.99), so m only affects per-sample magnitudes and tail statistics; m=1 and the
-# full sweep are reported as sensitivity. See paper/sections/ccmr.tex.
-CCMR_HEADLINE_M = 5
+# full sweep are reported as sensitivity. See paper/sections/croma.tex.
+CROMA_HEADLINE_M = 5
 
 
 @dataclass(frozen=True)
-class _CCMRSearchMeta:
+class _CRoMaSearchMeta:
     k_start: int
     k_final: int
     retries: int
 
 
-def _compute_sample_ccmr(
+def _compute_sample_croma(
     so_dists: np.ndarray,
     os_dists: np.ndarray,
 ) -> np.ndarray:
-    """Per-sample CCMR as a signed, normalized margin in ``(-1, 1)``.
+    """Per-sample CRoMa as a signed, normalized margin in ``(-1, 1)``.
 
-    ``CCMR_i = (d_OS - d_SO) / (d_OS + d_SO)`` where ``d_SO``/``d_OS`` are the
+    ``CRoMa_i = (d_OS - d_SO) / (d_OS + d_SO)`` where ``d_SO``/``d_OS`` are the
     mean cosine distances to the ``m`` nearest ``SO``/``OS`` neighbors. The sign
     reports which typed neighbor is closer and the magnitude how decisively:
     ``> 0`` is biology-dominant (robust), ``< 0`` confounder-dominant (fragile),
     ``0`` an exactly contested boundary. Equivalently, the same-confounder
-    impostor accounts for a fraction ``(1 + CCMR_i) / 2`` of the total typed
+    impostor accounts for a fraction ``(1 + CRoMa_i) / 2`` of the total typed
     distance ``d_OS + d_SO`` and the biological match the remaining
-    ``(1 - CCMR_i) / 2``.
+    ``(1 - CRoMa_i) / 2``.
     """
     has_inf_so = np.any(np.isinf(so_dists), axis=1)
     has_inf_os = np.any(np.isinf(os_dists), axis=1)
@@ -68,11 +68,11 @@ def _compute_sample_ccmr(
     denom = mean_os + mean_so
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        ccmr = (mean_os - mean_so) / denom
+        croma = (mean_os - mean_so) / denom
 
-    ccmr[undefined] = np.nan
-    ccmr[denom == 0.0] = np.nan
-    return ccmr
+    croma[undefined] = np.nan
+    croma[denom == 0.0] = np.nan
+    return croma
 
 
 def _scan_typed_neighbors_for_query_rows(
@@ -124,7 +124,7 @@ def _iterative_typed_neighbor_search(
     m: int,
     start_k: int,
     k_growth_factor: float,
-) -> tuple[np.ndarray, np.ndarray, _CCMRSearchMeta]:
+) -> tuple[np.ndarray, np.ndarray, _CRoMaSearchMeta]:
     n_samples = int(len(labels))
     so_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
     os_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
@@ -133,7 +133,7 @@ def _iterative_typed_neighbor_search(
         return (
             so_dists,
             os_dists,
-            _CCMRSearchMeta(
+            _CRoMaSearchMeta(
                 k_start=0,
                 k_final=0,
                 retries=0,
@@ -156,7 +156,7 @@ def _iterative_typed_neighbor_search(
             return (
                 so_dists,
                 os_dists,
-                _CCMRSearchMeta(
+                _CRoMaSearchMeta(
                     k_start=k_start_used,
                     k_final=int(k_current),
                     retries=int(retries),
@@ -199,7 +199,7 @@ def _iterative_typed_neighbor_search(
             return (
                 so_dists,
                 os_dists,
-                _CCMRSearchMeta(
+                _CRoMaSearchMeta(
                     k_start=k_start_used,
                     k_final=int(k_current),
                     retries=int(retries),
@@ -219,7 +219,7 @@ def _dataset_subset(df: pd.DataFrame) -> EvaluationSubset:
     return EvaluationSubset(subset_id="dataset", rows=subset_df)
 
 
-class CrossConfounderMarginRatio:
+class CrossConfounderRobustnessMargin:
     @classmethod
     def compute(
         cls,
@@ -228,11 +228,11 @@ class CrossConfounderMarginRatio:
         *,
         confounder_column: str,
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        m: int | list[int] | tuple[int, ...] = CCMR_HEADLINE_M,
+        m: int | list[int] | tuple[int, ...] = CROMA_HEADLINE_M,
         alpha: float = 0.10,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
-    ) -> CCMRResult | dict[int, CCMRResult]:
+    ) -> CRoMaResult | dict[int, CRoMaResult]:
         evaluation_design = _normalize_evaluation_design(evaluation_design)
 
         if isinstance(m, (list, tuple)):
@@ -272,7 +272,7 @@ class CrossConfounderMarginRatio:
             subsets = resolve_manifest_subsets(df)
             if not subsets:
                 raise RuntimeError(
-                    f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for CCMR"
+                    f"{dataset_name}: no valid manifest-defined 2x2 subsets remain for CRoMa"
                 )
             evaluation_unit = "occurrence"
         else:
@@ -329,16 +329,16 @@ class CrossConfounderMarginRatio:
             retries_values.append(int(search_meta.retries))
 
             for mm in unique_m_values:
-                sample_ccmr = _compute_sample_ccmr(
+                sample_croma = _compute_sample_croma(
                     so_dists[:, : int(mm)], os_dists[:, : int(mm)]
                 )
-                informative = np.isfinite(sample_ccmr)
+                informative = np.isfinite(sample_croma)
                 n_informative = int(informative.sum())
                 n_undefined = int(n_sub - n_informative)
                 total_undefined[int(mm)] += n_undefined
 
                 occurrence_values_by_m[int(mm)].append(
-                    np.asarray(sample_ccmr, dtype=float)
+                    np.asarray(sample_croma, dtype=float)
                 )
                 occurrence_subsets_by_m[int(mm)].append(
                     np.full(n_sub, str(subset.subset_id), dtype=object)
@@ -347,7 +347,7 @@ class CrossConfounderMarginRatio:
 
                 if n_informative > 0:
                     pair_medians[int(mm)].append(
-                        float(np.median(sample_ccmr[informative]))
+                        float(np.median(sample_croma[informative]))
                     )
                 else:
                     pair_medians[int(mm)].append(float("nan"))
@@ -356,7 +356,7 @@ class CrossConfounderMarginRatio:
         k_final_value = int(max(k_final_values)) if k_final_values else 0
         retries_value = int(max(retries_values)) if retries_values else 0
 
-        by_m: dict[int, CCMRResult] = {}
+        by_m: dict[int, CRoMaResult] = {}
         for mm in unique_m_values:
             finite_pair = np.asarray(pair_medians[int(mm)], dtype=float)
             finite_mask = np.isfinite(finite_pair)
@@ -398,13 +398,13 @@ class CrossConfounderMarginRatio:
 
             if total_undefined[int(mm)] > 0:
                 logger.warning(
-                    f"[CCMR] dataset '{dataset_name}' ({evaluation_design}) has "
+                    f"[CRoMa] dataset '{dataset_name}' ({evaluation_design}) has "
                     f"{total_undefined[int(mm)]}/{occurrence_total} unresolved samples "
                     f"({undefined_frac * 100.0:.1f}%) could not find {mm} SO and {mm} OS neighbor(s)."
                 )
 
             tail = compute_tail_metrics(sample_values, alpha=alpha)
-            by_m[int(mm)] = CCMRResult(
+            by_m[int(mm)] = CRoMaResult(
                 dataset=dataset_name,
                 m=int(mm),
                 value=value,

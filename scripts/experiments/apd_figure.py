@@ -1,6 +1,6 @@
-"""CCMR-vs-APD scatter (PathoROB Camelyon) for the APD-validation section.
+"""CRoMa-vs-APD scatter (PathoROB Camelyon) for the APD-validation section.
 
-Two panels share the CCMR x-axis: left vs in-domain APD (isolates shortcut
+Two panels share the CRoMa x-axis: left vs in-domain APD (isolates shortcut
 reliance), right vs out-of-domain APD (cross-centre generalisation). Reuses the
 project plotting identity (family palette, square panels, shared model legend).
 """
@@ -19,12 +19,12 @@ from croma import plotstyle  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 
 DATASET = "camelyon"
-OUT = REPO / "paper/figures/results/pathorob-camelyon-faithful/ccmr_vs_apd_scatter.png"
+OUT = REPO / "paper/figures/results/pathorob-camelyon-faithful/croma_vs_apd_scatter.png"
 
 
 def main():
     plotstyle.apply_style()
-    # apd_metrics_joined.csv is written by apd_ccmr_correlation.py with CCMR already
+    # apd_metrics_joined.csv is written by apd_croma_correlation.py with CRoMa already
     # on the signed-margin scale (the paper's definition).
     df = pd.read_csv(REPO / "output/apd/apd_metrics_joined.csv")
     df = df[df["dataset"] == DATASET].copy()
@@ -34,19 +34,19 @@ def main():
 
     fig, axes = plt.subplots(1, 2, figsize=(plotstyle.COL_DOUBLE, 5.0))
     panels = [
-        (axes[0], "apd_id_pct", "apd_id", "In-domain APD (%)", "CCMR vs in-domain APD"),
-        (axes[1], "apd_ood_pct", "apd_ood", "Out-of-domain APD (%)", "CCMR vs out-of-domain APD"),
+        (axes[0], "apd_id_pct", "apd_id", "In-domain APD (%)", "CRoMa vs in-domain APD"),
+        (axes[1], "apd_ood_pct", "apd_ood", "Out-of-domain APD (%)", "CRoMa vs out-of-domain APD"),
     ]
     for ax, ykey, raw, ylabel, title in panels:
         ys = df[ykey].to_numpy()
         ypad = max(0.5, (ys.max() - ys.min()) * 0.10)
         P._draw_model_scatter(
-            ax, rows, x_key="ccmr", y_key=ykey,
-            xlabel="CCMR", ylabel=ylabel, title=title,
+            ax, rows, x_key="croma", y_key=ykey,
+            xlabel="CRoMa", ylabel=ylabel, title=title,
             ylim=(ys.min() - ypad, ys.max() + ypad * 1.6),
             hline=0.0, vline=0.0,
         )
-        rho, _ = spearmanr(df["ccmr"], df[raw])
+        rho, _ = spearmanr(df["croma"], df[raw])
         ax.text(0.04, 0.96, f"Spearman $\\rho = {rho:.2f}$",
                 transform=ax.transAxes, ha="left", va="top",
                 fontsize=plotstyle.FS_ANNOT, color=plotstyle.TEXT_COLOR)

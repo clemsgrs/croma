@@ -1,28 +1,28 @@
-"""Variable-radius diagnostic for CCMR.
+"""Variable-radius diagnostic for CRoMa.
 
 For every sample and every model, find the rank (1-indexed position among non-self
 neighbours, ordered by increasing cosine distance, excluding same-slide neighbours as
-CCMR does) at which the first SO and first OS neighbour appears.
+CRoMa does) at which the first SO and first OS neighbour appears.
 
 SO = same label, different confounder ; OS = different label, same confounder.
 
-This decides empirically whether CCMR's k-free search is, in practice, local (typed
+This decides empirically whether CRoMa's k-free search is, in practice, local (typed
 neighbours at small rank) or whether it routinely reaches deep shells. It also checks
-whether the CCMR bottom decile (the LTM tail) is populated by near-shell samples
+whether the CRoMa bottom decile (the LTM tail) is populated by near-shell samples
 (genuine local shortcut) rather than far-shell ratio-compression artefacts.
 
 SS-shell depth (concern 6).
 ---------------------------
-The same neighbour ordering yields the entanglement signal CCMR is blind to. For each
+The same neighbour ordering yields the entanglement signal CRoMa is blind to. For each
 sample we record the rank, *among valid (non-self, non-same-slide) neighbours*, of the
 first typed (SO or OS) neighbour: this is the depth at which the sample exits its
 same-biology/same-confounder (SS) pocket and RI/MaRI first become defined. Everything
 strictly closer than this rank is SS or OO; in this benchmark OO is negligible, so the
 shell that is traversed is SS, and its depth is a continuous, threshold-free, k*-free
 generalisation of RI's SS-dominated undefined fraction. We summarise it per model
-(median depth, fixed-k SS-pocket prevalence) and cross it against pooled CCMR to test
-whether a model can rank high on CCMR while sitting in a deep SS shell (the masking
-concern 6 raises). The CCMR-vs-SS-depth scatter is the twin of fig:ccmr-vs-mari.
+(median depth, fixed-k SS-pocket prevalence) and cross it against pooled CRoMa to test
+whether a model can rank high on CRoMa while sitting in a deep SS shell (the masking
+concern 6 raises). The CRoMa-vs-SS-depth scatter is the twin of fig:croma-vs-mari.
 """
 
 import json
@@ -50,11 +50,11 @@ conf = pd.factorize(df["confounder"])[0].astype(np.int16)
 slide = pd.factorize(df["slide_id"])[0].astype(np.int32)
 n = len(df)
 
-# pooled CCMR (signed margin) per model for the SS-depth complementarity scatter
-ccmr_by_model = {}
+# pooled CRoMa (signed margin) per model for the SS-depth complementarity scatter
+croma_by_model = {}
 if METRICS.exists():
     _m = pd.read_csv(METRICS)
-    ccmr_by_model = dict(zip(_m["model"].astype(str), _m["ccmr"].astype(float)))
+    croma_by_model = dict(zip(_m["model"].astype(str), _m["croma"].astype(float)))
 
 models = sorted(p.stem for p in EMB.glob("*.npy"))
 print(f"{n} samples, {len(models)} models\n")
@@ -110,16 +110,16 @@ for model in models:
     so_rank = np.where(so.any(1), np.where(so, col, big).min(1), -1)
     os_rank = np.where(os.any(1), np.where(os, col, big).min(1), -1)
 
-    # nearest typed distances -> CCMR_i at m=1
+    # nearest typed distances -> CRoMa_i at m=1
     so_d = np.where(so.any(1), np.where(so, D[self_idx[:, None], order], np.inf).min(1), np.nan)
     os_d = np.where(os.any(1), np.where(os, D[self_idx[:, None], order], np.inf).min(1), np.nan)
     with np.errstate(divide="ignore", invalid="ignore"):
-        ccmr = os_d / so_d
-    defined = np.isfinite(ccmr) & (so_d > 0)
+        croma = os_d / so_d
+    defined = np.isfinite(croma) & (so_d > 0)
 
     sr = so_rank[defined]
     orr = os_rank[defined]
-    cc = ccmr[defined]
+    cc = croma[defined]
     pooled_so.append(sr)
     pooled_os.append(orr)
 
@@ -157,7 +157,7 @@ for model in models:
             rest_os_rank_med=pct(orr[~tail], 50),
             tail_so_rank_med=pct(sr[tail], 50),
             rest_so_rank_med=pct(sr[~tail], 50),
-            ccmr=float(ccmr_by_model.get(model, np.nan)),
+            croma=float(croma_by_model.get(model, np.nan)),
             ss_depth_med=pct(depth, 50),
             ss_depth_p90=pct(depth, 90),
             **{f"ss_pocket_frac_k{k}": float(np.mean(ftvr[has_typed] > k)) for k in SS_DEPTH_K},
@@ -180,7 +180,7 @@ for p in (50, 75, 90, 95, 99):
 print(f"  frac with both typed neighbours within rank 10 : {np.mean(both_all <= 10):.3f}")
 print(f"  frac within rank 20 : {np.mean(both_all <= 20):.3f}   rank 50 : {np.mean(both_all <= 50):.3f}")
 
-print("\n=== TAIL CLEANLINESS (CCMR bottom decile vs all) ===")
+print("\n=== TAIL CLEANLINESS (CRoMa bottom decile vs all) ===")
 print(f"  bottom-decile 'both-found' rank   median {np.percentile(tail_both,50):.1f}  p90 {np.percentile(tail_both,90):.1f}")
 print(f"  all-samples   'both-found' rank   median {np.percentile(both_all,50):.1f}  p90 {np.percentile(both_all,90):.1f}")
 print(f"  frac of bottom-decile samples with both typed neighbours within rank 10: {np.mean(tail_both <= 10):.3f}")
@@ -201,7 +201,7 @@ json.dump(
 )
 print(f"\nwrote {out}")
 
-# ---- figure: (left) how deep CCMR searches; (right) tail is locally grounded ----
+# ---- figure: (left) how deep CRoMa searches; (right) tail is locally grounded ----
 import matplotlib
 
 matplotlib.use("Agg")
@@ -251,7 +251,7 @@ _panel_tag(axL, "a")
 xr_t, yr_t = ecdf(PO[tmask])
 xr_r, yr_r = ecdf(PO[~tmask])
 plotstyle.style_axes(axR)
-axR.plot(xr_t, yr_t, color=ACCENT, lw=plotstyle.LW_SERIES, label="CCMR bottom decile (LTM tail)")
+axR.plot(xr_t, yr_t, color=ACCENT, lw=plotstyle.LW_SERIES, label="CRoMa bottom decile (LTM tail)")
 axR.plot(xr_r, yr_r, color=REST, lw=plotstyle.LW_SERIES, label="rest")
 axR.set_xscale("log")
 axR.set_xlabel("rank of nearest OS (same-confounder impostor) neighbour")
@@ -266,21 +266,21 @@ _panel_tag(axR, "b")
 fig.tight_layout()
 FIGDIR.mkdir(parents=True, exist_ok=True)
 (FIGDIR.parent / "png").mkdir(parents=True, exist_ok=True)
-figpath = FIGDIR / "ccmr_rank.pdf"
+figpath = FIGDIR / "croma_rank.pdf"
 fig.savefig(figpath, bbox_inches="tight")
-fig.savefig(FIGDIR.parent / "png" / "ccmr_rank.png", dpi=plotstyle.DEFAULT_DPI, bbox_inches="tight")
+fig.savefig(FIGDIR.parent / "png" / "croma_rank.png", dpi=plotstyle.DEFAULT_DPI, bbox_inches="tight")
 print(f"wrote {figpath}")
 
 # ===================================================================================
-# Concern 6: SS-shell depth is the entanglement axis CCMR is blind to
+# Concern 6: SS-shell depth is the entanglement axis CRoMa is blind to
 # ===================================================================================
 from scipy.stats import spearmanr
 
 print("\n=== SS-SHELL DEPTH (rank of first typed neighbour among valid neighbours) ===")
-ss_cols = ["model", "ccmr", "ss_depth_med", "ss_depth_p90"] + [
+ss_cols = ["model", "croma", "ss_depth_med", "ss_depth_p90"] + [
     f"ss_pocket_frac_k{k}" for k in SS_DEPTH_K
 ]
-ss_view = summary[ss_cols].sort_values("ccmr", ascending=False)
+ss_view = summary[ss_cols].sort_values("croma", ascending=False)
 print(ss_view.round(3).to_string(index=False))
 
 ss_frac_pretyped = pooled_pre_ss / pooled_pre_total if pooled_pre_total else float("nan")
@@ -289,40 +289,40 @@ print(
     f"{ss_frac_pretyped:.4f}  (the shell that is traversed is SS, not OO)"
 )
 
-have_ccmr = summary["ccmr"].notna()
-if have_ccmr.sum() >= 3:
-    sub = summary[have_ccmr]
+have_croma = summary["croma"].notna()
+if have_croma.sum() >= 3:
+    sub = summary[have_croma]
 
     def _sp(col):
-        r, p = spearmanr(sub["ccmr"], sub[col])
+        r, p = spearmanr(sub["croma"], sub[col])
         return f"rho={r:+.3f}  p={p:.3f}"
 
-    print("\n--- Spearman( CCMR , . ) across models ---")
+    print("\n--- Spearman( CRoMa , . ) across models ---")
     print(f"  SS-shell depth (median first-typed rank): {_sp('ss_depth_med')}")
     for k in SS_DEPTH_K:
         print(f"  SS-pocket prevalence @k={k:<3d}            : {_sp(f'ss_pocket_frac_k{k}')}")
     print(
-        "  SS-shell depth and CCMR co-vary (related, not redundant -- the same status\n"
-        "  as CCMR-vs-MaRI): biology-dominant models tend to exit the SS pocket sooner.\n"
+        "  SS-shell depth and CRoMa co-vary (related, not redundant -- the same status\n"
+        "  as CRoMa-vs-MaRI): biology-dominant models tend to exit the SS pocket sooner.\n"
         "  Concern 6 rests on the ABSOLUTE prevalence below, not on weak correlation:"
     )
-    lead = sub.loc[sub["ccmr"].idxmax()]
+    lead = sub.loc[sub["croma"].idxmax()]
     best_local = sub.loc[sub["ss_pocket_frac_k10"].idxmin()]
     print(
-        f"    top-CCMR model {lead['model']} (CCMR {lead['ccmr']:+.3f}) still has "
+        f"    top-CRoMa model {lead['model']} (CRoMa {lead['croma']:+.3f}) still has "
         f"{lead['ss_pocket_frac_k10'] * 100:.0f}% of samples with NO typed neighbour in the 10 nearest;"
     )
     print(
         f"    even the least locally-entangled model {best_local['model']} is at "
-        f"{best_local['ss_pocket_frac_k10'] * 100:.0f}%. CCMR reads its verdict past a locally SS-saturated shell."
+        f"{best_local['ss_pocket_frac_k10'] * 100:.0f}%. CRoMa reads its verdict past a locally SS-saturated shell."
     )
 
-# ---- figure: even CCMR leaders are majority locally SS-saturated ----
+# ---- figure: even CRoMa leaders are majority locally SS-saturated ----
 # y = fraction of samples with NO typed (SO/OS) neighbour among the 10 nearest valid
 # neighbours == RI's SS-dominated undefined fraction at a controlled k. The point cloud
-# trends with CCMR (related, not redundant) yet sits high for *every* model: CCMR reads
+# trends with CRoMa (related, not redundant) yet sits high for *every* model: CRoMa reads
 # its biology-vs-confounder verdict past a locally entangled neighbourhood.
-scat = summary[have_ccmr].copy().sort_values("model")
+scat = summary[have_croma].copy().sort_values("model")
 YK = "ss_pocket_frac_k10"
 fig2, ax2 = plt.subplots(figsize=(plotstyle.COL_ONEHALF, 5.6))
 plotstyle.style_axes(ax2)
@@ -330,24 +330,24 @@ ax2.axvline(0.0, color=plotstyle.REFERENCE_LINE_COLOR, ls="--", lw=plotstyle.LW_
 ax2.axhline(0.5, color=plotstyle.REFERENCE_LINE_COLOR, ls=":", lw=plotstyle.LW_REFERENCE, zorder=1)
 for _, r in scat.iterrows():
     ax2.scatter(
-        [float(r["ccmr"])], [float(r[YK])],
+        [float(r["croma"])], [float(r[YK])],
         s=52, color=plotstyle.color_for_model(str(r["model"])),
         edgecolors="white", linewidths=0.7, alpha=0.9, zorder=3, label=str(r["model"]),
     )
-# annotate the headline: the top-CCMR model is still majority locally entangled
-lead_ex = scat.loc[scat["ccmr"].idxmax()]
+# annotate the headline: the top-CRoMa model is still majority locally entangled
+lead_ex = scat.loc[scat["croma"].idxmax()]
 ax2.annotate(
     f"{lead_ex['model']}\n{lead_ex[YK] * 100:.0f}% SS-pocketed",
-    xy=(float(lead_ex["ccmr"]), float(lead_ex[YK])),
+    xy=(float(lead_ex["croma"]), float(lead_ex[YK])),
     xytext=(-6, -12), textcoords="offset points", ha="right", va="top",
     fontsize=plotstyle.FS_ANNOT, color=plotstyle.TEXT_COLOR,
 )
 ax2.set_ylim(0.0, 1.0)
-ax2.set_xlabel("CCMR  (biology-vs-confounder ordering)")
+ax2.set_xlabel("CRoMa  (biology-vs-confounder ordering)")
 ax2.set_ylabel("Local SS-saturation\n(fraction with no typed neighbour in 10 nearest)")
 plotstyle.title_with_subtitle(
-    ax2, "CCMR robustness does not imply local disentanglement",
-    "16 models; even CCMR leaders are majority SS-pocketed",
+    ax2, "CRoMa robustness does not imply local disentanglement",
+    "16 models; even CRoMa leaders are majority SS-pocketed",
 )
 handles, labels = ax2.get_legend_handles_labels()
 fig2.legend(
@@ -356,7 +356,7 @@ fig2.legend(
     bbox_to_anchor=(0.5, 0.012),
 )
 fig2.subplots_adjust(top=0.90, bottom=0.30, left=0.135, right=0.965)
-figpath2 = FIGDIR / "ccmr_vs_ss_depth.pdf"
+figpath2 = FIGDIR / "croma_vs_ss_depth.pdf"
 fig2.savefig(figpath2, bbox_inches="tight")
-fig2.savefig(FIGDIR.parent / "png" / "ccmr_vs_ss_depth.png", dpi=plotstyle.DEFAULT_DPI, bbox_inches="tight")
+fig2.savefig(FIGDIR.parent / "png" / "croma_vs_ss_depth.png", dpi=plotstyle.DEFAULT_DPI, bbox_inches="tight")
 print(f"wrote {figpath2}")

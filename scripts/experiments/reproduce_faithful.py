@@ -39,7 +39,7 @@ MODELS = ("CONCH,CONCHv1.5,H-optimus-0,H-optimus-1,H0-mini,Hibou-B,Hibou-L,"
 CFG = {
     # camelyon is the primary table (tab:main-results, the column-defining one): we
     # reproduce its metrics.csv here but regenerate its .tex separately so its
-    # self-contained caption is preserved. Its body carries in-table bootstrap CCMR
+    # self-contained caption is preserved. Its body carries in-table bootstrap CRoMa
     # CIs: regenerate with generate_results_table.py --with-ci (needs the sibling
     # bootstrap_uncertainty.csv from bootstrap_uncertainty.py), then restore the caption.
     "camelyon": dict(manifest="data/pathorob/manifests/pathorob-camelyon-faithful.csv",
@@ -132,7 +132,7 @@ if __name__ == "__main__":
     targets = [sys.argv[1]] if len(sys.argv) > 1 else list(CFG)
     for ds in targets:
         run(ds)
-    # Refresh the inline derived scalars (\<Bench>CcmrSpan, ...) so prose stays in
+    # Refresh the inline derived scalars (\<Bench>CromaSpan, ...) so prose stays in
     # sync with the regenerated tables instead of being hand-typed.
     subprocess.run([sys.executable, str(REPO / "scripts/experiments/generate_paper_values.py"),
                     "--root", str(REPO),

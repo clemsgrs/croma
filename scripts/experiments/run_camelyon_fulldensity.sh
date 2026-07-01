@@ -12,10 +12,10 @@
 #
 # Purpose: verify the low RI/MaRI *support* on Camelyon (the coverage-hazard headline,
 # 8-21% in results_table.tex) is intrinsic geometry, not a 4,000-patch subsampling
-# artifact. CCMR is k-free / fully covered and is unaffected either way.
+# artifact. CRoMa is k-free / fully covered and is unaffected either way.
 #
 # Hyperparameters pinned to the rest of the paper (tau=0.2, k_max=25, m<=20,
-# CCMR search start=200/growth=2/alpha=0.1 -- all benchmark.py defaults).
+# CRoMa search start=200/growth=2/alpha=0.1 -- all benchmark.py defaults).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."   # repo root: .../croma

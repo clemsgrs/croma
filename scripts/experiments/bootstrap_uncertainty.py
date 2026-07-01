@@ -1,19 +1,19 @@
-"""Uncertainty quantification for the headline CCMR (closes feedback point 3) and
-the CCMR-vs-RI/MaRI redundancy question (point 6).
+"""Uncertainty quantification for the headline CRoMa (closes feedback point 3) and
+the CRoMa-vs-RI/MaRI redundancy question (point 6).
 
-For each benchmark we read the cached per-sample CCMR (no neighbour recompute) and:
+For each benchmark we read the cached per-sample CRoMa (no neighbour recompute) and:
 
-  1. a slide-level *cluster* bootstrap CI on the pooled-median headline CCMR per
+  1. a slide-level *cluster* bootstrap CI on the pooled-median headline CRoMa per
      model -- tiles within a slide are correlated (pure slides, one scanner), so an
      i.i.d. resample would understate uncertainty;
   2. a *paired* rank-stability bootstrap (one shared slide resample applied to all
      models) giving each model's rank interval and the pairwise win probability
-     P(CCMR_A > CCMR_B) -- this is the honest answer to "is model A's lead real?";
-  3. Spearman(CCMR, RI) and Spearman(CCMR, MaRI) across models with a bootstrap CI
+     P(CRoMa_A > CRoMa_B) -- this is the honest answer to "is model A's lead real?";
+  3. Spearman(CRoMa, RI) and Spearman(CRoMa, MaRI) across models with a bootstrap CI
      over models -- the redundancy evidence for metric_complementarity.tex.
 
 Outputs, per benchmark, under <dir>/results/:
-  - bootstrap_uncertainty.csv   (per-model: ccmr + CI, point/mean rank + CI)
+  - bootstrap_uncertainty.csv   (per-model: croma + CI, point/mean rank + CI)
   - bootstrap_uncertainty.json  (correlations, adjacent-pair win probs, meta)
 
 Usage:
@@ -34,7 +34,7 @@ from croma.metrics.bootstrap import (  # noqa: E402
     bootstrap_spearman,
     paired_rank_stability,
 )
-from croma.metrics.ccmr import CCMR_HEADLINE_M  # noqa: E402
+from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 # name -> benchmark output directory (relative to repo root)
 BENCHMARKS: dict[str, str] = {
@@ -50,13 +50,13 @@ MIN_MODELS_FOR_CORR = 8  # Spearman over models is meaningless for tiny suites
 
 
 def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndarray]:
-    """Per-model CCMR(m) arrays aligned to one shared slide vector.
+    """Per-model CRoMa(m) arrays aligned to one shared slide vector.
 
     Rows are sorted by (occurrence_index, sample_index); every model shares this
     order and the same slide sequence (asserted), so a single slide vector clusters
     all models for the paired bootstrap.
     """
-    cols = ["model", "occurrence_index", "sample_index", "slide_id", f"ccmr_m{m}"]
+    cols = ["model", "occurrence_index", "sample_index", "slide_id", f"croma_m{m}"]
     ps = pd.read_csv(ps_path, usecols=cols)
     models = sorted(ps["model"].unique())
     ref_slides: np.ndarray | None = None
@@ -68,7 +68,7 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
             ref_slides = slides
         elif not np.array_equal(ref_slides, slides):
             raise RuntimeError(f"slide sequence misaligned for model '{model}'")
-        model_values[model] = sub[f"ccmr_m{m}"].to_numpy(dtype=float)
+        model_values[model] = sub[f"croma_m{m}"].to_numpy(dtype=float)
     assert ref_slides is not None
     return model_values, ref_slides
 
@@ -76,17 +76,17 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
 def _correlations(metrics_csv: Path, n_boot: int) -> dict:
     df = pd.read_csv(metrics_csv).set_index("model")
     n_models = len(df)
-    if n_models < MIN_MODELS_FOR_CORR or not {"ri", "mari", "ccmr"} <= set(df.columns):
+    if n_models < MIN_MODELS_FOR_CORR or not {"ri", "mari", "croma"} <= set(df.columns):
         return {"n_models": int(n_models), "skipped": True}
     out: dict = {"n_models": int(n_models), "skipped": False}
     for other in ("ri", "mari"):
         ci = bootstrap_spearman(
-            df["ccmr"].to_numpy(float),
+            df["croma"].to_numpy(float),
             df[other].to_numpy(float),
             n_boot=n_boot,
             seed=SEED,
         )
-        out[f"ccmr_vs_{other}"] = {
+        out[f"croma_vs_{other}"] = {
             "rho": ci.point,
             "lo": ci.lo,
             "hi": ci.hi,
@@ -107,7 +107,7 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
         print(f"[skip] {name}: {ps_path} not found")
         return
 
-    m = int(CCMR_HEADLINE_M)
+    m = int(CROMA_HEADLINE_M)
     model_values, slides = _load_aligned(ps_path, m)
     rs = paired_rank_stability(model_values, slides, n_boot=n_boot, seed=SEED)
 
@@ -118,9 +118,9 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
         rows.append(
             {
                 "model": model,
-                "ccmr": ci.point,
-                "ccmr_lo": ci.lo,
-                "ccmr_hi": ci.hi,
+                "croma": ci.point,
+                "croma_lo": ci.lo,
+                "croma_hi": ci.hi,
                 "point_rank": rs.point_rank[model],
                 "mean_rank": round(rs.mean_rank[model], 2),
                 "rank_lo": rs.rank_lo[model],
@@ -161,8 +161,8 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
     print(f"\n=== {name}  (m={m}, n_boot={n_boot}, slides={summary['n_slides']}) ===")
     for r in rows:
         print(
-            f"  {r['model']:14s} CCMR={r['ccmr']:+.3f} "
-            f"[{r['ccmr_lo']:+.3f}, {r['ccmr_hi']:+.3f}]  "
+            f"  {r['model']:14s} CRoMa={r['croma']:+.3f} "
+            f"[{r['croma_lo']:+.3f}, {r['croma_hi']:+.3f}]  "
             f"rank {r['point_rank']:>2d} (mean {r['mean_rank']:.2f}, "
             f"[{r['rank_lo']},{r['rank_hi']}])"
         )
@@ -173,7 +173,7 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
             f"with P={tightest['p_higher_beats_lower']:.3f}"
         )
     if not corr.get("skipped"):
-        for key in ("ccmr_vs_ri", "ccmr_vs_mari", "ri_vs_mari"):
+        for key in ("croma_vs_ri", "croma_vs_mari", "ri_vs_mari"):
             c = corr[key]
             print(f"  Spearman {key:14s} rho={c['rho']:+.3f} [{c['lo']:+.3f}, {c['hi']:+.3f}]")
     else:

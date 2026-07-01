@@ -1,9 +1,9 @@
-"""Cross-benchmark CCMR ranking figure (paper Fig. 3).
+"""Cross-benchmark CRoMa ranking figure (paper Fig. 3).
 
 A rank bump chart across the three tile-level PathoROB benchmarks: one line per
-model, vertical position = rank by the headline pooled CCMR (1 = most robust, top).
-Marker is filled when the model is biology-dominant (CCMR >= 0) and hollow when
-confounder-dominant (CCMR < 0), so Camelyon's difficulty and the rank crossings
+model, vertical position = rank by the headline pooled CRoMa (1 = most robust, top).
+Marker is filled when the model is biology-dominant (CRoMa >= 0) and hollow when
+confounder-dominant (CRoMa < 0), so Camelyon's difficulty and the rank crossings
 (e.g. Midnight-12k rising to the top) are both visible at a glance.
 
 Run: python scripts/experiments/cross_benchmark_figure.py
@@ -24,7 +24,7 @@ from plotting import (  # noqa: E402
     _color_for_model,
     _style_axes,
 )
-from croma.metrics.ccmr import CCMR_HEADLINE_M  # noqa: E402
+from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 BENCHMARKS = [
     ("Camelyon", "output/faithful/pathorob-camelyon-faithful"),
@@ -38,7 +38,7 @@ OUT = Path("paper/figures/cross_benchmark.pdf")
 def _load() -> pd.DataFrame:
     cols = {}
     for name, root in BENCHMARKS:
-        s = pd.read_csv(Path(root) / "results" / "metrics.csv").set_index("model")["ccmr"]
+        s = pd.read_csv(Path(root) / "results" / "metrics.csv").set_index("model")["croma"]
         cols[name] = s
     df = pd.DataFrame(cols).dropna()  # models present in all three
     return df
@@ -47,7 +47,7 @@ def _load() -> pd.DataFrame:
 def main() -> None:
     df = _load()
     names = [n for n, _ in BENCHMARKS]
-    # rank 1 = highest CCMR within each benchmark
+    # rank 1 = highest CRoMa within each benchmark
     ranks = df.rank(ascending=False, method="first").astype(int)
     n_models = len(df)
     xs = list(range(len(names)))
@@ -68,7 +68,7 @@ def main() -> None:
                 mfc=(color if robust else "white"),
                 mec=color, mew=1.2,
             )
-        # end labels with CCMR value, coloured by model
+        # end labels with CRoMa value, coloured by model
         ax.text(-0.06, ranks.loc[model, names[0]],
                 f"{model}  {df.loc[model, names[0]]:.2f}",
                 ha="right", va="center", fontsize=plotstyle.FS_ANNOT, color=color)
@@ -81,16 +81,16 @@ def main() -> None:
     ax.set_yticks(range(1, n_models + 1))
     ax.set_ylim(n_models + 0.6, 0.4)  # rank 1 on top
     ax.set_xlim(-1.15, len(names) - 1 + 1.15)
-    ax.set_ylabel(rf"Rank by pooled CCMR ($m{{=}}{int(CCMR_HEADLINE_M)}$)")
+    ax.set_ylabel(rf"Rank by pooled CRoMa ($m{{=}}{int(CROMA_HEADLINE_M)}$)")
     plotstyle.set_panel_title(ax, "Robustness ranking across tile-level benchmarks")
 
     # marker-style legend (fill = robust, hollow = confounder-dominant)
     handles = [
         plt.Line2D([0], [0], marker="o", ls="", ms=7, mfc=TEXT_COLOR,
-                   mec=TEXT_COLOR, label=r"biology-dominant (CCMR $\geq$ 0)"),
+                   mec=TEXT_COLOR, label=r"biology-dominant (CRoMa $\geq$ 0)"),
         plt.Line2D([0], [0], marker="o", ls="", ms=7, mfc="white",
                    mec=TEXT_COLOR, mew=1.2,
-                   label=r"confounder-dominant (CCMR $<$ 0)"),
+                   label=r"confounder-dominant (CRoMa $<$ 0)"),
     ]
     ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, -0.11),
               ncol=2, frameon=False, fontsize=plotstyle.FS_ANNOT, handletextpad=0.4)

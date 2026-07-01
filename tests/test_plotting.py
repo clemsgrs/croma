@@ -15,15 +15,15 @@ from plotting import (
     _png_export_path,
     _support_plot_rows,
     plot_bio_vs_confounder_scatter,
-    plot_ccmr_ltm_bars,
-    plot_ccmr_ltm_scatter,
-    plot_ccmr_m_sweep,
-    plot_ccmr_sample_distributions,
+    plot_croma_ltm_bars,
+    plot_croma_ltm_scatter,
+    plot_croma_m_sweep,
+    plot_croma_sample_distributions,
     plot_knn_confounder_k_sweep,
     plot_ri_cumulative_mean_k_sweep,
     plot_mari_cumulative_mean_k_sweep,
     plot_mari_k_sweep,
-    plot_q_alpha_vs_ccmr_scatter,
+    plot_q_alpha_vs_croma_scatter,
     plot_ri_mari_sample_distributions,
     plot_ri_mari_support,
     plot_ri_k_sweep,
@@ -146,33 +146,33 @@ def _sample_support_rows() -> list[dict]:
     ]
 
 
-def _sample_ccmr_m_rows() -> list[dict]:
+def _sample_croma_m_rows() -> list[dict]:
     return [
-        {"model": "Virchow2", "m": 1, "ccmr": 1.40, "ccmr_ltm_alpha": 1.05},
-        {"model": "Virchow2", "m": 2, "ccmr": 1.22, "ccmr_ltm_alpha": 0.95},
-        {"model": "Virchow2", "m": 3, "ccmr": 1.10, "ccmr_ltm_alpha": 0.88},
-        {"model": "UNI", "m": 1, "ccmr": 0.92, "ccmr_ltm_alpha": 0.70},
-        {"model": "UNI", "m": 2, "ccmr": 0.97, "ccmr_ltm_alpha": 0.75},
-        {"model": "UNI", "m": 3, "ccmr": 1.03, "ccmr_ltm_alpha": 0.80},
-        {"model": "CONCH", "m": 1, "ccmr": 1.15, "ccmr_ltm_alpha": 0.90},
-        {"model": "CONCH", "m": 2, "ccmr": 1.08, "ccmr_ltm_alpha": 0.85},
-        {"model": "CONCH", "m": 3, "ccmr": 1.02, "ccmr_ltm_alpha": 0.78},
-        {"model": "Phikon", "m": 1, "ccmr": 0.88, "ccmr_ltm_alpha": 0.65},
-        {"model": "Phikon", "m": 2, "ccmr": 0.93, "ccmr_ltm_alpha": 0.70},
-        {"model": "Phikon", "m": 3, "ccmr": 0.99, "ccmr_ltm_alpha": 0.74},
+        {"model": "Virchow2", "m": 1, "croma": 1.40, "croma_ltm_alpha": 1.05},
+        {"model": "Virchow2", "m": 2, "croma": 1.22, "croma_ltm_alpha": 0.95},
+        {"model": "Virchow2", "m": 3, "croma": 1.10, "croma_ltm_alpha": 0.88},
+        {"model": "UNI", "m": 1, "croma": 0.92, "croma_ltm_alpha": 0.70},
+        {"model": "UNI", "m": 2, "croma": 0.97, "croma_ltm_alpha": 0.75},
+        {"model": "UNI", "m": 3, "croma": 1.03, "croma_ltm_alpha": 0.80},
+        {"model": "CONCH", "m": 1, "croma": 1.15, "croma_ltm_alpha": 0.90},
+        {"model": "CONCH", "m": 2, "croma": 1.08, "croma_ltm_alpha": 0.85},
+        {"model": "CONCH", "m": 3, "croma": 1.02, "croma_ltm_alpha": 0.78},
+        {"model": "Phikon", "m": 1, "croma": 0.88, "croma_ltm_alpha": 0.65},
+        {"model": "Phikon", "m": 2, "croma": 0.93, "croma_ltm_alpha": 0.70},
+        {"model": "Phikon", "m": 3, "croma": 0.99, "croma_ltm_alpha": 0.74},
     ]
 
 
-def _sample_ccmr_ltm_rows() -> list[dict]:
+def _sample_croma_ltm_rows() -> list[dict]:
     return [
-        {"model": "Virchow2", "ccmr": 1.30, "ccmr_ltm_alpha": 1.10, "ccmr_alpha": 0.10},
-        {"model": "UNI", "ccmr": 1.05, "ccmr_ltm_alpha": 0.82, "ccmr_alpha": 0.10},
-        {"model": "CONCH", "ccmr": 0.96, "ccmr_ltm_alpha": 0.61, "ccmr_alpha": 0.10},
+        {"model": "Virchow2", "croma": 1.30, "croma_ltm_alpha": 1.10, "croma_alpha": 0.10},
+        {"model": "UNI", "croma": 1.05, "croma_ltm_alpha": 0.82, "croma_alpha": 0.10},
+        {"model": "CONCH", "croma": 0.96, "croma_ltm_alpha": 0.61, "croma_alpha": 0.10},
     ]
 
 
-def _sample_ccmr_distribution_rows(tmp_path: Path) -> list[dict]:
-    # CCMR is the signed margin in (-1, 1); per-sample arrays straddle 0 so the
+def _sample_croma_distribution_rows(tmp_path: Path) -> list[dict]:
+    # CRoMa is the signed margin in (-1, 1); per-sample arrays straddle 0 so the
     # "%<0" fragile-fraction column is exercised (Virchow2 25%, UNI 75%).
     by_model = {
         "Virchow2": np.asarray([-0.10, 0.10, 0.32, 0.45], dtype=float),
@@ -181,15 +181,15 @@ def _sample_ccmr_distribution_rows(tmp_path: Path) -> list[dict]:
     }
     rows: list[dict] = []
     for model, values in by_model.items():
-        path = tmp_path / f"{model}.ccmr.npy"
+        path = tmp_path / f"{model}.croma.npy"
         np.save(path, values)
         rows.append(
             {
                 "model": model,
-                "ccmr": {"Virchow2": 1.55, "UNI": 0.97, "CONCH": 1.21}[model],
-                "ccmr_q_alpha": {"Virchow2": 0.82, "UNI": 0.60, "CONCH": 1.02}[model],
-                "ccmr_alpha": 0.10,
-                "ccmr_samples_path": str(path),
+                "croma": {"Virchow2": 1.55, "UNI": 0.97, "CONCH": 1.21}[model],
+                "croma_q_alpha": {"Virchow2": 0.82, "UNI": 0.60, "CONCH": 1.02}[model],
+                "croma_alpha": 0.10,
+                "croma_samples_path": str(path),
             }
         )
     return rows
@@ -203,9 +203,9 @@ def test_representative_plotting_entrypoints_write_pngs(tmp_path: Path) -> None:
             "bio_vs_confounder_scatter.png",
         ),
         (
-            plot_ccmr_m_sweep,
-            {"rows": _sample_ccmr_m_rows()},
-            "ccmr_m_sweep.png",
+            plot_croma_m_sweep,
+            {"rows": _sample_croma_m_rows()},
+            "croma_m_sweep.png",
         ),
         (
             plot_ri_k_sweep,
@@ -238,11 +238,11 @@ def test_plot_writes_matching_pdf_export(tmp_path: Path) -> None:
     assert pdf_path.stat().st_size > 0
 
 
-def test_ccmr_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
-    rows = _sample_ccmr_distribution_rows(tmp_path)
-    out_path = tmp_path / "ccmr_sample_distributions.png"
+def test_croma_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
+    rows = _sample_croma_distribution_rows(tmp_path)
+    out_path = tmp_path / "croma_sample_distributions.png"
 
-    plot_ccmr_sample_distributions(rows=rows, out_path=out_path)
+    plot_croma_sample_distributions(rows=rows, out_path=out_path)
 
     assert _png_export_path(out_path).exists()
     pdf_path = _pdf_export_path(out_path)
@@ -313,8 +313,8 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_ccmr_m_sweep(
-        rows=_sample_ccmr_m_rows(), out_path=tmp_path / "ccmr_m_sweep.png"
+    plot_croma_m_sweep(
+        rows=_sample_croma_m_rows(), out_path=tmp_path / "croma_m_sweep.png"
     )
 
     assert not axes_legend_calls
@@ -381,7 +381,7 @@ def test_support_plot_uses_single_colour_without_threshold_legend(
     assert "Defined >=50%" not in legend_labels
 
 
-def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
+def test_plot_croma_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
@@ -405,20 +405,20 @@ def test_plot_ccmr_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
     monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
     monkeypatch.setattr(matplotlib.axes.Axes, "axhline", spy_axhline)
 
-    rows = _sample_ccmr_ltm_rows() + [
-        {"model": "Bad", "ccmr": float("nan"), "ccmr_ltm_alpha": 0.5, "ccmr_alpha": 0.1}
+    rows = _sample_croma_ltm_rows() + [
+        {"model": "Bad", "croma": float("nan"), "croma_ltm_alpha": 0.5, "croma_alpha": 0.1}
     ]
-    out_path = tmp_path / "ccmr_ltm_scatter.png"
-    plot_ccmr_ltm_scatter(rows=rows, out_path=out_path)
+    out_path = tmp_path / "croma_ltm_scatter.png"
+    plot_croma_ltm_scatter(rows=rows, out_path=out_path)
 
     assert _png_export_path(out_path).exists()
-    # The NaN-CCMR "Bad" row is filtered; the three valid points are plotted.
+    # The NaN-CRoMa "Bad" row is filtered; the three valid points are plotted.
     assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)} == set(points)
-    # A horizontal CCMR=0 robustness threshold is drawn (not a y=x diagonal).
+    # A horizontal CRoMa=0 robustness threshold is drawn (not a y=x diagonal).
     assert hlines == [0.0]
 
 
-def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
+def test_plot_croma_ltm_bars_sorts_descending_with_threshold_and_local_legend(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
@@ -456,8 +456,8 @@ def test_plot_ccmr_ltm_bars_sorts_descending_with_threshold_and_local_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    out_path = tmp_path / "ccmr_ltm_bars.png"
-    plot_ccmr_ltm_bars(rows=_sample_ccmr_ltm_rows(), out_path=out_path)
+    out_path = tmp_path / "croma_ltm_bars.png"
+    plot_croma_ltm_bars(rows=_sample_croma_ltm_rows(), out_path=out_path)
 
     assert _png_export_path(out_path).exists()
     assert ltm_heights == sorted(ltm_heights, reverse=True)
@@ -515,13 +515,13 @@ def test_dense_k_sweeps_use_human_friendly_integer_ticks(
     assert [1, 5, 10, 15, 20, 25] in xtick_calls
 
 
-def test_plot_q_alpha_vs_ccmr_scatter_writes_png(tmp_path: Path) -> None:
+def test_plot_q_alpha_vs_croma_scatter_writes_png(tmp_path: Path) -> None:
     rows = [
-        {"model": "Virchow2", "ccmr": 1.05, "ccmr_q_alpha": 0.85, "ccmr_alpha": 0.10},
-        {"model": "UNI", "ccmr": 0.92, "ccmr_q_alpha": 0.72, "ccmr_alpha": 0.10},
+        {"model": "Virchow2", "croma": 1.05, "croma_q_alpha": 0.85, "croma_alpha": 0.10},
+        {"model": "UNI", "croma": 0.92, "croma_q_alpha": 0.72, "croma_alpha": 0.10},
     ]
-    out_path = tmp_path / "q_alpha_vs_ccmr_scatter.png"
-    plot_q_alpha_vs_ccmr_scatter(rows=rows, out_path=out_path)
+    out_path = tmp_path / "q_alpha_vs_croma_scatter.png"
+    plot_q_alpha_vs_croma_scatter(rows=rows, out_path=out_path)
     assert _png_export_path(out_path).exists()
     assert _png_export_path(out_path).stat().st_size > 0
 
@@ -616,8 +616,8 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_ccmr_m_sweep(
-        rows=_sample_ccmr_m_rows(), out_path=tmp_path / "ccmr_m_sweep.png"
+    plot_croma_m_sweep(
+        rows=_sample_croma_m_rows(), out_path=tmp_path / "croma_m_sweep.png"
     )
 
     assert not axes_legend_calls
@@ -627,7 +627,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
-def test_ccmr_m_sweep_uses_human_friendly_m_ticks(
+def test_croma_m_sweep_uses_human_friendly_m_ticks(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
@@ -641,22 +641,22 @@ def test_ccmr_m_sweep_uses_human_friendly_m_ticks(
 
     monkeypatch.setattr(matplotlib.axes.Axes, "set_xticks", spy_set_xticks)
 
-    plot_ccmr_m_sweep(
-        rows=_sample_ccmr_m_rows() + [
-            {"model": "Virchow2", "m": 20, "ccmr": 1.05, "ccmr_ltm_alpha": 0.82},
-            {"model": "UNI", "m": 20, "ccmr": 1.00, "ccmr_ltm_alpha": 0.78},
+    plot_croma_m_sweep(
+        rows=_sample_croma_m_rows() + [
+            {"model": "Virchow2", "m": 20, "croma": 1.05, "croma_ltm_alpha": 0.82},
+            {"model": "UNI", "m": 20, "croma": 1.00, "croma_ltm_alpha": 0.78},
         ],
-        out_path=tmp_path / "ccmr_m_sweep.png",
+        out_path=tmp_path / "croma_m_sweep.png",
     )
 
     assert [1, 5, 10, 15, 20] in xtick_calls
 
 
-def test_ccmr_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
-    rows = _sample_ccmr_distribution_rows(tmp_path)
-    out_path = tmp_path / "ccmr_sample_distributions.png"
+def test_croma_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
+    rows = _sample_croma_distribution_rows(tmp_path)
+    out_path = tmp_path / "croma_sample_distributions.png"
 
-    plot_ccmr_sample_distributions(rows=rows, out_path=out_path)
+    plot_croma_sample_distributions(rows=rows, out_path=out_path)
 
     assert _png_export_path(out_path).exists()
     pdf_path = _pdf_export_path(out_path)
@@ -664,7 +664,7 @@ def test_ccmr_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
     assert pdf_path.stat().st_size > 0
 
 
-def test_ccmr_distribution_plot_uses_no_legend_and_ranks_rows(
+def test_croma_distribution_plot_uses_no_legend_and_ranks_rows(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
@@ -694,9 +694,9 @@ def test_ccmr_distribution_plot_uses_no_legend_and_ranks_rows(
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "text", spy_text)
 
-    plot_ccmr_sample_distributions(
-        rows=_sample_ccmr_distribution_rows(tmp_path),
-        out_path=tmp_path / "ccmr_sample_distributions.png",
+    plot_croma_sample_distributions(
+        rows=_sample_croma_distribution_rows(tmp_path),
+        out_path=tmp_path / "croma_sample_distributions.png",
     )
 
     assert not figure_legend_calls
@@ -704,7 +704,7 @@ def test_ccmr_distribution_plot_uses_no_legend_and_ranks_rows(
     assert model_label_order == ["Virchow2", "CONCH", "UNI"]
 
 
-def test_ccmr_distribution_plot_emits_summary_annotations(
+def test_croma_distribution_plot_emits_summary_annotations(
     monkeypatch, tmp_path: Path
 ) -> None:
     import matplotlib.axes
@@ -731,7 +731,7 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
 
     def spy_figure_text(self, x, y, s, *args, **kwargs):
         figure_texts.append(str(s))
-        if "sorted by CCMR" in str(s):
+        if "sorted by CRoMa" in str(s):
             subtitle_y_positions.append(float(y))
         return original_figure_text(self, x, y, s, *args, **kwargs)
 
@@ -739,13 +739,13 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
     monkeypatch.setattr(matplotlib.figure.Figure, "suptitle", spy_suptitle)
     monkeypatch.setattr(matplotlib.figure.Figure, "text", spy_figure_text)
 
-    plot_ccmr_sample_distributions(
-        rows=_sample_ccmr_distribution_rows(tmp_path),
-        out_path=tmp_path / "ccmr_sample_distributions.png",
+    plot_croma_sample_distributions(
+        rows=_sample_croma_distribution_rows(tmp_path),
+        out_path=tmp_path / "croma_sample_distributions.png",
     )
 
     joined = "\n".join(annotation_texts)
-    assert "CCMR" in joined
+    assert "CRoMa" in joined
     assert "Q10" in joined
     assert "%<0" in joined
     assert "1.550" in joined
@@ -753,8 +753,8 @@ def test_ccmr_distribution_plot_emits_summary_annotations(
     assert "25.0%" in joined
     assert "0.970" in joined
     assert "75.0%" in joined
-    assert "Per-sample CCMR distributions" in titles
-    assert any("sorted by CCMR" in text for text in figure_texts)
+    assert "Per-sample CRoMa distributions" in titles
+    assert any("sorted by CRoMa" in text for text in figure_texts)
     assert len(title_y_positions) == 1
     assert len(subtitle_y_positions) == 1
     assert title_y_positions[0] - subtitle_y_positions[0] >= 0.045

@@ -791,30 +791,30 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     plt.close(fig)
 
 
-def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
-    """Single-panel pooled CCMR(m) trajectory per model, with the CCMR=0 threshold."""
+def plot_croma_m_sweep(rows: list[dict], out_path: Path) -> None:
+    """Single-panel pooled CRoMa(m) trajectory per model, with the CRoMa=0 threshold."""
     fig, ax = plt.subplots(figsize=(COL_DOUBLE, 4.6))
-    ccmr_rows = [
+    croma_rows = [
         r
         for r in rows
         if "m" in r
-        and "ccmr" in r
+        and "croma" in r
         and np.isfinite(float(r["m"]))
-        and np.isfinite(float(r["ccmr"]))
+        and np.isfinite(float(r["croma"]))
     ]
-    if not ccmr_rows:
+    if not croma_rows:
         ax.set_visible(False)
         _finalize_figure(fig, out_path=out_path, add_legend=False)
         return
 
     by_model: dict[str, list[dict]] = {}
-    for row in ccmr_rows:
+    for row in croma_rows:
         model = str(row["model"])
         by_model.setdefault(model, []).append(row)
     for model in by_model:
         by_model[model] = sorted(by_model[model], key=lambda r: int(r["m"]))
 
-    m_all = sorted({int(row["m"]) for row in ccmr_rows})
+    m_all = sorted({int(row["m"]) for row in croma_rows})
     m_min, m_max = m_all[0], m_all[-1]
 
     _style_axes(ax)
@@ -826,10 +826,10 @@ def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
         zorder=1,
         alpha=0.8,
     )
-    ax.set_ylabel("CCMR")
-    _set_panel_title(ax, "CCMR over m")
-    ccmr_values = np.asarray([float(r["ccmr"]) for r in ccmr_rows], dtype=float)
-    finite = ccmr_values[np.isfinite(ccmr_values)]
+    ax.set_ylabel("CRoMa")
+    _set_panel_title(ax, "CRoMa over m")
+    croma_values = np.asarray([float(r["croma"]) for r in croma_rows], dtype=float)
+    finite = croma_values[np.isfinite(croma_values)]
     vmin = float(np.nanmin(finite)) if finite.size > 0 else 0.0
     vmax = float(np.nanmax(finite)) if finite.size > 0 else 1.0
     span = vmax - vmin
@@ -840,7 +840,7 @@ def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
         model_rows = by_model[model]
         color = _color_for_model(model)
         ms = np.asarray([int(r["m"]) for r in model_rows], dtype=int)
-        vals = np.asarray([float(r["ccmr"]) for r in model_rows], dtype=float)
+        vals = np.asarray([float(r["croma"]) for r in model_rows], dtype=float)
         ax.plot(ms, vals, color=color, linewidth=plotstyle.LW_SERIES, alpha=0.95, label=model)
 
     tick_positions = _human_friendly_integer_ticks(m_all, max_ticks=6)
@@ -851,28 +851,28 @@ def plot_ccmr_m_sweep(rows: list[dict], out_path: Path) -> None:
     _finalize_wide_line_figure(fig, out_path=out_path, ax=ax)
 
 
-def _valid_ccmr_ltm_rows(rows: list[dict]) -> list[dict]:
+def _valid_croma_ltm_rows(rows: list[dict]) -> list[dict]:
     valid: list[dict] = []
     for row in rows:
-        if "ccmr" not in row or "ccmr_ltm_alpha" not in row:
+        if "croma" not in row or "croma_ltm_alpha" not in row:
             continue
         try:
-            ccmr_value = float(row["ccmr"])
-            ltm_value = float(row["ccmr_ltm_alpha"])
+            croma_value = float(row["croma"])
+            ltm_value = float(row["croma_ltm_alpha"])
         except Exception:  # noqa: BLE001
             continue
-        if not np.isfinite(ccmr_value) or not np.isfinite(ltm_value):
+        if not np.isfinite(croma_value) or not np.isfinite(ltm_value):
             continue
 
         try:
-            alpha_value = float(row.get("ccmr_alpha", float("nan")))
+            alpha_value = float(row.get("croma_alpha", float("nan")))
         except Exception:  # noqa: BLE001
             alpha_value = float("nan")
 
         valid.append(
             {
                 "model": str(row.get("model", "")),
-                "ccmr": ccmr_value,
+                "croma": croma_value,
                 "ltm": ltm_value,
                 "alpha": alpha_value if np.isfinite(alpha_value) else float("nan"),
             }
@@ -887,11 +887,11 @@ def _ltm_label(valid_rows: list[dict]) -> str:
     if len(alpha_values) == 1:
         alpha_pct = int(round(alpha_values[0] * 100))
         return f"LTM@{alpha_pct}%"
-    return "LTM(CCMR)"
+    return "LTM(CRoMa)"
 
 
 def _padded_signed_limits(values: np.ndarray) -> tuple[float, float]:
-    """Padded limits for a signed quantity (e.g. the CCMR margin in ``(-1, 1)``).
+    """Padded limits for a signed quantity (e.g. the CRoMa margin in ``(-1, 1)``).
 
     The lower bound is not clamped to 0, so fragile models with negative margins
     are not clipped.
@@ -914,15 +914,15 @@ def _padded_signed_limits(values: np.ndarray) -> tuple[float, float]:
     return float(lo), float(hi)
 
 
-def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
-    """CCMR vs LTM scatter with a horizontal CCMR=0 robustness threshold.
+def plot_croma_ltm_scatter(rows: list[dict], out_path: Path) -> None:
+    """CRoMa vs LTM scatter with a horizontal CRoMa=0 robustness threshold.
 
     The threshold line (not a y=x diagonal) makes the claim non-tautological: every
     model's fragile decile falling below it is an empirical fact, since LTM <= median
-    CCMR by construction would only force points below the diagonal, not below 0.
+    CRoMa by construction would only force points below the diagonal, not below 0.
     """
     fig, ax = plt.subplots(figsize=(COL_ONEHALF, 5.6))
-    valid_rows = _valid_ccmr_ltm_rows(rows)
+    valid_rows = _valid_croma_ltm_rows(rows)
 
     if not valid_rows:
         ax.set_visible(False)
@@ -930,18 +930,18 @@ def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
         return
 
     label_ltm = _ltm_label(valid_rows)
-    xs = np.asarray([float(r["ccmr"]) for r in valid_rows], dtype=float)
+    xs = np.asarray([float(r["croma"]) for r in valid_rows], dtype=float)
     ys = np.asarray([float(r["ltm"]) for r in valid_rows], dtype=float)
     lim = _padded_signed_limits(np.concatenate([xs, ys]))
 
     _draw_model_scatter(
         ax,
         valid_rows,
-        x_key="ccmr",
+        x_key="croma",
         y_key="ltm",
-        xlabel="CCMR",
+        xlabel="CRoMa",
         ylabel=label_ltm,
-        title=f"CCMR vs {label_ltm}",
+        title=f"CRoMa vs {label_ltm}",
         xlim=lim,
         ylim=lim,
         hline=0.0,
@@ -950,10 +950,10 @@ def plot_ccmr_ltm_scatter(rows: list[dict], out_path: Path) -> None:
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
-def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
-    """Per-model CCMR/LTM bars sorted by LTM, with a CCMR=0 threshold line."""
+def plot_croma_ltm_bars(rows: list[dict], out_path: Path) -> None:
+    """Per-model CRoMa/LTM bars sorted by LTM, with a CRoMa=0 threshold line."""
     fig, ax = plt.subplots(figsize=(COL_DOUBLE, 4.6))
-    valid_rows = _valid_ccmr_ltm_rows(rows)
+    valid_rows = _valid_croma_ltm_rows(rows)
 
     if not valid_rows:
         ax.set_visible(False)
@@ -965,7 +965,7 @@ def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
         valid_rows, key=lambda r: (float(r["ltm"]), str(r["model"])), reverse=True
     )
     model_names = [str(r["model"]) for r in ranked_rows]
-    ccmr_vals = np.asarray([float(r["ccmr"]) for r in ranked_rows], dtype=float)
+    croma_vals = np.asarray([float(r["croma"]) for r in ranked_rows], dtype=float)
     ltm_vals = np.asarray([float(r["ltm"]) for r in ranked_rows], dtype=float)
     colors = [_color_for_model(model) for model in model_names]
     x = np.arange(len(ranked_rows), dtype=float)
@@ -982,13 +982,13 @@ def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
     )
     ax.bar(
         x - width / 2.0,
-        ccmr_vals,
+        croma_vals,
         width=width,
         color=colors,
         alpha=0.85,
         edgecolor="white",
         linewidth=0.6,
-        label="CCMR",
+        label="CRoMa",
         zorder=3,
     )
     ax.bar(
@@ -1007,7 +1007,7 @@ def plot_ccmr_ltm_bars(rows: list[dict], out_path: Path) -> None:
     ax.tick_params(axis="x", labelsize=plotstyle.FS_TICK, pad=4)
     ax.set_ylabel("Score")
     _set_panel_title(ax, f"Sorted by {label_ltm}")
-    y_lo, y_hi = _padded_signed_limits(np.concatenate([ccmr_vals, ltm_vals]))
+    y_lo, y_hi = _padded_signed_limits(np.concatenate([croma_vals, ltm_vals]))
     ax.set_ylim(y_lo, y_hi)
     ax.legend(frameon=False, loc="upper right", fontsize=plotstyle.FS_ANNOT)
 
@@ -1035,26 +1035,26 @@ def plot_mari_vs_ri_scatter(rows: list[dict], out_path: Path) -> None:
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
-def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict]) -> None:
-    ccmr_rows = [
+def _draw_croma_vs_mari_scatter(ax, rows: list[dict]) -> None:
+    croma_rows = [
         r
         for r in rows
-        if "ccmr" in r and "mari" in r and np.isfinite(float(r["ccmr"]))
+        if "croma" in r and "mari" in r and np.isfinite(float(r["croma"]))
     ]
-    if not ccmr_rows:
+    if not croma_rows:
         ax.set_visible(False)
         return
-    xs = np.asarray([float(r["mari"]) for r in ccmr_rows], dtype=float)
-    ys = np.asarray([float(r["ccmr"]) for r in ccmr_rows], dtype=float)
+    xs = np.asarray([float(r["mari"]) for r in croma_rows], dtype=float)
+    ys = np.asarray([float(r["croma"]) for r in croma_rows], dtype=float)
     y_pad = max(0.1, (ys.max() - ys.min()) * 0.10) if ys.size > 0 else 0.5
     _draw_model_scatter(
         ax,
-        ccmr_rows,
+        croma_rows,
         x_key="mari",
-        y_key="ccmr",
+        y_key="croma",
         xlabel="MaRI",
-        ylabel="CCMR",
-        title="CCMR vs MaRI",
+        ylabel="CRoMa",
+        title="CRoMa vs MaRI",
         xlim=_padded_unit_interval_limits(xs),
         ylim=(float(ys.min()) - y_pad, float(ys.max()) + y_pad),
         hline=0.0,
@@ -1062,37 +1062,37 @@ def _draw_ccmr_vs_mari_scatter(ax, rows: list[dict]) -> None:
     )
 
 
-def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
-    ccmr_rows = [
+def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
+    croma_rows = [
         r
         for r in rows
-        if "ccmr_samples_path" in r
-        and "ccmr_q_alpha" in r
-        and np.isfinite(float(r.get("ccmr", float("nan"))))
+        if "croma_samples_path" in r
+        and "croma_q_alpha" in r
+        and np.isfinite(float(r.get("croma", float("nan"))))
     ]
-    if not ccmr_rows:
+    if not croma_rows:
         ax.set_visible(False)
         return
 
     model_data = []
-    for row in ccmr_rows:
-        path = Path(str(row["ccmr_samples_path"]))
+    for row in croma_rows:
+        path = Path(str(row["croma_samples_path"]))
         if not path.exists():
             continue
         values = np.load(path)
         values = values[np.isfinite(values)]
         if len(values) < 2:
             continue
-        alpha = float(row["ccmr_alpha"])
+        alpha = float(row["croma_alpha"])
         alpha_pct = int(round(alpha * 100))
         model_data.append(
             {
                 "model": str(row["model"]),
                 "values": values,
-                "q_alpha": float(row["ccmr_q_alpha"]),
+                "q_alpha": float(row["croma_q_alpha"]),
                 "alpha": alpha,
                 "alpha_pct": alpha_pct,
-                "ccmr": float(row["ccmr"]),
+                "croma": float(row["croma"]),
                 "neg_frac": float(np.mean(values < 0.0)),
             }
         )
@@ -1103,7 +1103,7 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
 
     model_data = sorted(
         model_data,
-        key=lambda d: (float(d["ccmr"]), str(d["model"])),
+        key=lambda d: (float(d["croma"]), str(d["model"])),
         reverse=True,
     )
     all_values = np.concatenate([d["values"] for d in model_data])
@@ -1118,7 +1118,7 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
     ax.grid(False)
     ax.set_yticks([])
 
-    # Shade the fragile region (CCMR < 0)
+    # Shade the fragile region (CRoMa < 0)
     shade_right = min(0.0, x_max)
     if shade_right > x_min:
         ax.axvspan(x_min, shade_right, color=FRAGILE_SHADE_COLOR, alpha=0.55, zorder=1)
@@ -1227,17 +1227,17 @@ def _draw_ccmr_sample_distributions(ax, rows: list[dict]) -> None:
     alpha_pct = int(model_data[0]["alpha_pct"])
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(0.5, float(len(model_data)) + 0.95)
-    ax.set_xlabel("Per-sample CCMR")
+    ax.set_xlabel("Per-sample CRoMa")
     ax.set_ylabel("")
 
 
-def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
+def plot_croma_sample_distributions(rows: list[dict], out_path: Path) -> None:
     valid_rows = [
         r
         for r in rows
-        if "ccmr_samples_path" in r
-        and "ccmr_q_alpha" in r
-        and np.isfinite(float(r.get("ccmr", float("nan"))))
+        if "croma_samples_path" in r
+        and "croma_q_alpha" in r
+        and np.isfinite(float(r.get("croma", float("nan"))))
     ]
     fig_height = max(3.5, 0.85 + 0.45 * max(1, len(valid_rows)))
     fig, (ax, info_ax) = plt.subplots(
@@ -1247,12 +1247,12 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
         gridspec_kw={"width_ratios": [5.0, 1.6]},
     )
     alpha_values = [
-        int(round(float(r["ccmr_alpha"]) * 100))
+        int(round(float(r["croma_alpha"]) * 100))
         for r in valid_rows
-        if "ccmr_alpha" in r and np.isfinite(float(r["ccmr_alpha"]))
+        if "croma_alpha" in r and np.isfinite(float(r["croma_alpha"]))
     ]
     alpha_pct = alpha_values[0] if alpha_values else 10
-    _draw_ccmr_sample_distributions(ax, rows)
+    _draw_croma_sample_distributions(ax, rows)
     info_ax.set_axis_off()
     if ax.get_visible():
         info_ax.set_ylim(ax.get_ylim())
@@ -1260,7 +1260,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
         # Right edges of the numeric columns (right-aligned so digits line up).
         col_x = (0.26, 0.62, 0.99)
         header_y = float(len(valid_rows)) + 0.72
-        for label, x_pos in zip(("CCMR", f"Q{alpha_pct}", "%<0"), col_x):
+        for label, x_pos in zip(("CRoMa", f"Q{alpha_pct}", "%<0"), col_x):
             info_ax.text(
                 x_pos,
                 header_y,
@@ -1273,7 +1273,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
             )
         model_data: list[dict[str, float | str]] = []
         for row in valid_rows:
-            path = Path(str(row["ccmr_samples_path"]))
+            path = Path(str(row["croma_samples_path"]))
             if not path.exists():
                 continue
             values = np.load(path)
@@ -1283,20 +1283,20 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
             model_data.append(
                 {
                     "model": str(row["model"]),
-                    "ccmr": float(row["ccmr"]),
-                    "q_alpha": float(row["ccmr_q_alpha"]),
+                    "croma": float(row["croma"]),
+                    "q_alpha": float(row["croma_q_alpha"]),
                     "neg_frac": float(np.mean(values < 0.0)),
                 }
             )
         model_data = sorted(
             model_data,
-            key=lambda d: (float(d["ccmr"]), str(d["model"])),
+            key=lambda d: (float(d["croma"]), str(d["model"])),
             reverse=True,
         )
         row_centers = np.arange(len(model_data), 0, -1, dtype=float)
         for row_center, row in zip(row_centers, model_data):
             cells = (
-                f"{float(row['ccmr']):.{PREC_METRIC}f}",
+                f"{float(row['croma']):.{PREC_METRIC}f}",
                 f"{float(row['q_alpha']):.{PREC_METRIC}f}",
                 f"{100.0 * float(row['neg_frac']):.{PREC_PERCENT}f}%",
             )
@@ -1311,7 +1311,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
                     color=TEXT_COLOR,
                 )
     fig.suptitle(
-        "Per-sample CCMR distributions",
+        "Per-sample CRoMa distributions",
         fontsize=plotstyle.FS_TITLE,
         weight="bold",
         y=0.985,
@@ -1320,7 +1320,7 @@ def plot_ccmr_sample_distributions(rows: list[dict], out_path: Path) -> None:
     fig.text(
         0.5,
         0.935,
-        f"sorted by CCMR; dotted: $Q_{{{alpha_pct}}}$; shaded: CCMR < 0",
+        f"sorted by CRoMa; dotted: $Q_{{{alpha_pct}}}$; shaded: CRoMa < 0",
         ha="center",
         va="center",
         fontsize=plotstyle.FS_ANNOT,
@@ -1595,44 +1595,44 @@ def plot_ri_mari_sample_distributions(
     )
 
 
-def plot_ccmr_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
+def plot_croma_vs_mari_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(COL_ONEHALF, 5.6))
-    _draw_ccmr_vs_mari_scatter(ax, rows)
+    _draw_croma_vs_mari_scatter(ax, rows)
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)
 
 
-def _draw_q_alpha_vs_ccmr_scatter(ax, rows: list[dict]) -> None:
+def _draw_q_alpha_vs_croma_scatter(ax, rows: list[dict]) -> None:
     valid_rows = [
         r
         for r in rows
-        if "ccmr" in r
-        and "ccmr_q_alpha" in r
-        and np.isfinite(float(r["ccmr"]))
-        and np.isfinite(float(r["ccmr_q_alpha"]))
+        if "croma" in r
+        and "croma_q_alpha" in r
+        and np.isfinite(float(r["croma"]))
+        and np.isfinite(float(r["croma_q_alpha"]))
     ]
     if not valid_rows:
         ax.set_visible(False)
         return
 
     alpha_pct_values = [
-        int(round(float(r["ccmr_alpha"]) * 100))
+        int(round(float(r["croma_alpha"]) * 100))
         for r in valid_rows
-        if "ccmr_alpha" in r and np.isfinite(float(r["ccmr_alpha"]))
+        if "croma_alpha" in r and np.isfinite(float(r["croma_alpha"]))
     ]
     alpha_pct = alpha_pct_values[0] if alpha_pct_values else 10
 
-    xs = np.asarray([float(r["ccmr"]) for r in valid_rows], dtype=float)
-    ys = np.asarray([float(r["ccmr_q_alpha"]) for r in valid_rows], dtype=float)
+    xs = np.asarray([float(r["croma"]) for r in valid_rows], dtype=float)
+    ys = np.asarray([float(r["croma_q_alpha"]) for r in valid_rows], dtype=float)
     x_pad = max(0.1, (xs.max() - xs.min()) * 0.10) if xs.size > 0 else 0.5
     y_pad = max(0.1, (ys.max() - ys.min()) * 0.10) if ys.size > 0 else 0.5
     _draw_model_scatter(
         ax,
         valid_rows,
-        x_key="ccmr",
-        y_key="ccmr_q_alpha",
-        xlabel="CCMR",
+        x_key="croma",
+        y_key="croma_q_alpha",
+        xlabel="CRoMa",
         ylabel=f"Q{alpha_pct}",
-        title=f"Q{alpha_pct} vs CCMR",
+        title=f"Q{alpha_pct} vs CRoMa",
         xlim=(float(xs.min()) - x_pad, float(xs.max()) + x_pad),
         ylim=(float(ys.min()) - y_pad, float(ys.max()) + y_pad),
         hline=0.0,
@@ -1640,7 +1640,7 @@ def _draw_q_alpha_vs_ccmr_scatter(ax, rows: list[dict]) -> None:
     )
 
 
-def plot_q_alpha_vs_ccmr_scatter(rows: list[dict], out_path: Path) -> None:
+def plot_q_alpha_vs_croma_scatter(rows: list[dict], out_path: Path) -> None:
     fig, ax = plt.subplots(figsize=(COL_ONEHALF, 5.6))
-    _draw_q_alpha_vs_ccmr_scatter(ax, rows)
+    _draw_q_alpha_vs_croma_scatter(ax, rows)
     _finalize_single_panel_legend_figure(fig, out_path=out_path, ax=ax)

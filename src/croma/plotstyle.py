@@ -147,7 +147,7 @@ CANONICAL_MODEL_ORDER: list[str] = [
 METRIC_COLOR: dict[str, str] = {
     "ri": "#5b6b7b",
     "mari": "#2f6f8f",
-    "ccmr": "#9a5b9a",
+    "croma": "#9a5b9a",
     "ltm": "#b3651a",
 }
 
@@ -155,7 +155,7 @@ METRIC_COLOR: dict[str, str] = {
 METRIC_LABEL: dict[str, str] = {
     "ri": "RI",
     "mari": "MaRI",
-    "ccmr": "CCMR",
+    "croma": "CRoMa",
     "ltm": "LTM",
 }
 
@@ -167,7 +167,7 @@ SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
 }
 
 # Number formatting precision.
-PREC_METRIC = 3   # RI / MaRI / CCMR values
+PREC_METRIC = 3   # RI / MaRI / CRoMa values
 PREC_PERCENT = 1  # percentage annotations
 
 

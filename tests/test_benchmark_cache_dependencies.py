@@ -85,12 +85,12 @@ def _install_noop_plots(monkeypatch) -> None:
 
     for name in (
         "plot_bio_vs_confounder_scatter",
-        "plot_ccmr_ltm_bars",
-        "plot_ccmr_ltm_scatter",
-        "plot_ccmr_m_sweep",
-        "plot_ccmr_sample_distributions",
-        "plot_ccmr_vs_mari_scatter",
-        "plot_q_alpha_vs_ccmr_scatter",
+        "plot_croma_ltm_bars",
+        "plot_croma_ltm_scatter",
+        "plot_croma_m_sweep",
+        "plot_croma_sample_distributions",
+        "plot_croma_vs_mari_scatter",
+        "plot_q_alpha_vs_croma_scatter",
         "plot_knn_bio_k_sweep",
         "plot_knn_confounder_k_sweep",
         "plot_mari_k_sweep",
@@ -152,7 +152,7 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
         "ri_prepared": 0,
         "mari": 0,
         "mari_prepared": 0,
-        "ccmr": 0,
+        "croma": 0,
         "knn": 0,
         "knn_prepared": 0,
     }
@@ -161,7 +161,7 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
     original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
     original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
-    original_ccmr_compute = bm.CCMR.compute
+    original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
     def wrapped_ri_artifacts(*args, **kwargs):
@@ -184,9 +184,9 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
         calls["mari_prepared"] += 1
         return original_mari_prepared(*args, **kwargs)
 
-    def wrapped_ccmr_compute(*args, **kwargs):
-        calls["ccmr"] += 1
-        return original_ccmr_compute(*args, **kwargs)
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
 
     def wrapped_knn(*args, **kwargs):
         calls["knn"] += 1
@@ -203,7 +203,7 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared
     )
-    monkeypatch.setattr(bm.CCMR, "compute", wrapped_ccmr_compute)
+    monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
     assert (
@@ -218,11 +218,11 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
 
     assert calls["mari"] > 0
     assert calls["ri"] == 0
-    assert calls["ccmr"] == 0
+    assert calls["croma"] == 0
     assert calls["knn"] == 0
 
 
-def test_ccmr_search_change_recomputes_only_ccmr(monkeypatch, tmp_path: Path) -> None:
+def test_croma_search_change_recomputes_only_croma(monkeypatch, tmp_path: Path) -> None:
     manifest = _toy_manifest()
     manifest_path = tmp_path / "toy.csv"
     manifest.to_csv(manifest_path, index=False)
@@ -240,7 +240,7 @@ def test_ccmr_search_change_recomputes_only_ccmr(monkeypatch, tmp_path: Path) ->
         "ri_prepared": 0,
         "mari": 0,
         "mari_prepared": 0,
-        "ccmr": 0,
+        "croma": 0,
         "knn": 0,
         "knn_prepared": 0,
     }
@@ -249,7 +249,7 @@ def test_ccmr_search_change_recomputes_only_ccmr(monkeypatch, tmp_path: Path) ->
     original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
     original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
-    original_ccmr_compute = bm.CCMR.compute
+    original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
     def wrapped_ri_artifacts(*args, **kwargs):
@@ -272,9 +272,9 @@ def test_ccmr_search_change_recomputes_only_ccmr(monkeypatch, tmp_path: Path) ->
         calls["mari_prepared"] += 1
         return original_mari_prepared(*args, **kwargs)
 
-    def wrapped_ccmr_compute(*args, **kwargs):
-        calls["ccmr"] += 1
-        return original_ccmr_compute(*args, **kwargs)
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
 
     def wrapped_knn(*args, **kwargs):
         calls["knn"] += 1
@@ -291,7 +291,7 @@ def test_ccmr_search_change_recomputes_only_ccmr(monkeypatch, tmp_path: Path) ->
     monkeypatch.setattr(
         bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared
     )
-    monkeypatch.setattr(bm.CCMR, "compute", wrapped_ccmr_compute)
+    monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
     assert (
@@ -299,18 +299,18 @@ def test_ccmr_search_change_recomputes_only_ccmr(monkeypatch, tmp_path: Path) ->
             monkeypatch,
             manifest_path=manifest_path,
             output_dir=output_dir,
-            extra_args=["--ccmr-start-k", "300"],
+            extra_args=["--croma-start-k", "300"],
         )
         == 0
     )
 
-    assert calls["ccmr"] > 0
+    assert calls["croma"] > 0
     assert calls["ri"] == 0
     assert calls["mari"] == 0
     assert calls["knn"] == 0
 
 
-def test_k_values_change_recomputes_knn_ri_mari_not_ccmr(
+def test_k_values_change_recomputes_knn_ri_mari_not_croma(
     monkeypatch, tmp_path: Path
 ) -> None:
     manifest = _toy_manifest()
@@ -330,14 +330,14 @@ def test_k_values_change_recomputes_knn_ri_mari_not_ccmr(
         "ri_prepared": 0,
         "mari": 0,
         "mari_prepared": 0,
-        "ccmr": 0,
+        "croma": 0,
         "knn": 0,
     }
     original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
     original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
     original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
-    original_ccmr_compute = bm.CCMR.compute
+    original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
     def wrapped_ri_artifacts(*args, **kwargs):
@@ -356,9 +356,9 @@ def test_k_values_change_recomputes_knn_ri_mari_not_ccmr(
         calls["mari_prepared"] += 1
         return original_mari_prepared(*args, **kwargs)
 
-    def wrapped_ccmr_compute(*args, **kwargs):
-        calls["ccmr"] += 1
-        return original_ccmr_compute(*args, **kwargs)
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
 
     def wrapped_knn(*args, **kwargs):
         calls["knn"] += 1
@@ -372,7 +372,7 @@ def test_k_values_change_recomputes_knn_ri_mari_not_ccmr(
     monkeypatch.setattr(
         bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared
     )
-    monkeypatch.setattr(bm.CCMR, "compute", wrapped_ccmr_compute)
+    monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
     assert (
@@ -388,7 +388,7 @@ def test_k_values_change_recomputes_knn_ri_mari_not_ccmr(
     assert calls["ri"] > 0
     assert calls["mari"] > 0
     assert calls["knn"] > 0
-    assert calls["ccmr"] == 0
+    assert calls["croma"] == 0
 
 
 def test_evaluation_design_change_recomputes_all_artifacts(
@@ -416,7 +416,7 @@ def test_evaluation_design_change_recomputes_all_artifacts(
         "ri_prepared": 0,
         "mari": 0,
         "mari_prepared": 0,
-        "ccmr": 0,
+        "croma": 0,
         "knn": 0,
         "knn_prepared": 0,
     }
@@ -425,7 +425,7 @@ def test_evaluation_design_change_recomputes_all_artifacts(
     original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
     original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
-    original_ccmr_compute = bm.CCMR.compute
+    original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
     def wrapped_ri_artifacts(*args, **kwargs):
@@ -448,9 +448,9 @@ def test_evaluation_design_change_recomputes_all_artifacts(
         calls["mari_prepared"] += 1
         return original_mari_prepared(*args, **kwargs)
 
-    def wrapped_ccmr_compute(*args, **kwargs):
-        calls["ccmr"] += 1
-        return original_ccmr_compute(*args, **kwargs)
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
 
     def wrapped_knn(*args, **kwargs):
         calls["knn"] += 1
@@ -467,7 +467,7 @@ def test_evaluation_design_change_recomputes_all_artifacts(
     monkeypatch.setattr(
         bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared
     )
-    monkeypatch.setattr(bm.CCMR, "compute", wrapped_ccmr_compute)
+    monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
     assert (
@@ -482,7 +482,7 @@ def test_evaluation_design_change_recomputes_all_artifacts(
 
     assert calls["ri"] > 0 or calls["ri_prepared"] > 0
     assert calls["mari"] > 0 or calls["mari_prepared"] > 0
-    assert calls["ccmr"] > 0
+    assert calls["croma"] > 0
     assert calls["knn"] > 0 or calls["knn_prepared"] > 0
 
 
@@ -499,10 +499,10 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
         == 0
     )
 
-    calls = {"ri": 0, "mari": 0, "ccmr": 0, "knn": 0}
+    calls = {"ri": 0, "mari": 0, "croma": 0, "knn": 0}
     original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
     original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
-    original_ccmr_compute = bm.CCMR.compute
+    original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
     def wrapped_ri_artifacts(*args, **kwargs):
@@ -513,9 +513,9 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
         calls["mari"] += 1
         return original_mari_artifacts(*args, **kwargs)
 
-    def wrapped_ccmr_compute(*args, **kwargs):
-        calls["ccmr"] += 1
-        return original_ccmr_compute(*args, **kwargs)
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
 
     def wrapped_knn(*args, **kwargs):
         calls["knn"] += 1
@@ -523,7 +523,7 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
     monkeypatch.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
-    monkeypatch.setattr(bm.CCMR, "compute", wrapped_ccmr_compute)
+    monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     monkeypatch.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
     assert (
@@ -538,7 +538,7 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
 
     assert calls["ri"] > 0
     assert calls["mari"] > 0
-    assert calls["ccmr"] > 0
+    assert calls["croma"] > 0
     assert calls["knn"] > 0
 
 

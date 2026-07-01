@@ -17,7 +17,7 @@ def k_values_signature(k_values: list[int] | tuple[int, ...]) -> str:
     return ",".join(str(int(k)) for k in uniq)
 
 
-def ccmr_search_signature(
+def croma_search_signature(
     *,
     start_k: int,
     k_growth_factor: float,
