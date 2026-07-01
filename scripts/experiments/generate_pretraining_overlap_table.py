@@ -9,13 +9,11 @@ TCGA-only-pretrained Midnight-12k is the extreme outlier.
 Run: python scripts/experiments/generate_pretraining_overlap_table.py
 """
 
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
+from _paper_tables import CROMA_HEADLINE_M
 
 PER_SAMPLE = Path("output/pathorob-tolkach-esca/results/per_sample_metrics.csv")
 TCGA_CENTER = "VALSET3_TCGA"

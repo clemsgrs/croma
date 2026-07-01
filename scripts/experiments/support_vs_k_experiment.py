@@ -22,15 +22,12 @@ undefined 0.79225) because it calls the same core neighbour helpers the benchmar
 """
 
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPO = Path(__file__).resolve().parents[2]
-if str(REPO) not in sys.path:
-    sys.path.insert(0, str(REPO))
+from _neighbor_analysis import REPO, list_models, load_embedding, load_meta
 
 from croma import RI
 from croma.metrics.neighbors import _prepare_neighbors
@@ -44,23 +41,20 @@ FIGDIR = REPO / "paper/figures/results/pathorob-camelyon-faithful/pdf"
 K_GRID = list(range(1, 101))  # spans every model's k* (faithful k* range 5..61)
 
 df = pd.read_csv(MANIFEST)
-labels = pd.factorize(df["label"])[0].astype(int)
-centers = pd.factorize(df["confounder"])[0].astype(int)
-slide = df["slide_id"].astype(str).to_numpy()
+labels, centers, slide = load_meta(df)
 n = len(df)
 
 kstar = (
     pd.read_csv(METRICS).set_index("model")["k"].astype(int).to_dict()
 )  # per-model k* selected by the benchmark
 
-models = sorted(p.stem for p in EMB.glob("*.npy"))
+models = list_models(EMB)
 print(f"{n} samples, {len(models)} models\n")
 
 kmax = max(K_GRID)
 curves: dict[str, np.ndarray] = {}
 for model in models:
-    X = np.load(EMB / f"{model}.npy").astype(np.float64)
-    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
+    X = load_embedding(EMB / f"{model}.npy")
     nidx, ndist, vc = _prepare_neighbors(X, slide, kmax)
     scored = RI._score_all_k_from_neighbors(labels, centers, nidx, ndist, vc, K_GRID)
     # scored[k] = (pooled, sample_scores, informative_mask, undefined_type, so, os)

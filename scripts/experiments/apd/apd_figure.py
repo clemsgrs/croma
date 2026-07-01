@@ -5,13 +5,11 @@ reliance), right vs out-of-domain APD (cross-centre generalisation). Reuses the
 project plotting identity (family palette, square panels, shared model legend).
 """
 import sys
-from pathlib import Path
 
-import numpy as np
-import pandas as pd
 from scipy.stats import spearmanr
 
-REPO = Path("/data/pathology/projects/clement/code/croma")
+from loaders import REPO, read_joined
+
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts"))
 import plotting as P  # noqa: E402
@@ -24,9 +22,7 @@ OUT = REPO / "paper/figures/results/pathorob-camelyon-faithful/croma_vs_apd_scat
 
 def main():
     plotstyle.apply_style()
-    # apd_metrics_joined.csv is written by apd_croma_correlation.py with CRoMa already
-    # on the signed-margin scale (the paper's definition).
-    df = pd.read_csv(REPO / "output/apd/apd_metrics_joined.csv")
+    df = read_joined()
     df = df[df["dataset"] == DATASET].copy()
     df["apd_id_pct"] = df["apd_id"] * 100.0
     df["apd_ood_pct"] = df["apd_ood"] * 100.0

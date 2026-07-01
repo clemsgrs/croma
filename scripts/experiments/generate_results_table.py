@@ -13,13 +13,11 @@ Usage:
 """
 
 import argparse
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
+from _paper_tables import CROMA_HEADLINE_M, scriptsize_ci
 
 # column -> (header, decimals, percent)
 COLS = [
@@ -83,7 +81,7 @@ def build_table(
             cell = _fmt(row[col], dec, pct, is_best)
             if col == "croma" and croma_ci is not None and row["model"] in croma_ci:
                 lo, hi = croma_ci[row["model"]]
-                cell += rf"\,{{\scriptsize$[{lo:.2f}, {hi:.2f}]$}}"
+                cell += r"\," + scriptsize_ci(lo, hi)
             cells.append(cell)
         lines.append(" & ".join(cells) + r" \\")
     lines += [
