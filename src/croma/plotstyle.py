@@ -170,6 +170,16 @@ NEIGHBOR_TYPE_COLOR: dict[str, str] = {
     "OO": "#e0a01a",  # other biology, other confounder — gold / amber
 }
 
+# Two-way pretraining-regime colours (vision--language vs vision-only) for the
+# scale/robustness scatter. Reuses existing family hues rather than new ink: the
+# disclosed VLFMs *are* the CONCH family, so they take its red; vision-only
+# encoders take the steel blue already used for the SO neighbour role. The result
+# is a strong, print- and colourblind-safe red/blue split.
+REGIME_COLOR: dict[str, str] = {
+    "VLFM": "#c2222f",         # vision--language (CONCH-family red)
+    "vision-only": "#2f86b8",  # vision-only (steel blue)
+}
+
 # Status colours (defined-support tiers): (fill, track).
 SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
     "good": ("#3f8f6e", "#dcebe4"),
