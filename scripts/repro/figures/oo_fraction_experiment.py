@@ -128,8 +128,8 @@ import matplotlib.pyplot as plt
 
 from croma import plotstyle
 
-# Semantic neighbour-type colours, tuned to the shared palette hues.
-COLORS = {"SS": "#8a8682", "SO": "#2f86b8", "OS": "#d12f2f", "OO": "#e0a01a"}
+# Semantic neighbour-type colours from the shared palette.
+COLORS = plotstyle.NEIGHBOR_TYPE_COLOR
 LABELS = {
     "SS": "SS (same bio, same conf.)",
     "SO": "SO (same bio, other conf.)",

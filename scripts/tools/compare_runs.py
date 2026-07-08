@@ -14,7 +14,6 @@ import re
 import sys
 from pathlib import Path
 
-import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -32,15 +31,11 @@ from plotting import (  # noqa: E402
     _style_axes,
 )
 
-matplotlib.rcParams.update(
-    {
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
-        "savefig.facecolor": "white",
-        "font.family": "DejaVu Serif",
-        "mathtext.fontset": "dejavuserif",
-    }
-)
+from croma import plotstyle  # noqa: E402
+
+# Use the shared Arimo visual identity — the same style-setup every other figure
+# uses — instead of a local serif rcParams override.
+plotstyle.apply_style()
 
 _JOIN_KEYS = ["dataset", "model", "confounder_column", "evaluation_design"]
 
