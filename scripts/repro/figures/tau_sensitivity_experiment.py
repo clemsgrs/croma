@@ -32,7 +32,7 @@ from _neighbor_analysis import REPO, list_models, load_embedding  # noqa: E402
 
 from croma import MaRI, RI
 
-ROOT = REPO / "output/faithful/pathorob-camelyon-faithful"
+ROOT = REPO / "output/faithful/k-star/pathorob-camelyon-faithful"
 EMB = ROOT / "embeddings"
 MANIFEST = ROOT / "embedding_source_manifest.csv"
 METRICS = ROOT / "results" / "metrics.csv"

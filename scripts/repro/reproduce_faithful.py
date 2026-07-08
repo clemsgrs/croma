@@ -60,7 +60,7 @@ CFG = {
                      out_tex="paper/sections/results_table_tcga4x4.tex"),
 }
 CONFOUNDER = "medical_center"
-OUT_ROOT = REPO / "output/faithful"
+OUT_ROOT = REPO / "output/faithful/k-star"
 
 
 def materialise_embeddings(ds, cfg):
