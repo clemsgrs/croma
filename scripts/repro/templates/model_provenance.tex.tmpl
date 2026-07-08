@@ -1,0 +1,32 @@
+\begin{table}[h]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{llcccc}
+\hline
+Model & Disclosed public WSI sources & Camelyon & TCGA & Tolkach & PANDA \\
+\hline
+%%BODY%%
+\hline
+\end{tabular}
+\caption{\textbf{Benchmark-wise in/out-of-distribution status from disclosed pretraining data.}
+\textbf{ID}: the benchmark's domain is part of the model's disclosed pretraining corpus;
+\textbf{OOD}: disclosed corpus does not contain it; \textbf{n/d}: composition not disclosed, so
+overlap cannot be determined---though these are proprietary institutional corpora not known to
+include any of the four public benchmark datasets. $^{*}$ID for the TCGA cohort of Tolkach-ESCA
+(\texttt{VALSET3\_TCGA}) only; its three other cohorts are out-of-distribution.
+$^{\ddagger}$\code{CONCHv1.5} is assumed to follow the contamination-avoidance policy that
+\code{CONCH} states explicitly~\cite{conch}. $^{\S}$\code{Prost40M}~\cite{grisi2026bcr} is a prostate model, so on the
+three PathoROB benchmarks its overlap is with the data source (the TCGA repository or RUMC), not the
+benchmark tissue; on PANDA (prostate, including RUMC) the overlap is at the tissue level as well,
+though \code{Prost40M} is not part of the PANDA panel. Among the four TCGA-exposed tile models, only
+\code{Midnight-12k} converts that exposure into a measurable in-distribution advantage
+(Table~\ref{tab:pretraining-overlap}); \code{Phikon} (weak encoder), \code{Phikon-v2} (diluted TCGA),
+and \code{Prost40M} (small capacity, different organ) do not. $^{\P}$\code{MOOZY}~\cite{moozy}
+is the only slide model whose open pretraining corpus \emph{directly} includes the evaluation
+benchmark: its $56$ public datasets contain the PANDA slides themselves (as well as TCGA's $32$
+cohorts and CAMELYON17), so the PANDA evaluation is strictly in-distribution and \code{MOOZY}'s
+scores must be read with the corresponding caution; \code{MOOZY} is evaluated only on the PANDA
+panel. $^{\dagger}$\code{H0-mini} is distilled from the proprietary \code{H-optimus-0} on public TCGA tiles ($43$M tiles from $6{,}093$ slides)~\cite{h0mini}, so its TCGA exposure is at the data level (in-distribution on the TCGA benchmark); it remains out-of-distribution on Camelyon and PANDA.}
+\label{tab:provenance}
+\end{table}
