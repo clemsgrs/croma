@@ -6,7 +6,7 @@ so the per-sample CRoMa gap between them is a within-dataset test for an
 in-distribution advantage. Sorted by the TCGA-favouring gap (descending); the
 TCGA-only-pretrained Midnight-12k is the extreme outlier.
 
-Run: python scripts/experiments/generate_pretraining_overlap_table.py
+Run: python scripts/repro/generate_pretraining_overlap_table.py
 """
 
 from pathlib import Path

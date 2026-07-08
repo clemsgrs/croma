@@ -5,13 +5,16 @@ reliance), right vs out-of-domain APD (cross-centre generalisation). Reuses the
 project plotting identity (family palette, square panels, shared model legend).
 """
 import sys
+from pathlib import Path
 
 from scipy.stats import spearmanr
 
-from loaders import REPO, read_joined
+# The APD loaders live with the rest of the apd study package; reach them across dirs.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts" / "studies" / "apd"))
+from loaders import REPO, read_joined  # noqa: E402
 
 sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "bench"))
 import plotting as P  # noqa: E402
 from croma import plotstyle  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402

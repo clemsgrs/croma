@@ -7,9 +7,9 @@ import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+for _p in (ROOT / "scripts" / "bench", ROOT / "scripts" / "prep"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 import benchmark as bm
 import prepare_benchmark_embeddings as pbe

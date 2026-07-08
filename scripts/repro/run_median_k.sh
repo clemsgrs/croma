@@ -44,7 +44,7 @@ for spec in "${BENCHES[@]}"; do
   cp "$SRC/embedding_source_manifest.csv" "$ROOT/manifests/$NAME.csv"
   mkdir -p "$ROOT/$NAME"
   ln -sfn "$REPO/$SRC/embeddings" "$ROOT/$NAME/embeddings"
-  CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS="$OMP_THREADS" PYTHONPATH=src python scripts/benchmark.py \
+  CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS="$OMP_THREADS" PYTHONPATH=src python scripts/bench/benchmark.py \
     --manifest "$ROOT/manifests/$NAME.csv" \
     --confounder-column confounder \
     --evaluation-design "$DESIGN" \

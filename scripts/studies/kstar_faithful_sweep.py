@@ -17,7 +17,7 @@ from pathlib import Path
 import numpy as np, pandas as pd
 from scipy.stats import pearsonr, spearmanr
 
-# Repo root autodetected from this file's location: scripts/experiments/kstar_faithful_sweep.py
+# Repo root autodetected from this file's location: scripts/studies/kstar_faithful_sweep.py
 # -> parents[2] is the croma repo root, so the reproduction works from any checkout.
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))

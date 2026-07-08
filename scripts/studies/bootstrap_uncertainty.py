@@ -17,7 +17,7 @@ Outputs, per benchmark, under <dir>/results/:
   - bootstrap_uncertainty.json  (correlations, adjacent-pair win probs, meta)
 
 Usage:
-  python scripts/experiments/bootstrap_uncertainty.py [n_boot] [bench1 bench2 ...]
+  python scripts/studies/bootstrap_uncertainty.py [n_boot] [bench1 bench2 ...]
   (defaults: n_boot=2000, all benchmarks)
 """
 

@@ -14,7 +14,7 @@ what benchmark recomputes. Rows are sourced from the full 8,000-row stacked arra
 image_path (the unique join key), so no GPU / re-embed is needed.
 
 Usage:
-  python scripts/experiments/bridge_prostate_cache.py \
+  python scripts/prep/bridge_prostate_cache.py \
       --manifest data/prostate-shift-4class-kirumc-paired.csv \
       --evaluation-design paired_2x2 --output-dir output
 """
@@ -27,7 +27,7 @@ import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "bench"))
 
 from croma.alignment import build_embedding_source_manifest  # noqa: E402
 from croma.metrics.pairs import load_manifest  # noqa: E402
