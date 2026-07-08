@@ -446,33 +446,6 @@ def test_aggregate_by_model_separates_evaluation_designs() -> None:
     assert grouped.sort_values("ri")["ri"].tolist() == [0.4, 0.8]
 
 
-def test_k_sweep_sensitivity_separates_evaluation_designs() -> None:
-    df = pd.DataFrame(
-        {
-            "model": ["M1", "M1", "M1", "M1"],
-            "evaluation_design": [
-                "dataset_wide",
-                "dataset_wide",
-                "paired_2x2",
-                "paired_2x2",
-            ],
-            "evaluation_unit": ["sample", "sample", "occurrence", "occurrence"],
-            "k": [1, 3, 1, 3],
-            "ri": [0.8, 0.7, 0.5, 0.2],
-            "mari": [0.75, 0.7, 0.45, 0.1],
-        }
-    )
-
-    grouped = ar._k_sweep_sensitivity(df)
-
-    assert set(grouped["model"]) == {
-        "M1 [dataset_wide;sample]",
-        "M1 [paired_2x2;occurrence]",
-    }
-    paired_row = grouped[grouped["model"] == "M1 [paired_2x2;occurrence]"].iloc[0]
-    assert float(paired_row["ri_range"]) == 0.3
-
-
 def test_build_croma_subgroup_analysis_highlights_tumor_fragility() -> None:
     subgroup_df, context_df = ar._build_croma_subgroup_analysis(
         _binary_camelyon_like_per_sample_df()
@@ -1141,12 +1114,7 @@ def test_model_action_flags_use_only_lower_coverage_risk_threshold() -> None:
         }
     )
 
-    flags = ar._model_action_flags(
-        df_model=df_model,
-        delta_df=pd.DataFrame(),
-        k_sensitivity_df=pd.DataFrame(),
-        croma_m_sensitivity_df=pd.DataFrame(),
-    )
+    flags = ar._model_action_flags(df_model=df_model)
 
     assert set(flags["flag"]) == {"coverage_risk"}
     assert set(flags["model"]) == {"M1", "M2"}
@@ -1172,12 +1140,7 @@ def test_model_action_flags_keep_only_coverage_embedding_and_ltm_tail_flags() ->
         }
     )
 
-    flags = ar._model_action_flags(
-        df_model=df_model,
-        delta_df=pd.DataFrame(),
-        k_sensitivity_df=pd.DataFrame(),
-        croma_m_sensitivity_df=pd.DataFrame(),
-    )
+    flags = ar._model_action_flags(df_model=df_model)
 
     assert set(flags["flag"]) == {
         "coverage_risk",
@@ -1195,112 +1158,3 @@ def test_model_action_flags_keep_only_coverage_embedding_and_ltm_tail_flags() ->
     poor_embedding_flag = flags[flags["flag"] == "poor_embedding"].iloc[0]
     assert float(coverage_flag["value"]) == pytest.approx(0.30)
     assert float(poor_embedding_flag["value"]) == pytest.approx(0.12)
-
-
-def test_report_adds_coverage_section_and_filters_coverage_and_rank_shift_from_additional_flags(
-    tmp_path: Path,
-) -> None:
-    out_path = tmp_path / "analysis_report.md"
-    df_raw = _metrics_rows(["M1", "M2"])
-    df_model = pd.DataFrame(
-        {
-            "model": ["M1", "M2"],
-            "ri": [0.80, 0.82],
-            "mari": [0.78, 0.81],
-            "croma": [1.10, 1.12],
-            "ri_undefined_frac": [0.30, 0.10],
-            "mari_undefined_frac": [0.28, 0.10],
-        }
-    )
-    top_df = pd.DataFrame(
-        {
-            "metric": ["ri"],
-            "rank_position": [1],
-            "model": ["M1"],
-            "value": [0.80],
-        }
-    )
-    delta_df = pd.DataFrame(
-        {
-            "model": ["M1"],
-            "metric_a": ["ri"],
-            "metric_b": ["mari"],
-            "pair": ["ri_vs_mari"],
-            "rank_a": [3.0],
-            "rank_b": [1.0],
-            "improvement_delta": [2.0],
-            "improvement_delta_signed": ["+2"],
-            "direction": ["improvement"],
-            "abs_improvement_delta": [2.0],
-        }
-    )
-    pearson = pd.DataFrame(
-        [[1.0, 0.8], [0.8, 1.0]],
-        index=["ri", "mari"],
-        columns=["ri", "mari"],
-    )
-    action_flags_df = pd.DataFrame(
-        [
-            {
-                "model": "M1",
-                "flag": "coverage_risk",
-                "severity": "high",
-                "value": 0.30,
-                "threshold": 0.25,
-                "detail": "Undefined coverage is high.",
-            },
-            {
-                "model": "M1",
-                "flag": "rank_shift_ri_vs_mari",
-                "severity": "high",
-                "value": 2.0,
-                "threshold": 2.0,
-                "detail": "Rank shift.",
-            },
-            {
-                "model": "M1",
-                "flag": "poor_embedding",
-                "severity": "high",
-                "value": 0.12,
-                "threshold": 0.10,
-                "detail": "Poor embedding.",
-            },
-        ]
-    )
-
-    ar._write_report(
-        out_path=out_path,
-        input_csv=tmp_path / "metrics.csv",
-        df_raw=df_raw,
-        df_model=df_model,
-        top_metrics=["ri"],
-        corr_metrics=["ri", "mari"],
-        rank_metrics=["ri", "mari"],
-        rank_reference="ri",
-        top_df=top_df,
-        delta_df=delta_df,
-        pearson=pearson,
-        spearman=pearson,
-        top_k=1,
-        action_flags_df=action_flags_df,
-        k_sensitivity_df=pd.DataFrame(),
-        croma_m_sensitivity_df=pd.DataFrame(),
-    )
-
-    report = out_path.read_text(encoding="utf-8")
-
-    assert "## Spearman Correlations" in report
-    assert "## Coverage Risk" in report
-    assert "| Model | Undefined Frac | Coverage Risk |" in report
-    assert "| M1 | 0.300 | yes |" in report
-    assert "| M2 | 0.100 | no |" in report
-
-    additional_section = report.split(
-        "## Additional Insights and Action Flags", maxsplit=1
-    )[1]
-    additional_section = additional_section.split("## K-Sweep Sensitivity", maxsplit=1)[
-        0
-    ]
-    assert "`coverage_risk`" not in additional_section
-    assert "`rank_shift_ri_vs_mari`" not in additional_section
-    assert "`poor_embedding`" in additional_section

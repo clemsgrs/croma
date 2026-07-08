@@ -1,3 +1,28 @@
+"""Optional exploratory CRoMa subgroup / tier analysis (dev tooling).
+
+This module is NOT a paper-artifact generator: nothing in ``paper/`` is built from
+its output, and it must never be wired into the reproduction pipeline. It lives in
+``scripts/tools/`` (the dev / exploratory cluster) precisely because it is an
+optional analytical console, not part of the paper path.
+
+What it uniquely provides:
+
+- the model-specific CRoMa subgroup breakdown (``_build_croma_subgroup_analysis``),
+- the tier1 / tier2 / tier3 subgroup-status logic
+  (``_tier1_status`` / ``_tier2_status`` / ``_tier3_status``), and
+- per-model action flags (``_aggregate_by_model`` + ``_model_action_flags``).
+
+The subgroup + tier breakdown backs the paper's metric-complementarity and
+lower-tail-behavior discussions; it is retained here for ad-hoc inspection only.
+
+Analyses that used to live here but are produced by dedicated generators have been
+removed to avoid duplication:
+
+- metric correlations -> ``scripts/studies/bootstrap_uncertainty.py``,
+- rank tables / rank-agreement -> ``scripts/repro/generate_results_table.py``,
+- k / m-sweep sensitivity -> ``scripts/repro/figures/cross_benchmark_figure.py``.
+"""
+
 import argparse
 from pathlib import Path
 
@@ -18,34 +43,9 @@ except ModuleNotFoundError:
     from croma.metrics.tail import compute_tail_metrics
 
 
-_TOP_METRICS_CANONICAL = ["ri", "mari", "croma", "croma_q_alpha", "croma_ltm_alpha"]
-_CORR_METRICS_CANONICAL = ["ri", "mari", "croma"]
-_RANK_METRICS_CANONICAL = ["ri", "mari", "croma"]
-_RANK_SHIFT_PAIRS = [("ri", "mari"), ("ri", "croma"), ("mari", "croma")]
-
-_DISPLAY_NAMES = {
-    "ri": "RI",
-    "mari": "MaRI",
-    "croma": "CRoMa",
-    "croma_q_alpha": "Q(CRoMa)",
-    "croma_ltm_alpha": "LTM(CRoMa)",
-}
-
-_HIGHER_IS_BETTER = {
-    "ri",
-    "mari",
-    "croma",
-    "croma_q_alpha",
-    "croma_ltm_alpha",
-    "bio_knn_bacc",
-}
-
-_THRESH_RANK_SHIFT = 2.0
 _THRESH_UNDEFINED_COVERAGE_RISK = 0.25
 _THRESH_OO_DOMINATED_HIGH = 0.10
 _THRESH_TAIL_GAP_LTM = 0.20
-_THRESH_K_SWEEP_RANGE = 0.15
-_THRESH_M_SWEEP_CRoMa_GAIN = 0.08
 _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO = 2.0
 _THRESH_TAIL_SEVERITY_MEANINGFUL_GAP = 0.10
 # CRoMa is now the signed normalized margin in (-1, 1); the robustness threshold is 0.
@@ -71,11 +71,6 @@ _SUBGROUP_SCOPE_TO_COLUMNS = {
     "label": ("label",),
     "confounder": ("confounder",),
 }
-_SUBGROUP_SCOPE_TO_TITLE = {
-    "stratum": "Strata",
-    "label": "Biology",
-    "confounder": "Confounders",
-}
 _SCOPE_SORT_ORDER = {
     "stratum": 0,
     "label": 1,
@@ -85,7 +80,10 @@ _SCOPE_SORT_ORDER = {
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Analyze benchmark metrics: correlations, model ranks, and rank changes."
+        description=(
+            "Optional exploratory CRoMa subgroup / tier analysis and per-model action "
+            "flags (dev tooling; NOT a paper-artifact generator)."
+        )
     )
     parser.add_argument(
         "--metrics-csv", required=True, type=Path, help="Path to benchmark metrics CSV."
@@ -96,57 +94,7 @@ def _parse_args() -> argparse.Namespace:
         default=None,
         help="Output directory for analysis artifacts (default: <metrics parent>/analysis).",
     )
-    parser.add_argument(
-        "--rank-reference",
-        default="RI",
-        help="Reference metric for rank deltas (case-insensitive, default: RI).",
-    )
-    parser.add_argument(
-        "--top-k", type=int, default=5, help="Top-k models to highlight per metric."
-    )
-    parser.add_argument(
-        "--k-sweep-csv",
-        type=Path,
-        default=None,
-        help="Optional k-sweep CSV path (default: auto-detect next to metrics CSV).",
-    )
-    parser.add_argument(
-        "--croma-m-sweep-csv",
-        type=Path,
-        default=None,
-        help="Optional CRoMa m-sweep CSV path (default: auto-detect next to metrics CSV).",
-    )
     return parser.parse_args()
-
-
-def _resolve_metric_name(name: str, available: list[str]) -> str:
-    key = str(name).strip().lower()
-    by_lower = {c.lower(): c for c in available}
-    if key not in by_lower:
-        raise ValueError(f"Unknown metric '{name}'. Available: {', '.join(available)}")
-    return by_lower[key]
-
-
-def _resolve_required_metrics(
-    canonical: list[str], numeric_cols: list[str], label: str
-) -> list[str]:
-    resolved: list[str] = []
-    missing: list[str] = []
-    for name in canonical:
-        try:
-            resolved.append(_resolve_metric_name(name, numeric_cols))
-        except ValueError:
-            missing.append(name)
-    if missing:
-        raise ValueError(
-            f"metrics CSV missing required {label} metrics: {', '.join(missing)}. "
-            f"Available numeric columns: {', '.join(numeric_cols)}"
-        )
-    return resolved
-
-
-def _is_higher_better(metric_name: str) -> bool:
-    return str(metric_name).strip().lower() in _HIGHER_IS_BETTER
 
 
 def _scoped_model_labels(df: pd.DataFrame) -> pd.Series:
@@ -180,131 +128,6 @@ def _aggregate_by_model(df: pd.DataFrame) -> pd.DataFrame:
         numeric_only=True
     )
     return grouped
-
-
-def _correlation_outputs(
-    df_model: pd.DataFrame, metrics: list[str]
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    corr_df = df_model.loc[:, metrics]
-    pearson = pd.DataFrame(np.nan, index=metrics, columns=metrics, dtype=float)
-    spearman = pd.DataFrame(np.nan, index=metrics, columns=metrics, dtype=float)
-
-    for m1 in metrics:
-        s1 = corr_df[m1]
-        unique_1 = int(s1.dropna().nunique())
-        for m2 in metrics:
-            s2 = corr_df[m2]
-            unique_2 = int(s2.dropna().nunique())
-            if m1 == m2:
-                if unique_1 >= 2:
-                    pearson.loc[m1, m2] = 1.0
-                    spearman.loc[m1, m2] = 1.0
-                continue
-            if unique_1 < 2 or unique_2 < 2:
-                continue
-            pearson.loc[m1, m2] = float(s1.corr(s2, method="pearson"))
-            spearman.loc[m1, m2] = float(s1.corr(s2, method="spearman"))
-
-    return pearson, spearman
-
-
-def _rank_table(df_model: pd.DataFrame, metrics: list[str]) -> pd.DataFrame:
-    out = df_model.loc[:, ["model"]].copy()
-    for metric in metrics:
-        ascending = not _is_higher_better(metric)
-        out[f"rank_{metric}"] = df_model[metric].rank(method="min", ascending=ascending)
-    return out
-
-
-def _top_models(df_model: pd.DataFrame, metrics: list[str], top_k: int) -> pd.DataFrame:
-    rows: list[dict] = []
-    for metric in metrics:
-        ascending = not _is_higher_better(metric)
-        top = df_model.sort_values(metric, ascending=ascending).head(int(top_k))
-        for pos, (_, row) in enumerate(top.iterrows(), start=1):
-            rows.append(
-                {
-                    "metric": str(metric),
-                    "rank_position": int(pos),
-                    "model": str(row["model"]),
-                    "value": float(row[metric]),
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _rank_deltas(rank_df: pd.DataFrame) -> pd.DataFrame:
-    rows: list[dict] = []
-    for metric_a, metric_b in _RANK_SHIFT_PAIRS:
-        col_a = f"rank_{metric_a}"
-        col_b = f"rank_{metric_b}"
-        if col_a not in rank_df.columns or col_b not in rank_df.columns:
-            continue
-        for _, row in rank_df.iterrows():
-            rank_a = float(row[col_a])
-            rank_b = float(row[col_b])
-            improvement_delta = rank_a - rank_b
-            if improvement_delta > 0:
-                direction = "improvement"
-            elif improvement_delta < 0:
-                direction = "downgrade"
-            else:
-                direction = "no_change"
-            rows.append(
-                {
-                    "model": str(row["model"]),
-                    "metric_a": str(metric_a),
-                    "metric_b": str(metric_b),
-                    "pair": f"{metric_a}_vs_{metric_b}",
-                    "rank_a": rank_a,
-                    "rank_b": rank_b,
-                    "improvement_delta": float(improvement_delta),
-                    "improvement_delta_signed": f"{improvement_delta:+.0f}",
-                    "direction": direction,
-                    "abs_improvement_delta": float(abs(improvement_delta)),
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _rank_agreement(rank_df: pd.DataFrame) -> pd.DataFrame:
-    rank_cols = [c for c in rank_df.columns if c.startswith("rank_")]
-    rows: list[dict] = []
-    for i, c1 in enumerate(rank_cols):
-        for c2 in rank_cols[i + 1 :]:
-            metric_1 = c1[len("rank_") :]
-            metric_2 = c2[len("rank_") :]
-            s1 = rank_df[c1]
-            s2 = rank_df[c2]
-            if int(s1.dropna().nunique()) < 2 or int(s2.dropna().nunique()) < 2:
-                spearman = float("nan")
-                kendall = float("nan")
-            else:
-                spearman = float(s1.corr(s2, method="spearman"))
-                kendall = float(s1.corr(s2, method="kendall"))
-            rows.append(
-                {
-                    "metric_1": metric_1,
-                    "metric_2": metric_2,
-                    "spearman": spearman,
-                    "kendall": kendall,
-                }
-            )
-    return pd.DataFrame(rows)
-
-
-def _strongest_corr_pairs(
-    corr: pd.DataFrame, top_n: int = 5
-) -> list[tuple[str, str, float]]:
-    rows: list[tuple[str, str, float]] = []
-    cols = list(corr.columns)
-    for i, c1 in enumerate(cols):
-        for c2 in cols[i + 1 :]:
-            val = float(corr.loc[c1, c2])
-            if np.isfinite(val):
-                rows.append((c1, c2, val))
-    rows.sort(key=lambda x: abs(x[2]), reverse=True)
-    return rows[: int(top_n)]
 
 
 def _load_optional_csv(path: Path | None) -> pd.DataFrame | None:
@@ -466,16 +289,6 @@ def _fmt_float(value: object) -> str:
     return f"{parsed:.3f}"
 
 
-def _fmt_pct(value: object) -> str:
-    try:
-        parsed = float(value)
-    except (TypeError, ValueError):
-        return "NA"
-    if not np.isfinite(parsed):
-        return "NA"
-    return f"{parsed * 100.0:.1f}%"
-
-
 def _fmt_ratio(value: object) -> str:
     try:
         parsed = float(value)
@@ -484,12 +297,6 @@ def _fmt_ratio(value: object) -> str:
     if not np.isfinite(parsed):
         return "NA"
     return f"{parsed:.1f}x"
-
-
-def _render_context_heading(
-    *, dataset: object, context_id: object, evaluation_design: object
-) -> str:
-    return f"{dataset} / {context_id} ({evaluation_design})"
 
 
 def _tier1_status(
@@ -1236,103 +1043,14 @@ def _render_croma_subgroup_markdown(
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _k_sweep_sensitivity(df_k: pd.DataFrame | None) -> pd.DataFrame:
-    if df_k is None:
-        return pd.DataFrame()
-    required = {"model", "k", "ri", "mari"}
-    if not required.issubset(df_k.columns):
-        return pd.DataFrame()
-    working = df_k.copy()
-    working["model"] = _scoped_model_labels(working)
+def _model_action_flags(*, df_model: pd.DataFrame) -> pd.DataFrame:
+    """Per-model action flags derived from the aggregated metrics table.
 
-    grouped = (
-        working.groupby("model", as_index=False)
-        .agg(
-            k_min=("k", "min"),
-            k_max=("k", "max"),
-            ri_min=("ri", "min"),
-            ri_max=("ri", "max"),
-            mari_min=("mari", "min"),
-            mari_max=("mari", "max"),
-        )
-        .copy()
-    )
-    grouped["ri_range"] = grouped["ri_max"] - grouped["ri_min"]
-    grouped["mari_range"] = grouped["mari_max"] - grouped["mari_min"]
-    grouped["max_range"] = grouped[["ri_range", "mari_range"]].max(axis=1)
-    grouped = grouped.sort_values("max_range", ascending=False).reset_index(drop=True)
-    return grouped
-
-
-def _croma_m_sweep_sensitivity(df_m: pd.DataFrame | None) -> pd.DataFrame:
-    if df_m is None:
-        return pd.DataFrame()
-    required = {"model", "m", "croma", "croma_q_alpha", "croma_ltm_alpha"}
-    if not required.issubset(df_m.columns):
-        return pd.DataFrame()
-    working = df_m.copy()
-    working["model"] = _scoped_model_labels(working)
-
-    grouped_rows: list[dict] = []
-    for model, grp in working.groupby("model"):
-        grp_sorted = grp.sort_values("m", ascending=True)
-        row: dict = {
-            "model": str(model),
-            "m_min": float(grp_sorted["m"].iloc[0]),
-            "m_max": float(grp_sorted["m"].iloc[-1]),
-            "croma_m_min": float(grp_sorted["croma"].iloc[0]),
-            "croma_m_max": float(grp_sorted["croma"].iloc[-1]),
-            "croma_gain": float(
-                grp_sorted["croma"].iloc[-1] - grp_sorted["croma"].iloc[0]
-            ),
-            "q_gain": float(
-                grp_sorted["croma_q_alpha"].iloc[-1] - grp_sorted["croma_q_alpha"].iloc[0]
-            ),
-            "ltm_gain": float(
-                grp_sorted["croma_ltm_alpha"].iloc[-1]
-                - grp_sorted["croma_ltm_alpha"].iloc[0]
-            ),
-        }
-        if "croma_retries" in grp_sorted.columns:
-            row["croma_retries_max"] = float(grp_sorted["croma_retries"].max())
-        if "croma_k_final" in grp_sorted.columns:
-            row["croma_k_final_max"] = float(grp_sorted["croma_k_final"].max())
-        grouped_rows.append(row)
-
-    out = pd.DataFrame(grouped_rows)
-    if len(out) == 0:
-        return out
-    sort_col = "croma_gain"
-    out = out.sort_values(sort_col, ascending=False).reset_index(drop=True)
-    return out
-
-
-def _model_action_flags(
-    *,
-    df_model: pd.DataFrame,
-    delta_df: pd.DataFrame,
-    k_sensitivity_df: pd.DataFrame,
-    croma_m_sensitivity_df: pd.DataFrame,
-) -> pd.DataFrame:
+    Only flags computable from ``df_model`` itself are emitted (coverage risk,
+    OO-dominated poor-embedding, and the lower-tail-mean gap). Rank-shift and
+    k/m-sweep flags were dropped along with those duplicated sections.
+    """
     rows: list[dict] = []
-
-    # Rank disagreements with meaningful magnitude.
-    if len(delta_df) > 0:
-        shifted = delta_df[delta_df["abs_improvement_delta"] >= _THRESH_RANK_SHIFT]
-        for _, row in shifted.iterrows():
-            rows.append(
-                {
-                    "model": str(row["model"]),
-                    "flag": f"rank_shift_{row['pair']}",
-                    "severity": "high",
-                    "value": float(row["improvement_delta"]),
-                    "threshold": _THRESH_RANK_SHIFT,
-                    "detail": (
-                        f"Rank shift between {_DISPLAY_NAMES.get(row['metric_a'], row['metric_a'])} and "
-                        f"{_DISPLAY_NAMES.get(row['metric_b'], row['metric_b'])} is {row['improvement_delta_signed']}."
-                    ),
-                }
-            )
 
     # Coverage risks: RI/MaRI undefined coverage is shared in this benchmark path,
     # so emit one model-level flag using the max available undefined fraction.
@@ -1401,38 +1119,6 @@ def _model_action_flags(
                 }
             )
 
-    # k-sweep sensitivity.
-    if len(k_sensitivity_df) > 0 and "max_range" in k_sensitivity_df.columns:
-        for _, row in k_sensitivity_df[
-            k_sensitivity_df["max_range"] >= _THRESH_K_SWEEP_RANGE
-        ].iterrows():
-            rows.append(
-                {
-                    "model": str(row["model"]),
-                    "flag": "k_sweep_sensitivity_high",
-                    "severity": "medium",
-                    "value": float(row["max_range"]),
-                    "threshold": _THRESH_K_SWEEP_RANGE,
-                    "detail": f"k-sweep range is high (max RI/MaRI range={row['max_range']:.3f}).",
-                }
-            )
-
-    # m-sweep CRoMa gain and compute cost.
-    if len(croma_m_sensitivity_df) > 0:
-        if "croma_gain" in croma_m_sensitivity_df.columns:
-            for _, row in croma_m_sensitivity_df[
-                croma_m_sensitivity_df["croma_gain"] >= _THRESH_M_SWEEP_CRoMa_GAIN
-            ].iterrows():
-                rows.append(
-                    {
-                        "model": str(row["model"]),
-                        "flag": "croma_m_sweep_gain_high",
-                        "severity": "medium",
-                        "value": float(row["croma_gain"]),
-                        "threshold": _THRESH_M_SWEEP_CRoMa_GAIN,
-                        "detail": f"CRoMa gain across m-sweep is high ({row['croma_gain']:.3f}).",
-                    }
-                )
     out = pd.DataFrame(rows)
     if len(out) == 0:
         return out
@@ -1444,193 +1130,6 @@ def _model_action_flags(
         .reset_index(drop=True)
     )
     return out
-
-
-def _write_report(
-    *,
-    out_path: Path,
-    input_csv: Path,
-    df_raw: pd.DataFrame,
-    df_model: pd.DataFrame,
-    top_metrics: list[str],
-    corr_metrics: list[str],
-    rank_metrics: list[str],
-    rank_reference: str,
-    top_df: pd.DataFrame,
-    delta_df: pd.DataFrame,
-    pearson: pd.DataFrame,
-    spearman: pd.DataFrame,
-    top_k: int,
-    action_flags_df: pd.DataFrame,
-    k_sensitivity_df: pd.DataFrame,
-    croma_m_sensitivity_df: pd.DataFrame,
-) -> None:
-    strong_corr = _strongest_corr_pairs(pearson, top_n=8)
-    strong_spearman = _strongest_corr_pairs(spearman, top_n=8)
-    coverage_cols = [
-        c
-        for c in ("ri_undefined_frac", "mari_undefined_frac", "croma_undefined_frac")
-        if c in df_model.columns
-    ]
-
-    lines: list[str] = []
-    lines.append("# Benchmark Metrics Analysis")
-    lines.append("")
-    lines.append(f"- Input CSV: `{input_csv}`")
-    lines.append(f"- Raw rows: {len(df_raw)}")
-    lines.append(f"- Unique models analyzed: {len(df_model)}")
-    lines.append(
-        f"- Top-model metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in top_metrics)}"
-    )
-    lines.append(
-        f"- Correlation metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in corr_metrics)}"
-    )
-    lines.append(
-        f"- Rank-shift metrics: {', '.join(_DISPLAY_NAMES.get(m, m) for m in rank_metrics)}"
-    )
-    lines.append(
-        f"- Rank reference: `{_DISPLAY_NAMES.get(rank_reference, rank_reference)}`"
-    )
-    lines.append("")
-    lines.append("## Top Models By Metric")
-    lines.append("")
-    for metric in top_metrics:
-        lines.append(f"### {_DISPLAY_NAMES.get(metric, metric)}")
-        metric_rows = (
-            top_df[top_df["metric"] == metric]
-            .sort_values("rank_position")
-            .head(int(top_k))
-        )
-        for _, row in metric_rows.iterrows():
-            lines.append(
-                f"- #{int(row['rank_position'])} {row['model']} ({float(row['value']):.6g})"
-            )
-        lines.append("")
-
-    lines.append("")
-    lines.append("## Pearson Correlations (RI / MaRI / CRoMa)")
-    lines.append("")
-    for m1, m2, val in strong_corr:
-        lines.append(
-            f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}"
-        )
-    lines.append("")
-    lines.append("## Spearman Correlations (RI / MaRI / CRoMa)")
-    lines.append("")
-    for m1, m2, val in strong_spearman:
-        lines.append(
-            f"- `{_DISPLAY_NAMES.get(m1, m1)}` vs `{_DISPLAY_NAMES.get(m2, m2)}`: {val:.4f}"
-        )
-    lines.append("")
-    lines.append("## Rank Shift Analysis (Pairwise)")
-    lines.append("")
-    for metric_a, metric_b in _RANK_SHIFT_PAIRS:
-        pair_rows = delta_df[
-            (delta_df["metric_a"] == metric_a) & (delta_df["metric_b"] == metric_b)
-        ].sort_values("abs_improvement_delta", ascending=False)
-        lines.append(
-            f"### {_DISPLAY_NAMES.get(metric_a, metric_a)} vs {_DISPLAY_NAMES.get(metric_b, metric_b)}"
-        )
-        shown_rows = pair_rows[pair_rows["abs_improvement_delta"] >= _THRESH_RANK_SHIFT]
-        if len(shown_rows) == 0:
-            lines.append(f"- No rank shifts with |delta| >= {int(_THRESH_RANK_SHIFT)}.")
-            lines.append("")
-            continue
-        for _, row in shown_rows.head(10).iterrows():
-            lines.append(
-                f"- {row['model']}: "
-                f"{_DISPLAY_NAMES.get(metric_a, metric_a)} rank {int(row['rank_a'])} -> "
-                f"{_DISPLAY_NAMES.get(metric_b, metric_b)} rank {int(row['rank_b'])} "
-                f"({row['improvement_delta_signed']})"
-            )
-        lines.append("")
-
-    lines.append("")
-    lines.append("## Coverage Risk")
-    lines.append("")
-    if not coverage_cols:
-        lines.append("- Undefined-fraction columns unavailable.")
-    else:
-        coverage_flag_models = set(
-            action_flags_df.loc[
-                action_flags_df["flag"] == "coverage_risk", "model"
-            ].astype(str)
-        )
-        coverage_headers = ["Model", "Undefined Frac", "Coverage Risk"]
-        coverage_rows: list[list[str]] = []
-        for _, row in df_model.sort_values("model").iterrows():
-            coverage_values = [
-                float(row[c]) for c in coverage_cols if np.isfinite(row[c])
-            ]
-            coverage_value = (
-                float(max(coverage_values)) if coverage_values else float("nan")
-            )
-            coverage_rows.append(
-                [
-                    str(row["model"]),
-                    _fmt_float(coverage_value),
-                    "yes" if str(row["model"]) in coverage_flag_models else "no",
-                ]
-            )
-        lines.extend(_render_markdown_table(coverage_headers, coverage_rows))
-    lines.append("")
-
-    filtered_action_flags_df = action_flags_df[
-        ~action_flags_df["flag"].astype(str).eq("coverage_risk")
-        & ~action_flags_df["flag"].astype(str).str.startswith("rank_shift_")
-    ].reset_index(drop=True)
-
-    lines.append("")
-    lines.append("## Additional Insights and Action Flags")
-    lines.append("")
-    if len(filtered_action_flags_df) == 0:
-        lines.append(
-            "- No additional action flags triggered beyond the dedicated coverage and rank-shift sections."
-        )
-    else:
-        lines.append(
-            f"- Models with >=1 additional action flag: {filtered_action_flags_df['model'].nunique()}"
-        )
-        lines.append(
-            f"- Total unique additional flags: {len(filtered_action_flags_df)}"
-        )
-        lines.append("")
-        lines.append("### Triggered Flags (Top 20)")
-        for _, row in filtered_action_flags_df.head(20).iterrows():
-            lines.append(
-                f"- {row['model']}: `{row['flag']}` (value={float(row['value']):.3f}, "
-                f"threshold={float(row['threshold']):.3f})"
-            )
-    lines.append("")
-    lines.append("## K-Sweep Sensitivity")
-    lines.append("")
-    if len(k_sensitivity_df) == 0:
-        lines.append("- k-sweep metrics unavailable.")
-    else:
-        lines.append(
-            f"- Threshold: `max(ri_range, mari_range) >= {_THRESH_K_SWEEP_RANGE:.2f}`"
-        )
-        for _, row in k_sensitivity_df.head(5).iterrows():
-            lines.append(
-                f"- {row['model']}: ri_range={float(row['ri_range']):.3f}, "
-                f"mari_range={float(row['mari_range']):.3f}, max_range={float(row['max_range']):.3f}"
-            )
-    lines.append("")
-    lines.append("## CRoMa m-Sweep Sensitivity and Cost")
-    lines.append("")
-    if len(croma_m_sensitivity_df) == 0:
-        lines.append("- CRoMa m-sweep metrics unavailable.")
-    else:
-        lines.append(
-            f"- Sensitivity threshold: `croma_gain >= {_THRESH_M_SWEEP_CRoMa_GAIN:.2f}`"
-        )
-        for _, row in croma_m_sensitivity_df.head(5).iterrows():
-            lines.append(
-                f"- {row['model']}: croma_gain={float(row['croma_gain']):.3f}, "
-                f"q_gain={float(row['q_gain']):.3f}, ltm_gain={float(row['ltm_gain']):.3f}"
-            )
-    lines.append("")
-    out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> int:
@@ -1651,90 +1150,19 @@ def main() -> int:
         raise ValueError(f"Metrics CSV is empty: {metrics_csv}")
 
     df_model = _aggregate_by_model(df_raw)
-    numeric_cols = [
-        c
-        for c in df_model.columns
-        if c != "model" and pd.api.types.is_numeric_dtype(df_model[c])
-    ]
-    top_metrics = _resolve_required_metrics(
-        _TOP_METRICS_CANONICAL, numeric_cols, "top-model"
-    )
-    corr_metrics = _resolve_required_metrics(
-        _CORR_METRICS_CANONICAL, numeric_cols, "correlation"
-    )
-    rank_metrics = _resolve_required_metrics(
-        _RANK_METRICS_CANONICAL, numeric_cols, "rank-shift"
-    )
+    action_flags_df = _model_action_flags(df_model=df_model)
 
-    rank_reference = _resolve_metric_name(str(args.rank_reference), rank_metrics)
-
-    pearson_corr, spearman_corr = _correlation_outputs(df_model, metrics=corr_metrics)
-    rank_df = _rank_table(df_model, metrics=rank_metrics)
-    top_df = _top_models(df_model, metrics=top_metrics, top_k=int(args.top_k))
-    delta_df = _rank_deltas(rank_df)
-    agreement_df = _rank_agreement(rank_df)
-
-    k_sweep_path = (
-        Path(args.k_sweep_csv)
-        if args.k_sweep_csv is not None
-        else metrics_csv.parent / "k_sweep_metrics.csv"
-    )
-    croma_m_sweep_path = (
-        Path(args.croma_m_sweep_csv)
-        if args.croma_m_sweep_csv is not None
-        else metrics_csv.parent / "croma_m_sweep_metrics.csv"
-    )
     per_sample_path = metrics_csv.parent / "per_sample_metrics.csv"
-    df_k_sweep = _load_optional_csv(k_sweep_path)
-    df_croma_m_sweep = _load_optional_csv(croma_m_sweep_path)
     df_per_sample = _load_optional_csv(per_sample_path)
-    k_sensitivity_df = _k_sweep_sensitivity(df_k_sweep)
-    croma_m_sensitivity_df = _croma_m_sweep_sensitivity(df_croma_m_sweep)
-    action_flags_df = _model_action_flags(
-        df_model=df_model,
-        delta_df=delta_df,
-        k_sensitivity_df=k_sensitivity_df,
-        croma_m_sensitivity_df=croma_m_sensitivity_df,
-    )
     subgroup_df, subgroup_context_df = _build_croma_subgroup_analysis(df_per_sample)
 
-    pearson_corr.to_csv(out_dir / "correlation_pearson.csv")
-    spearman_corr.to_csv(out_dir / "correlation_spearman.csv")
-    rank_df.to_csv(out_dir / "model_ranks.csv", index=False)
-    top_df.to_csv(out_dir / "top_models_by_metric.csv", index=False)
-    delta_df.to_csv(out_dir / "rank_deltas.csv", index=False)
-    agreement_df.to_csv(out_dir / "rank_agreement.csv", index=False)
     action_flags_df.to_csv(out_dir / "model_action_flags.csv", index=False)
-    if len(k_sensitivity_df) > 0:
-        k_sensitivity_df.to_csv(out_dir / "k_sweep_sensitivity.csv", index=False)
-    if len(croma_m_sensitivity_df) > 0:
-        croma_m_sensitivity_df.to_csv(
-            out_dir / "croma_m_sweep_sensitivity.csv", index=False
-        )
     if df_per_sample is not None:
         subgroup_df.to_csv(out_dir / "model_specific_croma_subgroups.csv", index=False)
         (out_dir / "model_specific_croma_subgroups.md").write_text(
             _render_croma_subgroup_markdown(subgroup_df, subgroup_context_df),
             encoding="utf-8",
         )
-    _write_report(
-        out_path=out_dir / "analysis_report.md",
-        input_csv=metrics_csv,
-        df_raw=df_raw,
-        df_model=df_model,
-        top_metrics=top_metrics,
-        corr_metrics=corr_metrics,
-        rank_metrics=rank_metrics,
-        rank_reference=rank_reference,
-        top_df=top_df,
-        delta_df=delta_df,
-        pearson=pearson_corr,
-        spearman=spearman_corr,
-        top_k=int(args.top_k),
-        action_flags_df=action_flags_df,
-        k_sensitivity_df=k_sensitivity_df,
-        croma_m_sensitivity_df=croma_m_sensitivity_df,
-    )
 
     print(f"[analyze_results] wrote analysis to: {out_dir}")
     return 0
