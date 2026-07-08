@@ -205,8 +205,9 @@ import matplotlib.pyplot as plt
 
 from croma import plotstyle
 
-ACCENT = "#d12f2f"  # red (impostor / tail)
-REST = "#2f86b8"    # steel blue (rest)
+# Shared semantic palette: OS is the impostor / lower-tail accent, SO the neutral "rest".
+ACCENT = plotstyle.NEIGHBOR_TYPE_COLOR["OS"]  # red (impostor / tail)
+REST = plotstyle.NEIGHBOR_TYPE_COLOR["SO"]    # steel blue (rest)
 
 tmask = np.concatenate(pooled_tail_mask)
 

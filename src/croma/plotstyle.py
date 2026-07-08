@@ -159,6 +159,17 @@ METRIC_LABEL: dict[str, str] = {
     "ltm": "LTM",
 }
 
+# Semantic neighbour-type colours (SS / SO / OS / OO) for the neighbourhood-composition
+# and rank diagnostics. These are role-based encodings (not model-family hues), tuned to
+# sit within the shared palette's hue space. In the rank diagnostic, OS doubles as the
+# impostor / lower-tail accent and SO as the neutral baseline ("rest") series.
+NEIGHBOR_TYPE_COLOR: dict[str, str] = {
+    "SS": "#8a8682",  # same biology, same confounder   — neutral grey
+    "SO": "#2f86b8",  # same biology, other confounder  — steel blue
+    "OS": "#d12f2f",  # other biology, same confounder  — red (impostor)
+    "OO": "#e0a01a",  # other biology, other confounder — gold / amber
+}
+
 # Status colours (defined-support tiers): (fill, track).
 SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
     "good": ("#3f8f6e", "#dcebe4"),
