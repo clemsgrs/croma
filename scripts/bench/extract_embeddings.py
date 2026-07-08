@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import dataclasses
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -53,6 +54,38 @@ def _extract_timm_features(out, extract: str):
             raise RuntimeError("virchow extraction expects 3D token output.")
         return torch.cat([out[:, 0], out[:, 5:].mean(1)], dim=-1)
     raise ValueError(f"Unknown extract mode: {extract}")
+
+
+_GPFM_ARCH = "vit_large_patch14_dinov2.lvd142m"
+_GPFM_CHECKPOINT = "GPFM.pth"
+_GPFM_WRAPPER_KEYS = ("model", "teacher", "student", "state_dict", "teacher_backbone")
+_GPFM_PREFIXES = ("module.", "backbone.")
+
+
+def _unwrap_gpfm_state_dict(payload):
+    """Reduce a GPFM checkpoint payload to a bare state_dict (mirrors slide2vec)."""
+    state = payload
+    for wrapper in _GPFM_WRAPPER_KEYS:
+        if (
+            isinstance(state, Mapping)
+            and wrapper in state
+            and isinstance(state[wrapper], Mapping)
+        ):
+            state = state[wrapper]
+            break
+    if not isinstance(state, Mapping):
+        raise ValueError(
+            "Unexpected GPFM checkpoint payload: expected a state_dict mapping, "
+            f"got {type(state)}"
+        )
+    cleaned = {}
+    for key, value in state.items():
+        name = key
+        for prefix in _GPFM_PREFIXES:
+            if name.startswith(prefix):
+                name = name[len(prefix) :]
+        cleaned[name] = value
+    return cleaned
 
 
 def _load_manifest(manifest_path: Path) -> pd.DataFrame:
@@ -179,6 +212,90 @@ def _load_model_and_transform(spec: ModelSpec, device):
             return encoder(batch)
 
         return encoder, encoder.eval_transforms, embed_fn
+
+    if spec.backend == "gpfm":
+        from huggingface_hub import hf_hub_download
+
+        model = timm.create_model(
+            _GPFM_ARCH,
+            pretrained=False,
+            img_size=224,
+            init_values=1e-5,
+            dynamic_img_size=True,
+        )
+        checkpoint_path = hf_hub_download(
+            repo_id=spec.model_id, filename=_GPFM_CHECKPOINT
+        )
+        # weights_only=False: GPFM.pth is a pickled checkpoint (executes code on load);
+        # safe only from the trusted majiabo/GPFM repo. Do not repoint at untrusted repos.
+        payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        if not isinstance(payload, Mapping):
+            raise ValueError(
+                f"Invalid GPFM checkpoint payload: expected a dict, got {type(payload)}"
+            )
+        model.load_state_dict(_unwrap_gpfm_state_dict(payload), strict=True)
+        model.eval().to(device)
+        transform = create_transform(
+            **resolve_data_config(model.pretrained_cfg, model=model)
+        )
+
+        def embed_fn(batch):
+            out = model.forward_features(batch)
+            return _extract_timm_features(out, spec.extract)
+
+        return model, transform, embed_fn
+
+    if spec.backend == "musk":
+        from musk import modeling, utils  # noqa: F401 - modeling registers the timm arch
+        from timm.models import create_model
+        from torchvision.transforms import v2
+
+        model = create_model("musk_large_patch16_384").eval()
+        utils.load_model_and_may_interpolate(spec.model_id, model, "model|module", "")
+        model.to(device)
+        transform = v2.Compose(
+            [
+                v2.ToImage(),
+                v2.Resize(
+                    384, interpolation=v2.InterpolationMode.BICUBIC, antialias=True
+                ),
+                v2.CenterCrop(384),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+            ]
+        )
+        ms_aug = spec.extract == "ms_aug"
+
+        def embed_fn(batch):
+            return model(
+                image=batch, with_head=False, out_norm=False, ms_aug=ms_aug
+            )[0]
+
+        return model, transform, embed_fn
+
+    if spec.backend == "genbio":
+        from torchvision.transforms import v2
+
+        model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
+        model.eval().to(device)
+        transform = v2.Compose(
+            [
+                v2.ToImage(),
+                v2.Resize(
+                    (224, 224),
+                    interpolation=v2.InterpolationMode.BICUBIC,
+                    antialias=True,
+                ),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=(0.697, 0.575, 0.728), std=(0.188, 0.240, 0.187)),
+            ]
+        )
+
+        def embed_fn(batch):
+            # GenBio's forward returns [B, 4608] embeddings directly (not last_hidden_state).
+            return model(batch)
+
+        return model, transform, embed_fn
 
     raise ValueError(f"Unknown backend: {spec.backend}")
 

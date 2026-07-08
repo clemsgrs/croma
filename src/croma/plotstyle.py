@@ -92,6 +92,13 @@ MODEL_FAMILY_MAP: dict[str, str] = {
     "Hibou-L": "hibou",
     "Hibou-B": "hibou",
     "Prost40M": "prost",
+    # Ported from slide2vec (provisional hues — validate via the dataviz skill
+    # before these appear in paper figures).
+    "mSTAR": "mstar",
+    "GPFM": "gpfm",
+    "MUSK": "musk",
+    "GenBio-PathFM": "genbio",
+    "DINOv2-B": "dinov2",
 }
 
 # Per-family tones ordered light -> dark. Saturated for a lively, readable look.
@@ -105,6 +112,12 @@ FAMILY_PALETTE: dict[str, list[str]] = {
     "midnight": ["#16b6c4"],              # cyan / teal
     "hibou": ["#e07ad0", "#b1318f"],      # magenta
     "prost": ["#8a8682"],                 # neutral grey
+    # Ported from slide2vec — provisional single-tone hues (validate via dataviz).
+    "mstar": ["#6d5bd0"],                 # indigo
+    "gpfm": ["#d94a8c"],                  # rose
+    "musk": ["#2aa198"],                  # teal
+    "genbio": ["#9a7d0a"],                # olive / amber
+    "dinov2": ["#5f6b7a"],                # slate grey — natural-image control
     "other": ["#aab2bb", "#7e8790", "#565d65"],
 }
 
@@ -128,6 +141,11 @@ MODEL_TONE_INDEX: dict[str, int] = {
     "Hibou-L": 0,
     "Hibou-B": 1,
     "Prost40M": 0,
+    "mSTAR": 0,
+    "GPFM": 0,
+    "MUSK": 0,
+    "GenBio-PathFM": 0,
+    "DINOv2-B": 0,
 }
 
 # Canonical model order: grouped by family, newest/strongest first within group.
@@ -141,6 +159,9 @@ CANONICAL_MODEL_ORDER: list[str] = [
     "Midnight-12k",
     "Hibou-L", "Hibou-B",
     "Prost40M",
+    # Ported from slide2vec; DINOv2-B last as the natural-image control.
+    "mSTAR", "GPFM", "MUSK", "GenBio-PathFM",
+    "DINOv2-B",
 ]
 
 # Fixed colour per metric (for single-metric accents and cross-metric panels).

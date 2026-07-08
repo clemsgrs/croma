@@ -68,6 +68,12 @@ dev = [
   "matplotlib>=3.8",
   "scipy>=1.11",
 ]
+encoders = [
+  "musk @ git+https://github.com/lilab-stanford/MUSK.git",
+  "conch @ git+https://github.com/Mahmoodlab/CONCH.git",
+  "trident @ git+https://github.com/mahmoodlab/TRIDENT.git",
+  "gigapath @ git+https://github.com/prov-gigapath/prov-gigapath.git",
+]
 
 [project.scripts]
 croma = "croma.cli:main"
