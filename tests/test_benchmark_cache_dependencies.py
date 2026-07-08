@@ -78,29 +78,6 @@ def _install_fake_registry_and_embed(monkeypatch, model: str = "M1") -> None:
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
 
-def _install_noop_plots(monkeypatch) -> None:
-    def fake_plot(*, out_path: Path, **kwargs: object) -> None:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"plot")
-
-    for name in (
-        "plot_bio_vs_confounder_scatter",
-        "plot_croma_ltm_bars",
-        "plot_croma_ltm_scatter",
-        "plot_croma_m_sweep",
-        "plot_croma_sample_distributions",
-        "plot_croma_vs_mari_scatter",
-        "plot_q_alpha_vs_croma_scatter",
-        "plot_knn_bio_k_sweep",
-        "plot_knn_confounder_k_sweep",
-        "plot_mari_k_sweep",
-        "plot_mari_vs_ri_scatter",
-        "plot_ri_mari_support",
-        "plot_ri_k_sweep",
-    ):
-        monkeypatch.setattr(bm, name, fake_plot)
-
-
 def _run_benchmark(
     monkeypatch,
     *,
@@ -140,7 +117,6 @@ def test_tau_change_recomputes_only_mari(monkeypatch, tmp_path: Path) -> None:
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, model="M1")
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir)
@@ -228,7 +204,6 @@ def test_croma_search_change_recomputes_only_croma(monkeypatch, tmp_path: Path) 
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, model="M1")
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir)
@@ -318,7 +293,6 @@ def test_k_values_change_recomputes_knn_ri_mari_not_croma(
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, model="M1")
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir)
@@ -399,7 +373,6 @@ def test_evaluation_design_change_recomputes_all_artifacts(
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, model="M1")
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(
@@ -492,7 +465,6 @@ def test_recompute_metrics_flag_forces_all(monkeypatch, tmp_path: Path) -> None:
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, model="M1")
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(monkeypatch, manifest_path=manifest_path, output_dir=output_dir)
@@ -550,7 +522,6 @@ def test_cold_cache_uses_one_shared_scoring_pass_per_metric(
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, model="M1")
-    _install_noop_plots(monkeypatch)
 
     calls = {"ri": 0, "mari": 0}
     original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide

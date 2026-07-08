@@ -84,30 +84,6 @@ def _install_fake_registry_and_embed(monkeypatch, models: list[str]) -> None:
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
 
 
-def _install_noop_plots(monkeypatch) -> None:
-    def fake_plot(*, out_path: Path, **kwargs: object) -> None:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"plot")
-
-    plot_names = [
-        "plot_bio_vs_confounder_scatter",
-        "plot_croma_ltm_bars",
-        "plot_croma_ltm_scatter",
-        "plot_croma_m_sweep",
-        "plot_croma_sample_distributions",
-        "plot_croma_vs_mari_scatter",
-        "plot_q_alpha_vs_croma_scatter",
-        "plot_knn_bio_k_sweep",
-        "plot_knn_confounder_k_sweep",
-        "plot_mari_k_sweep",
-        "plot_mari_vs_ri_scatter",
-        "plot_ri_mari_support",
-        "plot_ri_k_sweep",
-    ]
-    for name in plot_names:
-        monkeypatch.setattr(bm, name, fake_plot)
-
-
 def _run_benchmark(
     monkeypatch,
     *,
@@ -210,7 +186,6 @@ def test_benchmark_uses_manifest_stem_for_dataset_output(
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(
@@ -236,7 +211,6 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
     output_dir = tmp_path / "out"
     models = ["M1", "M2"]
     _install_fake_registry_and_embed(monkeypatch, models=models)
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(
@@ -250,7 +224,6 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
 
     dataset_dir = output_dir / manifest_path.stem
     results_dir = dataset_dir / "results"
-    plots_dir = dataset_dir / "plots"
     metrics_df = pd.read_csv(results_dir / "metrics.csv")
     k_sweep_df = pd.read_csv(results_dir / "k_sweep_metrics.csv")
     per_sample_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
@@ -288,19 +261,15 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
         results_dir / "k_sweep_metrics.csv",
         results_dir / "croma_m_sweep_metrics.csv",
         results_dir / "per_sample_metrics.csv",
+        results_dir / "render_manifest.json",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
-        plots_dir / "croma_ltm_bars.png",
-        plots_dir / "croma_ltm_scatter.png",
-        plots_dir / "ri_mari_support.png",
     ):
         assert path.exists(), f"Missing output: {path}"
 
-    for path in (
-        plots_dir / "benchmark_6panel_summary.png",
-        plots_dir / "croma_trend_quadrants.png",
-    ):
-        assert not path.exists(), f"Deprecated plot should not be written: {path}"
+    # The compute driver is plot-free: it writes no figures and no plots/ directory.
+    # Rendering is scripts/bench/render.py's responsibility (see test_render.py).
+    assert not (dataset_dir / "plots").exists()
 
 
 def test_benchmark_paired_outputs_occurrence_level_rows(
@@ -311,7 +280,6 @@ def test_benchmark_paired_outputs_occurrence_level_rows(
     manifest.to_csv(manifest_path, index=False)
     output_dir = tmp_path / "out"
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(
@@ -449,7 +417,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
         }
 
     _install_fake_registry_and_embed(monkeypatch, models=[model])
-    _install_noop_plots(monkeypatch)
     monkeypatch.setattr(
         bm.RI,
         "_compute_artifacts_from_prepared_dataset_wide",
@@ -514,7 +481,6 @@ def test_benchmark_k_max_uses_full_range(
     output_dir = tmp_path / "out"
     models = ["M1", "M2"]
     _install_fake_registry_and_embed(monkeypatch, models=models)
-    _install_noop_plots(monkeypatch)
 
     assert (
         _run_benchmark(
@@ -597,7 +563,6 @@ def test_benchmark_can_select_different_confounder_k(
         )
 
     _install_fake_registry_and_embed(monkeypatch, models=["M1"])
-    _install_noop_plots(monkeypatch)
     monkeypatch.setattr(
         bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k
     )

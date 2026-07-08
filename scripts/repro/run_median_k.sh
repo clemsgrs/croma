@@ -44,6 +44,7 @@ for spec in "${BENCHES[@]}"; do
   cp "$SRC/embedding_source_manifest.csv" "$ROOT/manifests/$NAME.csv"
   mkdir -p "$ROOT/$NAME"
   ln -sfn "$REPO/$SRC/embeddings" "$ROOT/$NAME/embeddings"
+  # Step 1: compute metrics (no plotting).
   CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS="$OMP_THREADS" PYTHONPATH=src python scripts/bench/benchmark.py \
     --manifest "$ROOT/manifests/$NAME.csv" \
     --confounder-column confounder \
@@ -62,6 +63,8 @@ print('  OK  median-k (unique):', sorted(d['k'].unique()),
       '| mean support=%.1f%%'%d['support'].mean(),
       '| n_models=%d'%len(d))
 "
+    # Step 2: render this run's figure set from the written metrics.
+    PYTHONPATH=src python scripts/bench/render.py "$ROOT/$NAME"
   else
     echo "  !! FAILED rc=$rc (metrics missing: $M)"
   fi
