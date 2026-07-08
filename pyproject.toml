@@ -78,6 +78,11 @@ encoders = [
 [project.scripts]
 croma = "croma.cli:main"
 
+[tool.hatch.metadata]
+# The optional `encoders` extra pins encoder sources by git URL (PEP 508 direct
+# references); hatchling rejects those during metadata generation unless this is set.
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/croma"]
 
