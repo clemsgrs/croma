@@ -12,14 +12,19 @@ inline code it replaces.
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-REPO = Path("/data/pathology/projects/clement/code/croma")
-PATHOROB = Path("/data/pathology/projects/clement/code/PathoROB")
+# Repo root autodetected from this file's location: scripts/experiments/apd/loaders.py
+# -> parents[3] is the croma repo root, so the reproduction works from any checkout.
+REPO = Path(__file__).resolve().parents[3]
+# PathoROB is a SIBLING repo (not under croma), so it cannot be autodetected. Default to
+# a sibling checkout next to croma; override with PATHOROB_ROOT if it lives elsewhere.
+PATHOROB = Path(os.environ.get("PATHOROB_ROOT", REPO.parent / "PathoROB"))
 if str(PATHOROB) not in sys.path:
     sys.path.insert(0, str(PATHOROB))
 

@@ -102,7 +102,9 @@ tolkach)
   PATHOROB_META="../PathoROB/data/metadata/tolkach_esca_reduced.csv"
   MANIFEST="data/pathorob/manifests/pathorob-tolkach-esca-faithful.csv"
   OUTDIR="output/pathorob-tolkach-esca-faithful"
-  IMG_BASE="/data/pathology/archives/public-datasets/pathorob/tolkach_esca/images"
+  # Data-archive path (not a repo path). Override IMG_BASE to point at your own copy of
+  # the PathoROB Tolkach-ESCA images; defaults to the internal archive location.
+  IMG_BASE="${IMG_BASE:-/data/pathology/archives/public-datasets/pathorob/tolkach_esca/images}"
   MODELS="CONCH,CONCHv1.5,H-optimus-0,H-optimus-1,H0-mini,Hibou-B,Hibou-L,Midnight-12k,Phikon,Phikon-v2,Prost40M,Prov-GigaPath,UNI,UNI2-h,Virchow,Virchow2"
 
   # Build the exact 9k manifest from PathoROB's metadata if absent.

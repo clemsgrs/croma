@@ -221,3 +221,11 @@ feedback.html
 pathorob-ri.png
 # render helper operates on the git-ignored paper/ tree
 scripts/render_one.py
+
+# Local editorial / reviewer notes (repo-root only): a stray `git add -A` must not
+# publish these author markdown files. Anchored to repo root so same-named files elsewhere
+# are unaffected.
+/anticipate-reviewer-concerns.md
+/croma-results-handoff.md
+/methods-feedback.md
+/results-feedback.md
