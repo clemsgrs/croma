@@ -56,29 +56,6 @@ def _paired_features() -> np.ndarray:
     )
 
 
-def _install_noop_plots(monkeypatch) -> None:
-    def fake_plot(*, out_path: Path, **kwargs: object) -> None:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"plot")
-
-    for name in (
-        "plot_bio_vs_confounder_scatter",
-        "plot_croma_ltm_bars",
-        "plot_croma_ltm_scatter",
-        "plot_croma_m_sweep",
-        "plot_croma_sample_distributions",
-        "plot_croma_vs_mari_scatter",
-        "plot_q_alpha_vs_croma_scatter",
-        "plot_knn_bio_k_sweep",
-        "plot_knn_confounder_k_sweep",
-        "plot_mari_k_sweep",
-        "plot_mari_vs_ri_scatter",
-        "plot_ri_mari_support",
-        "plot_ri_k_sweep",
-    ):
-        monkeypatch.setattr(bm, name, fake_plot)
-
-
 def test_paired_cached_artifacts_match_uncached_metric_outputs() -> None:
     manifest = _paired_manifest()
     features = _paired_features()
@@ -214,7 +191,6 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(
     monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
     monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
-    _install_noop_plots(monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -334,7 +310,6 @@ def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
     monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
     monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
-    _install_noop_plots(monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",

@@ -56,11 +56,16 @@ print(f"wrote {dst}: {len(keep)} patches, "
 PY
   fi
 
+  # Step 1: compute metrics (no plotting).
   CUDA_VISIBLE_DEVICES=1 python scripts/bench/benchmark.py \
     --manifest "$MANIFEST" \
     --confounder-column medical_center \
     --evaluation-design dataset_wide \
     --output-dir "$OUTDIR"
+
+  # Step 2: render this run's figure set from the written metrics.
+  RUN_DIR="$OUTDIR/$(basename "${MANIFEST%.csv}")"
+  python scripts/bench/render.py "$RUN_DIR"
 
   echo
   echo "Done. Metrics: $OUTDIR/results/metrics.csv"
@@ -129,6 +134,7 @@ print(f"wrote {dst}: {len(out)} patches, {len(set(r['slide_id'] for r in out))} 
 PY
   fi
 
+  # Step 1: compute metrics (no plotting).
   python scripts/bench/benchmark.py \
     --manifest "$MANIFEST" \
     --confounder-column medical_center \
@@ -138,6 +144,10 @@ PY
     --k-max 25 \
     --output-dir "$OUTDIR" \
     --device auto
+
+  # Step 2: render this run's figure set from the written metrics.
+  RUN_DIR="$OUTDIR/$(basename "${MANIFEST%.csv}")"
+  python scripts/bench/render.py "$RUN_DIR"
 
   echo
   echo "Done. Metrics: $OUTDIR/results/metrics.csv"

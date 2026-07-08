@@ -38,24 +38,10 @@ from metrics_io import (
     safe_model_name,
 )
 from progress_utils import model_block, progress_write, resolve_progress_mode
-from plotting import (
-    plot_bio_vs_confounder_scatter,
-    plot_croma_ltm_bars,
-    plot_croma_ltm_scatter,
-    plot_croma_m_sweep,
-    plot_croma_sample_distributions,
-    plot_croma_vs_mari_scatter,
-    plot_q_alpha_vs_croma_scatter,
-    plot_knn_bio_k_sweep,
-    plot_knn_confounder_k_sweep,
-    plot_mari_cumulative_mean_k_sweep,
-    plot_mari_k_sweep,
-    plot_mari_vs_ri_scatter,
-    plot_ri_cumulative_mean_k_sweep,
-    plot_ri_mari_sample_distributions,
-    plot_ri_mari_support,
-    plot_ri_k_sweep,
-)
+
+# NOTE: this is the compute-only driver. It imports no matplotlib/plotting code and
+# makes no plot calls -- it writes the metrics JSON/CSV and per-sample artifacts that
+# scripts/bench/render.py consumes to emit the figure set.
 
 
 def _sample_distribution_dir(results_dir: Path) -> Path:
@@ -86,6 +72,32 @@ def _per_sample_metrics_json_path(results_dir: Path) -> Path:
 
 def _per_sample_metrics_by_model_dir(results_dir: Path) -> Path:
     return results_dir / "per_sample_metrics_by_model"
+
+
+def _render_manifest_path(results_dir: Path) -> Path:
+    return results_dir / "render_manifest.json"
+
+
+def _write_render_manifest(
+    results_dir: Path, *, summarize_by_mean: bool, prune_ss_oo: bool
+) -> None:
+    """Persist the flags render.py needs to reproduce the exact figure set.
+
+    The compute driver produces no plots, but the conditional figures (cumulative-mean
+    k-sweeps, RI/MaRI sample distributions) are gated on run-time flags that are not
+    otherwise recoverable from the metrics rows. Writing them here keeps benchmark.py the
+    single source of run configuration while render.py owns the plot sequence.
+    """
+    _render_manifest_path(results_dir).write_text(
+        json.dumps(
+            {
+                "summarize_by_mean": bool(summarize_by_mean),
+                "prune_ss_oo": bool(prune_ss_oo),
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _per_sample_metrics_by_model_paths(
@@ -217,7 +229,7 @@ def _save_ri_sample_distribution(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Unified benchmark pipeline: extract embeddings, compute RI/MaRI metrics, and plot results."
+        description="Compute-only benchmark pipeline: extract embeddings and compute RI/MaRI/CRoMa metrics. Render figures separately with scripts/bench/render.py."
     )
     parser.add_argument(
         "--manifest", required=True, type=Path, help="Path to manifest CSV."
@@ -759,10 +771,8 @@ def main() -> int:
     dataset_dir = output_dir / args.manifest.stem
     embeddings_dir = dataset_dir / "embeddings"
     results_dir = dataset_dir / "results"
-    plots_dir = dataset_dir / "plots"
     embeddings_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
-    plots_dir.mkdir(parents=True, exist_ok=True)
 
     metrics_csv = results_dir / "metrics.csv"
     metrics_json = results_dir / "metrics.json"
@@ -1999,59 +2009,14 @@ def main() -> int:
             csv_path=croma_m_sweep_csv,
             json_path=croma_m_sweep_json,
         )
-        plot_knn_bio_k_sweep(
-            rows=k_sweep_rows, out_path=plots_dir / "knn_bio_k_sweep.png"
+        # Persist the render-relevant flags so the (matplotlib-free) compute driver stays
+        # the single source of run configuration; scripts/bench/render.py reads this to
+        # decide which conditional figures to emit. No metric value depends on it.
+        _write_render_manifest(
+            results_dir,
+            summarize_by_mean=bool(args.summarize_by_mean),
+            prune_ss_oo=bool(args.prune_ss_oo),
         )
-        plot_knn_confounder_k_sweep(
-            rows=k_sweep_rows, out_path=plots_dir / "knn_confounder_k_sweep.png"
-        )
-        plot_ri_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "ri_k_sweep.png")
-        plot_mari_k_sweep(rows=k_sweep_rows, out_path=plots_dir / "mari_k_sweep.png")
-        if args.summarize_by_mean:
-            plot_ri_cumulative_mean_k_sweep(
-                rows=k_sweep_rows,
-                out_path=plots_dir / "ri_cumulative_mean_k_sweep.png",
-            )
-            plot_mari_cumulative_mean_k_sweep(
-                rows=k_sweep_rows,
-                out_path=plots_dir / "mari_cumulative_mean_k_sweep.png",
-            )
-        plot_croma_m_sweep(
-            rows=croma_m_sweep_rows, out_path=plots_dir / "croma_m_sweep.png"
-        )
-        plot_croma_ltm_scatter(
-            rows=rows, out_path=plots_dir / "croma_ltm_scatter.png"
-        )
-        plot_croma_ltm_bars(
-            rows=rows, out_path=plots_dir / "croma_ltm_bars.png"
-        )
-        plot_bio_vs_confounder_scatter(
-            rows=rows, out_path=plots_dir / "bio_vs_confounder_scatter.png"
-        )
-        plot_mari_vs_ri_scatter(
-            rows=rows, out_path=plots_dir / "mari_vs_ri_scatter.png"
-        )
-        plot_ri_mari_support(rows=rows, out_path=plots_dir / "ri_mari_support.png")
-        plot_croma_vs_mari_scatter(
-            rows=rows, out_path=plots_dir / "croma_vs_mari_scatter.png"
-        )
-        plot_q_alpha_vs_croma_scatter(
-            rows=rows, out_path=plots_dir / "q_alpha_vs_croma_scatter.png"
-        )
-        plot_croma_sample_distributions(
-            rows=rows, out_path=plots_dir / "croma_sample_distributions.png"
-        )
-        if args.prune_ss_oo:
-            plot_ri_mari_sample_distributions(
-                rows=rows,
-                metric="ri",
-                out_path=plots_dir / "ri_sample_distributions.png",
-            )
-            plot_ri_mari_sample_distributions(
-                rows=rows,
-                metric="mari",
-                out_path=plots_dir / "mari_sample_distributions.png",
-            )
 
     progress_write("\n[benchmark] === summary ===", enabled=progress_enabled)
     for model in models:
@@ -2070,7 +2035,10 @@ def main() -> int:
     progress_write(
         f"[benchmark] croma_m_sweep_json={croma_m_sweep_json}", enabled=progress_enabled
     )
-    progress_write(f"[benchmark] plots_dir={plots_dir}", enabled=progress_enabled)
+    progress_write(
+        f"[benchmark] render figures with: python scripts/bench/render.py {dataset_dir}",
+        enabled=progress_enabled,
+    )
 
     if failures:
         progress_write("[benchmark] failures:", enabled=progress_enabled)

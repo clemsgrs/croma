@@ -107,15 +107,19 @@ croma croma \
 
 ## Benchmarking
 
-`croma` also includes an optional benchmarking pipeline for comparing multiple foundation models on the same manifest. The benchmark handles embedding extraction, metric computation, cached re-runs, and summary artifact generation in a single workflow.
+`croma` also includes an optional benchmarking pipeline for comparing multiple foundation models on the same manifest. It is split into two commands: `benchmark.py` computes the metrics (embedding extraction, metric computation, cached re-runs, and summary JSON/CSV artifacts — no plotting), and `render.py` renders that run's figure set from the written artifacts.
 
-Run it with:
+Run it as two steps:
 
 ```bash
+# 1. Compute: extract embeddings and write metric JSON/CSV artifacts.
 python scripts/bench/benchmark.py \
   --manifest /path/to/manifest.csv \
   --confounder-column confounder \
   --output-dir /path/to/benchmark
+
+# 2. Render: emit the figure set from the run directory (<output-dir>/<manifest-stem>).
+python scripts/bench/render.py /path/to/benchmark/<manifest-stem>
 ```
 
 For benchmark options, outputs, caching behavior, and downstream analysis, see [docs/benchmarking.md](docs/benchmarking.md).

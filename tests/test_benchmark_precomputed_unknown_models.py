@@ -37,29 +37,6 @@ def _features() -> np.ndarray:
     )
 
 
-def _install_noop_plots(monkeypatch) -> None:
-    def fake_plot(*, out_path: Path, **kwargs: object) -> None:
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        out_path.write_bytes(b"plot")
-
-    for name in (
-        "plot_bio_vs_confounder_scatter",
-        "plot_croma_ltm_bars",
-        "plot_croma_ltm_scatter",
-        "plot_croma_m_sweep",
-        "plot_croma_sample_distributions",
-        "plot_croma_vs_mari_scatter",
-        "plot_q_alpha_vs_croma_scatter",
-        "plot_knn_bio_k_sweep",
-        "plot_knn_confounder_k_sweep",
-        "plot_mari_k_sweep",
-        "plot_mari_vs_ri_scatter",
-        "plot_ri_k_sweep",
-        "plot_ri_mari_support",
-    ):
-        monkeypatch.setattr(bm, name, fake_plot)
-
-
 def _write_precomputed_cache(
     *,
     manifest_path: Path,
@@ -126,7 +103,6 @@ def test_benchmark_accepts_unknown_models_when_precomputed_cache_exists(
 
     monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
     monkeypatch.setattr(bm.ee, "embed_manifest", fail_embed_manifest)
-    _install_noop_plots(monkeypatch)
     monkeypatch.setattr(
         sys,
         "argv",
