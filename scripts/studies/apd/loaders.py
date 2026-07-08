@@ -19,7 +19,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-# Repo root autodetected from this file's location: scripts/experiments/apd/loaders.py
+# Repo root autodetected from this file's location: scripts/studies/apd/loaders.py
 # -> parents[3] is the croma repo root, so the reproduction works from any checkout.
 REPO = Path(__file__).resolve().parents[3]
 # PathoROB is a SIBLING repo (not under croma), so it cannot be autodetected. Default to

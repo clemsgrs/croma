@@ -25,7 +25,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _neighbor_analysis import list_models, load_embedding, load_meta
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
+from _neighbor_analysis import list_models, load_embedding, load_meta  # noqa: E402
 
 ROOT = Path("output/faithful/pathorob-camelyon-faithful")
 EMB = ROOT / "embeddings"

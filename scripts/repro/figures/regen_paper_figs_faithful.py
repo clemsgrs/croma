@@ -10,7 +10,7 @@ paper on the faithful run. The four experiment-script figures (croma_rank,
 oo_fraction, support_vs_k, tau_sensitivity) already read faithful and are
 re-run separately.
 
-Usage: python scripts/experiments/regen_paper_figs_faithful.py
+Usage: python scripts/repro/figures/regen_paper_figs_faithful.py
 """
 
 import json
@@ -18,9 +18,9 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "scripts" / "bench"))
 
 import plotting  # noqa: E402
 

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT_PATH = ROOT / "scripts" / "extract_embeddings.py"
+SCRIPT_PATH = ROOT / "scripts" / "bench" / "extract_embeddings.py"
 
 
 def test_module_imports_without_bench_dependencies(

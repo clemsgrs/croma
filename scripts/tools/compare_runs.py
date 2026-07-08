@@ -19,9 +19,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+ROOT = Path(__file__).resolve().parents[2]
+for _p in (ROOT, ROOT / "scripts" / "bench"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from plotting import (  # noqa: E402
     DEFAULT_DPI,

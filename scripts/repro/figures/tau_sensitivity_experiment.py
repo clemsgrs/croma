@@ -26,7 +26,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _neighbor_analysis import REPO, list_models, load_embedding
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
+from _neighbor_analysis import REPO, list_models, load_embedding  # noqa: E402
 
 from croma import MaRI, RI
 

@@ -8,8 +8,8 @@ SS/OO pruning), then (3) regenerates the LaTeX results table. Because the number
 straight from benchmark.py, they are guaranteed identical to a fresh from-embeddings run.
 
 Usage:
-    python scripts/experiments/reproduce_faithful.py            # all datasets
-    python scripts/experiments/reproduce_faithful.py camelyon   # one dataset
+    python scripts/repro/reproduce_faithful.py            # all datasets
+    python scripts/repro/reproduce_faithful.py camelyon   # one dataset
 
 Faithful datasets (exactly PathoROB's RI sets):
     camelyon  : RUMC+UMCU, 20,400 patches, dataset_wide
@@ -26,7 +26,7 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
+sys.path.insert(0, str(REPO / "scripts" / "bench"))
 sys.path.insert(0, str(REPO))
 from benchmark import _prepare_eval_manifest  # noqa: E402
 from croma.alignment import build_embedding_source_manifest  # noqa: E402
@@ -107,7 +107,7 @@ def materialise_embeddings(ds, cfg):
 def run(ds):
     cfg = CFG[ds]
     materialise_embeddings(ds, cfg)
-    cmd = [sys.executable, str(REPO / "scripts/benchmark.py"),
+    cmd = [sys.executable, str(REPO / "scripts/bench/benchmark.py"),
            "--manifest", str(REPO / cfg["manifest"]),
            "--confounder-column", CONFOUNDER,
            "--evaluation-design", cfg["design"],
@@ -121,7 +121,7 @@ def run(ds):
     metrics = OUT_ROOT / stem / "results" / "metrics.csv"
     print(f"[{ds}] metrics -> {metrics}", flush=True)
     if cfg["out_tex"]:
-        gen = [sys.executable, str(REPO / "scripts/experiments/generate_results_table.py"),
+        gen = [sys.executable, str(REPO / "scripts/repro/generate_results_table.py"),
                "--metrics", str(metrics), "--name", cfg["name"],
                "--label", cfg["label"], "--out", str(REPO / cfg["out_tex"])]
         subprocess.run(gen, check=True)
@@ -134,7 +134,7 @@ if __name__ == "__main__":
         run(ds)
     # Refresh the inline derived scalars (\<Bench>CromaSpan, ...) so prose stays in
     # sync with the regenerated tables instead of being hand-typed.
-    subprocess.run([sys.executable, str(REPO / "scripts/experiments/generate_paper_values.py"),
+    subprocess.run([sys.executable, str(REPO / "scripts/repro/generate_paper_values.py"),
                     "--root", str(REPO),
                     "--out", str(REPO / "paper/sections/generated_values.tex")],
                    check=True)

@@ -15,7 +15,7 @@ inline expression it replaces, so importing it here does not change any emitted
 import sys
 from pathlib import Path
 
-# The generators live in ``scripts/experiments``; the repo root is two levels up. Do
+# The generators live in ``scripts/repro``; the repo root is two levels up. Do
 # the shim once here so each generator can import the constant from this module rather
 # than repeating the ``sys.path`` dance.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))

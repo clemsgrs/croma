@@ -112,7 +112,7 @@ croma croma \
 Run it with:
 
 ```bash
-python scripts/benchmark.py \
+python scripts/bench/benchmark.py \
   --manifest /path/to/manifest.csv \
   --confounder-column confounder \
   --output-dir /path/to/benchmark

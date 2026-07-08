@@ -19,7 +19,10 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from progress_utils import progress_bar, progress_write, resolve_progress_mode
+
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "bench"))
+from progress_utils import progress_bar, progress_write, resolve_progress_mode  # noqa: E402
 
 try:
     from huggingface_hub import HfApi, snapshot_download
@@ -274,7 +277,7 @@ def _decode_to_rgb_image(value: Any, parquet_parent: Path) -> "Image.Image":
     if Image is None:
         raise ModuleNotFoundError(
             "Pillow is required for PathoROB parquet extraction. "
-            "Install it to run scripts/prepare_pathorob.py extract/full."
+            "Install it to run scripts/prep/prepare_pathorob.py extract/full."
         )
     raw = _to_bytes(value, parquet_parent)
     img = Image.open(io.BytesIO(raw))
@@ -288,7 +291,7 @@ def _require_pyarrow_parquet() -> Any:
     if pq is None:
         raise ModuleNotFoundError(
             "pyarrow is required for PathoROB parquet extraction. "
-            "Install it to run scripts/prepare_pathorob.py extract/full."
+            "Install it to run scripts/prep/prepare_pathorob.py extract/full."
         )
     return pq
 
@@ -297,7 +300,7 @@ def _require_huggingface_hub() -> tuple[Any, Any]:
     if HfApi is None or snapshot_download is None:
         raise ModuleNotFoundError(
             "huggingface_hub is required for PathoROB dataset download. "
-            "Install it to run scripts/prepare_pathorob.py extract/full."
+            "Install it to run scripts/prep/prepare_pathorob.py extract/full."
         )
     return HfApi, snapshot_download
 

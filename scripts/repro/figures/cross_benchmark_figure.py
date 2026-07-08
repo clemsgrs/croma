@@ -6,7 +6,7 @@ Marker is filled when the model is biology-dominant (CRoMa >= 0) and hollow when
 confounder-dominant (CRoMa < 0), so Camelyon's difficulty and the rank crossings
 (e.g. Midnight-12k rising to the top) are both visible at a glance.
 
-Run: python scripts/experiments/cross_benchmark_figure.py
+Run: python scripts/repro/figures/cross_benchmark_figure.py
 """
 
 import sys
@@ -15,8 +15,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root (croma pkg)
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # scripts/ (plotting)
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))  # repo root (croma pkg)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))  # scripts/bench (plotting)
 from plotting import (  # noqa: E402
     DEFAULT_DPI,
     REFERENCE_LINE_COLOR,

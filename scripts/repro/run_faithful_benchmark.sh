@@ -7,8 +7,8 @@
 # run_tolkach_reduced.sh into a single dataset-dispatched script.
 #
 # Usage:
-#   scripts/experiments/run_faithful_benchmark.sh camelyon
-#   scripts/experiments/run_faithful_benchmark.sh tolkach
+#   scripts/repro/run_faithful_benchmark.sh camelyon
+#   scripts/repro/run_faithful_benchmark.sh tolkach
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."   # repo root: .../croma
@@ -56,7 +56,7 @@ print(f"wrote {dst}: {len(keep)} patches, "
 PY
   fi
 
-  CUDA_VISIBLE_DEVICES=1 python scripts/benchmark.py \
+  CUDA_VISIBLE_DEVICES=1 python scripts/bench/benchmark.py \
     --manifest "$MANIFEST" \
     --confounder-column medical_center \
     --evaluation-design dataset_wide \
@@ -129,7 +129,7 @@ print(f"wrote {dst}: {len(out)} patches, {len(set(r['slide_id'] for r in out))} 
 PY
   fi
 
-  python scripts/benchmark.py \
+  python scripts/bench/benchmark.py \
     --manifest "$MANIFEST" \
     --confounder-column medical_center \
     --evaluation-design dataset_wide \
@@ -142,7 +142,7 @@ PY
   echo
   echo "Done. Metrics: $OUTDIR/results/metrics.csv"
   echo "Next: regenerate the main Tolkach table from this run, e.g."
-  echo "  python scripts/experiments/generate_results_table.py \\"
+  echo "  python scripts/repro/generate_results_table.py \\"
   echo "    --metrics $OUTDIR/results/metrics.csv \\"
   echo "    --name 'PathoROB Tolkach-ESCA' \\"
   echo "    --label tab:main-results-tolkach \\"

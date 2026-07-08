@@ -5,7 +5,7 @@ Mirrors the hand-authored Camelyon table (``paper/sections/results_table.tex``,
 zero manual entry. Sorted by pooled CRoMa (headline m); per-column best in bold.
 
 Usage:
-  python scripts/experiments/generate_results_table.py \
+  python scripts/repro/generate_results_table.py \
       --metrics output/pathorob-tcga-4x4/results/metrics.csv \
       --name "PathoROB TCGA (4x4)" \
       --label tab:main-results-tcga4x4 \
