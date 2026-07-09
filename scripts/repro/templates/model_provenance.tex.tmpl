@@ -19,14 +19,16 @@ $^{\ddagger}$\code{CONCHv1.5} is assumed to follow the contamination-avoidance p
 \code{CONCH} states explicitly~\cite{conch}. $^{\S}$\code{Prost40M}~\cite{grisi2026bcr} is a prostate model, so on the
 three PathoROB benchmarks its overlap is with the data source (the TCGA repository or RUMC), not the
 benchmark tissue; on PANDA (prostate, including RUMC) the overlap is at the tissue level as well,
-though \code{Prost40M} is not part of the PANDA panel. Among the four TCGA-exposed tile models, only
+though \code{Prost40M} is not part of the PANDA panel. Among the TCGA-exposed tile models,
 \code{Midnight-12k} converts that exposure into a measurable in-distribution advantage
 (Table~\ref{tab:pretraining-overlap}); \code{Phikon} (weak encoder), \code{Phikon-v2} (diluted TCGA),
-and \code{Prost40M} (small capacity, different organ) do not. $^{\P}$\code{MOOZY}~\cite{moozy}
-is the only slide model whose open pretraining corpus \emph{directly} includes the evaluation
-benchmark: its $56$ public datasets contain the PANDA slides themselves (as well as TCGA's $32$
-cohorts and CAMELYON17), so the PANDA evaluation is strictly in-distribution and \code{MOOZY}'s
-scores must be read with the corresponding caution; \code{MOOZY} is evaluated only on the PANDA
-panel. $^{\dagger}$\code{H0-mini} is distilled from the proprietary \code{H-optimus-0} on public TCGA tiles ($43$M tiles from $6{,}093$ slides)~\cite{h0mini}, so its TCGA exposure is at the data level (in-distribution on the TCGA benchmark); it remains out-of-distribution on Camelyon and PANDA.}
+and \code{Prost40M} (small capacity, different organ) do not. $^{\P}$Two models' open pretraining
+corpora \emph{directly} include an evaluation benchmark, so their scores on it must be read with
+the corresponding caution. \code{MOOZY}~\cite{moozy} is the only such slide model: its $56$ public
+datasets contain the PANDA slides themselves (as well as TCGA's $32$ cohorts and CAMELYON17), so
+the PANDA evaluation is strictly in-distribution; \code{MOOZY} is evaluated only on the PANDA panel.
+\code{GPFM}~\cite{gpfm} is the only such tile model, and the only model in either panel that is
+in-distribution on \emph{all four} benchmarks: its $33$ pretraining datasets include CAMELYON16 and
+CAMELYON17 ($1{,}129$ slides) and PANDA ($7{,}114$ slides) alongside TCGA ($26{,}285$ slides). $^{\dagger}$\code{H0-mini} is distilled from the proprietary \code{H-optimus-0} on public TCGA tiles ($43$M tiles from $6{,}093$ slides)~\cite{h0mini}, so its TCGA exposure is at the data level (in-distribution on the TCGA benchmark); it remains out-of-distribution on Camelyon and PANDA.}
 \label{tab:provenance}
 \end{table}
