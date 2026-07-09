@@ -81,10 +81,7 @@ from .ksweep import (
     plot_ri_k_sweep,
 )
 from .curves import (
-    _draw_cumulative_mean_k_curve,
     plot_croma_m_sweep,
-    plot_mari_cumulative_mean_k_sweep,
-    plot_ri_cumulative_mean_k_sweep,
 )
 from .bars import (
     _SUPPORT_STATUS_COLORS,
@@ -108,7 +105,6 @@ from .scatter import (
 from .distributions import (
     _draw_croma_sample_distributions,
     plot_croma_sample_distributions,
-    plot_ri_mari_sample_distributions,
 )
 
 __all__ = [
@@ -117,9 +113,7 @@ __all__ = [
     "plot_knn_confounder_k_sweep",
     "plot_ri_k_sweep",
     "plot_mari_k_sweep",
-    # cumulative-mean curves + CRoMa(m)
-    "plot_ri_cumulative_mean_k_sweep",
-    "plot_mari_cumulative_mean_k_sweep",
+    # CRoMa(m)
     "plot_croma_m_sweep",
     # bars
     "plot_ri_mari_support",
@@ -132,5 +126,4 @@ __all__ = [
     "plot_q_alpha_vs_croma_scatter",
     # distributions
     "plot_croma_sample_distributions",
-    "plot_ri_mari_sample_distributions",
 ]

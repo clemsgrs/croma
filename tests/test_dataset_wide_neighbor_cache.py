@@ -56,10 +56,10 @@ def _direct_artifacts(metric, **kwargs):
     )
 
 
-def _cached_artifacts(metric, *, prune_ss_oo=False, **kwargs):
+def _cached_artifacts(metric, **kwargs):
     df = metric._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
     cache = metric._prepare_dataset_wide_neighbor_cache(
-        features=FEATURES, df=df, k_values=K_VALUES, prune_ss_oo=prune_ss_oo
+        features=FEATURES, df=df, k_values=K_VALUES
     )
     return metric._compute_artifacts_from_prepared_dataset_wide(
         prepared_neighbors=cache,
@@ -95,13 +95,6 @@ def test_ri_dataset_wide_cache_matches_direct() -> None:
 def test_mari_dataset_wide_cache_matches_direct() -> None:
     _assert_artifacts_equal(
         _direct_artifacts(MaRI, tau=0.2), _cached_artifacts(MaRI, tau=0.2)
-    )
-
-
-def test_summarize_by_mean_cache_matches_direct() -> None:
-    _assert_artifacts_equal(
-        _direct_artifacts(RI, summarize_by_mean=True),
-        _cached_artifacts(RI, summarize_by_mean=True),
     )
 
 

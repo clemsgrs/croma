@@ -197,7 +197,6 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(bench_env) -> None:
         results_dir / "k_sweep_metrics.csv",
         results_dir / "croma_m_sweep_metrics.csv",
         results_dir / "per_sample_metrics.csv",
-        results_dir / "render_manifest.json",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
     ):
@@ -285,7 +284,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
         selected_k: int,
         include_selected_result: bool,
         warn_selected_result: bool,
-        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         assert include_selected_result is True
         assert warn_selected_result is True
@@ -305,7 +303,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
         include_selected_result: bool,
         warn_selected_result: bool,
         tau: float,
-        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         assert include_selected_result is True
         assert warn_selected_result is True

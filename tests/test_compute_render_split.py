@@ -53,7 +53,7 @@ _PATH_COLUMNS = (
     "croma_samples_path",
 )
 
-# The base figure set render.py emits for a plain (no summarize-by-mean / no prune) run.
+# The full figure set render.py emits for a run.
 _BASE_FIGURE_NAMES = (
     "knn_bio_k_sweep",
     "knn_confounder_k_sweep",
@@ -168,9 +168,8 @@ def test_compute_is_deterministic(bench_env) -> None:
 
 def test_compute_writes_no_matplotlib_and_no_plots(bench_env) -> None:
     run_dir = run_compute(bench_env)
-    # Compute writes the metric artifacts and a render manifest, but no figures.
+    # Compute writes the metric artifacts, but no figures.
     assert (run_dir / "results" / "metrics.json").exists()
-    assert (run_dir / "results" / "render_manifest.json").exists()
     assert not (run_dir / "plots").exists()
 
 
@@ -230,19 +229,3 @@ def test_render_into_custom_plots_dir(bench_env) -> None:
     assert (scratch / "pdf" / "ri_mari_support.pdf").exists()
     # The default plots dir stays untouched when an override is given.
     assert not (run_dir / "plots").exists()
-
-
-def test_render_respects_manifest_flags(bench_env) -> None:
-    """A prune-ss-oo / summarize-by-mean run must additionally emit the gated figures."""
-    run_dir = run_compute(bench_env)
-    # Simulate a run whose flags request the conditional figures.
-    manifest_path = run_dir / "results" / "render_manifest.json"
-    manifest_path.write_text(
-        json.dumps({"summarize_by_mean": True, "prune_ss_oo": True}) + "\n"
-    )
-    rendered = render.render_run(run_dir)
-    names = {p.stem for p in rendered}
-    assert "ri_cumulative_mean_k_sweep" in names
-    assert "mari_cumulative_mean_k_sweep" in names
-    assert "ri_sample_distributions" in names
-    assert "mari_sample_distributions" in names
