@@ -69,6 +69,13 @@ BENCHMARKS: list[tuple[str, tuple[str, ...]]] = [
     ("Tolkach", ("output/metrics/k-star/pathorob-tolkach-esca",)),
 ]
 
+#: Models excluded from this figure by construction, not by missing data. The x-axis is
+#: pretraining #WSIs; a natural-image control never saw a slide, so it has no position on
+#: that axis -- ``n/a``, not ``n/d``. Dropping it here (loudly) rather than letting its
+#: NaN x silently vanish into the log axis keeps the exclusion a stated choice that the
+#: caption can name.
+CONTROL_MODELS = ("DINOv2-B",)
+
 # LaTeX-scale unit suffixes -> multiplier.
 _UNIT_MULT = {"k": 1e3, "m": 1e6, "b": 1e9}
 _MISSING_TOKENS = {"", "nan", "n/d", "n/a", "--", "none"}
@@ -118,7 +125,8 @@ def build_scale_frame(
     ----------
     metadata:
         The model-metadata frame (as loaded from ``model_metadata.csv``). Only the
-        ``panel == "tile"`` rows are used -- slide-level models are excluded.
+        ``panel == "tile"`` rows are used -- slide-level models are excluded, as are
+        the natural-image controls in ``CONTROL_MODELS`` (no #WSIs axis position).
     per_dataset_croma:
         ``{dataset_name: {model: croma}}``. Each model's y-value is the mean of its
         CRoMa across *all* provided datasets; a model missing (or NaN) in any one of
@@ -133,6 +141,7 @@ def build_scale_frame(
     """
     datasets = list(per_dataset_croma.keys())
     tile = metadata[metadata["panel"] == "tile"]
+    tile = tile[~tile["model"].isin(CONTROL_MODELS)]
     rows: list[dict[str, object]] = []
     for _, meta in tile.iterrows():
         model = str(meta["model"])
@@ -165,8 +174,13 @@ def build_scale_frame(
 # Data loading (filesystem; guarded).
 # ---------------------------------------------------------------------------
 def load_metadata(path: Path = DEFAULT_METADATA) -> pd.DataFrame:
-    """Load the committed model metadata (empty cells normalised to ``""``)."""
-    return pd.read_csv(path).fillna("")
+    """Load the committed model metadata (empty cells normalised to ``""``).
+
+    ``keep_default_na=False`` keeps the literal ``n/a`` cells (not applicable) distinct
+    from truly empty ones; ``_parse_scale`` maps both to NaN anyway, but the distinction
+    matters to anything that reads the raw cell.
+    """
+    return pd.read_csv(path, keep_default_na=False, na_values=[])
 
 
 def _metrics_path(repo: Path, candidates: tuple[str, ...]) -> Path | None:

@@ -176,3 +176,41 @@ def test_render_template_requires_placeholder() -> None:
     with pytest.raises(ValueError):
         gmt.render_template("no placeholder here", "body")
     assert gmt.render_template("a\n%%BODY%%\nb", "X") == "a\nX\nb"
+
+
+def test_not_applicable_cells_survive_the_csv_round_trip() -> None:
+    """``n/a`` must reach the table, not be eaten by pandas' default NaN parsing.
+
+    The natural-image control has no #WSIs -- that is *not applicable*, a different
+    claim from *undisclosed*. pandas maps the literal string ``n/a`` to NaN unless
+    told otherwise, which would silently render an empty cell.
+    """
+    df = gmt.load_metadata()
+    control = df[df["model"] == "DINOv2-B"].iloc[0]
+    assert control["n_wsis"] == "n/a"
+    assert control["n_tiles"] == "n/a"
+
+
+def test_wsis_tiles_cell_collapses_a_uniform_missing_token() -> None:
+    assert gmt._wsis_tiles_cell("n/a", "n/a", "card") == "n/a"
+    assert gmt._wsis_tiles_cell("n/d", "n/d", "card") == "n/d"
+    # A half-known cell keeps both halves rather than collapsing.
+    assert gmt._wsis_tiles_cell("$350$k", "n/d", "card") == "$350$k / n/d"
+
+
+def test_gpfm_is_in_distribution_on_every_benchmark() -> None:
+    """GPFM pretrains on TCGA, CAMELYON16/17 and PANDA, so no benchmark is held out.
+
+    It is the only tile model for which this holds; the direct-inclusion marker (\\P)
+    must appear on the two benchmarks whose slides are literally in its corpus.
+    """
+    grid = gmt.provenance_grid(gmt.load_metadata()).set_index("model")
+    assert grid.loc["GPFM", "Camelyon"] == r"\textbf{ID}$^{\P}$"
+    assert grid.loc["GPFM", "PANDA"] == r"\textbf{ID}$^{\P}$"
+    assert grid.loc["GPFM", "TCGA"] == r"\textbf{ID}"
+    assert grid.loc["GPFM", "Tolkach"] == r"\textbf{ID}$^{*}$"
+
+
+def test_natural_image_control_is_out_of_distribution_everywhere() -> None:
+    grid = gmt.provenance_grid(gmt.load_metadata()).set_index("model")
+    assert all(grid.loc["DINOv2-B", b] == "OOD" for b in gmt.BENCHMARKS)

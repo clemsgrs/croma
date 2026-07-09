@@ -64,8 +64,13 @@ def _domains(spec: str) -> set[str]:
 
 
 def load_metadata(path: Path = DEFAULT_CSV) -> pd.DataFrame:
-    """Load the model metadata CSV with empty cells normalised to ``""``."""
-    return pd.read_csv(path).fillna("")
+    """Load the model metadata CSV with empty cells normalised to ``""``.
+
+    ``keep_default_na=False`` is load-bearing: pandas otherwise parses the literal
+    cell ``n/a`` (not applicable -- the natural-image control has no #WSIs) as NaN,
+    which ``fillna("")`` would then render as an empty table cell.
+    """
+    return pd.read_csv(path, keep_default_na=False, na_values=[])
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +93,9 @@ def _wsis_tiles_cell(n_wsis: str, n_tiles: str, wsis_source: str) -> str:
     marker whose footnote (in the template) cites PathoROB.
     """
     n_wsis, n_tiles = _s(n_wsis), _s(n_tiles)
-    if n_wsis == "n/d" and n_tiles == "n/d":
-        return "n/d"
+    for token in ("n/d", "n/a"):
+        if n_wsis == token and n_tiles == token:
+            return token
     if wsis_source == "pathorob":
         n_wsis = n_wsis + PATHOROB_WSIS_MARKER
     return f"{n_wsis} / {n_tiles}"
