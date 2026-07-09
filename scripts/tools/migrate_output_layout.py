@@ -30,13 +30,20 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts" / "bench"))
-sys.path.insert(0, str(ROOT / "src"))
+#: Where this *code* lives -- used only to import the modules next to it.
+_HERE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_HERE))
+sys.path.insert(0, str(_HERE / "scripts" / "bench"))
+sys.path.insert(0, str(_HERE / "src"))
 
 import layout  # noqa: E402
 from benchmarks import BENCHMARKS  # noqa: E402
+
+#: Where the *data* lives. Deliberately taken from layout, which honours ``CROMA_REPO``:
+#: this script is normally run from a worktree whose ``data/`` and ``output/`` are the
+#: main checkout's. Resolving them from ``_HERE`` would silently look in the worktree,
+#: find nothing, and fail verification -- while ``output/`` (via layout) looked elsewhere.
+ROOT = layout.REPO
 
 from croma.alignment import (  # noqa: E402
     build_embedding_source_manifest,
@@ -233,7 +240,9 @@ def verify() -> bool:
         tm_path = layout.tileset_manifest(spec.tileset)
         man_path = ROOT / spec.manifest
         if not tm_path.exists():
-            print(f"  FAIL {name:18s} missing tileset manifest {tm_path.relative_to(ROOT)}")
+            # Print the absolute path: OUTPUT_ROOT may sit outside ROOT (CROMA_OUTPUT_ROOT),
+            # and relative_to() would raise from inside the error path.
+            print(f"  FAIL {name:18s} missing tileset manifest {tm_path}")
             ok = False
             continue
         if not man_path.exists():
