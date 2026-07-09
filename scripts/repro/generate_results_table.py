@@ -20,15 +20,26 @@ import pandas as pd
 from _paper_tables import CROMA_HEADLINE_M, scriptsize_ci
 
 # column -> (header, decimals, percent)
+# NOTE: the paper reports RI/MaRI at the shared median-of-k* (original RI-paper procedure),
+# so the k column holds one shared value for every model; the header is plain "$k$" (not
+# "$k^\star$", which would imply a per-model optimum).
 COLS = [
-    ("k", r"$k^\star$", 0, False),
+    ("k", r"$k$", 0, False),
     ("bio_knn_bacc", "bio bacc", 3, False),
+    ("confounder_knn_bacc", "conf bacc", 3, False),
     ("ri", r"\code{RI}", 3, False),
     ("mari", r"\code{MaRI}", 3, False),
     ("croma", r"\code{CRoMa}", 2, False),
+    ("croma_frac_neg", r"$P_{<0}$", 3, False),
     ("croma_ltm_alpha", r"$\mcode{LTM}_{10\%}$", 2, False),
     ("support", "support", 1, True),
 ]
+
+# Diagnostics, not scores: never bolded (and excluded from the per-column "best").
+# k is the operating point; conf bacc's max marks the *least* robust models; $P_{<0}$
+# (the confounder-dominant fraction) is a prevalence diagnostic for which lower is
+# better, so the generic max-is-best bold rule does not apply.
+NO_BOLD = ("k", "confounder_knn_bacc", "croma_frac_neg")
 
 
 def _fmt(value: float, decimals: int, percent: bool, bold: bool) -> str:
@@ -50,18 +61,33 @@ def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
     return {m: (float(r["croma_lo"]), float(r["croma_hi"])) for m, r in ci.iterrows()}
 
 
+def _load_frac_neg(metrics_csv: Path, headline_m: int) -> dict[str, float]:
+    """Per-model fraction of confounder-dominant samples (CRoMa < 0 at the headline m).
+
+    Read from the sibling per_sample_metrics.csv column ``croma_m{headline_m}``.
+    """
+    ps_path = metrics_csv.parent / "per_sample_metrics.csv"
+    col = f"croma_m{int(headline_m)}"
+    ps = pd.read_csv(ps_path, usecols=["model", col])
+    return ps.groupby("model")[col].apply(lambda s: float((s < 0).mean())).to_dict()
+
+
 def build_table(
     metrics_csv: Path, name: str, label: str, model_type: str, with_ci: bool = False
 ) -> str:
     df = pd.read_csv(metrics_csv)
     df["support"] = (1.0 - df["ri_undefined_frac"]) * 100.0
+    df["croma_frac_neg"] = df["model"].map(_load_frac_neg(metrics_csv, CROMA_HEADLINE_M))
     df = df.sort_values("croma", ascending=False).reset_index(drop=True)
 
     croma_ci = _load_croma_ci(metrics_csv) if with_ci else None
     confounder = df["confounder_display_name"].iloc[0]
     n_models = len(df)
-    # per-column best (highest is best for every reported column, incl. support)
-    best = {col: df[col].max() for col, _, _, _ in COLS if col != "k"}
+    # per-column best (highest is best for every reported *score* column, incl. support).
+    # Columns in NO_BOLD are diagnostics/operating points, not scores, so they are never
+    # bolded and are excluded from the per-column "best" (e.g. conf bacc's max marks the
+    # most confounder-encoding, i.e. least robust, models).
+    best = {col: df[col].max() for col, _, _, _ in COLS if col not in NO_BOLD}
 
     header = " & ".join(["Model"] + [h for _, h, _, _ in COLS]) + r" \\"
     lines = [
@@ -77,7 +103,7 @@ def build_table(
     for _, row in df.iterrows():
         cells = [row["model"]]
         for col, _, dec, pct in COLS:
-            is_best = col != "k" and abs(row[col] - best[col]) < 1e-9
+            is_best = col not in NO_BOLD and abs(row[col] - best[col]) < 1e-9
             cell = _fmt(row[col], dec, pct, is_best)
             if col == "croma" and croma_ci is not None and row["model"] in croma_ci:
                 lo, hi = croma_ci[row["model"]]
@@ -89,12 +115,15 @@ def build_table(
         r"\end{tabular}",
         rf"\caption{{\textbf{{Main quantitative results on {name}.}} The {n_models} "
         rf"{model_type} foundation models, sorted by pooled \code{{CRoMa}} ($m{{=}}{int(CROMA_HEADLINE_M)}$). "
-        r"Columns are as defined in Table~\ref{tab:main-results} (operating point "
-        r"$k^\star$; biological $k$-NN balanced accuracy at $k^\star$; pooled \code{RI} and "
-        rf"\code{{MaRI}} at $k^\star$; pooled \code{{CRoMa}} at $m{{=}}{int(CROMA_HEADLINE_M)}$; lower-tail mean "
+        r"Columns are as defined in Table~\ref{tab:main-results} (shared operating point "
+        r"$k$, the dataset median of the per-model biological $k^\star$; biological and confounder "
+        r"$k$-NN balanced accuracy at $k$; pooled "
+        rf"\code{{RI}} and \code{{MaRI}} at $k$; pooled \code{{CRoMa}} at $m{{=}}{int(CROMA_HEADLINE_M)}$; "
+        r"$P_{<0}$, the confounder-dominant fraction (\code{CRoMa}${<}0$; a prevalence diagnostic for "
+        r"which lower is better, so not bolded); lower-tail mean "
         r"$\mcode{LTM}_{10\%}$ of \code{CRoMa}; and \emph{support}, the fraction of samples "
         rf"on which \code{{RI}}/\code{{MaRI}} are defined). Confounder: {confounder}. "
-        r"Per-column best is in bold."
+        r"Per-column best is in bold (conf bacc is a diagnostic, not bolded)."
         + (
             r" \code{CRoMa} brackets are 95\% slide-level cluster-bootstrap confidence "
             r"intervals on the pooled median; overlapping intervals near the top indicate "

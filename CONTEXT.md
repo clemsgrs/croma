@@ -53,3 +53,25 @@ The fraction of anchors on which RI/MaRI are defined (`1 - ri_undefined_frac`).
 Always reported alongside RI/MaRI because those metrics are undefined on
 SS-dominated anchors and their pooled values are otherwise computed on a silent,
 model-dependent subset.
+
+### Model attributes
+
+Per-model properties carried in the single-source model metadata (see ADR-0005) and
+used to annotate figures like CRoMa-vs-scale.
+
+**Regime**:
+The pretraining paradigm of a foundation model, reduced to a two-way split for
+figure encoding: **VLFM** (a vision--language model, e.g. CONCH) vs **vision-only**
+(everything else — DINOv2, iBOT, SSL, distilled, etc.).
+_Avoid_: modality, family (family is the palette-hue grouping, a different axis).
+
+**VLFM** — Vision--Language Foundation Model:
+A model pretrained with paired image--text supervision. One value of _regime_.
+_Avoid_: VLM, multimodal.
+
+**Pretraining scale**:
+How much data a model was pretrained on, measured in **#WSIs** (whole-slide images);
+`#tiles` is the finer-grained companion count. The x-axis of the scale figure. Some
+values are undisclosed by model cards and sourced from PathoROB with a citation
+marker.
+_Avoid_: model size (that is the parameter count, a separate attribute).

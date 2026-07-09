@@ -24,10 +24,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 # (display name, benchmark dir) -- Camelyon included for the correlation summary only.
 SUMMARY_ORDER = [
-    ("PathoROB Camelyon", "output/faithful/pathorob-camelyon-faithful"),
-    (r"PathoROB TCGA ($2{\times}2$)", "output/faithful/pathorob-tcga-2x2"),
-    (r"PathoROB TCGA ($4{\times}4$)", "output/faithful/pathorob-tcga-4x4"),
-    ("PathoROB Tolkach-ESCA", "output/faithful/pathorob-tolkach-esca-faithful"),
+    ("PathoROB Camelyon", "output/faithful/k-star/pathorob-camelyon-faithful"),
+    (r"PathoROB TCGA ($2{\times}2$)", "output/faithful/k-star/pathorob-tcga-2x2"),
+    (r"PathoROB TCGA ($4{\times}4$)", "output/faithful/k-star/pathorob-tcga-4x4"),
+    ("PathoROB Tolkach-ESCA", "output/faithful/k-star/pathorob-tolkach-esca-faithful"),
     ("PANDA", "output/panda-wsi-isup-paired-2x2"),
 ]
 # benchmarks needing a per-model CI table (Camelyon excluded -- it is in the main table)

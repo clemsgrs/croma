@@ -34,7 +34,7 @@ from _neighbor_analysis import REPO, list_models, load_embedding, load_meta  # n
 from croma import RI
 from croma.metrics.neighbors import _prepare_neighbors
 
-ROOT = REPO / "output/faithful/pathorob-camelyon-faithful"
+ROOT = REPO / "output/faithful/k-star/pathorob-camelyon-faithful"
 EMB = ROOT / "embeddings"
 MANIFEST = ROOT / "embedding_source_manifest.csv"
 METRICS = ROOT / "results" / "metrics.csv"

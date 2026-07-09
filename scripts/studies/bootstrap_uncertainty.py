@@ -38,10 +38,10 @@ from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 # name -> benchmark output directory (relative to repo root)
 BENCHMARKS: dict[str, str] = {
-    "camelyon": "output/faithful/pathorob-camelyon-faithful",
-    "tcga2x2": "output/faithful/pathorob-tcga-2x2",
-    "tcga4x4": "output/faithful/pathorob-tcga-4x4",
-    "tolkach": "output/faithful/pathorob-tolkach-esca-faithful",
+    "camelyon": "output/faithful/k-star/pathorob-camelyon-faithful",
+    "tcga2x2": "output/faithful/k-star/pathorob-tcga-2x2",
+    "tcga4x4": "output/faithful/k-star/pathorob-tcga-4x4",
+    "tolkach": "output/faithful/k-star/pathorob-tolkach-esca-faithful",
     "panda": "output/panda-wsi-isup-paired-2x2",
 }
 

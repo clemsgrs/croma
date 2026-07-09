@@ -35,7 +35,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
 from _neighbor_analysis import list_models, load_embedding, load_meta  # noqa: E402
 
-ROOT = Path("output/faithful/pathorob-camelyon-faithful")
+ROOT = Path("output/faithful/k-star/pathorob-camelyon-faithful")
 EMB = ROOT / "embeddings"
 MANIFEST = ROOT / "embedding_source_manifest.csv"
 METRICS = ROOT / "results" / "metrics.csv"

@@ -173,7 +173,7 @@ def main(ds):
                                 dMaRI_mean=round(float(np.mean(np.abs(ma_ks - ma_md))), 4),
                                 dMaRI_max=round(float(np.max(np.abs(ma_ks - ma_md))), 4)),
     )
-    outdir = REPO / "output/faithful" / ds
+    outdir = REPO / "output/faithful/k-star" / ds
     outdir.mkdir(parents=True, exist_ok=True)
     json.dump(out, open(outdir / "kstar_sweep.json", "w"), indent=2)
     # tidy CSV
