@@ -2,7 +2,7 @@
 # Compute metrics for one protocol across registered benchmarks, then render each run.
 #
 #   scripts/repro/run_benchmarks.sh k-star                 # every benchmark
-#   scripts/repro/run_benchmarks.sh median-k camelyon      # just one
+#   scripts/repro/run_benchmarks.sh median-k pathorob-camelyon   # just one
 #
 # This replaces run_median_k.sh. Everything that driver did by hand -- copying each
 # benchmark's manifest, symlinking an embeddings directory next to it, and pasting a

@@ -37,10 +37,10 @@ PROTOCOL = "k-star"
 # ``design`` is the sweep-local pooling mode ("paired" groups by the manifest's subset
 # column, "dataset_wide" pools all rows); it mirrors the benchmark's registered design.
 CFG = {
-    "camelyon":  dict(benchmark="camelyon", design="dataset_wide", kmax=80,  pathorob_k=11),
-    "tolkach":   dict(benchmark="tolkach",  design="dataset_wide", kmax=100, pathorob_k=46),
-    "tcga_4x4":  dict(benchmark="tcga-4x4", design="dataset_wide", kmax=100, pathorob_k=None),
-    "tcga_2x2":  dict(benchmark="tcga-2x2", design="paired",       kmax=100, pathorob_k=61),
+    "camelyon":  dict(benchmark="pathorob-camelyon",     design="dataset_wide", kmax=80,  pathorob_k=11),
+    "tolkach":   dict(benchmark="pathorob-tolkach-esca", design="dataset_wide", kmax=100, pathorob_k=46),
+    "tcga_4x4":  dict(benchmark="pathorob-tcga-4x4",     design="dataset_wide", kmax=100, pathorob_k=None),
+    "tcga_2x2":  dict(benchmark="pathorob-tcga-2x2",     design="paired",       kmax=100, pathorob_k=61),
 }
 
 

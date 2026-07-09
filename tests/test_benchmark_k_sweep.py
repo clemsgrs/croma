@@ -141,6 +141,32 @@ def test_benchmark_rejects_removed_k_sweep_flags(
     assert excinfo.value.code == 2
 
 
+def test_median_k_prepass_exits_when_a_model_npy_is_missing(bench_env, monkeypatch) -> None:
+    # Every model must contribute to the shared median; a model whose embeddings vanish
+    # before the pre-pass reads them must fail loudly (naming the model), never silently
+    # shift the median or fall back to per-model k*.
+    import layout
+
+    models = ["M1", "M2"]
+    _setup(bench_env, models=models)
+
+    # The availability glob still sees both .npy, so the roster check passes and the run
+    # enters the median-k pre-pass. There, embedding_path for M2 resolves to a file that
+    # does not exist, exercising the pre-pass's own existence guard.
+    real_embedding_path = layout.embedding_path
+
+    def fake_embedding_path(tileset: str, model: str):
+        if model == "M2":
+            return layout.embeddings_dir(tileset) / "vanished-M2.npy"
+        return real_embedding_path(tileset, model)
+
+    monkeypatch.setattr(layout, "embedding_path", fake_embedding_path)
+
+    with pytest.raises(SystemExit) as excinfo:
+        bench_env.run("toy", "median-k", "--progress", "off")
+    assert "M2" in str(excinfo.value)
+
+
 def test_benchmark_uses_benchmark_name_for_dataset(bench_env) -> None:
     # The manifest may carry a stale ``dataset`` column; the run must label rows with the
     # registered benchmark name, not the manifest stem or the manifest's own column.

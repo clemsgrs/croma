@@ -37,16 +37,16 @@ CFG = {
     # self-contained caption is preserved. Its body carries in-table bootstrap CRoMa
     # CIs: regenerate with generate_results_table.py --with-ci (needs the sibling
     # bootstrap_uncertainty.csv from bootstrap_uncertainty.py), then restore the caption.
-    "camelyon": dict(benchmark="camelyon",
+    "camelyon": dict(benchmark="pathorob-camelyon",
                      name=r"PathoROB Camelyon", label="tab:main-results",
                      out_tex=None),
-    "tolkach": dict(benchmark="tolkach",
+    "tolkach": dict(benchmark="pathorob-tolkach-esca",
                     name=r"PathoROB Tolkach-ESCA", label="tab:main-results-tolkach",
                     out_tex="paper/sections/results_table_tolkach.tex"),
-    "tcga_2x2": dict(benchmark="tcga-2x2",
+    "tcga_2x2": dict(benchmark="pathorob-tcga-2x2",
                      name=r"PathoROB TCGA (2$\times$2)", label="tab:main-results-tcga",
                      out_tex="paper/sections/results_table_tcga.tex"),
-    "tcga_4x4": dict(benchmark="tcga-4x4",
+    "tcga_4x4": dict(benchmark="pathorob-tcga-4x4",
                      name=r"PathoROB TCGA (4$\times$4)", label="tab:main-results-tcga4x4",
                      out_tex="paper/sections/results_table_tcga4x4.tex"),
 }

@@ -12,7 +12,7 @@ benchmark.py's ``main``.
 
 Usage:
     python scripts/bench/render.py <run-dir>
-    # e.g. python scripts/bench/render.py output/metrics/median-k/camelyon
+    # e.g. python scripts/bench/render.py output/metrics/median-k/pathorob-camelyon
 """
 
 import argparse

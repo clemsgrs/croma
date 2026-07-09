@@ -14,6 +14,13 @@ has been embedded for its tileset* -- discovered from the ``.npy`` files present
 is what lets a newly embedded encoder join every benchmark over that tileset without
 editing this file.
 
+The four PathoROB benchmarks read ``*-ri.csv``: the exact rows PathoROB's own
+``robustness_index.get_meta`` feeds to RI. That selection is *not* uniform across
+cohorts and is not derivable from a single column -- see
+``scripts/prep/build_pathorob_views.py``. In particular the APD study evaluates a
+different row set (the whole cohort, split by ``apd_split``), which is why RI and APD
+each get their own manifest.
+
 ``k_max`` is the sweep ceiling, not the operating point. The operating point is chosen
 per protocol (per-model ``k-star``, or the shared ``median-k``); see ``layout.PROTOCOLS``.
 """
@@ -21,6 +28,11 @@ per protocol (per-model ``k-star``, or the shared ``median-k``); see ``layout.PR
 from __future__ import annotations
 
 from dataclasses import dataclass
+
+#: Uniform ceiling of the dense k sweep (1..k_max) for every benchmark. The smallest
+#: evaluated unit in the registry is 1,000 samples (panda, and panda-isup's smallest
+#: subset), so a 100-neighbour ceiling fits comfortably inside every subset.
+DEFAULT_K_MAX = 100
 
 
 @dataclass(frozen=True)
@@ -34,56 +46,37 @@ class BenchmarkSpec:
     #: ``dataset_wide`` or ``paired_2x2``.
     design: str
     #: Ceiling of the dense k sweep (1..k_max).
-    k_max: int
+    k_max: int = DEFAULT_K_MAX
     #: Manifest column holding the non-biological confounder.
     confounder_column: str = "medical_center"
 
 
 _SPECS: tuple[BenchmarkSpec, ...] = (
     # --- PathoROB tile benchmarks -------------------------------------------------
+    # Each reads its cohort's RI view; the benchmark is named for the cohort itself.
     BenchmarkSpec(
-        name="camelyon",
+        name="pathorob-camelyon",
         tileset="pathorob-camelyon",
-        manifest="data/pathorob/manifests/pathorob-camelyon-faithful.csv",
+        manifest="data/pathorob/manifests/pathorob-camelyon-ri.csv",
         design="dataset_wide",
-        k_max=100,
     ),
     BenchmarkSpec(
-        name="tolkach",
+        name="pathorob-tolkach-esca",
         tileset="pathorob-tolkach-esca",
-        manifest="data/pathorob/manifests/pathorob-tolkach-esca-faithful.csv",
+        manifest="data/pathorob/manifests/pathorob-tolkach-esca-ri.csv",
         design="dataset_wide",
-        k_max=100,
     ),
     BenchmarkSpec(
-        name="tcga-2x2",
+        name="pathorob-tcga-2x2",
         tileset="pathorob-tcga-2x2",
-        manifest="data/pathorob/manifests/pathorob-tcga-2x2.csv",
+        manifest="data/pathorob/manifests/pathorob-tcga-2x2-ri.csv",
         design="paired_2x2",
-        k_max=100,
-    ),
-    # The unfiltered views: every centre, not just PathoROB's in-domain pair. The
-    # pretraining-overlap table reads tolkach-full's per-sample metrics.
-    BenchmarkSpec(
-        name="camelyon-full",
-        tileset="pathorob-camelyon",
-        manifest="data/pathorob/manifests/pathorob-camelyon.csv",
-        design="dataset_wide",
-        k_max=25,
     ),
     BenchmarkSpec(
-        name="tolkach-full",
-        tileset="pathorob-tolkach-esca",
-        manifest="data/pathorob/manifests/pathorob-tolkach-esca.csv",
-        design="dataset_wide",
-        k_max=25,
-    ),
-    BenchmarkSpec(
-        name="tcga-4x4",
+        name="pathorob-tcga-4x4",
         tileset="pathorob-tcga-4x4",
-        manifest="data/pathorob/manifests/pathorob-tcga-4x4.csv",
+        manifest="data/pathorob/manifests/pathorob-tcga-4x4-ri.csv",
         design="dataset_wide",
-        k_max=100,
     ),
     # --- Prostate-shift views (three views, one tileset) --------------------------
     BenchmarkSpec(
@@ -91,43 +84,33 @@ _SPECS: tuple[BenchmarkSpec, ...] = (
         tileset="prostate-shift",
         manifest="data/prostate-shift-binary-kirumc.csv",
         design="dataset_wide",
-        k_max=25,
     ),
     BenchmarkSpec(
         name="prostate-4class",
         tileset="prostate-shift",
         manifest="data/prostate-shift-4class-kirumc-paired.csv",
         design="paired_2x2",
-        k_max=25,
     ),
     BenchmarkSpec(
         name="prostate-gradebal",
         tileset="prostate-shift",
         manifest="data/prostate-shift-gradebal-binary-kirumc-paired.csv",
         design="paired_2x2",
-        k_max=25,
     ),
     # --- PANDA slide benchmarks (two views, one tileset) --------------------------
-    # PANDA's confounder is the slide's data provider (radboud / karolinska). These
-    # manifests had no home under data/; migration writes them to data/benchmarks/.
+    # PANDA's confounder is the slide's data provider (radboud / karolinska).
     BenchmarkSpec(
         name="panda",
         tileset="panda-wsi",
         manifest="data/benchmarks/panda.csv",
         design="dataset_wide",
-        k_max=25,
         confounder_column="data_provider",
     ),
-    # The stale k-star artifact for this benchmark recorded k_max=500, but it was written
-    # by an older build: it disagrees with the same code's later median-k run (which used
-    # 25) on croma_auc/croma_delta over identical data. 25 matches `panda` and the most
-    # recent actual run; k* here is 13, well inside either ceiling.
     BenchmarkSpec(
         name="panda-isup",
         tileset="panda-wsi",
         manifest="data/benchmarks/panda-isup.csv",
         design="paired_2x2",
-        k_max=25,
         confounder_column="data_provider",
     ),
 )

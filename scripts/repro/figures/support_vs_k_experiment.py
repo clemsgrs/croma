@@ -37,7 +37,7 @@ from croma import RI
 from croma.metrics.neighbors import _prepare_neighbors
 
 PROTOCOL = "k-star"
-view = views.load_view("camelyon")  # row-view over the pathorob-camelyon tileset
+view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
 METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
 STUDIES = view.studies_dir(PROTOCOL)
 FIGDIR = REPO / "paper/figures/results/pathorob-camelyon-faithful/pdf"

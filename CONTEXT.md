@@ -69,8 +69,26 @@ _Avoid_: dataset (ambiguous — it named both the tiles and the evaluation).
 An evaluable *view* over a tileset: an eval manifest that selects its rows, plus an
 evaluation design. Several benchmarks share one tileset (`prostate`,
 `prostate-4class` and `prostate-gradebal` all view `prostate-shift`), so a benchmark
-never owns embeddings. Camelyon's tileset is 22,402 tiles; the `camelyon` benchmark
-is the 20,400-tile faithful view of it.
+never owns embeddings. Camelyon's tileset is 22,402 tiles; the `pathorob-camelyon`
+benchmark is the 20,400-tile RI view of it.
+
+**RI view** (`pathorob-<cohort>-ri.csv`):
+Exactly the rows PathoROB's Robustness Index evaluates. The selection differs per
+cohort and is _not_ a predicate: Tolkach's is a stored balanced sample. This is what
+the four `pathorob-*` benchmarks read.
+_Avoid_: "faithful manifest" — it described our intent, not what the rows are for.
+
+**APD view** (`pathorob-<cohort>.csv`):
+Every tile of a cohort, carrying `apd_split`. APD evaluates ID and OOD rows, i.e. the
+whole cohort, so this doubles as the tileset source. APD is a *study*, not a benchmark:
+it lives in `scripts/studies/apd/`, is absent from the `croma` library, and writes to
+`output/studies/apd/`.
+
+**`apd_split`**:
+PathoROB's ID/OOD partition — APD's notion and only APD's. Tolkach's RI view
+deliberately straddles it (3,000 of its 9,000 rows are `VALSET1_UKK`, which APD calls
+OOD), so this column must never be used to derive an RI row set. See ADR-0008.
+_Avoid_: `id_ood` (the old name; its generality is what let `tcga-4x4` silently drift).
 _Avoid_: run (a run is a benchmark evaluated at one protocol).
 
 **Protocol**:

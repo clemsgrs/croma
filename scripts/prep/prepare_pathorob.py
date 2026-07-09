@@ -867,7 +867,7 @@ def align_dataset(
             out_df, label_col="label", confounder_col="confounder"
         )
     elif alignment.subset_mode == "id_ood":
-        out_df["id_ood"] = joined["subset"].astype(str)
+        out_df["apd_split"] = joined["subset"].astype(str)
     else:
         raise ValueError(
             f"Unknown subset_mode for {alignment.output_name}: {alignment.subset_mode}"

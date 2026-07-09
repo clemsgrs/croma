@@ -775,14 +775,22 @@ def main() -> int:
     n_tileset_rows = int(len(tileset_manifest))
 
     # --- Pre-pass: collect per-model best k to determine dataset-wide median k ---
+    #
+    # Every model must contribute. A model that silently dropped out would shift the
+    # median without trace, and a pre-pass that produced nothing at all would leave
+    # dataset_median_k as None -- which used to fall back to per-model k*, writing
+    # non-median-k results into a directory named median-k. Both now fail loudly.
     dataset_median_k: int | None = None
     if use_median_k:
-        per_model_best_k: list[int] = []
+        per_model_best_k: dict[str, int] = {}
         for model in models:
+            output_path = layout.embedding_path(bench.tileset, model)
+            if not output_path.exists():
+                raise SystemExit(
+                    f"[benchmark] median-k pre-pass: no embeddings for model {model!r} "
+                    f"at {output_path}; every model must contribute to the median"
+                )
             try:
-                output_path = layout.embedding_path(bench.tileset, model)
-                if not output_path.exists():
-                    continue
                 embedding_fp = embedding_fingerprint(output_path)
                 input_fp_pre = {
                     "manifest_fingerprint": base_manifest_fingerprint,
@@ -825,21 +833,29 @@ def main() -> int:
                         prepared_subsets=prepared_subsets_pre,
                     )
                     cache.put_json(key=knn_bio_key, payload=_curve_payload(knn_bacc_pre))
-                per_model_best_k.append(
-                    _select_k_from_balanced_accuracy(k_values=k_values, scores=knn_bacc_pre)
-                )
-            except Exception:  # noqa: BLE001
-                pass
-        if per_model_best_k:
-            dataset_median_k = int(np.median(per_model_best_k))
-            progress_write(
-                f"[benchmark] use-median-k: per-model optimal k = {per_model_best_k}",
-                enabled=progress_enabled,
+            except Exception as exc:  # noqa: BLE001
+                raise SystemExit(
+                    f"[benchmark] median-k pre-pass failed for model {model!r}: {exc}"
+                ) from exc
+            per_model_best_k[model] = _select_k_from_balanced_accuracy(
+                k_values=k_values, scores=knn_bacc_pre
             )
-            progress_write(
-                f"[benchmark] use-median-k: dataset median k = {dataset_median_k}",
-                enabled=progress_enabled,
+        if not per_model_best_k:
+            raise SystemExit(
+                "[benchmark] median-k pre-pass produced no per-model k: refusing to fall "
+                "back to per-model k* under --protocol median-k"
             )
+        # int() floors the .5 that an even model count can produce. Deliberate and stable.
+        dataset_median_k = int(np.median(list(per_model_best_k.values())))
+        progress_write(
+            f"[benchmark] use-median-k: per-model optimal k = {per_model_best_k}",
+            enabled=progress_enabled,
+        )
+        progress_write(
+            f"[benchmark] use-median-k: dataset median k = {dataset_median_k} "
+            f"(over {len(per_model_best_k)} models)",
+            enabled=progress_enabled,
+        )
 
     for i, model in enumerate(models):
         with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
@@ -1277,9 +1293,10 @@ def main() -> int:
                         payload=_curve_payload(knn_confounder_bacc_by_k),
                     )
 
+                # The pre-pass guarantees dataset_median_k is set whenever use_median_k.
                 selected_k = (
                     dataset_median_k
-                    if use_median_k and dataset_median_k is not None
+                    if use_median_k
                     else _select_k_from_balanced_accuracy(
                         k_values=k_values,
                         scores=knn_bacc_by_k,

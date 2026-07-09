@@ -194,9 +194,9 @@ CORR_METRICS = ["croma", "ri", "mari"]
 # figures read, with CRoMa already on the signed-margin scale the paper defines. The
 # `dataset` column there holds the dir name, so we override it with the APD key below.
 METRIC_DIR = {
-    "camelyon": "output/metrics/k-star/camelyon",
-    "tcga_4x4": "output/metrics/k-star/tcga-4x4",
-    "tolkach": "output/metrics/k-star/tolkach",
+    "camelyon": "output/metrics/k-star/pathorob-camelyon",
+    "tcga_4x4": "output/metrics/k-star/pathorob-tcga-4x4",
+    "tolkach": "output/metrics/k-star/pathorob-tolkach-esca",
     "prostate": "output/metrics/k-star/prostate",
 }
 
