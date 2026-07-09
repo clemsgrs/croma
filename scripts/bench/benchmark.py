@@ -213,7 +213,18 @@ def _parse_args() -> argparse.Namespace:
         "--k-max",
         type=_positive_int,
         default=None,
-        help="Override the benchmark's registered k_max (dense sweep over 1..k_max).",
+        help="Override the benchmark's registered k_max (sweep ceiling).",
+    )
+    parser.add_argument(
+        "--k-grid",
+        choices=K_GRIDS,
+        default="dense",
+        help=(
+            "How the k sweep is discretised. 'dense' (default): every integer 1..k_max. "
+            "'sparse': PathoROB's grid, [1,3,5,7,9] + arange(11, k_max, 10) -- note k_max "
+            "is exclusive in the tail, so k_max=100 sweeps up to 91. The operating point "
+            "is chosen from these values, so this is part of the protocol, not display."
+        ),
     )
     parser.add_argument(
         "--tau",
@@ -270,10 +281,34 @@ def _positive_int(value: str) -> int:
     return int(parsed)
 
 
-def _resolve_sweep_k_values(k_max: int) -> list[int]:
+#: How the k sweep is discretised. The operating point is picked from these values, so
+#: the grid bounds which k a model can select -- it is part of the protocol, not a
+#: display setting. The chosen grid is recorded verbatim in the ``k_values`` column.
+K_GRIDS = ("dense", "sparse")
+
+
+def _resolve_sweep_k_values(k_max: int, grid: str = "dense") -> list[int]:
+    """The k values swept, for a ceiling and a grid.
+
+    ``dense`` sweeps every integer ``1..k_max``.
+
+    ``sparse`` reproduces PathoROB's grid, ``[1, 3, 5, 7, 9] + arange(11, k_max, 10)``
+    (``robustness_index_utils.get_k_values``). Note ``k_max`` is *exclusive* in the
+    arange tail, exactly as upstream: with ``k_max=100`` the largest swept k is 91.
+    Values above ``k_max`` are dropped, so small ceilings degrade gracefully.
+    """
     if int(k_max) <= 0:
         raise ValueError("k_max must be strictly positive")
-    return list(range(1, int(k_max) + 1))
+    k_max = int(k_max)
+    if grid == "dense":
+        return list(range(1, k_max + 1))
+    if grid == "sparse":
+        candidates = [1, 3, 5, 7, 9, *range(11, k_max, 10)]
+        values = sorted({k for k in candidates if 1 <= k <= k_max})
+        if not values:
+            raise ValueError(f"sparse grid is empty for k_max={k_max}")
+        return values
+    raise ValueError(f"unknown k grid {grid!r}; expected one of {list(K_GRIDS)}")
 
 
 def _prepare_eval_manifest(
@@ -721,7 +756,7 @@ def main() -> int:
     cache = MetricsArtifactCache(results_dir=results_dir)
 
     k_max = int(args.k_max) if args.k_max is not None else int(bench.k_max)
-    k_values = _resolve_sweep_k_values(k_max)
+    k_values = _resolve_sweep_k_values(k_max, str(args.k_grid))
     croma_m_values = list(range(1, int(args.croma_m_max) + 1))
     # Headline m must be inside the swept range; clamp down if the sweep is shorter.
     croma_headline_m = min(int(CROMA_HEADLINE_M), max(croma_m_values))

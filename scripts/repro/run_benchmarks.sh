@@ -4,6 +4,8 @@
 #   scripts/repro/run_benchmarks.sh k-star                 # every benchmark
 #   scripts/repro/run_benchmarks.sh median-k pathorob-camelyon   # just one
 #
+# CROMA_K_GRID=sparse sweeps PathoROB's k grid instead of every integer 1..k_max.
+#
 # This replaces run_median_k.sh. Everything that driver did by hand -- copying each
 # benchmark's manifest, symlinking an embeddings directory next to it, and pasting a
 # model roster and k-max per benchmark -- is now read from the benchmark registry
@@ -27,6 +29,13 @@ export PYTHONPATH="src:scripts/bench"
 # Resolving `output/` relative to the cd above would silently look inside the worktree.
 OUT_ROOT="$(python -c 'import layout; print(layout.OUTPUT_ROOT)')" || exit 1
 
+# The k grid is part of the protocol (it bounds which k a model can select), so it is
+# recorded in each run's `k_values` column rather than being a display setting.
+K_GRID_ARGS=()
+if [ -n "${CROMA_K_GRID:-}" ]; then
+  K_GRID_ARGS=(--k-grid "$CROMA_K_GRID")
+fi
+
 if [ "$#" -gt 0 ]; then
   BENCHMARKS=("$@")
 else
@@ -38,7 +47,8 @@ for B in "${BENCHMARKS[@]}"; do
   echo "=================================================================="
   echo ">>> $B  (protocol=$PROTOCOL)  $(date +%H:%M:%S)"
   CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS="$OMP_THREADS" \
-    python scripts/bench/benchmark.py --benchmark "$B" --protocol "$PROTOCOL"
+    python scripts/bench/benchmark.py --benchmark "$B" --protocol "$PROTOCOL" \
+      ${K_GRID_ARGS[@]+"${K_GRID_ARGS[@]}"}
   rc=$?
   M="$OUT_ROOT/metrics/$PROTOCOL/$B/results/metrics.csv"
   if [ $rc -eq 0 ] && [ -f "$M" ]; then
