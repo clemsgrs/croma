@@ -100,63 +100,28 @@ def _features(model_name: str) -> np.ndarray:
     return np.asarray(rows, dtype=float)
 
 
-def _install_fake_registry_and_embed(monkeypatch) -> None:
-    def fake_registry() -> dict:
-        return {name: object() for name in MODELS}
-
-    def fake_embed_manifest(
-        manifest_path: Path,
-        output_path: Path,
-        spec: object,
-        batch_size: int,
-        num_workers: int,
-        device_arg: str,
-        **kwargs: object,
-    ) -> tuple[Path, tuple[int, int]]:
-        arr = _features(output_path.stem)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, arr)
-        output_path.with_suffix(".npy.json").write_text(
-            '{"manifest":"%s","model_id":"fake","extract":"cls","mixed_precision":false}\n'
-            % str(manifest_path),
-            encoding="utf-8",
-        )
-        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
-
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
-
-
-def run_compute(monkeypatch, tmp_path: Path) -> Path:
-    """Run the compute-only driver on the fixed synthetic manifest; return the run dir."""
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    manifest_path = tmp_path / "toy.csv"
-    _manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-    _install_fake_registry_and_embed(monkeypatch)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            ",".join(MODELS),
-            "--output-dir",
-            str(output_dir),
-            "--confounder-column",
-            "scanner_vendor",
-            "--evaluation-design",
-            "dataset_wide",
-            "--k-max",
-            "5",
-            "--progress",
-            "off",
-        ],
+def _setup(bench_env) -> None:
+    """Materialise the fixed synthetic tileset + benchmark named ``toy`` (dataset=toy)."""
+    tileset = _manifest()  # one row per distinct tile already
+    bench_env.write_tileset("toy-tiles", tileset, {m: _features(m) for m in MODELS})
+    bench_env.register(
+        "toy",
+        tileset="toy-tiles",
+        manifest=_manifest(),
+        design="dataset_wide",
+        k_max=5,
+        confounder_column="scanner_vendor",
     )
-    assert bm.main() == 0
-    return output_dir / manifest_path.stem
+
+
+def run_compute(bench_env, *, recompute: bool = False) -> Path:
+    """Run the compute-only driver on the fixed synthetic tileset; return the run dir."""
+    _setup(bench_env)
+    extra = ["--models", ",".join(MODELS), "--k-max", "5", "--progress", "off"]
+    if recompute:
+        extra.append("--recompute-metrics")
+    assert bench_env.run("toy", "k-star", *extra) == 0
+    return bench_env.results_dir("toy").parent
 
 
 def _stable_rows(run_dir: Path) -> list[dict]:
@@ -182,21 +147,27 @@ def _assert_rows_match(actual: list[dict], expected: list[dict]) -> None:
                 assert gv == wv, key
 
 
-def test_compute_metrics_match_golden(monkeypatch, tmp_path: Path) -> None:
-    run_dir = run_compute(monkeypatch, tmp_path)
+def test_compute_metrics_match_golden(bench_env) -> None:
+    run_dir = run_compute(bench_env)
     rows = _stable_rows(run_dir)
     golden = json.loads(GOLDEN_PATH.read_text())
     _assert_rows_match(rows, golden)
 
 
-def test_compute_is_deterministic(monkeypatch, tmp_path: Path) -> None:
-    run_a = run_compute(monkeypatch, tmp_path / "a")
-    run_b = run_compute(monkeypatch, tmp_path / "b")
-    _assert_rows_match(_stable_rows(run_a), _stable_rows(run_b))
+def test_compute_is_deterministic(bench_env) -> None:
+    run_dir = run_compute(bench_env)
+    rows_a = _stable_rows(run_dir)
+    # A forced recompute over the same benchmark must reproduce the metrics exactly.
+    assert bench_env.run(
+        "toy", "k-star", "--models", ",".join(MODELS), "--k-max", "5",
+        "--recompute-metrics", "--progress", "off",
+    ) == 0
+    rows_b = _stable_rows(run_dir)
+    _assert_rows_match(rows_a, rows_b)
 
 
-def test_compute_writes_no_matplotlib_and_no_plots(monkeypatch, tmp_path: Path) -> None:
-    run_dir = run_compute(monkeypatch, tmp_path)
+def test_compute_writes_no_matplotlib_and_no_plots(bench_env) -> None:
+    run_dir = run_compute(bench_env)
     # Compute writes the metric artifacts and a render manifest, but no figures.
     assert (run_dir / "results" / "metrics.json").exists()
     assert (run_dir / "results" / "render_manifest.json").exists()
@@ -228,8 +199,8 @@ def _figure_paths(plots_dir: Path, name: str) -> tuple[Path, Path]:
     return plots_dir / "png" / f"{name}.png", plots_dir / "pdf" / f"{name}.pdf"
 
 
-def test_render_emits_expected_figures(monkeypatch, tmp_path: Path) -> None:
-    run_dir = run_compute(monkeypatch, tmp_path)
+def test_render_emits_expected_figures(bench_env) -> None:
+    run_dir = run_compute(bench_env)
     rendered = render.render_run(run_dir)
 
     plots_dir = run_dir / "plots"
@@ -244,15 +215,15 @@ def test_render_emits_expected_figures(monkeypatch, tmp_path: Path) -> None:
         assert pdf_path.stat().st_size > 0
 
 
-def test_render_cli_runs(monkeypatch, tmp_path: Path) -> None:
-    run_dir = run_compute(monkeypatch, tmp_path)
+def test_render_cli_runs(bench_env) -> None:
+    run_dir = run_compute(bench_env)
     assert render.main([str(run_dir)]) == 0
     assert (run_dir / "plots" / "png" / "ri_mari_support.png").exists()
 
 
-def test_render_into_custom_plots_dir(monkeypatch, tmp_path: Path) -> None:
+def test_render_into_custom_plots_dir(bench_env) -> None:
     """The plots_dir override (used by regen_paper_figs_faithful.py) redirects output."""
-    run_dir = run_compute(monkeypatch, tmp_path)
+    run_dir = run_compute(bench_env)
     scratch = run_dir / "results" / "plots_scratch"
     render.render_run(run_dir, plots_dir=scratch)
     assert (scratch / "png" / "ri_mari_support.png").exists()
@@ -261,9 +232,9 @@ def test_render_into_custom_plots_dir(monkeypatch, tmp_path: Path) -> None:
     assert not (run_dir / "plots").exists()
 
 
-def test_render_respects_manifest_flags(monkeypatch, tmp_path: Path) -> None:
+def test_render_respects_manifest_flags(bench_env) -> None:
     """A prune-ss-oo / summarize-by-mean run must additionally emit the gated figures."""
-    run_dir = run_compute(monkeypatch, tmp_path)
+    run_dir = run_compute(bench_env)
     # Simulate a run whose flags request the conditional figures.
     manifest_path = run_dir / "results" / "render_manifest.json"
     manifest_path.write_text(

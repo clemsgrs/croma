@@ -6,7 +6,12 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+import layout
 from input_fingerprint import manifest_fingerprint
+
+from croma.alignment import build_embedding_source_manifest
+from croma.metrics.pairs import load_manifest
 
 try:
     import torch
@@ -272,16 +277,30 @@ def embed_manifest(
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Extract tile embeddings from a manifest CSV (image_path column)."
+        description=(
+            "Extract tile embeddings for a tileset. This is the sole writer of "
+            "output/embeddings/<tileset>/: it owns manifest.csv (the row-order contract) "
+            "and every <Model>.npy aligned to it."
+        )
     )
     parser.add_argument(
-        "--manifest", required=True, type=Path, help="Path to manifest CSV."
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
+        "--tileset",
         required=True,
-        help="Required output directory for embeddings.",
+        help="Tileset name; embeddings land in output/embeddings/<tileset>/.",
+    )
+    parser.add_argument(
+        "--manifest",
+        type=Path,
+        default=None,
+        help=(
+            "Source manifest CSV. Required only the first time a tileset is embedded, "
+            "to derive its manifest.csv; ignored once that exists."
+        ),
+    )
+    parser.add_argument(
+        "--confounder-column",
+        default="medical_center",
+        help="Source-manifest column holding the confounder (used to derive manifest.csv).",
     )
     parser.add_argument(
         "--models",
@@ -312,18 +331,51 @@ def _resolve_specs(model_names: list[str]) -> list[tuple[str, ModelSpec]]:
     return [(m, model_registry[m]) for m in model_names]
 
 
+def _resolve_tileset_manifest(
+    tileset: str, source_manifest: Path | None, confounder_column: str, progress: bool
+) -> Path:
+    """Return the tileset's manifest.csv, deriving it on first use.
+
+    The manifest is written once and then frozen: it is the row-order contract every
+    ``<Model>.npy`` in the directory is aligned to, so re-deriving it under a different
+    source would silently invalidate the matrices already on disk.
+    """
+    manifest_path = layout.tileset_manifest(tileset)
+    if manifest_path.exists():
+        return manifest_path
+    if source_manifest is None:
+        raise SystemExit(
+            f"tileset '{tileset}' has no {manifest_path}; pass --manifest <source csv> "
+            "the first time you embed it"
+        )
+    frame = load_manifest(str(source_manifest), confounder_column=confounder_column)
+    tileset_manifest, _ = build_embedding_source_manifest(frame)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    tileset_manifest.to_csv(manifest_path, index=False)
+    progress_write(
+        f"[embed] derived {manifest_path} ({len(tileset_manifest)} rows) "
+        f"from {source_manifest}",
+        enabled=progress,
+    )
+    return manifest_path
+
+
 def main():
     args = parse_args()
     progress_enabled = resolve_progress_mode(str(args.progress))
     model_names = _parse_models(args.models)
     model_specs = _resolve_specs(model_names)
 
-    output_dir = Path(args.output_dir)
+    output_dir = layout.embeddings_dir(str(args.tileset))
     output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = _resolve_tileset_manifest(
+        str(args.tileset), args.manifest, str(args.confounder_column), progress_enabled
+    )
 
     progress_write(
         f"[embed] models: {', '.join(model_names)}", enabled=progress_enabled
     )
+    progress_write(f"[embed] tileset: {args.tileset}", enabled=progress_enabled)
     progress_write(f"[embed] output_dir: {output_dir}", enabled=progress_enabled)
 
     statuses: list[dict] = []
@@ -338,7 +390,7 @@ def main():
             progress_write(
                 f"\n[embed] === model: {model_name} ===", enabled=progress_enabled
             )
-            output = _output_path_in_dir(args.manifest, output_dir, model_name)
+            output = _output_path_in_dir(manifest_path, output_dir, model_name)
             if output.exists() and not args.force:
                 progress_write(
                     f"[embed] output exists, skipping: {output}",
@@ -353,7 +405,7 @@ def main():
             try:
                 model_bar.set_postfix_str(f"{model_name}:extract")
                 embed_manifest(
-                    manifest_path=args.manifest,
+                    manifest_path=manifest_path,
                     output_path=output,
                     spec=spec,
                     batch_size=int(args.batch_size),

@@ -16,9 +16,9 @@ try:
 except ModuleNotFoundError:
     torch = None
 
+import layout
 from croma.alignment import build_embedding_source_manifest
 from croma.metrics.pairs import load_manifest, retain_complete_subset_memberships
-from extract_embeddings import _output_path_in_dir
 from input_fingerprint import manifest_fingerprint
 
 
@@ -44,10 +44,12 @@ def _parse_args() -> argparse.Namespace:
         help="CSV with columns image_path,model,embedding_path.",
     )
     parser.add_argument(
-        "--output-dir",
+        "--tileset",
         required=True,
-        type=Path,
-        help="Benchmark output root; outputs are written under <output-dir>/<manifest stem>/.",
+        help=(
+            "Tileset name; the stacked per-model matrices and their row-order manifest "
+            "are written to output/embeddings/<tileset>/ (see scripts/bench/layout.py)."
+        ),
     )
     parser.add_argument(
         "--models",
@@ -206,7 +208,7 @@ def prepare_benchmark_embeddings(
     manifest_path: Path,
     confounder_column: str,
     mapping_csv: Path,
-    output_dir: Path,
+    tileset: str,
     models: list[str] | None = None,
     evaluation_design: str = "dataset_wide",
 ) -> dict:
@@ -216,6 +218,8 @@ def prepare_benchmark_embeddings(
         dataset_name=str(manifest_path.stem),
         evaluation_design=str(evaluation_design),
     )
+    # The unique-tile manifest is the tileset's row-order contract: row i of every
+    # <Model>.npy describes row i of manifest.csv (see scripts/bench/layout.py).
     embedding_manifest, _ = build_embedding_source_manifest(eval_manifest)
     mapping_df = _load_mapping(mapping_csv)
 
@@ -223,11 +227,10 @@ def prepare_benchmark_embeddings(
     if not selected_models:
         raise ValueError("No models were provided and mapping CSV contains no model rows")
 
-    dataset_dir = Path(output_dir) / manifest_path.stem
-    embeddings_dir = dataset_dir / "embeddings"
+    embeddings_dir = layout.embeddings_dir(str(tileset))
     embeddings_dir.mkdir(parents=True, exist_ok=True)
-    embedding_manifest_path = dataset_dir / "embedding_source_manifest.csv"
-    embedding_manifest.to_csv(embedding_manifest_path, index=False)
+    tileset_manifest_path = layout.tileset_manifest(str(tileset))
+    embedding_manifest.to_csv(tileset_manifest_path, index=False)
     embedding_manifest_fp = manifest_fingerprint(embedding_manifest)
 
     outputs: dict[str, str] = {}
@@ -265,12 +268,12 @@ def prepare_benchmark_embeddings(
             stacked_rows.append(np.asarray(vector))
 
         stacked = np.stack(stacked_rows, axis=0)
-        output_path = _output_path_in_dir(manifest_path, embeddings_dir, str(model))
+        output_path = layout.embedding_path(str(tileset), str(model))
         np.save(output_path, stacked)
         output_path.with_suffix(output_path.suffix + ".json").write_text(
             json.dumps(
                 {
-                    "manifest": str(embedding_manifest_path),
+                    "manifest": str(tileset_manifest_path),
                     "manifest_fingerprint": embedding_manifest_fp,
                     "n_samples": int(stacked.shape[0]),
                     "embedding_dim": int(stacked.shape[1]),
@@ -291,8 +294,9 @@ def prepare_benchmark_embeddings(
     return {
         "manifest": str(manifest_path),
         "mapping_csv": str(mapping_csv),
-        "dataset_dir": str(dataset_dir),
-        "embedding_manifest": str(embedding_manifest_path),
+        "tileset": str(tileset),
+        "tileset_dir": str(embeddings_dir),
+        "tileset_manifest": str(tileset_manifest_path),
         "embedding_manifest_rows": int(len(embedding_manifest)),
         "evaluation_design": str(evaluation_design),
         "models": [str(model) for model in selected_models],
@@ -306,7 +310,7 @@ def main() -> int:
         manifest_path=Path(args.manifest),
         confounder_column=str(args.confounder_column),
         mapping_csv=Path(args.mapping_csv),
-        output_dir=Path(args.output_dir),
+        tileset=str(args.tileset),
         models=_parse_models(str(args.models)),
         evaluation_design=str(args.evaluation_design),
     )

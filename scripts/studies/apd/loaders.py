@@ -22,6 +22,10 @@ import pandas as pd
 # Repo root autodetected from this file's location: scripts/studies/apd/loaders.py
 # -> parents[3] is the croma repo root, so the reproduction works from any checkout.
 REPO = Path(__file__).resolve().parents[3]
+if str(REPO / "scripts" / "bench") not in sys.path:
+    sys.path.insert(0, str(REPO / "scripts" / "bench"))
+import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>/...)
+
 # PathoROB is a SIBLING repo (not under croma), so it cannot be autodetected. Default to
 # a sibling checkout next to croma; override with PATHOROB_ROOT if it lives elsewhere.
 PATHOROB = Path(os.environ.get("PATHOROB_ROOT", REPO.parent / "PathoROB"))
@@ -33,10 +37,12 @@ if str(PATHOROB) not in sys.path:
 # ---------------------------------------------------------------------------
 # Per-dataset constants, copied from PathoROB's apd/utils.load_data so that our
 # (centre, biology) cell indexing matches the split schedule exactly. ``split_key``
-# is the name get_patches_map_to_split expects (note: tcga_4x4 -> "tcga").
+# is the name get_patches_map_to_split expects (note: tcga_4x4 -> "tcga"). ``src`` is
+# the *tileset* whose full embedding matrix (every row, ID + OOD centres) APD reads --
+# resolved via layout.embeddings_dir(); it is not a benchmark eval view.
 DATASETS = {
     "camelyon": dict(
-        src="output/pathorob-camelyon",
+        src="pathorob-camelyon",
         metadata="data/pathorob/metadata/camelyon.csv",
         split_key="camelyon",
         centers_id=["RUMC", "UMCU"],
@@ -45,7 +51,7 @@ DATASETS = {
         num_splits=8, num_slides_per_category=17, num_patches_per_slide=300,
     ),
     "tcga_4x4": dict(
-        src="output/pathorob-tcga-4x4",
+        src="pathorob-tcga-4x4",
         metadata="data/pathorob/metadata/tcga_4x4.csv",
         split_key="tcga",
         centers_id=["Asterand", "Christiana Healthcare", "Roswell Park", "University of Pittsburgh"],
@@ -54,7 +60,7 @@ DATASETS = {
         num_splits=7, num_slides_per_category=12, num_patches_per_slide=30,
     ),
     "tolkach": dict(
-        src="output/pathorob-tolkach-esca",
+        src="pathorob-tolkach-esca",
         metadata="data/pathorob/metadata/tolkach_esca.csv",
         split_key="tolkach_esca",
         centers_id=["VALSET2_WNS", "VALSET4_CHA_FULL"],
@@ -76,7 +82,7 @@ DATASETS = {
     # disjoint train/test). NUS is a flat OOD test pool (no npps chunking), so its ragged
     # 24-79 patches/slide is irrelevant. See paper for the schedule-faithfulness note.
     "prostate": dict(
-        src="output/prostate-shift-binary",
+        src="prostate-shift",
         metadata="data/prostate/metadata/prostate_shift.csv",
         split_key="prostate",
         centers_id=["KI", "RUMC"],
@@ -136,7 +142,7 @@ def load_data(model, dataset):
     bio = cfg["biological_classes"]
 
     md = pd.read_csv(REPO / cfg["metadata"])
-    emb = np.load(REPO / cfg["src"] / "embeddings" / f"{model}.npy")
+    emb = np.load(layout.embeddings_dir(cfg["src"]) / f"{model}.npy")
     assert len(emb) == len(md), f"{model}/{dataset}: {len(emb)} emb vs {len(md)} meta rows"
 
     md_id = md[md["subset"] == "ID"]
@@ -188,10 +194,10 @@ CORR_METRICS = ["croma", "ri", "mari"]
 # figures read, with CRoMa already on the signed-margin scale the paper defines. The
 # `dataset` column there holds the dir name, so we override it with the APD key below.
 METRIC_DIR = {
-    "camelyon": "output/faithful/k-star/pathorob-camelyon-faithful",
-    "tcga_4x4": "output/faithful/k-star/pathorob-tcga-4x4",
-    "tolkach": "output/faithful/k-star/pathorob-tolkach-esca-faithful",
-    "prostate": "output/prostate-shift-binary-kirumc",
+    "camelyon": "output/metrics/k-star/camelyon",
+    "tcga_4x4": "output/metrics/k-star/tcga-4x4",
+    "tolkach": "output/metrics/k-star/tolkach",
+    "prostate": "output/metrics/k-star/prostate",
 }
 
 
@@ -221,4 +227,4 @@ def read_joined():
     Written by ``apd_croma_correlation.py`` with CRoMa already on the signed-margin
     scale (the paper's definition).
     """
-    return pd.read_csv(REPO / "output/apd/apd_metrics_joined.csv")
+    return pd.read_csv(REPO / "output/studies/apd/apd_metrics_joined.csv")

@@ -1,9 +1,16 @@
-import json
+"""benchmark.py discovers its model roster from the tileset's ``.npy`` files.
+
+There is no model registry gate any more: a model is evaluated iff its embedding matrix
+exists in the tileset. So an encoder absent from ``model_registry`` is evaluated when its
+``.npy`` is present, and a requested model with no ``.npy`` is a hard error naming it.
+"""
+
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts" / "bench"
@@ -11,6 +18,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import benchmark as bm
+from model_registry import _build_model_registry
 
 
 def _toy_manifest() -> pd.DataFrame:
@@ -37,95 +45,71 @@ def _features() -> np.ndarray:
     )
 
 
-def _write_precomputed_cache(
-    *,
-    manifest_path: Path,
-    output_dir: Path,
-    model: str,
-    values: np.ndarray,
-) -> None:
-    manifest = bm.load_manifest(str(manifest_path), confounder_column="scanner_vendor")
-    eval_manifest = bm._prepare_eval_manifest(
-        manifest_df=manifest,
-        dataset_name=str(manifest_path.stem),
-        evaluation_design="dataset_wide",
+def test_benchmark_evaluates_models_present_only_as_npy(bench_env) -> None:
+    # Neither name is in the tile model registry; they exist only as embedded matrices.
+    registry = _build_model_registry()
+    assert "PRISM" not in registry
+    assert "TITAN" not in registry
+
+    manifest = _toy_manifest()
+    tileset = manifest.copy()
+    bench_env.write_tileset(
+        "unknown-tiles",
+        tileset,
+        {"PRISM": _features(), "TITAN": _features()},
     )
-    embedding_manifest, _ = bm.build_embedding_source_manifest(eval_manifest)
-    dataset_dir = output_dir / manifest_path.stem
-    embeddings_dir = dataset_dir / "embeddings"
-    embeddings_dir.mkdir(parents=True, exist_ok=True)
-    embedding_manifest_path = dataset_dir / "embedding_source_manifest.csv"
-    embedding_manifest.to_csv(embedding_manifest_path, index=False)
-    output_path = bm.ee._output_path_in_dir(manifest_path, embeddings_dir, model)
-    np.save(output_path, values)
-    output_path.with_suffix(".npy.json").write_text(
-        json.dumps(
-            {
-                "manifest": str(embedding_manifest_path),
-                "manifest_fingerprint": bm.manifest_fingerprint(embedding_manifest),
-                "model_id": model,
-                "extract": "precomputed",
-                "mixed_precision": False,
-                "n_samples": int(values.shape[0]),
-                "embedding_dim": int(values.shape[1]),
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    bench_env.register(
+        "toy",
+        tileset="unknown-tiles",
+        manifest=manifest,
+        design="dataset_wide",
+        k_max=3,
+        confounder_column="scanner_vendor",
     )
 
-
-def test_benchmark_accepts_unknown_models_when_precomputed_cache_exists(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    output_dir = tmp_path / "out"
-    _toy_manifest().to_csv(manifest_path, index=False)
-
-    _write_precomputed_cache(
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        model="PRISM",
-        values=_features(),
-    )
-    _write_precomputed_cache(
-        manifest_path=manifest_path,
-        output_dir=output_dir,
-        model="TITAN",
-        values=_features(),
+    assert (
+        bench_env.run("toy", "k-star", "--models", "PRISM,TITAN", "--progress", "off")
+        == 0
     )
 
-    def fake_registry() -> dict:
-        return {"UNI": object()}
-
-    def fail_embed_manifest(*args, **kwargs):
-        raise AssertionError("benchmark should not try to extract cached unknown models")
-
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fail_embed_manifest)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            "PRISM,TITAN",
-            "--output-dir",
-            str(output_dir),
-            "--confounder-column",
-            "scanner_vendor",
-            "--evaluation-design",
-            "dataset_wide",
-            "--k-max",
-            "3",
-            "--progress",
-            "off",
-        ],
-    )
-
-    assert bm.main() == 0
-
-    metrics_df = pd.read_csv(output_dir / manifest_path.stem / "results" / "metrics.csv")
+    metrics_df = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
     assert metrics_df["model"].tolist() == ["PRISM", "TITAN"]
+
+
+def test_benchmark_errors_when_requested_model_has_no_embedding(bench_env) -> None:
+    manifest = _toy_manifest()
+    tileset = manifest.copy()
+    bench_env.write_tileset("unknown-tiles", tileset, {"PRISM": _features()})
+    bench_env.register(
+        "toy",
+        tileset="unknown-tiles",
+        manifest=manifest,
+        design="dataset_wide",
+        k_max=3,
+        confounder_column="scanner_vendor",
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        bench_env.run("toy", "k-star", "--models", "PRISM,UNI", "--progress", "off")
+    # The missing model must be named so the caller knows what to embed first.
+    assert "UNI" in str(excinfo.value)
+
+
+def test_benchmark_errors_when_tileset_has_no_embeddings(bench_env) -> None:
+    manifest = _toy_manifest()
+    tileset = manifest.copy()
+    # Write the tileset manifest but no ``.npy`` matrices at all.
+    bench_env.write_tileset("empty-tiles", tileset, {})
+    bench_env.register(
+        "toy",
+        tileset="empty-tiles",
+        manifest=manifest,
+        design="dataset_wide",
+        k_max=3,
+        confounder_column="scanner_vendor",
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        bench_env.run("toy", "k-star", "--progress", "off")
+    assert "empty-tiles" in str(excinfo.value)
+    assert "extract_embeddings.py" in str(excinfo.value)

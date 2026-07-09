@@ -44,16 +44,23 @@ def load_meta(df: pd.DataFrame, *, compact: bool = False):
     return labels, conf, slide
 
 
-def load_embedding(path, dtype=np.float64, *, normalize: bool = True) -> np.ndarray:
-    """Load a model embedding matrix, optionally L2-normalising rows.
+def prepare_embedding(X, dtype=np.float64, *, normalize: bool = True) -> np.ndarray:
+    """Cast (and optionally L2-normalise) an in-memory embedding matrix.
 
     ``dtype`` (float32 vs float64) is load-bearing -- it changes the downstream cosine
-    geometry -- so it stays explicit at the call site.
+    geometry -- so it stays explicit at the call site. Use this on the row-selected
+    matrix returned by ``views.BenchmarkView.features`` (which yields the raw stored
+    rows) to reproduce what ``load_embedding`` did for a whole-file matrix.
     """
-    X = np.load(path).astype(dtype)
+    X = np.asarray(X).astype(dtype)
     if normalize:
         X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
     return X
+
+
+def load_embedding(path, dtype=np.float64, *, normalize: bool = True) -> np.ndarray:
+    """Load a model embedding matrix from disk, optionally L2-normalising rows."""
+    return prepare_embedding(np.load(path), dtype, normalize=normalize)
 
 
 def list_models(emb_dir: Path) -> list[str]:

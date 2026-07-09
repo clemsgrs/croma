@@ -56,89 +56,59 @@ def _toy_features(model_name: str = "M1") -> np.ndarray:
     return base
 
 
-def _install_fake_registry_and_embed(monkeypatch, models: list[str]) -> None:
-    def fake_registry() -> dict:
-        return {name: object() for name in models}
-
-    def fake_embed_manifest(
-        manifest_path: Path,
-        output_path: Path,
-        spec: object,
-        batch_size: int,
-        num_workers: int,
-        device_arg: str,
-        **kwargs: object,
-    ) -> tuple[Path, tuple[int, int]]:
-        model_name = output_path.stem
-        arr = _toy_features(model_name)
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, arr)
-        output_path.with_suffix(".npy.json").write_text(
-            '{"manifest":"%s","model_id":"fake","extract":"cls","mixed_precision":false}\n'
-            % str(manifest_path),
-            encoding="utf-8",
-        )
-        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
-
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
+TOY_TILESET = "toy-tiles"
 
 
-def _run_benchmark(
-    monkeypatch,
+def _tileset_manifest() -> pd.DataFrame:
+    """The tileset: one row per distinct tile, in embedding row order."""
+    manifest = _toy_manifest().drop(columns=["subset", "dataset"])
+    return manifest.drop_duplicates(subset=["sample_id", "image_path"]).reset_index(drop=True)
+
+
+def _setup(
+    bench_env,
     *,
-    manifest_path: Path,
-    output_dir: Path,
-    models: list[str] | None,
-    evaluation_design: str = "dataset_wide",
+    models: list[str],
+    name: str = "toy",
+    design: str = "dataset_wide",
     k_max: int = 3,
-    extra_args: list[str] | None = None,
-) -> int:
-    argv = [
-        "benchmark.py",
-        "--manifest",
-        str(manifest_path),
-        "--output-dir",
-        str(output_dir),
-        "--confounder-column",
-        "scanner_vendor",
-        "--evaluation-design",
-        evaluation_design,
-        "--k-max",
-        str(int(k_max)),
-        "--progress",
-        "off",
-    ]
-    if models is not None:
-        argv.extend(["--models", ",".join(models)])
-    if extra_args:
-        argv.extend(extra_args)
-    monkeypatch.setattr(sys, "argv", argv)
-    return bm.main()
-
-
-@pytest.mark.parametrize(
-    "argv_tail",
-    [
-        ["--dataset-name", "override"],
-        ["--exclude-confounder", "C1"],
-    ],
-)
-def test_benchmark_rejects_removed_flags(
-    monkeypatch, tmp_path: Path, argv_tail: list[str]
 ) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    _toy_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
+    """Embed a toy tileset and register a benchmark that views all of it."""
+    tileset = _tileset_manifest()
+    bench_env.write_tileset(
+        TOY_TILESET, tileset, {m: _toy_features(m)[: len(tileset)] for m in models}
+    )
+    bench_env.register(
+        name,
+        tileset=TOY_TILESET,
+        manifest=_toy_manifest(),
+        design=design,
+        k_max=k_max,
+        confounder_column="scanner_vendor",
+    )
 
-    argv = [
-        "benchmark.py",
-        "--manifest",
-        str(manifest_path),
-        "--output-dir",
-        str(output_dir),
-    ]
-    argv.extend(argv_tail)
+
+# Flags the compute-only rewrite dropped. Every one must make _parse_args() exit 2.
+_REMOVED_FLAGS = [
+    ["--manifest", "toy.csv"],
+    ["--output-dir", "out"],
+    ["--confounder-column", "scanner_vendor"],
+    ["--evaluation-design", "dataset_wide"],
+    ["--use-median-k"],
+    ["--force-embed"],
+    ["--device", "cpu"],
+    ["--batch-size", "8"],
+    ["--num-workers", "2"],
+    ["--dataset-name", "override"],
+    ["--exclude-confounder", "C1"],
+]
+
+
+@pytest.mark.parametrize("argv_tail", _REMOVED_FLAGS)
+def test_benchmark_rejects_removed_flags(
+    monkeypatch, argv_tail: list[str]
+) -> None:
+    argv = ["benchmark.py", "--benchmark", "toy", "--protocol", "k-star", *argv_tail]
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit) as excinfo:
         bm._parse_args()
@@ -153,77 +123,43 @@ def test_benchmark_rejects_removed_flags(
     ],
 )
 def test_benchmark_rejects_removed_k_sweep_flags(
-    monkeypatch, tmp_path: Path, argv_tail: list[str]
+    monkeypatch, argv_tail: list[str]
 ) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    _toy_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-
     argv = [
         "benchmark.py",
-        "--manifest",
-        str(manifest_path),
-        "--output-dir",
-        str(output_dir),
-        "--confounder-column",
-        "scanner_vendor",
+        "--benchmark",
+        "toy",
+        "--protocol",
+        "k-star",
         "--k-max",
         "3",
+        *argv_tail,
     ]
-    argv.extend(argv_tail)
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit) as excinfo:
         bm._parse_args()
     assert excinfo.value.code == 2
 
 
-def test_benchmark_uses_manifest_stem_for_dataset_output(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "release-ready.csv"
-    manifest = _toy_manifest()
-    manifest["dataset"] = "wrong_name"
-    manifest.to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-    _install_fake_registry_and_embed(monkeypatch, models=["M1"])
+def test_benchmark_uses_benchmark_name_for_dataset(bench_env) -> None:
+    # The manifest may carry a stale ``dataset`` column; the run must label rows with the
+    # registered benchmark name, not the manifest stem or the manifest's own column.
+    _setup(bench_env, models=["M1"], name="release-ready")
 
-    assert (
-        _run_benchmark(
-            monkeypatch,
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            models=["M1"],
-        )
-        == 0
-    )
+    assert bench_env.run("release-ready", "k-star", "--progress", "off") == 0
 
-    metrics_df = pd.read_csv(
-        output_dir / manifest_path.stem / "results" / "metrics.csv"
-    )
+    metrics_df = pd.read_csv(bench_env.results_dir("release-ready") / "metrics.csv")
     assert set(metrics_df["dataset"]) == {"release-ready"}
 
 
-def test_benchmark_dataset_wide_outputs_sample_level_rows(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    _toy_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
+def test_benchmark_dataset_wide_outputs_sample_level_rows(bench_env) -> None:
     models = ["M1", "M2"]
-    _install_fake_registry_and_embed(monkeypatch, models=models)
+    _setup(bench_env, models=models)
 
-    assert (
-        _run_benchmark(
-            monkeypatch,
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            models=None,
-        )
-        == 0
-    )
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
 
-    dataset_dir = output_dir / manifest_path.stem
-    results_dir = dataset_dir / "results"
+    results_dir = bench_env.results_dir("toy")
+    dataset_dir = results_dir.parent
     metrics_df = pd.read_csv(results_dir / "metrics.csv")
     k_sweep_df = pd.read_csv(results_dir / "k_sweep_metrics.csv")
     per_sample_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
@@ -272,27 +208,13 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(
     assert not (dataset_dir / "plots").exists()
 
 
-def test_benchmark_paired_outputs_occurrence_level_rows(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
+def test_benchmark_paired_outputs_occurrence_level_rows(bench_env) -> None:
     manifest = _toy_manifest()
-    manifest.to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-    _install_fake_registry_and_embed(monkeypatch, models=["M1"])
+    _setup(bench_env, models=["M1"], design="paired_2x2")
 
-    assert (
-        _run_benchmark(
-            monkeypatch,
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            models=["M1"],
-            evaluation_design="paired_2x2",
-        )
-        == 0
-    )
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
 
-    results_dir = output_dir / manifest_path.stem / "results"
+    results_dir = bench_env.results_dir("toy")
     metrics_df = pd.read_csv(results_dir / "metrics.csv")
     per_sample_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
 
@@ -305,13 +227,8 @@ def test_benchmark_paired_outputs_occurrence_level_rows(
     assert int((per_sample_df["sample_id"] == "s0").sum()) == 2
 
 
-def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
+def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> None:
     manifest = _toy_manifest()
-    manifest.to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
     model = "M1"
 
     class _FakeRobustnessResult:
@@ -416,32 +333,27 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
             2: _FakeCRoMaResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
         }
 
-    _install_fake_registry_and_embed(monkeypatch, models=[model])
-    monkeypatch.setattr(
-        bm.RI,
+    _setup(bench_env, models=[model])
+    import benchmark as bm_mod
+
+    bench_env._monkeypatch.setattr(
+        bm_mod.RI,
         "_compute_artifacts_from_prepared_dataset_wide",
         fake_ri_compute_artifacts,
     )
-    monkeypatch.setattr(
-        bm.MaRI,
+    bench_env._monkeypatch.setattr(
+        bm_mod.MaRI,
         "_compute_artifacts_from_prepared_dataset_wide",
         fake_mari_compute_artifacts,
     )
-    monkeypatch.setattr(bm.CRoMa, "compute", fake_croma_compute)
+    bench_env._monkeypatch.setattr(bm_mod.CRoMa, "compute", fake_croma_compute)
 
     assert (
-        _run_benchmark(
-            monkeypatch,
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            models=[model],
-            extra_args=["--croma-m-max", "2"],
-        )
-        == 0
+        bench_env.run("toy", "k-star", "--croma-m-max", "2", "--progress", "off") == 0
     )
 
     per_sample_df = pd.read_csv(
-        output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv"
+        bench_env.results_dir("toy") / "per_sample_metrics.csv"
     )
     assert len(per_sample_df) == len(manifest)
     assert per_sample_df["sample_index"].tolist() == list(range(len(manifest)))
@@ -473,61 +385,19 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(
     assert np.isnan(per_sample_df.loc[5, "croma_m2"])
 
 
-def test_benchmark_k_max_uses_full_range(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    _toy_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
+def test_benchmark_k_max_uses_full_range(bench_env) -> None:
     models = ["M1", "M2"]
-    _install_fake_registry_and_embed(monkeypatch, models=models)
+    _setup(bench_env, models=models, k_max=4)
 
-    assert (
-        _run_benchmark(
-            monkeypatch,
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            models=models,
-            k_max=4,
-        )
-        == 0
-    )
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
 
-    df = pd.read_csv(
-        output_dir / manifest_path.stem / "results" / "k_sweep_metrics.csv"
-    )
+    df = pd.read_csv(bench_env.results_dir("toy") / "k_sweep_metrics.csv")
     assert set(df["model"]) == set(models)
     assert set(df["k"]) == {1, 2, 3, 4}
     assert set(df["k_max"]) == {4}
 
 
-def test_benchmark_can_select_different_confounder_k(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    _toy_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-
-    class _CurveResult:
-        def __init__(self, k: int) -> None:
-            self.k = int(k)
-            self.value = 0.5
-            self.std = 0.0
-            self.n_pairs = 1
-            self.sample_values = np.asarray([0.2, 0.6, 0.8], dtype=float)
-            self.sample_values_aligned = np.asarray(
-                [0.2, np.nan, 0.6, 0.8, np.nan, np.nan, np.nan, np.nan], dtype=float
-            )
-            self.sample_undefined_types = np.asarray(
-                [0, 3, 0, 0, 3, 3, 3, 3], dtype=int
-            )
-            self.undefined_frac = 0.0
-            self.ss_dominated_undefined_frac = 0.0
-            self.oo_dominated_undefined_frac = 0.0
-            self.mixed_undefined_frac = 0.0
-            self.evaluation_design = "dataset_wide"
-            self.evaluation_unit = "sample"
-
+def test_benchmark_can_select_different_confounder_k(bench_env) -> None:
     def fake_knn_balanced_accuracy_by_k(
         *,
         features: np.ndarray,
@@ -536,52 +406,27 @@ def test_benchmark_can_select_different_confounder_k(
         k_values: list[int],
         warn_context: str,
     ) -> dict[int, float]:
+        # The confounder (scanner vendor) alternates V1/V2 -> factorized [0,1,0,1,...];
+        # its balanced accuracy peaks at k=3. The biological label is [0,0,1,1,...] and
+        # peaks at k=1. This decouples the two selected-k values.
         if np.array_equal(labels, np.array([0, 1, 0, 1, 0, 1, 0, 1], dtype=int)):
             return {
                 int(k): v for k, v in zip(k_values, [0.60, 0.75, 0.92], strict=False)
             }
         return {int(k): v for k, v in zip(k_values, [0.90, 0.70, 0.68], strict=False)}
 
-    def fake_compute_artifacts(
-        *,
-        features: np.ndarray,
-        manifest: pd.DataFrame,
-        confounder_column: str,
-        k_values: list[int],
-        evaluation_design: str,
-        selected_k: int,
-        include_selected_result: bool,
-        warn_selected_result: bool,
-        tau: float | None = None,
-        prune_ss_oo: bool = False,
-        summarize_by_mean: bool = False,
-    ) -> SimpleNamespace:
-        del include_selected_result, warn_selected_result
-        return SimpleNamespace(
-            curve={int(k): 0.5 for k in k_values},
-            result=_CurveResult(k=int(selected_k)),
-        )
+    _setup(bench_env, models=["M1"])
+    import benchmark as bm_mod
 
-    _install_fake_registry_and_embed(monkeypatch, models=["M1"])
-    monkeypatch.setattr(
-        bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k
-    )
-    monkeypatch.setattr(bm.RI, "_compute_artifacts", fake_compute_artifacts)
-    monkeypatch.setattr(bm.MaRI, "_compute_artifacts", fake_compute_artifacts)
-
-    assert (
-        _run_benchmark(
-            monkeypatch,
-            manifest_path=manifest_path,
-            output_dir=output_dir,
-            models=["M1"],
-        )
-        == 0
+    bench_env._monkeypatch.setattr(
+        bm_mod, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k
     )
 
-    dataset_dir = output_dir / manifest_path.stem
-    metrics_df = pd.read_csv(dataset_dir / "results" / "metrics.csv")
-    k_sweep_df = pd.read_csv(dataset_dir / "results" / "k_sweep_metrics.csv")
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    results_dir = bench_env.results_dir("toy")
+    metrics_df = pd.read_csv(results_dir / "metrics.csv")
+    k_sweep_df = pd.read_csv(results_dir / "k_sweep_metrics.csv")
 
     assert int(metrics_df.loc[0, "k"]) == 1
     assert int(metrics_df.loc[0, "selected_k_confounder"]) == 3

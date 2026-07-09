@@ -14,7 +14,7 @@ sample distributions) are gated on the flags benchmark.py records in
 
 Usage:
     python scripts/bench/render.py <run-dir>
-    # e.g. python scripts/bench/render.py output/pathorob-camelyon-faithful
+    # e.g. python scripts/bench/render.py output/metrics/median-k/camelyon
 """
 
 import argparse
@@ -155,8 +155,8 @@ def render_run(
 ) -> list[Path]:
     """Render the figure set for a completed benchmark run directory.
 
-    ``run_dir`` is a benchmark ``dataset_dir`` (``<output-dir>/<manifest-stem>``): it
-    holds ``results/metrics.json`` and the sweep JSONs. Figures land in ``run_dir/plots``
+    ``run_dir`` is a benchmark run directory (``output/metrics/<protocol>/<benchmark>``):
+    it holds ``results/metrics.json`` and the sweep JSONs. Figures land in ``run_dir/plots``
     unless ``plots_dir`` is given. When the render flags are not passed explicitly they are
     read from ``results/render_manifest.json``.
     """
@@ -199,7 +199,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "run_dir",
         type=Path,
-        help="Benchmark run directory (<output-dir>/<manifest-stem>).",
+        help="Benchmark run directory (output/metrics/<protocol>/<benchmark>).",
     )
     return parser.parse_args(argv)
 

@@ -29,6 +29,7 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 sys.path.insert(0, str(REPO / "scripts" / "bench"))
 
+import layout  # noqa: E402
 from croma.alignment import build_embedding_source_manifest  # noqa: E402
 from croma.metrics.pairs import load_manifest  # noqa: E402
 from input_fingerprint import manifest_fingerprint  # noqa: E402
@@ -37,7 +38,8 @@ from benchmark import _prepare_eval_manifest, _build_aligned_manifest  # noqa: E
 
 CONFOUNDER = "medical_center"
 FULL_CSV = REPO / "data/prostate-shift-binary.csv"  # 8,000 rows, the embedded order
-FULL_EMB_DIR = REPO / "output/prostate-shift-binary/embeddings"
+# The full 8,000-row prostate embeddings now live as the `prostate-shift` tileset.
+FULL_EMB_DIR = layout.embeddings_dir("prostate-shift")
 
 
 def _parse_args() -> argparse.Namespace:
@@ -112,7 +114,7 @@ def main() -> int:
                     "model_id": model,
                     "extract": "precomputed",
                     "mixed_precision": False,
-                    "source": "bridge_prostate_cache (sliced from output/prostate-shift-binary)",
+                    "source": "bridge_prostate_cache (sliced from tileset prostate-shift)",
                 },
                 indent=2,
             )

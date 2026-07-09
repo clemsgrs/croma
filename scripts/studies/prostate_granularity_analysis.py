@@ -4,9 +4,9 @@ Reads three KI+RUMC runs on a shared patch pool and answers: does measuring robu
 at finer biological granularity (4-class Gleason) change what we conclude versus the
 coarse benign-vs-tumour binary?
 
-  natural-binary   output/prostate-shift-binary-kirumc            (dataset_wide, 1,850/cell)
-  gradebal-binary  output/prostate-shift-gradebal-binary-kirumc-paired (1 pair, 1,440/cell)
-  4-class          output/prostate-shift-4class-kirumc-paired      (6 grade-pairs, 480/cell)
+  natural-binary   output/metrics/k-star/prostate            (dataset_wide, 1,850/cell)
+  gradebal-binary  output/metrics/k-star/prostate-gradebal   (1 pair, 1,440/cell)
+  4-class          output/metrics/k-star/prostate-4class      (6 grade-pairs, 480/cell)
 
 Outputs (printed + CSV under the 4-class results dir):
   1. per-model CRoMa / RI / MaRI / support across the three settings;
@@ -28,9 +28,9 @@ from scipy.stats import spearmanr
 
 REPO = Path(__file__).resolve().parents[2]
 SETTINGS = {
-    "natbin": "output/prostate-shift-binary-kirumc",
-    "gradebal": "output/prostate-shift-gradebal-binary-kirumc-paired",
-    "fourclass": "output/prostate-shift-4class-kirumc-paired",
+    "natbin": "output/metrics/k-star/prostate",
+    "gradebal": "output/metrics/k-star/prostate-gradebal",
+    "fourclass": "output/metrics/k-star/prostate-4class",
 }
 OUT_DIR = REPO / SETTINGS["fourclass"] / "results"
 PAIR_LABEL = {
