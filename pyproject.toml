@@ -68,9 +68,20 @@ dev = [
   "matplotlib>=3.8",
   "scipy>=1.11",
 ]
+encoders = [
+  "musk @ git+https://github.com/lilab-stanford/MUSK.git",
+  "conch @ git+https://github.com/Mahmoodlab/CONCH.git",
+  "trident @ git+https://github.com/mahmoodlab/TRIDENT.git",
+  "gigapath @ git+https://github.com/prov-gigapath/prov-gigapath.git",
+]
 
 [project.scripts]
 croma = "croma.cli:main"
+
+[tool.hatch.metadata]
+# The optional `encoders` extra pins encoder sources by git URL (PEP 508 direct
+# references); hatchling rejects those during metadata generation unless this is set.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/croma"]

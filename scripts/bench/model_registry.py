@@ -3,7 +3,7 @@ import dataclasses
 
 @dataclasses.dataclass
 class ModelSpec:
-    backend: str  # "timm", "hf_auto", "conch_v1", "conch_v1_5", or "midnight"
+    backend: str  # "timm", "hf_auto", "conch_v1", "conch_v1_5", "midnight", "gpfm", "musk", or "genbio"
     model_id: str
     extract: str = "cls"
     timm_kwargs: dict = dataclasses.field(default_factory=dict)
@@ -132,5 +132,33 @@ def _build_model_registry():
             backend="hf_auto",
             model_id="histai/hibou-b",
             extract="cls",
+        ),
+        "mSTAR": ModelSpec(
+            backend="timm",
+            model_id="hf-hub:Wangyh/mSTAR",
+            extract="cls",
+            timm_kwargs={"init_values": 1e-5, "dynamic_img_size": True},
+        ),
+        "DINOv2-B": ModelSpec(
+            backend="timm",
+            model_id="vit_base_patch14_dinov2.lvd142m",
+            extract="cls",
+            timm_kwargs={"dynamic_img_size": True},
+        ),
+        "GPFM": ModelSpec(
+            backend="gpfm",
+            model_id="majiabo/GPFM",
+            extract="cls",
+        ),
+        "MUSK": ModelSpec(
+            backend="musk",
+            model_id="hf_hub:xiangjx/musk",
+            extract="ms_aug",
+            mixed_precision=True,
+        ),
+        "GenBio-PathFM": ModelSpec(
+            backend="genbio",
+            model_id="genbio-ai/genbio-pathfm",
+            extract="raw",
         ),
     }
