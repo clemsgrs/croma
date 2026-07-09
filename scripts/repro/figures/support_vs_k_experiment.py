@@ -29,20 +29,22 @@ import pandas as pd
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
-from _neighbor_analysis import REPO, list_models, load_embedding, load_meta  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+from _neighbor_analysis import REPO, load_meta, prepare_embedding  # noqa: E402
+import views  # noqa: E402
 
 from croma import RI
 from croma.metrics.neighbors import _prepare_neighbors
 
-ROOT = REPO / "output/faithful/pathorob-camelyon-faithful"
-EMB = ROOT / "embeddings"
-MANIFEST = ROOT / "embedding_source_manifest.csv"
-METRICS = ROOT / "results" / "metrics.csv"
+PROTOCOL = "k-star"
+view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
+METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
+STUDIES = view.studies_dir(PROTOCOL)
 FIGDIR = REPO / "paper/figures/results/pathorob-camelyon-faithful/pdf"
 
 K_GRID = list(range(1, 101))  # spans every model's k* (faithful k* range 5..61)
 
-df = pd.read_csv(MANIFEST)
+df = view.eval_manifest
 labels, centers, slide = load_meta(df)
 n = len(df)
 
@@ -50,13 +52,13 @@ kstar = (
     pd.read_csv(METRICS).set_index("model")["k"].astype(int).to_dict()
 )  # per-model k* selected by the benchmark
 
-models = list_models(EMB)
+models = view.models
 print(f"{n} samples, {len(models)} models\n")
 
 kmax = max(K_GRID)
 curves: dict[str, np.ndarray] = {}
 for model in models:
-    X = load_embedding(EMB / f"{model}.npy")
+    X = prepare_embedding(view.features(model))
     nidx, ndist, vc = _prepare_neighbors(X, slide, kmax)
     scored = RI._score_all_k_from_neighbors(labels, centers, nidx, ndist, vc, K_GRID)
     # scored[k] = (pooled, sample_scores, informative_mask, undefined_type, so, os)
@@ -86,9 +88,10 @@ for model in models:
     }
 
 summary = pd.DataFrame(rows)
-out_csv = ROOT / "support_vs_k_summary.csv"
+STUDIES.mkdir(parents=True, exist_ok=True)
+out_csv = STUDIES / "support_vs_k_summary.csv"
 summary.to_csv(out_csv, index=False)
-json.dump(summary_json, open(ROOT / "support_vs_k_summary.json", "w"), indent=1)
+json.dump(summary_json, open(STUDIES / "support_vs_k_summary.json", "w"), indent=1)
 print(f"wrote {out_csv}")
 
 # quick console view: defined fraction at k* vs at k=50 (the entanglement gap)

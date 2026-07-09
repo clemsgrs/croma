@@ -30,16 +30,21 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _neighbor_analysis import REPO, list_models, load_embedding, load_meta
+import sys
+
+from _neighbor_analysis import REPO, load_meta, prepare_embedding
+
+sys.path.insert(0, str(REPO / "scripts" / "bench"))
+import views  # noqa: E402
 
 from croma.metrics.neighbors import _prepare_neighbors
 
-ROOT = REPO / "output/faithful/pathorob-camelyon-faithful"
-EMB = ROOT / "embeddings"
-MANIFEST = ROOT / "embedding_source_manifest.csv"
-METRICS = ROOT / "results" / "metrics.csv"
+PROTOCOL = "k-star"
+view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
+METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
+STUDIES = view.studies_dir(PROTOCOL)
 
-df = pd.read_csv(MANIFEST)
+df = view.eval_manifest
 labels, centers, slide = load_meta(df)
 n = len(df)
 
@@ -48,12 +53,12 @@ kstar = mdf["k"].astype(int).to_dict()
 ri_pooled = mdf["ri"].astype(float).to_dict()
 mari_pooled = mdf["mari"].astype(float).to_dict()
 
-models = list_models(EMB)
+models = view.models
 print(f"{n} samples, {len(models)} models\n")
 
 rows = []
 for model in models:
-    X = load_embedding(EMB / f"{model}.npy")
+    X = prepare_embedding(view.features(model))
     k = int(kstar[model])
     nidx, ndist, vc = _prepare_neighbors(X, slide, k)
     so = np.zeros(n, int)
@@ -110,7 +115,8 @@ print(
     f"{gaps.max():+.3f} ({top_pos['model']})]"
 )
 
-out_csv = ROOT / "contested_fraction_summary.csv"
+STUDIES.mkdir(parents=True, exist_ok=True)
+out_csv = STUDIES / "contested_fraction_summary.csv"
 summary.to_csv(out_csv, index=False)
 json.dump(
     {
@@ -121,7 +127,7 @@ json.dump(
         "pooled_gap_min": {"model": str(top_neg["model"]), "gap": float(gaps.min())},
         "pooled_gap_max": {"model": str(top_pos["model"]), "gap": float(gaps.max())},
     },
-    open(ROOT / "contested_fraction_summary.json", "w"),
+    open(STUDIES / "contested_fraction_summary.json", "w"),
     indent=1,
 )
 print(f"\nwrote {out_csv}")

@@ -11,8 +11,8 @@ import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
 
-ROOT = Path("output/faithful/pathorob-camelyon-faithful")
-rank = pd.read_csv(ROOT / "typed_neighbor_rank_summary.csv").set_index("model")
+ROOT = Path("output/metrics/k-star/pathorob-camelyon")
+rank = pd.read_csv(ROOT / "studies" / "typed_neighbor_rank_summary.csv").set_index("model")
 croma = pd.read_csv(ROOT / "results" / "metrics.csv").set_index("model")["croma"]
 
 df = rank.join(croma).sort_values("croma", ascending=False)

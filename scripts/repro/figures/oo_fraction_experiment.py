@@ -27,21 +27,23 @@ import pandas as pd
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
-from _neighbor_analysis import list_models, load_embedding, load_meta  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+from _neighbor_analysis import load_meta, prepare_embedding  # noqa: E402
+import views  # noqa: E402
 
-ROOT = Path("output/faithful/pathorob-camelyon-faithful")
-EMB = ROOT / "embeddings"
-MANIFEST = ROOT / "embedding_source_manifest.csv"
+PROTOCOL = "k-star"
+view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
+STUDIES = view.studies_dir(PROTOCOL)
 FIGDIR = Path("paper/figures/results/pathorob-camelyon-faithful/pdf")
 
 K_GRID = [3, 5, 10, 20, 30, 50, 75, 100, 150, 200]
 COL_CAP = 400  # leading sorted columns scanned to collect up to max(K_GRID) valid ones
 
-df = pd.read_csv(MANIFEST)
+df = view.eval_manifest
 labels, conf, slide = load_meta(df, compact=True)
 n = len(df)
 
-models = list_models(EMB)
+models = view.models
 print(f"{n} samples, {len(models)} models\n")
 
 self_idx = np.arange(n)
@@ -49,7 +51,7 @@ self_idx = np.arange(n)
 pooled = {t: {k: [] for k in K_GRID} for t in ("SS", "SO", "OS", "OO")}
 
 for model in models:
-    X = load_embedding(EMB / f"{model}.npy", np.float32)
+    X = prepare_embedding(view.features(model), np.float32)
     D = 1.0 - X @ X.T
     order = np.argsort(D, axis=1, kind="stable")[:, :COL_CAP]  # (n, COL_CAP)
 
@@ -105,7 +107,8 @@ oo_max_q90 = float(summary["OO_q90"].max())
 print(f"\nOO fraction: max mean over k = {oo_max_mean:.3f}, max q90 over k = {oo_max_q90:.3f}")
 print(f"SS fraction: min mean over k = {float(summary['SS_mean'].min()):.3f}")
 
-out_csv = ROOT / "oo_fraction_summary.csv"
+STUDIES.mkdir(parents=True, exist_ok=True)
+out_csv = STUDIES / "oo_fraction_summary.csv"
 summary.to_csv(out_csv, index=False)
 json.dump(
     {
@@ -115,7 +118,7 @@ json.dump(
         "oo_max_q90": oo_max_q90,
         "ss_min_mean": float(summary["SS_mean"].min()),
     },
-    open(ROOT / "oo_fraction_summary.json", "w"),
+    open(STUDIES / "oo_fraction_summary.json", "w"),
     indent=1,
 )
 print(f"wrote {out_csv}")

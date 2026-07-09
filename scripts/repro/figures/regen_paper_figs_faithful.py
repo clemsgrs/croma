@@ -28,7 +28,7 @@ sys.path.insert(0, str(ROOT / "scripts" / "bench"))
 
 import render  # noqa: E402
 
-RUN_DIR = ROOT / "output/faithful/pathorob-camelyon-faithful"
+RUN_DIR = ROOT / "output/metrics/k-star/pathorob-camelyon"
 PAPER = ROOT / "paper/figures/results/pathorob-camelyon-faithful"
 TMP = RUN_DIR / "results/plots_faithful_paper"
 

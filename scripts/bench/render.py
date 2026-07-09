@@ -8,13 +8,11 @@ run directory it loads the written artifacts and emits the full figure set into
 ``<run-dir>/plots/{png,pdf}/`` (each plot function writes both a PNG and a PDF).
 
 The figure sequence here is the exact sequence that used to be inlined at the end of
-benchmark.py's ``main``; the two conditional groups (cumulative-mean k-sweeps and RI/MaRI
-sample distributions) are gated on the flags benchmark.py records in
-``results/render_manifest.json``.
+benchmark.py's ``main``.
 
 Usage:
     python scripts/bench/render.py <run-dir>
-    # e.g. python scripts/bench/render.py output/pathorob-camelyon-faithful
+    # e.g. python scripts/bench/render.py output/metrics/median-k/pathorob-camelyon
 """
 
 import argparse
@@ -40,29 +38,12 @@ def _load_rows(path: Path) -> list[dict]:
     return json.loads(text)
 
 
-def _load_render_flags(results_dir: Path) -> dict[str, bool]:
-    """Read the render flags benchmark.py persisted; default to the base figure set.
-
-    Runs produced before render_manifest.json existed simply render the unconditional
-    figure set (both flags default False), matching a plain ``benchmark.py`` invocation.
-    """
-    manifest_path = results_dir / "render_manifest.json"
-    flags = {"summarize_by_mean": False, "prune_ss_oo": False}
-    if manifest_path.exists():
-        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-        for key in flags:
-            flags[key] = bool(payload.get(key, flags[key]))
-    return flags
-
-
 def render_figure_set(
     *,
     rows: list[dict],
     k_sweep_rows: list[dict],
     croma_m_sweep_rows: list[dict],
     plots_dir: Path,
-    summarize_by_mean: bool = False,
-    prune_ss_oo: bool = False,
 ) -> list[Path]:
     """Emit the full benchmark figure set into ``plots_dir``.
 
@@ -90,17 +71,6 @@ def render_figure_set(
     )
     _render(plotting.plot_ri_k_sweep, rows=k_sweep_rows, out_name="ri_k_sweep.png")
     _render(plotting.plot_mari_k_sweep, rows=k_sweep_rows, out_name="mari_k_sweep.png")
-    if summarize_by_mean:
-        _render(
-            plotting.plot_ri_cumulative_mean_k_sweep,
-            rows=k_sweep_rows,
-            out_name="ri_cumulative_mean_k_sweep.png",
-        )
-        _render(
-            plotting.plot_mari_cumulative_mean_k_sweep,
-            rows=k_sweep_rows,
-            out_name="mari_cumulative_mean_k_sweep.png",
-        )
     _render(
         plotting.plot_croma_m_sweep,
         rows=croma_m_sweep_rows,
@@ -130,19 +100,6 @@ def render_figure_set(
         rows=rows,
         out_name="croma_sample_distributions.png",
     )
-    if prune_ss_oo:
-        _render(
-            plotting.plot_ri_mari_sample_distributions,
-            rows=rows,
-            metric="ri",
-            out_name="ri_sample_distributions.png",
-        )
-        _render(
-            plotting.plot_ri_mari_sample_distributions,
-            rows=rows,
-            metric="mari",
-            out_name="mari_sample_distributions.png",
-        )
     return rendered
 
 
@@ -150,15 +107,12 @@ def render_run(
     run_dir: Path,
     *,
     plots_dir: Path | None = None,
-    summarize_by_mean: bool | None = None,
-    prune_ss_oo: bool | None = None,
 ) -> list[Path]:
     """Render the figure set for a completed benchmark run directory.
 
-    ``run_dir`` is a benchmark ``dataset_dir`` (``<output-dir>/<manifest-stem>``): it
-    holds ``results/metrics.json`` and the sweep JSONs. Figures land in ``run_dir/plots``
-    unless ``plots_dir`` is given. When the render flags are not passed explicitly they are
-    read from ``results/render_manifest.json``.
+    ``run_dir`` is a benchmark run directory (``output/metrics/<protocol>/<benchmark>``):
+    it holds ``results/metrics.json`` and the sweep JSONs. Figures land in ``run_dir/plots``
+    unless ``plots_dir`` is given.
     """
     run_dir = Path(run_dir)
     results_dir = run_dir / "results"
@@ -173,19 +127,11 @@ def render_run(
     k_sweep_rows = _load_rows(results_dir / "k_sweep_metrics.json")
     croma_m_sweep_rows = _load_rows(results_dir / "croma_m_sweep_metrics.json")
 
-    flags = _load_render_flags(results_dir)
-    if summarize_by_mean is None:
-        summarize_by_mean = flags["summarize_by_mean"]
-    if prune_ss_oo is None:
-        prune_ss_oo = flags["prune_ss_oo"]
-
     return render_figure_set(
         rows=rows,
         k_sweep_rows=k_sweep_rows,
         croma_m_sweep_rows=croma_m_sweep_rows,
         plots_dir=plots_dir,
-        summarize_by_mean=bool(summarize_by_mean),
-        prune_ss_oo=bool(prune_ss_oo),
     )
 
 
@@ -199,7 +145,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "run_dir",
         type=Path,
-        help="Benchmark run directory (<output-dir>/<manifest-stem>).",
+        help="Benchmark run directory (output/metrics/<protocol>/<benchmark>).",
     )
     return parser.parse_args(argv)
 

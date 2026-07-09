@@ -15,6 +15,7 @@ RI/MaRI are reported alongside purely as a sanity check that APD is a sensible
 yardstick — no claim that CRoMa predicts APD better than RI.
 """
 import sys
+from pathlib import Path
 
 import pandas as pd
 from scipy.stats import spearmanr, pearsonr
@@ -68,6 +69,6 @@ def main(apd_csv, out_dir):
 
 
 if __name__ == "__main__":
-    apd_csv = sys.argv[1] if len(sys.argv) > 1 else str(REPO / "output/apd/apd.csv")
-    out_dir = sys.argv[2] if len(sys.argv) > 2 else str(REPO / "output/apd")
+    apd_csv = sys.argv[1] if len(sys.argv) > 1 else str(REPO / "output/studies/apd/apd.csv")
+    out_dir = sys.argv[2] if len(sys.argv) > 2 else str(REPO / "output/studies/apd")
     main(apd_csv, out_dir)

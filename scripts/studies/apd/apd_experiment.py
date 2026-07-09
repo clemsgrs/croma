@@ -15,10 +15,10 @@ Closer to 0 = more robust. We report APD_ID and APD_OOD per (model, dataset).
 Faithfulness: the split schedule, train/val/test slicing, probe and the APD
 reduction are PathoROB's own code, imported verbatim from ../PathoROB. The only
 thing authored here is the feature loader, which sources features from croma's
-embedding cache instead of PathoROB's FeatureDataManager. croma's
-``embedding_source_manifest.csv`` is row-aligned with PathoROB's metadata CSV
-(verified for all three datasets), so the per-cell pseudo-slide chunking that
-PathoROB performs is reproduced bit-for-bit.
+embedding cache instead of PathoROB's FeatureDataManager. croma's per-tileset
+embedding matrix (``output/embeddings/<tileset>/``) is row-aligned with PathoROB's
+metadata CSV (verified for all three datasets), so the per-cell pseudo-slide chunking
+that PathoROB performs is reproduced bit-for-bit.
 """
 import os
 # Pin BLAS to one thread per process: the probe grid-search parallelises poorly
@@ -39,6 +39,8 @@ import pandas as pd
 from tqdm import trange
 
 from loaders import DATASETS, REPO, _prostate_split_map, load_data  # noqa: E402
+
+import layout  # noqa: E402  (loaders put scripts/bench on sys.path on import above)
 
 # Reused verbatim from PathoROB (numpy/sklearn only, no torch side-effects); importing
 # ``loaders`` above puts the PathoROB checkout on sys.path so these resolve.
@@ -121,7 +123,7 @@ def compute(model, dataset, iterations=20):
 
 
 def model_list(dataset):
-    return sorted(p.stem for p in (REPO / DATASETS[dataset]["src"] / "embeddings").glob("*.npy"))
+    return sorted(p.stem for p in layout.embeddings_dir(DATASETS[dataset]["src"]).glob("*.npy"))
 
 
 def _job(args):
@@ -166,7 +168,7 @@ def get_args():
     p.add_argument("--datasets", nargs="+", default=list(DATASETS), choices=list(DATASETS))
     p.add_argument("--models", nargs="+", default=None, help="default: all models in each dataset's cache")
     p.add_argument("--iterations", type=int, default=20)
-    p.add_argument("--out_dir", default="output/apd")
+    p.add_argument("--out_dir", default="output/studies/apd")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument("--jobs", type=int, default=1, help="parallel (model,dataset) processes")
     return p.parse_args()

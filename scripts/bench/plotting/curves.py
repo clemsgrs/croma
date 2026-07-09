@@ -1,9 +1,6 @@
 """Curve archetype: per-model line trajectories over a sweep parameter.
 
-Covers the cumulative-mean RI/MaRI curves (rightmost point equals the
-``--summarize-by-mean`` value) and the pooled CRoMa(m) trajectory. The named
-per-metric wrappers are kept separate for discoverability; the cumulative-mean
-pair shares the ``_draw_cumulative_mean_k_curve`` drawer.
+Covers the pooled CRoMa(m) trajectory drawn per model.
 """
 
 from pathlib import Path
@@ -19,101 +16,11 @@ from croma.plotstyle import COL_DOUBLE, REFERENCE_LINE_COLOR, model_sort_key
 
 from .base import (
     _color_for_model,
-    _group_k_rows,
     _human_friendly_integer_ticks,
-    _padded_unit_interval_limits,
-    _set_k_axis,
     _set_panel_title,
     _style_axes,
 )
 from .export import _finalize_figure, _finalize_wide_line_figure
-
-
-def _draw_cumulative_mean_k_curve(
-    ax,
-    *,
-    rows: list[dict],
-    value_key: str,
-    ylabel: str,
-    title: str,
-) -> None:
-    """Draw cumulative mean of ``value_key`` over k for each model.
-
-    At x=k the y-value is ``mean(v_1, ..., v_k)`` (ascending k order), so the
-    rightmost point equals the arithmetic mean across all evaluated k values —
-    i.e. the value reported by ``--summarize-by-mean``.
-    """
-    if not rows:
-        return
-    by_model = _group_k_rows(rows)
-    models = sorted(by_model, key=lambda m: (model_sort_key(m), m))
-    k_ticks = sorted({int(row["k"]) for row in rows})
-
-    # Compute all cumulative-mean values to set axis limits
-    all_cum_vals: list[float] = []
-    model_curves: list[tuple[str, np.ndarray, np.ndarray]] = []
-    for model in models:
-        model_rows = by_model[model]
-        ks = np.asarray([int(r["k"]) for r in model_rows], dtype=int)
-        vals = np.asarray([float(r[value_key]) for r in model_rows], dtype=float)
-        order = np.argsort(ks)
-        ks, vals = ks[order], vals[order]
-        cum_means = np.cumsum(vals) / np.arange(1, len(vals) + 1, dtype=float)
-        all_cum_vals.extend(cum_means.tolist())
-        model_curves.append((model, ks, cum_means))
-
-    _set_k_axis(ax, k_ticks)
-    ax.set_ylim(*_padded_unit_interval_limits(np.asarray(all_cum_vals, dtype=float)))
-    ax.set_ylabel(ylabel)
-    _set_panel_title(ax, title)
-
-    for model, ks, cum_means in model_curves:
-        color = _color_for_model(model)
-        ax.plot(ks, cum_means, color=color, linewidth=plotstyle.LW_SERIES, alpha=0.95, label=model)
-        # Mark the endpoint (= reported summarize_by_mean value)
-        ax.scatter(
-            [ks[-1]],
-            [cum_means[-1]],
-            s=42,
-            color=color,
-            edgecolors="white",
-            linewidths=0.7,
-            zorder=4,
-        )
-
-
-def plot_ri_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
-    """Single-panel cumulative mean RI over k.
-
-    Intended for use with ``--summarize-by-mean``: each model's rightmost point
-    is exactly the value reported as its final RI score.
-    """
-    fig, ax = plt.subplots(figsize=(COL_DOUBLE, 4.6))
-    _draw_cumulative_mean_k_curve(
-        ax,
-        rows=rows,
-        value_key="ri",
-        ylabel="Cumulative mean RI",
-        title="RI – cumulative mean over k",
-    )
-    _finalize_wide_line_figure(fig, out_path=out_path, ax=ax)
-
-
-def plot_mari_cumulative_mean_k_sweep(rows: list[dict], out_path: Path) -> None:
-    """Single-panel cumulative mean MaRI over k.
-
-    Intended for use with ``--summarize-by-mean``: each model's rightmost point
-    is exactly the value reported as its final MaRI score.
-    """
-    fig, ax = plt.subplots(figsize=(COL_DOUBLE, 4.6))
-    _draw_cumulative_mean_k_curve(
-        ax,
-        rows=rows,
-        value_key="mari",
-        ylabel="Cumulative mean MaRI",
-        title="MaRI – cumulative mean over k",
-    )
-    _finalize_wide_line_figure(fig, out_path=out_path, ax=ax)
 
 
 def plot_croma_m_sweep(rows: list[dict], out_path: Path) -> None:

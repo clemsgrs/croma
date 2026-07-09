@@ -33,17 +33,19 @@ import pandas as pd
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
-from _neighbor_analysis import list_models, load_embedding, load_meta  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+from _neighbor_analysis import load_meta, prepare_embedding  # noqa: E402
+import views  # noqa: E402
 
-ROOT = Path("output/faithful/pathorob-camelyon-faithful")
-EMB = ROOT / "embeddings"
-MANIFEST = ROOT / "embedding_source_manifest.csv"
-METRICS = ROOT / "results" / "metrics.csv"
+PROTOCOL = "k-star"
+view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
+METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
+STUDIES = view.studies_dir(PROTOCOL)
 FIGDIR = Path("paper/figures/results/pathorob-camelyon-faithful/pdf")
 ALPHA = 0.10  # bottom decile, matches reported LTM_10%
 SS_DEPTH_K = (10, 25, 50)  # fixed reference k for SS-pocket prevalence (k*-free)
 
-df = pd.read_csv(MANIFEST)
+df = view.eval_manifest
 labels, conf, slide = load_meta(df, compact=True)
 n = len(df)
 
@@ -53,7 +55,7 @@ if METRICS.exists():
     _m = pd.read_csv(METRICS)
     croma_by_model = dict(zip(_m["model"].astype(str), _m["croma"].astype(float)))
 
-models = list_models(EMB)
+models = view.models
 print(f"{n} samples, {len(models)} models\n")
 
 self_idx = np.arange(n)
@@ -65,7 +67,7 @@ pooled_pre_ss = 0  # SS neighbours strictly closer than the first typed neighbou
 pooled_pre_total = 0  # all (SS or OO) neighbours strictly closer than the first typed
 
 for model in models:
-    X = load_embedding(EMB / f"{model}.npy", np.float32)
+    X = prepare_embedding(view.features(model), np.float32)
     D = 1.0 - X @ X.T  # cosine distance, (n, n)
 
     order = np.argsort(D, axis=1, kind="stable")  # ascending; col 0 is self
@@ -181,7 +183,8 @@ print(f"  bottom-decile 'both-found' rank   median {np.percentile(tail_both,50):
 print(f"  all-samples   'both-found' rank   median {np.percentile(both_all,50):.1f}  p90 {np.percentile(both_all,90):.1f}")
 print(f"  frac of bottom-decile samples with both typed neighbours within rank 10: {np.mean(tail_both <= 10):.3f}")
 
-out = ROOT / "typed_neighbor_rank_summary.csv"
+STUDIES.mkdir(parents=True, exist_ok=True)
+out = STUDIES / "typed_neighbor_rank_summary.csv"
 summary.to_csv(out, index=False)
 json.dump(
     dict(
@@ -192,7 +195,7 @@ json.dump(
         tail_both_p90=float(np.percentile(tail_both, 90)),
         tail_frac_le10=float(np.mean(tail_both <= 10)),
     ),
-    open(ROOT / "typed_neighbor_rank_summary.json", "w"),
+    open(STUDIES / "typed_neighbor_rank_summary.json", "w"),
     indent=1,
 )
 print(f"\nwrote {out}")

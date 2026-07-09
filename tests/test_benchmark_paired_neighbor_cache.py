@@ -1,4 +1,3 @@
-import json
 import sys
 from pathlib import Path
 
@@ -53,6 +52,15 @@ def _paired_features() -> np.ndarray:
             [0.00, 1.00, 0.00, 0.00],
         ],
         dtype=float,
+    )
+
+
+def _tileset_from(manifest: pd.DataFrame) -> pd.DataFrame:
+    cols = [c for c in manifest.columns if c not in ("subset", "dataset")]
+    return (
+        manifest.loc[:, cols]
+        .drop_duplicates(subset=["sample_id", "image_path"])
+        .reset_index(drop=True)
     )
 
 
@@ -133,53 +141,22 @@ def test_paired_cached_artifacts_match_uncached_metric_outputs() -> None:
         )
 
 
-def test_benchmark_paired_prepares_neighbors_once_per_subset(
-    monkeypatch, tmp_path: Path
-) -> None:
-    manifest_path = tmp_path / "toy.csv"
-    _paired_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-
-    def fake_registry() -> dict:
-        return {"M1": object()}
-
-    def fake_embed_manifest(
-        manifest_path: Path,
-        output_path: Path,
-        spec: object,
-        batch_size: int,
-        num_workers: int,
-        device_arg: str,
-        **kwargs: object,
-    ) -> tuple[Path, tuple[int, int]]:
-        manifest_df = pd.read_csv(manifest_path, dtype=str)
-        arr = np.asarray(
-            [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.85, 0.15, 0.0, 0.0],
-                [0.15, 0.85, 0.0, 0.0],
-                [0.0, 1.0, 0.0, 0.0],
-            ],
-            dtype=float,
-        )
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, arr)
-        output_path.with_suffix(".npy.json").write_text(
-            json.dumps(
-                {
-                    "manifest": str(manifest_path),
-                    "manifest_fingerprint": bm.manifest_fingerprint(manifest_df),
-                    "model_id": "fake",
-                    "extract": "cls",
-                    "mixed_precision": False,
-                    "n_samples": int(arr.shape[0]),
-                    "embedding_dim": int(arr.shape[1]),
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+def test_benchmark_paired_prepares_neighbors_once_per_subset(bench_env) -> None:
+    manifest = _paired_manifest()
+    # The eval manifest repeats each tile across pair1/pair2, so the tileset holds one
+    # embedding per distinct tile (4), and the benchmark gathers a row-view of them.
+    tileset = _tileset_from(manifest)
+    bench_env.write_tileset(
+        "paired-tiles", tileset, {"M1": _paired_features()[: len(tileset)]}
+    )
+    bench_env.register(
+        "toy",
+        tileset="paired-tiles",
+        manifest=manifest,
+        design="paired_2x2",
+        k_max=3,
+        confounder_column="scanner_vendor",
+    )
 
     neighbor_prepare_calls = {"count": 0}
     original_prepare = nb._prepare_neighbors_with_meta
@@ -188,40 +165,14 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(
         neighbor_prepare_calls["count"] += 1
         return original_prepare(*args, **kwargs)
 
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
-    monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            "M1",
-            "--output-dir",
-            str(output_dir),
-            "--confounder-column",
-            "scanner_vendor",
-            "--evaluation-design",
-            "paired_2x2",
-            "--k-max",
-            "3",
-            "--progress",
-            "off",
-        ],
-    )
+    bench_env._monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
 
-    assert bm.main() == 0
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
     assert neighbor_prepare_calls["count"] == 2
 
-    per_sample_df = pd.read_csv(
-        output_dir / manifest_path.stem / "results" / "per_sample_metrics.csv"
-    )
-    metrics_df = pd.read_csv(
-        output_dir / manifest_path.stem / "results" / "metrics.csv"
-    )
+    results_dir = bench_env.results_dir("toy")
+    per_sample_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
+    metrics_df = pd.read_csv(results_dir / "metrics.csv")
     assert len(per_sample_df) == 8
     assert per_sample_df["occurrence_index"].tolist() == list(range(8))
     assert set(per_sample_df["subset"]) == {"pair1", "pair2"}
@@ -245,8 +196,20 @@ def _dataset_wide_manifest() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _dataset_wide_features(tileset: pd.DataFrame) -> np.ndarray:
+    base = {"A": [1.0, 0.0], "B": [0.0, 1.0]}
+    conf_offset = {"V1": 0.0, "V2": 0.25}
+    return np.asarray(
+        [
+            base[row["label"]] + [conf_offset[row["scanner_vendor"]], 0.0]
+            for _, row in tileset.iterrows()
+        ],
+        dtype=float,
+    )
+
+
 def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
-    monkeypatch, tmp_path: Path
+    bench_env,
 ) -> None:
     """RI, MaRI and the tau-scale check must reuse a single dataset-wide neighbour cache.
 
@@ -254,51 +217,19 @@ def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
     curves plus one shared RI/MaRI/tau cache -> 3 calls. Before the shared cache RI, MaRI
     and the tau check each prepared their own (5 calls); this pins the reuse.
     """
-    manifest_path = tmp_path / "toy.csv"
-    _dataset_wide_manifest().to_csv(manifest_path, index=False)
-    output_dir = tmp_path / "out"
-
-    def fake_registry() -> dict:
-        return {"M1": object()}
-
-    def fake_embed_manifest(
-        manifest_path: Path,
-        output_path: Path,
-        spec: object,
-        batch_size: int,
-        num_workers: int,
-        device_arg: str,
-        **kwargs: object,
-    ) -> tuple[Path, tuple[int, int]]:
-        manifest_df = pd.read_csv(manifest_path, dtype=str)
-        base = {"A": [1.0, 0.0], "B": [0.0, 1.0]}
-        conf_offset = {"V1": 0.0, "V2": 0.25}
-        conf_col = "confounder" if "confounder" in manifest_df.columns else "scanner_vendor"
-        arr = np.asarray(
-            [
-                base[row["label"]] + [conf_offset[row[conf_col]], 0.0]
-                for _, row in manifest_df.iterrows()
-            ],
-            dtype=float,
-        )
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(output_path, arr)
-        output_path.with_suffix(".npy.json").write_text(
-            json.dumps(
-                {
-                    "manifest": str(manifest_path),
-                    "manifest_fingerprint": bm.manifest_fingerprint(manifest_df),
-                    "model_id": "fake",
-                    "extract": "cls",
-                    "mixed_precision": False,
-                    "n_samples": int(arr.shape[0]),
-                    "embedding_dim": int(arr.shape[1]),
-                }
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-        return output_path, (int(arr.shape[0]), int(arr.shape[1]))
+    manifest = _dataset_wide_manifest()
+    tileset = _tileset_from(manifest)
+    bench_env.write_tileset(
+        "wide-tiles", tileset, {"M1": _dataset_wide_features(tileset)}
+    )
+    bench_env.register(
+        "toy",
+        tileset="wide-tiles",
+        manifest=manifest,
+        design="dataset_wide",
+        k_max=3,
+        confounder_column="scanner_vendor",
+    )
 
     neighbor_prepare_calls = {"count": 0}
     original_prepare = nb._prepare_neighbors_with_meta
@@ -307,36 +238,11 @@ def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
         neighbor_prepare_calls["count"] += 1
         return original_prepare(*args, **kwargs)
 
-    monkeypatch.setattr(bm, "_build_model_registry", fake_registry)
-    monkeypatch.setattr(bm.ee, "embed_manifest", fake_embed_manifest)
-    monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "benchmark.py",
-            "--manifest",
-            str(manifest_path),
-            "--models",
-            "M1",
-            "--output-dir",
-            str(output_dir),
-            "--confounder-column",
-            "scanner_vendor",
-            "--evaluation-design",
-            "dataset_wide",
-            "--k-max",
-            "3",
-            "--progress",
-            "off",
-        ],
-    )
+    bench_env._monkeypatch.setattr(nb, "_prepare_neighbors_with_meta", wrapped_prepare)
 
-    assert bm.main() == 0
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
     # 2 unpruned kNN curves (bio + confounder) + 1 shared RI/MaRI/tau cache.
     assert neighbor_prepare_calls["count"] == 3
 
-    metrics_df = pd.read_csv(
-        output_dir / manifest_path.stem / "results" / "metrics.csv"
-    )
+    metrics_df = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
     assert set(metrics_df["evaluation_design"]) == {"dataset_wide"}

@@ -61,30 +61,12 @@ DEFAULT_METADATA = HERE.parent / "model_metadata.csv"
 DEFAULT_OUT = REPO / "paper" / "figures" / "scale_scatter.pdf"
 
 # The three tile benchmarks whose ``croma`` column is averaged into the y-axis.
-# Each entry lists candidate roots (first existing wins), mirroring the loading in
-# ``cross_benchmark_figure.py`` while tolerating the k-star/ output-tree layout.
+# Each entry lists candidate run dirs (first existing wins), mirroring the loading in
+# ``cross_benchmark_figure.py`` on the output/metrics/<protocol>/<benchmark> layout.
 BENCHMARKS: list[tuple[str, tuple[str, ...]]] = [
-    (
-        "Camelyon",
-        (
-            "output/faithful/pathorob-camelyon-faithful",
-            "output/faithful/k-star/pathorob-camelyon-faithful",
-        ),
-    ),
-    (
-        "TCGA-4x4",
-        (
-            "output/faithful/pathorob-tcga-4x4",
-            "output/faithful/k-star/pathorob-tcga-4x4",
-        ),
-    ),
-    (
-        "Tolkach",
-        (
-            "output/faithful/pathorob-tolkach-esca-faithful",
-            "output/faithful/k-star/pathorob-tolkach-esca-faithful",
-        ),
-    ),
+    ("Camelyon", ("output/metrics/k-star/pathorob-camelyon",)),
+    ("TCGA-4x4", ("output/metrics/k-star/pathorob-tcga-4x4",)),
+    ("Tolkach", ("output/metrics/k-star/pathorob-tolkach-esca",)),
 ]
 
 # LaTeX-scale unit suffixes -> multiplier.

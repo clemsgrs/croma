@@ -53,6 +53,32 @@ cross-confounder margin metric).
   public API is the leanest surface: `RI`, `MaRI`, `CRoMa`,
   `expand_features_to_manifest`, and `__version__`.
 
+### Removed
+
+- **Dropped the `prune_ss_oo` and `summarize_by_mean` options** from `RI.compute`,
+  `MaRI.compute`, and the benchmark driver (`--prune-ss-oo`, `--summarize-by-mean`),
+  together with the code that existed only to serve them. Both were exploratory and
+  have been abandoned. Neither was ever used to produce a committed result, so **no
+  reported number changes**.
+  - `summarize_by_mean` replaced a metric's headline `value` with the mean over the
+    whole k-curve and `std` with the spread *across k*, while leaving every other
+    column in the same row (tail metrics, `median`, undefined fractions, per-sample
+    values) computed at a single `k = k_max`. The row mixed two incompatible
+    estimators under one set of column names. `value` is now always the pooled score
+    at the operating k, and `std` always the spread across pairs.
+  - `prune_ss_oo` restricted neighborhoods to informative (SO/OS) neighbors, which
+    drove `undefined_frac` to zero by construction and so destroyed the very
+    diagnostics it was meant to sidestep. The SS/OO diagnostic columns
+    (`undefined_frac`, `ss_dominated_undefined_frac`, `oo_dominated_undefined_frac`,
+    `mixed_undefined_frac`) are **unchanged** and remain fully reported.
+  - Both flags silently forced `selected_k = k_max`, overriding the requested k
+    operating point. Removing them makes the k protocol (per-model `k-star` or the
+    shared `median-k`) the sole determinant of the operating k.
+  - Consequently removed: the `results/render_manifest.json` artifact (it carried
+    only these two flags) and the four figures that only made sense under them
+    (RI/MaRI cumulative-mean k-sweeps and RI/MaRI sample-distribution plots).
+    `plot_croma_sample_distributions` is retained.
+
 ### Added
 
 - Tracked design documentation under version control: `CONTEXT.md` (glossary and

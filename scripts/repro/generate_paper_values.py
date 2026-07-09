@@ -28,23 +28,41 @@ import pandas as pd
 
 from _paper_tables import bare_num as _apd_bare, ci_bracket as _ci, num_math as _num, pct_round as _pct
 
+# Operating-point variant. The paper reports RI/MaRI/support at the shared median-of-k*
+# (the original RI paper's k-selection procedure); the per-model-k* "faithful" runs are
+# kept untouched as the swap-back backup. Flip USE_MEDIAN_K to swap the whole paper.
+# NOTE: CRoMa / LTM / tail / APD scalars are k-free and identical either way; only
+# RI/MaRI/support/bio-bacc scalars move. PandaIsup stays at k* in BOTH modes (its paired
+# median-k run needs a reconstructed subset manifest; it is the most minor supp benchmark).
+USE_MEDIAN_K = True
+
 # macro prefix (LaTeX commands take letters only -> spell digits out) -> metrics.csv
-BENCHMARKS: list[tuple[str, str]] = [
-    ("Camelyon", "output/faithful/pathorob-camelyon-faithful/results/metrics.csv"),
-    ("TcgaTwoByTwo", "output/faithful/pathorob-tcga-2x2/results/metrics.csv"),
-    ("TcgaFourByFour", "output/faithful/pathorob-tcga-4x4/results/metrics.csv"),
-    ("Tolkach", "output/faithful/pathorob-tolkach-esca-faithful/results/metrics.csv"),
-    ("Panda", "output/panda-wsi-cancer/results/metrics.csv"),
-    ("PandaIsup", "output/panda-wsi-isup-paired-2x2/results/metrics.csv"),
-    ("Prostate", "output/prostate-shift-binary-kirumc/results/metrics.csv"),
+_FAITHFUL: list[tuple[str, str]] = [
+    ("Camelyon", "output/metrics/k-star/pathorob-camelyon/results/metrics.csv"),
+    ("TcgaTwoByTwo", "output/metrics/k-star/pathorob-tcga-2x2/results/metrics.csv"),
+    ("TcgaFourByFour", "output/metrics/k-star/pathorob-tcga-4x4/results/metrics.csv"),
+    ("Tolkach", "output/metrics/k-star/pathorob-tolkach-esca/results/metrics.csv"),
+    ("Panda", "output/metrics/k-star/panda/results/metrics.csv"),
+    ("PandaIsup", "output/metrics/k-star/panda-isup/results/metrics.csv"),
+    ("Prostate", "output/metrics/k-star/prostate/results/metrics.csv"),
 ]
+_MEDIAN: list[tuple[str, str]] = [
+    ("Camelyon", "output/metrics/median-k/pathorob-camelyon/results/metrics.csv"),
+    ("TcgaTwoByTwo", "output/metrics/median-k/pathorob-tcga-2x2/results/metrics.csv"),
+    ("TcgaFourByFour", "output/metrics/median-k/pathorob-tcga-4x4/results/metrics.csv"),
+    ("Tolkach", "output/metrics/median-k/pathorob-tolkach-esca/results/metrics.csv"),
+    ("Panda", "output/metrics/median-k/panda/results/metrics.csv"),
+    ("PandaIsup", "output/metrics/k-star/panda-isup/results/metrics.csv"),  # k* (see note)
+    ("Prostate", "output/metrics/median-k/prostate/results/metrics.csv"),
+]
+BENCHMARKS: list[tuple[str, str]] = _MEDIAN if USE_MEDIAN_K else _FAITHFUL
 
 # SS-shell (local-entanglement) scalars for concern 6. Sourced from the typed-neighbour
 # -rank experiment summary, which carries per-model CRoMa, SS-shell exit depth, and the
 # fixed-k SS-pocket prevalence (fraction with no typed neighbour among the k nearest).
 SS_SHELL_SUMMARY = (
     "Camelyon",
-    "output/faithful/pathorob-camelyon-faithful/typed_neighbor_rank_summary.csv",
+    "output/metrics/k-star/pathorob-camelyon/studies/typed_neighbor_rank_summary.csv",
 )
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
@@ -53,8 +71,8 @@ SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 # (CSV) and the cross-model Spearman correlations with bootstrap CIs (JSON).
 UNCERTAINTY_SUMMARY = (
     "Camelyon",
-    "output/faithful/pathorob-camelyon-faithful/results/bootstrap_uncertainty.json",
-    "output/faithful/pathorob-camelyon-faithful/results/bootstrap_uncertainty.csv",
+    "output/metrics/k-star/pathorob-camelyon/results/bootstrap_uncertainty.json",
+    "output/metrics/k-star/pathorob-camelyon/results/bootstrap_uncertainty.csv",
 )
 
 # Downstream-validation scalars: the APD<->metric rank correlations that fill
@@ -63,7 +81,7 @@ UNCERTAINTY_SUMMARY = (
 # drift from the recomputed correlations. `headline` (the three faithful benchmarks, 48
 # pairs) is the table's "pooled" column; the all-four `pooled` scope is deliberately NOT
 # exported -- prostate's single-centre OOD must not enter a pooled APD_OOD statistic.
-APD_CORRELATION_CSV = "output/apd/apd_correlation.csv"
+APD_CORRELATION_CSV = "output/studies/apd/apd_correlation.csv"
 APD_TARGET_MACRO = {"apd_id": "Id", "apd_ood": "Ood"}
 APD_METRIC_MACRO = {"croma": "Croma", "ri": "Ri", "mari": "Mari"}
 APD_SCOPE_MACRO = {
@@ -114,6 +132,12 @@ def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[lis
     ]
     if ltm is not None:
         specs.append(("CromaLtmMax", _num(float(ltm.max()))))  # best (least-negative) tail
+
+    # Confounder-kNN balanced-accuracy range: prose cites how near-perfectly decodable the
+    # confounder is for *every* model (e.g. Camelyon "0.92--1.00"), a k-free diagnostic.
+    if "confounder_knn_bacc" in df:
+        cb = df["confounder_knn_bacc"].astype(float)
+        specs.append(("ConfBaccRange", f"{_num(float(cb.min()), decimals=2)}--{_num(float(cb.max()), decimals=2)}"))
 
     # Leader bundle: the model with the highest (least-negative) CRoMa. Lets prose cite the
     # leader's own scalars (name, CRoMa, biological k-NN accuracy, support) without drift.
