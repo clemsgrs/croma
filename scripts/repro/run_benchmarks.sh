@@ -22,6 +22,11 @@ shift
 OMP_THREADS="${OMP_NUM_THREADS:-8}"
 export PYTHONPATH="src:scripts/bench"
 
+# Where the artifacts live. layout honours CROMA_REPO / CROMA_OUTPUT_ROOT, so this script
+# can run from a worktree while reading data/ and writing output/ in the main checkout.
+# Resolving `output/` relative to the cd above would silently look inside the worktree.
+OUT_ROOT="$(python -c 'import layout; print(layout.OUTPUT_ROOT)')" || exit 1
+
 if [ "$#" -gt 0 ]; then
   BENCHMARKS=("$@")
 else
@@ -35,7 +40,7 @@ for B in "${BENCHMARKS[@]}"; do
   CUDA_VISIBLE_DEVICES="" OMP_NUM_THREADS="$OMP_THREADS" \
     python scripts/bench/benchmark.py --benchmark "$B" --protocol "$PROTOCOL"
   rc=$?
-  M="output/metrics/$PROTOCOL/$B/results/metrics.csv"
+  M="$OUT_ROOT/metrics/$PROTOCOL/$B/results/metrics.csv"
   if [ $rc -eq 0 ] && [ -f "$M" ]; then
     python -c "
 import pandas as pd
@@ -45,7 +50,7 @@ print('  OK  k (unique):', sorted(d['k'].unique()),
       '| mean support=%.1f%%' % d['support'].mean(),
       '| n_models=%d' % len(d))
 "
-    python scripts/bench/render.py "output/metrics/$PROTOCOL/$B"
+    python scripts/bench/render.py "$OUT_ROOT/metrics/$PROTOCOL/$B"
   else
     echo "  !! FAILED rc=$rc (metrics missing: $M)"
     failed+=("$B")
