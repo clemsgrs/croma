@@ -38,22 +38,22 @@ USE_MEDIAN_K = True
 
 # macro prefix (LaTeX commands take letters only -> spell digits out) -> metrics.csv
 _FAITHFUL: list[tuple[str, str]] = [
-    ("Camelyon", "output/faithful/k-star/pathorob-camelyon-faithful/results/metrics.csv"),
-    ("TcgaTwoByTwo", "output/faithful/k-star/pathorob-tcga-2x2/results/metrics.csv"),
-    ("TcgaFourByFour", "output/faithful/k-star/pathorob-tcga-4x4/results/metrics.csv"),
-    ("Tolkach", "output/faithful/k-star/pathorob-tolkach-esca-faithful/results/metrics.csv"),
-    ("Panda", "output/panda-wsi-cancer/results/metrics.csv"),
-    ("PandaIsup", "output/panda-wsi-isup-paired-2x2/results/metrics.csv"),
-    ("Prostate", "output/prostate-shift-binary-kirumc/results/metrics.csv"),
+    ("Camelyon", "output/metrics/k-star/camelyon/results/metrics.csv"),
+    ("TcgaTwoByTwo", "output/metrics/k-star/tcga-2x2/results/metrics.csv"),
+    ("TcgaFourByFour", "output/metrics/k-star/tcga-4x4/results/metrics.csv"),
+    ("Tolkach", "output/metrics/k-star/tolkach/results/metrics.csv"),
+    ("Panda", "output/metrics/k-star/panda/results/metrics.csv"),
+    ("PandaIsup", "output/metrics/k-star/panda-isup/results/metrics.csv"),
+    ("Prostate", "output/metrics/k-star/prostate/results/metrics.csv"),
 ]
 _MEDIAN: list[tuple[str, str]] = [
-    ("Camelyon", "output/faithful/median/camelyon-median/results/metrics.csv"),
-    ("TcgaTwoByTwo", "output/faithful/median/pathorob-tcga-2x2/results/metrics.csv"),
-    ("TcgaFourByFour", "output/faithful/median/tcga4x4-median/results/metrics.csv"),
-    ("Tolkach", "output/faithful/median/tolkach-median/results/metrics.csv"),
-    ("Panda", "output/faithful/median/panda-median/results/metrics.csv"),
-    ("PandaIsup", "output/panda-wsi-isup-paired-2x2/results/metrics.csv"),  # k* (see note)
-    ("Prostate", "output/faithful/median/prostate-median/results/metrics.csv"),
+    ("Camelyon", "output/metrics/median-k/camelyon/results/metrics.csv"),
+    ("TcgaTwoByTwo", "output/metrics/median-k/tcga-2x2/results/metrics.csv"),
+    ("TcgaFourByFour", "output/metrics/median-k/tcga-4x4/results/metrics.csv"),
+    ("Tolkach", "output/metrics/median-k/tolkach/results/metrics.csv"),
+    ("Panda", "output/metrics/median-k/panda/results/metrics.csv"),
+    ("PandaIsup", "output/metrics/k-star/panda-isup/results/metrics.csv"),  # k* (see note)
+    ("Prostate", "output/metrics/median-k/prostate/results/metrics.csv"),
 ]
 BENCHMARKS: list[tuple[str, str]] = _MEDIAN if USE_MEDIAN_K else _FAITHFUL
 
@@ -62,7 +62,7 @@ BENCHMARKS: list[tuple[str, str]] = _MEDIAN if USE_MEDIAN_K else _FAITHFUL
 # fixed-k SS-pocket prevalence (fraction with no typed neighbour among the k nearest).
 SS_SHELL_SUMMARY = (
     "Camelyon",
-    "output/faithful/k-star/pathorob-camelyon-faithful/typed_neighbor_rank_summary.csv",
+    "output/metrics/k-star/camelyon/studies/typed_neighbor_rank_summary.csv",
 )
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
@@ -71,8 +71,8 @@ SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 # (CSV) and the cross-model Spearman correlations with bootstrap CIs (JSON).
 UNCERTAINTY_SUMMARY = (
     "Camelyon",
-    "output/faithful/k-star/pathorob-camelyon-faithful/results/bootstrap_uncertainty.json",
-    "output/faithful/k-star/pathorob-camelyon-faithful/results/bootstrap_uncertainty.csv",
+    "output/metrics/k-star/camelyon/results/bootstrap_uncertainty.json",
+    "output/metrics/k-star/camelyon/results/bootstrap_uncertainty.csv",
 )
 
 # Downstream-validation scalars: the APD<->metric rank correlations that fill
@@ -81,7 +81,7 @@ UNCERTAINTY_SUMMARY = (
 # drift from the recomputed correlations. `headline` (the three faithful benchmarks, 48
 # pairs) is the table's "pooled" column; the all-four `pooled` scope is deliberately NOT
 # exported -- prostate's single-centre OOD must not enter a pooled APD_OOD statistic.
-APD_CORRELATION_CSV = "output/apd/apd_correlation.csv"
+APD_CORRELATION_CSV = "output/studies/apd/apd_correlation.csv"
 APD_TARGET_MACRO = {"apd_id": "Id", "apd_ood": "Ood"}
 APD_METRIC_MACRO = {"croma": "Croma", "ri": "Ri", "mari": "Mari"}
 APD_SCOPE_MACRO = {

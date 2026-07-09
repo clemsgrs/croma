@@ -28,14 +28,16 @@ import pandas as pd
 
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
-from _neighbor_analysis import REPO, list_models, load_embedding  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+from _neighbor_analysis import REPO, prepare_embedding  # noqa: E402
+import views  # noqa: E402
 
 from croma import MaRI, RI
 
-ROOT = REPO / "output/faithful/k-star/pathorob-camelyon-faithful"
-EMB = ROOT / "embeddings"
-MANIFEST = ROOT / "embedding_source_manifest.csv"
-METRICS = ROOT / "results" / "metrics.csv"
+PROTOCOL = "k-star"
+view = views.load_view("camelyon")  # row-view over the pathorob-camelyon tileset
+METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
+STUDIES = view.studies_dir(PROTOCOL)
 FIGDIR = REPO / "paper/figures/results/pathorob-camelyon-faithful/pdf"
 
 TAUS = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0]
@@ -49,18 +51,19 @@ def spearman(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(ra, rb)[0, 1])
 
 
-df = pd.read_csv(MANIFEST)
+df = view.eval_manifest
 _metrics = pd.read_csv(METRICS).set_index("model")
 kstar = _metrics["k"].astype(int).to_dict()
 tau_auto = _metrics["tau"].astype(float)  # per-model auto tau (median typed-neighbour dist)
 TAU_MIN, TAU_MED, TAU_MAX = float(tau_auto.min()), float(tau_auto.median()), float(tau_auto.max())
-models = list_models(EMB)
+models = view.models
 print(f"{len(df)} samples, {len(models)} models, taus={TAUS}\n")
 
 # The MaRI(tau) curves are deterministic from the embeddings; reuse the cached
 # summary when it matches the current taus/models so a re-render (e.g. for a style
 # refresh) skips the expensive recompute. Delete the JSON to force recomputation.
-CACHE_JSON = ROOT / "tau_sensitivity_summary.json"
+STUDIES.mkdir(parents=True, exist_ok=True)
+CACHE_JSON = STUDIES / "tau_sensitivity_summary.json"
 _cache = json.loads(CACHE_JSON.read_text()) if CACHE_JSON.exists() else None
 _cache_ok = bool(
     _cache
@@ -78,7 +81,7 @@ if _cache_ok:
     }
 else:
     for model in models:
-        X = load_embedding(EMB / f"{model}.npy", np.float64, normalize=False)
+        X = prepare_embedding(view.features(model), np.float64, normalize=False)
         k = int(kstar[model])
         ri_vals[model] = float(
             RI.compute(
@@ -139,11 +142,11 @@ json.dump(
         "spearman_mari_vs_ri": {str(t): rho_mari_vs_ri[t] for t in TAUS},
         "min_pairwise_spearman": min_pairwise_rho,
     },
-    open(ROOT / "tau_sensitivity_summary.json", "w"),
+    open(STUDIES / "tau_sensitivity_summary.json", "w"),
     indent=1,
 )
-table.to_csv(ROOT / "tau_sensitivity_summary.csv", index=False)
-print(f"\nwrote {ROOT / 'tau_sensitivity_summary.csv'}")
+table.to_csv(STUDIES / "tau_sensitivity_summary.csv", index=False)
+print(f"\nwrote {STUDIES / 'tau_sensitivity_summary.csv'}")
 
 # ---- figure: MaRI(tau) per model; flat, non-crossing lines = tau-stable ordering ----
 import matplotlib

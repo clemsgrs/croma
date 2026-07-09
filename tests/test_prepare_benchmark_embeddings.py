@@ -11,8 +11,9 @@ for _p in (ROOT / "scripts" / "bench", ROOT / "scripts" / "prep"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
-import benchmark as bm
+import layout
 import prepare_benchmark_embeddings as pbe
+from input_fingerprint import manifest_fingerprint
 
 
 def _repeated_subset_manifest() -> pd.DataFrame:
@@ -44,12 +45,9 @@ def _write_npz(path: Path, values: np.ndarray) -> None:
     np.savez(path, embedding=values)
 
 
-def test_prepare_benchmark_embeddings_writes_benchmark_cache_files(
-    tmp_path: Path,
-) -> None:
+def test_prepare_benchmark_embeddings_writes_tileset(bench_env, tmp_path: Path) -> None:
     manifest_path = tmp_path / "toy.csv"
     mapping_path = tmp_path / "mapping.csv"
-    output_dir = tmp_path / "out"
     _repeated_subset_manifest().to_csv(manifest_path, index=False)
 
     image_order = ["/tmp/s0.png", "/tmp/s1.png", "/tmp/s2.png", "/tmp/s3.png"]
@@ -83,58 +81,47 @@ def test_prepare_benchmark_embeddings_writes_benchmark_cache_files(
         manifest_path=manifest_path,
         confounder_column="scanner_vendor",
         mapping_csv=mapping_path,
-        output_dir=output_dir,
+        tileset="toy-tiles",
         models=["UNI", "Virchow2"],
         evaluation_design="paired_2x2",
     )
 
-    dataset_dir = output_dir / manifest_path.stem
-    embedding_manifest_path = dataset_dir / "embedding_source_manifest.csv"
-    embedding_manifest = pd.read_csv(embedding_manifest_path, dtype=str)
-    assert embedding_manifest["image_path"].tolist() == image_order
+    tileset_dir = layout.embeddings_dir("toy-tiles")
+    tileset_manifest = pd.read_csv(layout.tileset_manifest("toy-tiles"), dtype=str)
+    # The tileset manifest holds one row per distinct tile, in embedding row order.
+    assert tileset_manifest["image_path"].tolist() == image_order
     assert summary["embedding_manifest_rows"] == 4
     assert summary["models"] == ["UNI", "Virchow2"]
+    assert summary["tileset"] == "toy-tiles"
 
-    uni_path = dataset_dir / "embeddings" / "UNI.npy"
-    virchow_path = dataset_dir / "embeddings" / "Virchow2.npy"
+    uni_path = layout.embedding_path("toy-tiles", "UNI")
+    virchow_path = layout.embedding_path("toy-tiles", "Virchow2")
+    assert uni_path == tileset_dir / "UNI.npy"
     np.testing.assert_allclose(
         np.load(uni_path),
-        np.asarray(
-            [[1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0]],
-            dtype=np.float32,
-        ),
+        np.asarray([[1.0, 0.0], [2.0, 0.0], [3.0, 0.0], [4.0, 0.0]], dtype=np.float32),
     )
     np.testing.assert_allclose(
         np.load(virchow_path),
-        np.asarray(
-            [[0.0, 1.0], [0.0, 2.0], [0.0, 3.0], [0.0, 4.0]],
-            dtype=np.float32,
-        ),
+        np.asarray([[0.0, 1.0], [0.0, 2.0], [0.0, 3.0], [0.0, 4.0]], dtype=np.float32),
     )
 
-    manifest_fp = bm.manifest_fingerprint(embedding_manifest)
-    assert bm._embedding_cache_matches_expected(
-        uni_path,
-        expected_n_samples=4,
-        expected_manifest_fingerprint=manifest_fp,
-        expected_manifest_path=embedding_manifest_path,
-    )
-    assert bm._embedding_cache_matches_expected(
-        virchow_path,
-        expected_n_samples=4,
-        expected_manifest_fingerprint=manifest_fp,
-        expected_manifest_path=embedding_manifest_path,
-    )
-
-    uni_sidecar = json.loads(uni_path.with_suffix(".npy.json").read_text(encoding="utf-8"))
-    assert uni_sidecar["extract"] == "precomputed"
-    assert uni_sidecar["model_id"] == "UNI"
+    # The sidecar pins each matrix to the tileset manifest's row-order contract.
+    manifest_fp = manifest_fingerprint(tileset_manifest)
+    for path, model in ((uni_path, "UNI"), (virchow_path, "Virchow2")):
+        sidecar = json.loads(path.with_suffix(".npy.json").read_text(encoding="utf-8"))
+        assert sidecar["extract"] == "precomputed"
+        assert sidecar["model_id"] == model
+        assert sidecar["n_samples"] == 4
+        assert sidecar["manifest_fingerprint"] == manifest_fp
+        assert sidecar["manifest"] == str(layout.tileset_manifest("toy-tiles"))
 
 
-def test_prepare_benchmark_embeddings_rejects_missing_rows(tmp_path: Path) -> None:
+def test_prepare_benchmark_embeddings_rejects_missing_rows(
+    bench_env, tmp_path: Path
+) -> None:
     manifest_path = tmp_path / "toy.csv"
     mapping_path = tmp_path / "mapping.csv"
-    output_dir = tmp_path / "out"
     _repeated_subset_manifest().to_csv(manifest_path, index=False)
 
     rows = [
@@ -158,14 +145,12 @@ def test_prepare_benchmark_embeddings_rejects_missing_rows(tmp_path: Path) -> No
         _write_npz(tmp_path / f"s{idx}.npz", np.asarray([[float(idx), 0.0]], dtype=np.float32))
     pd.DataFrame(rows).to_csv(mapping_path, index=False)
 
-    with pytest.raises(
-        ValueError, match="missing embeddings for model 'UNI'"
-    ):
+    with pytest.raises(ValueError, match="missing embeddings for model 'UNI'"):
         pbe.prepare_benchmark_embeddings(
             manifest_path=manifest_path,
             confounder_column="scanner_vendor",
             mapping_csv=mapping_path,
-            output_dir=output_dir,
+            tileset="toy-tiles",
             models=["UNI"],
             evaluation_design="paired_2x2",
         )

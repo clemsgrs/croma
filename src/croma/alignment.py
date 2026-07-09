@@ -84,6 +84,64 @@ def build_manifest_row_to_embedding_index(
     return np.asarray(row_to_embedding, dtype=int)
 
 
+#: What makes two rows the same tile. Everything else -- notably ``label`` -- is an
+#: attribute a *view* attaches to the tile, not part of its identity.
+TILE_IDENTITY_COLUMNS = ("sample_id", "image_path")
+
+
+def build_view_row_index(
+    view_df: pd.DataFrame,
+    tileset_df: pd.DataFrame,
+) -> np.ndarray:
+    """Map each row of a benchmark's eval manifest to its tileset embedding row.
+
+    A benchmark is a *view* over a tileset: it selects tiles (and, for paired designs,
+    may repeat one tile across subsets) and attaches its own ``label``. Identity is the
+    tile, not the row's full attribute tuple -- the same tile is ``tumor`` in the binary
+    prostate benchmark and ``gleason-3`` in the four-class one, and the same slide is
+    cancer ``1`` in PANDA-cancer and ISUP ``2`` in PANDA-ISUP.
+
+    So the lookup is keyed on ``(sample_id, image_path)`` -- the tile -- and nothing else.
+    A view may repeat a tile (one row per paired subset) and may relabel it, but it may
+    not point a known ``sample_id`` at pixels the tileset never embedded.
+    """
+    for frame, source in ((view_df, "evaluation manifest"), (tileset_df, "tileset manifest")):
+        missing = [c for c in TILE_IDENTITY_COLUMNS if c not in frame.columns]
+        if missing:
+            raise ValueError(f"{source} is missing tile-identity columns: {missing}")
+
+    tile_row: dict[tuple[str, str], int] = {}
+    paths_for_sample: dict[str, str] = {}
+    for idx, row in enumerate(
+        tileset_df.loc[:, list(TILE_IDENTITY_COLUMNS)].itertuples(index=False, name=None)
+    ):
+        key = tuple(_normalize_key_value(value) for value in row)
+        if key in tile_row:
+            raise ValueError(f"tileset manifest contains duplicate tile {key!r}")
+        tile_row[key] = idx
+        paths_for_sample.setdefault(key[0], key[1])
+
+    rows: list[int] = []
+    for row_idx, row in enumerate(
+        view_df.loc[:, list(TILE_IDENTITY_COLUMNS)].itertuples(index=False, name=None)
+    ):
+        sample_id, image_path = (_normalize_key_value(value) for value in row)
+        idx = tile_row.get((sample_id, image_path))
+        if idx is not None:
+            rows.append(int(idx))
+            continue
+        if sample_id in paths_for_sample:
+            raise ValueError(
+                f"evaluation manifest row {row_idx} (sample_id={sample_id!r}) points at "
+                f"{image_path!r} but the tileset embedded {paths_for_sample[sample_id]!r}"
+            )
+        raise ValueError(
+            f"evaluation manifest row {row_idx} (sample_id={sample_id!r}) is not in the tileset"
+        )
+
+    return np.asarray(rows, dtype=int)
+
+
 def expand_features_to_manifest(
     *,
     features: np.ndarray,

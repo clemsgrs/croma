@@ -11,10 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import extract_embeddings as ee
-from model_registry import ModelSpec, _build_model_registry, _parse_models
+import layout
+from benchmarks import get as get_benchmark
+from model_registry import _parse_models
 from input_fingerprint import embedding_fingerprint, manifest_fingerprint
-from croma.alignment import build_embedding_source_manifest
+from croma.alignment import build_embedding_source_manifest, build_view_row_index
 from croma import CRoMa, MaRI, RI
 from croma.confounders import infer_confounder_display_name
 from croma.metrics.croma import CROMA_HEADLINE_M
@@ -115,38 +116,14 @@ def _npy_matches_shape(
     return tuple(int(v) for v in values.shape) == tuple(int(v) for v in expected_shape)
 
 
-def _embedding_manifest_path(dataset_dir: Path) -> Path:
-    return dataset_dir / "embedding_source_manifest.csv"
-
-
-def _embedding_cache_matches_expected(
-    output_path: Path,
-    *,
-    expected_n_samples: int,
-    expected_manifest_fingerprint: str,
-    expected_manifest_path: Path,
-) -> bool:
+def _embedding_rows(output_path: Path) -> int:
+    """Row count of a tileset embedding matrix, or -1 if it cannot be read."""
     if not output_path.exists():
-        return False
+        return -1
     try:
-        arr = np.load(output_path, mmap_mode="r")
+        return int(np.load(output_path, mmap_mode="r").shape[0])
     except Exception:  # noqa: BLE001
-        return False
-    if int(arr.shape[0]) != int(expected_n_samples):
-        return False
-    sidecar_path = output_path.with_suffix(output_path.suffix + ".json")
-    if not sidecar_path.exists():
-        return False
-    try:
-        payload = json.loads(sidecar_path.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001
-        return False
-    if not isinstance(payload, dict):
-        return False
-    cached_manifest_fingerprint = str(payload.get("manifest_fingerprint", "")).strip()
-    if cached_manifest_fingerprint:
-        return cached_manifest_fingerprint == str(expected_manifest_fingerprint)
-    return str(payload.get("manifest", "")).strip() == str(expected_manifest_path)
+        return -1
 
 
 def _save_mari_sample_distribution(
@@ -229,35 +206,40 @@ def _save_ri_sample_distribution(
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compute-only benchmark pipeline: extract embeddings and compute RI/MaRI/CRoMa metrics. Render figures separately with scripts/bench/render.py."
+        description=(
+            "Compute-only benchmark driver: reads a tileset's embeddings and computes "
+            "RI/MaRI/CRoMa for one benchmark at one protocol. It never extracts "
+            "(see scripts/bench/extract_embeddings.py) and never plots "
+            "(see scripts/bench/render.py)."
+        )
     )
     parser.add_argument(
-        "--manifest", required=True, type=Path, help="Path to manifest CSV."
-    )
-    parser.add_argument(
-        "--confounder-column",
+        "--benchmark",
         required=True,
-        help="Manifest column to treat as the non-biological confounder.",
+        help="Registered benchmark name; see scripts/bench/benchmarks.py.",
+    )
+    parser.add_argument(
+        "--protocol",
+        required=True,
+        choices=list(layout.PROTOCOLS),
+        help=(
+            "Operating point. 'k-star': each model at its own kNN-optimal k. "
+            "'median-k': the shared median of per-model k*, as in the original RI paper."
+        ),
     )
     parser.add_argument(
         "--models",
         default="",
-        help="Comma-separated model names. If omitted, all registered models are evaluated.",
-    )
-    parser.add_argument(
-        "--output-dir", required=True, type=Path, help="Benchmark output directory."
-    )
-    parser.add_argument(
-        "--evaluation-design",
-        default="paired_2x2",
-        choices=["paired_2x2", "dataset_wide"],
-        help="Evaluation design for RI/MaRI/CRoMa.",
+        help=(
+            "Comma-separated model names. If omitted, every model embedded for the "
+            "benchmark's tileset is evaluated."
+        ),
     )
     parser.add_argument(
         "--k-max",
         type=_positive_int,
-        default=25,
-        help="Maximum k for dense benchmark sweeps; benchmark evaluates all integer k in 1..k_max (default 25).",
+        default=None,
+        help="Override the benchmark's registered k_max (dense sweep over 1..k_max).",
     )
     parser.add_argument(
         "--tau",
@@ -293,17 +275,11 @@ def _parse_args() -> argparse.Namespace:
         default=0.10,
         help="Tail percentile alpha used for CRoMa Q_alpha/LTM_alpha reporting (default 0.10).",
     )
-    parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--device", default="auto", help="auto|cpu|cuda|cuda:0")
     parser.add_argument(
         "--progress",
         choices=["auto", "on", "off"],
         default="auto",
         help="Progress display mode: auto=TTY only, on=always, off=never.",
-    )
-    parser.add_argument(
-        "--force-embed", action="store_true", help="Force re-extraction of embeddings."
     )
     parser.add_argument(
         "--recompute-metrics",
@@ -327,15 +303,6 @@ def _parse_args() -> argparse.Namespace:
             "selecting a single k via kNN biological accuracy."
         ),
     )
-    parser.add_argument(
-        "--use-median-k",
-        action="store_true",
-        help=(
-            "Use the median of per-model optimal k values as a shared k for the dataset, "
-            "matching the original RI paper's k-selection procedure. "
-            "By default each model is evaluated at its own kNN-optimal k."
-        ),
-    )
     return parser.parse_args()
 
 
@@ -344,12 +311,6 @@ def _positive_int(value: str) -> int:
     if parsed <= 0:
         raise argparse.ArgumentTypeError("value must be a positive integer")
     return int(parsed)
-
-
-def _resolve_models(raw_models: str, registry: dict[str, ModelSpec]) -> list[str]:
-    if str(raw_models).strip():
-        return _parse_models(raw_models)
-    return list(registry.keys())
 
 
 def _resolve_sweep_k_values(k_max: int) -> list[int]:
@@ -764,15 +725,32 @@ def main() -> int:
     if int(args.croma_m_max) < 1:
         raise ValueError("--croma-m-max must be >= 1")
 
-    registry = _build_model_registry()
-    models = _resolve_models(args.models, registry)
+    bench = get_benchmark(str(args.benchmark))
+    protocol = layout.validate_protocol(str(args.protocol))
+    use_median_k = protocol == "median-k"
 
-    output_dir = args.output_dir
-    dataset_dir = output_dir / args.manifest.stem
-    embeddings_dir = dataset_dir / "embeddings"
+    embeddings_dir = layout.embeddings_dir(bench.tileset)
+    manifest_path = layout.REPO / bench.manifest
+    dataset_dir = layout.metrics_dir(protocol, bench.name)
     results_dir = dataset_dir / "results"
-    embeddings_dir.mkdir(parents=True, exist_ok=True)
     results_dir.mkdir(parents=True, exist_ok=True)
+
+    # Pure-read: this driver never extracts. Embeddings are produced once per tileset by
+    # scripts/bench/extract_embeddings.py, and every benchmark over that tileset borrows
+    # a row-view of them. The model roster is therefore whatever has been embedded.
+    available = sorted(p.stem for p in embeddings_dir.glob("*.npy"))
+    if not available:
+        raise SystemExit(
+            f"no embeddings under {embeddings_dir}; run "
+            f"scripts/bench/extract_embeddings.py --tileset {bench.tileset} first"
+        )
+    models = _parse_models(args.models) if str(args.models).strip() else available
+    missing = [m for m in models if m not in available]
+    if missing:
+        raise SystemExit(
+            f"tileset '{bench.tileset}' has no embeddings for {missing}; "
+            f"embed them first (available: {available})"
+        )
 
     metrics_csv = results_dir / "metrics.csv"
     metrics_json = results_dir / "metrics.json"
@@ -785,7 +763,7 @@ def main() -> int:
 
     cache = MetricsArtifactCache(results_dir=results_dir)
 
-    k_max = int(args.k_max)
+    k_max = int(args.k_max) if args.k_max is not None else int(bench.k_max)
     k_values = _resolve_sweep_k_values(k_max)
     croma_m_values = list(range(1, int(args.croma_m_max) + 1))
     # Headline m must be inside the swept range; clamp down if the sweep is shorter.
@@ -796,12 +774,11 @@ def main() -> int:
         k_growth_factor=float(args.croma_k_growth_factor),
         alpha=float(args.croma_alpha),
     )
-    dataset_name = str(args.manifest.stem)
+    dataset_name = str(bench.name)
 
-    extraction_status: dict[str, str] = {}
     metrics_status: dict[str, str] = {}
     failures: list[str] = []
-    evaluation_design = str(args.evaluation_design)
+    evaluation_design = str(bench.design)
     rows: list[dict] = []
     k_sweep_rows: list[dict] = []
     croma_m_sweep_rows: list[dict] = []
@@ -810,16 +787,18 @@ def main() -> int:
         csv_path=per_sample_csv, json_path=per_sample_json
     )
 
-    progress_write(f"[benchmark] manifest={args.manifest}", enabled=progress_enabled)
+    progress_write(f"[benchmark] benchmark={bench.name}", enabled=progress_enabled)
+    progress_write(f"[benchmark] protocol={protocol}", enabled=progress_enabled)
+    progress_write(f"[benchmark] tileset={bench.tileset}", enabled=progress_enabled)
+    progress_write(f"[benchmark] manifest={bench.manifest}", enabled=progress_enabled)
     progress_write(f"[benchmark] models={', '.join(models)}", enabled=progress_enabled)
-    progress_write(f"[benchmark] output_dir={output_dir}", enabled=progress_enabled)
-    progress_write(f"[benchmark] dataset_dir={dataset_dir}", enabled=progress_enabled)
+    progress_write(f"[benchmark] run_dir={dataset_dir}", enabled=progress_enabled)
     progress_write(
         f"[benchmark] evaluation_design={evaluation_design}", enabled=progress_enabled
     )
-    confounder_column = str(args.confounder_column)
+    confounder_column = str(bench.confounder_column)
     confounder_display_name = infer_confounder_display_name(confounder_column)
-    manifest_df = load_manifest(str(args.manifest), confounder_column=confounder_column)
+    manifest_df = load_manifest(str(manifest_path), confounder_column=confounder_column)
     base_manifest_fingerprint = manifest_fingerprint(manifest_df)
     eval_manifest = _prepare_eval_manifest(
         manifest_df=manifest_df,
@@ -830,20 +809,21 @@ def main() -> int:
         eval_manifest=eval_manifest,
         evaluation_design=evaluation_design,
     )
-    embedding_manifest, embedding_keep_indices = build_embedding_source_manifest(
-        eval_manifest
-    )
-    embedding_manifest_path = _embedding_manifest_path(dataset_dir)
-    embedding_manifest.to_csv(embedding_manifest_path, index=False)
-    embedding_manifest_fingerprint = manifest_fingerprint(embedding_manifest)
+    # Two hops, composed: eval row -> benchmark-unique row -> tileset embedding row.
+    # The tileset matrix is a superset, so a benchmark simply gathers the rows it needs.
+    embedding_manifest, view_keep_indices = build_embedding_source_manifest(eval_manifest)
+    tileset_manifest = pd.read_csv(layout.tileset_manifest(bench.tileset))
+    view_to_tileset = build_view_row_index(embedding_manifest, tileset_manifest)
+    embedding_keep_indices = view_to_tileset[view_keep_indices]
+    n_tileset_rows = int(len(tileset_manifest))
 
     # --- Pre-pass: collect per-model best k to determine dataset-wide median k ---
     dataset_median_k: int | None = None
-    if args.use_median_k and not (args.prune_ss_oo or args.summarize_by_mean):
+    if use_median_k and not (args.prune_ss_oo or args.summarize_by_mean):
         per_model_best_k: list[int] = []
         for model in models:
             try:
-                output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
+                output_path = layout.embedding_path(bench.tileset, model)
                 if not output_path.exists():
                     continue
                 embedding_fp = embedding_fingerprint(output_path)
@@ -907,55 +887,19 @@ def main() -> int:
 
     for i, model in enumerate(models):
         with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
-            output_path = ee._output_path_in_dir(args.manifest, embeddings_dir, model)
-            spec = registry.get(model)
-            ticker.start("embed")
-            if not args.force_embed and _embedding_cache_matches_expected(
-                output_path,
-                expected_n_samples=len(embedding_manifest),
-                expected_manifest_fingerprint=embedding_manifest_fingerprint,
-                expected_manifest_path=embedding_manifest_path,
-            ):
-                ticker.log(f"[benchmark] embedding cache hit -> {output_path}")
-                extraction_status[model] = "skipped"
-                ticker.done("embed", cached=True)
-            else:
-                if spec is None:
-                    extraction_status[model] = "failed"
-                    metrics_status[model] = "failed"
-                    if bool(args.force_embed):
-                        msg = (
-                            f"{model}: --force-embed requested but the model is not "
-                            "registered for extraction"
-                        )
-                    else:
-                        msg = (
-                            f"{model}: no compatible cached embeddings found at "
-                            f"{output_path} and the model is not registered for "
-                            "extraction"
-                        )
-                    failures.append(msg)
-                    ticker.log(f"[benchmark] {msg}")
-                    continue
-                try:
-                    ee.embed_manifest(
-                        manifest_path=embedding_manifest_path,
-                        output_path=output_path,
-                        spec=spec,
-                        batch_size=int(args.batch_size),
-                        num_workers=int(args.num_workers),
-                        device_arg=str(args.device),
-                        progress_enabled=progress_enabled,
-                        tile_progress_leave=False,
-                    )
-                    extraction_status[model] = "ok"
-                    ticker.done("embed")
-                except Exception as exc:  # noqa: BLE001
-                    extraction_status[model] = "failed"
-                    metrics_status[model] = "failed"
-                    failures.append(f"{model}: extraction failed ({exc})")
-                    ticker.log(f"[benchmark] extraction failed: {exc}")
-                    continue
+            output_path = layout.embedding_path(bench.tileset, model)
+            ticker.start("load")
+            n_rows = _embedding_rows(output_path)
+            if n_rows != n_tileset_rows:
+                metrics_status[model] = "failed"
+                msg = (
+                    f"{model}: {output_path} has {n_rows} rows but tileset "
+                    f"'{bench.tileset}' has {n_tileset_rows}; re-extract it"
+                )
+                failures.append(msg)
+                ticker.log(f"[benchmark] {msg}")
+                continue
+            ticker.done("load", cached=True)
 
             try:
                 embedding_fp = embedding_fingerprint(output_path)
@@ -974,7 +918,7 @@ def main() -> int:
                 tau_value = float(args.tau) if args.tau is not None else "auto"
                 prune_ss_oo_value = bool(args.prune_ss_oo)
                 summarize_by_mean_value = bool(args.summarize_by_mean)
-                use_median_k_value = bool(args.use_median_k)
+                use_median_k_value = bool(use_median_k)
 
                 keys = {
                     "knn_bio_curve": build_cache_key(
@@ -1407,7 +1351,7 @@ def main() -> int:
                     max(k_values)
                     if (args.prune_ss_oo or args.summarize_by_mean)
                     else dataset_median_k
-                    if args.use_median_k and dataset_median_k is not None
+                    if use_median_k and dataset_median_k is not None
                     else _select_k_from_balanced_accuracy(
                         k_values=k_values,
                         scores=knn_bacc_by_k,
@@ -2020,11 +1964,8 @@ def main() -> int:
 
     progress_write("\n[benchmark] === summary ===", enabled=progress_enabled)
     for model in models:
-        e = extraction_status.get(model, "n/a")
         m = metrics_status.get(model, "n/a")
-        progress_write(
-            f"[benchmark] {model}: extract={e} metrics={m}", enabled=progress_enabled
-        )
+        progress_write(f"[benchmark] {model}: metrics={m}", enabled=progress_enabled)
     progress_write(f"[benchmark] metrics_csv={metrics_csv}", enabled=progress_enabled)
     progress_write(f"[benchmark] metrics_json={metrics_json}", enabled=progress_enabled)
     progress_write(f"[benchmark] k_sweep_csv={k_sweep_csv}", enabled=progress_enabled)

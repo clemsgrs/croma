@@ -107,20 +107,27 @@ croma croma \
 
 ## Benchmarking
 
-`croma` also includes an optional benchmarking pipeline for comparing multiple foundation models on the same manifest. It is split into two commands: `benchmark.py` computes the metrics (embedding extraction, metric computation, cached re-runs, and summary JSON/CSV artifacts — no plotting), and `render.py` renders that run's figure set from the written artifacts.
+`croma` also includes an optional benchmarking pipeline for comparing multiple foundation models. It is split into three commands, along the seams of what is expensive:
 
-Run it as two steps:
+- `extract_embeddings.py` embeds a **tileset** once, into `output/embeddings/<tileset>/`.
+- `benchmark.py` computes metrics for one **benchmark** (a row-view of a tileset) at one **protocol**, reading those embeddings and never writing any. Results land in `output/metrics/<protocol>/<benchmark>/`.
+- `render.py` renders a run's figure set from the written artifacts.
 
 ```bash
-# 1. Compute: extract embeddings and write metric JSON/CSV artifacts.
-python scripts/bench/benchmark.py \
-  --manifest /path/to/manifest.csv \
-  --confounder-column confounder \
-  --output-dir /path/to/benchmark
+# 1. Embed a tileset once. --manifest is needed only the first time (it derives manifest.csv).
+python scripts/bench/extract_embeddings.py \
+  --tileset pathorob-camelyon \
+  --manifest data/pathorob/manifests/pathorob-camelyon.csv \
+  --models UNI,Virchow2
 
-# 2. Render: emit the figure set from the run directory (<output-dir>/<manifest-stem>).
-python scripts/bench/render.py /path/to/benchmark/<manifest-stem>
+# 2. Compute metrics for a registered benchmark at one operating point.
+python scripts/bench/benchmark.py --benchmark camelyon --protocol median-k
+
+# 3. Render that run's figures.
+python scripts/bench/render.py output/metrics/median-k/camelyon
 ```
+
+Every benchmark over a tileset shares its embeddings, so adding an encoder means embedding it once; it then joins every benchmark over that tileset automatically. Benchmarks are declared in `scripts/bench/benchmarks.py`. To sweep them all: `scripts/repro/run_benchmarks.sh median-k`. See [ADR-0007](docs/adr/0007-embeddings-are-a-tileset-benchmarks-are-views.md).
 
 For benchmark options, outputs, caching behavior, and downstream analysis, see [docs/benchmarking.md](docs/benchmarking.md).
 

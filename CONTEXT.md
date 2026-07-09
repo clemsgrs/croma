@@ -54,6 +54,36 @@ Always reported alongside RI/MaRI because those metrics are undefined on
 SS-dominated anchors and their pooled values are otherwise computed on a silent,
 model-dependent subset.
 
+### Evaluation units
+
+The vocabulary of the output layout (see ADR-0007).
+
+**Tileset**:
+A physical set of tiles that was pushed through the encoders, holding one embedding
+matrix per model under `output/embeddings/<tileset>/`. Its `manifest.csv` is the
+row-order contract: row `i` of every `<Model>.npy` describes `manifest.csv` row `i`.
+The only expensive artifact in `output/`.
+_Avoid_: dataset (ambiguous — it named both the tiles and the evaluation).
+
+**Benchmark**:
+An evaluable *view* over a tileset: an eval manifest that selects its rows, plus an
+evaluation design. Several benchmarks share one tileset (`prostate`,
+`prostate-4class` and `prostate-gradebal` all view `prostate-shift`), so a benchmark
+never owns embeddings. Camelyon's tileset is 22,402 tiles; the `camelyon` benchmark
+is the 20,400-tile faithful view of it.
+_Avoid_: run (a run is a benchmark evaluated at one protocol).
+
+**Protocol**:
+The k operating point a metrics run was computed at — `k-star` (each model at its own
+kNN-optimal k) or `median-k` (the shared median of per-model k*). It scopes the
+metrics tree: `output/metrics/<protocol>/<benchmark>/`.
+_Avoid_: mode, setting.
+
+**Tile identity**:
+`(sample_id, image_path)` — what makes two manifest rows the same tile. Notably
+excludes `label`, which a view attaches to a tile rather than owning: one tile is
+`tumor` to `prostate` and `gleason-3` to `prostate-4class`.
+
 ### Model attributes
 
 Per-model properties carried in the single-source model metadata (see ADR-0005) and

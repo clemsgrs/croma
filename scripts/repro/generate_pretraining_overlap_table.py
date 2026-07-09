@@ -25,7 +25,7 @@ import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
 
-PER_SAMPLE = Path("output/pathorob-tolkach-esca/results/per_sample_metrics.csv")
+PER_SAMPLE = Path("output/metrics/k-star/tolkach-full/results/per_sample_metrics.csv")
 TCGA_CENTER = "VALSET3_TCGA"
 HEADLINE_COL = f"croma_m{int(CROMA_HEADLINE_M)}"
 OUT = Path("paper/sections/supp_pretraining_overlap.tex")

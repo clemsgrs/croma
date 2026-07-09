@@ -38,11 +38,11 @@ from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 # name -> benchmark output directory (relative to repo root)
 BENCHMARKS: dict[str, str] = {
-    "camelyon": "output/faithful/k-star/pathorob-camelyon-faithful",
-    "tcga2x2": "output/faithful/k-star/pathorob-tcga-2x2",
-    "tcga4x4": "output/faithful/k-star/pathorob-tcga-4x4",
-    "tolkach": "output/faithful/k-star/pathorob-tolkach-esca-faithful",
-    "panda": "output/panda-wsi-isup-paired-2x2",
+    "camelyon": "output/metrics/k-star/camelyon",
+    "tcga2x2": "output/metrics/k-star/tcga-2x2",
+    "tcga4x4": "output/metrics/k-star/tcga-4x4",
+    "tolkach": "output/metrics/k-star/tolkach",
+    "panda": "output/metrics/k-star/panda-isup",
 }
 
 SEED = 12345
