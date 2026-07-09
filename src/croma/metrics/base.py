@@ -359,7 +359,6 @@ class BaseRobustnessIndex(ABC):
         features: np.ndarray,
         subsets: list[EvaluationSubset],
         k_values: list[int] | tuple[int, ...],
-        prune_ss_oo: bool = False,
     ) -> list[_PreparedNeighborSubset]:
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
@@ -376,8 +375,6 @@ class BaseRobustnessIndex(ABC):
                 prepared.features,
                 prepared.slide_ids,
                 kmax,
-                labels=prepared.labels if prune_ss_oo else None,
-                centers=prepared.centers if prune_ss_oo else None,
             )
             prepared_subsets.append(
                 _PreparedNeighborSubset(
@@ -535,8 +532,6 @@ class BaseRobustnessIndex(ABC):
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        prune_ss_oo: bool = False,
-        summarize_by_mean: bool = False,
         **kwargs: float,
     ) -> RobustnessResult:
         artifacts = cls._compute_artifacts(
@@ -547,8 +542,6 @@ class BaseRobustnessIndex(ABC):
             evaluation_design=evaluation_design,
             include_selected_result=True,
             warn_selected_result=True,
-            prune_ss_oo=prune_ss_oo,
-            summarize_by_mean=summarize_by_mean,
             **kwargs,
         )
         if artifacts.result is None:
@@ -564,8 +557,6 @@ class BaseRobustnessIndex(ABC):
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
         evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
-        prune_ss_oo: bool = False,
-        summarize_by_mean: bool = False,
         **kwargs: float,
     ) -> dict[int, float]:
         artifacts = cls._compute_artifacts(
@@ -576,8 +567,6 @@ class BaseRobustnessIndex(ABC):
             evaluation_design=evaluation_design,
             include_selected_result=False,
             warn_selected_result=False,
-            prune_ss_oo=prune_ss_oo,
-            summarize_by_mean=summarize_by_mean,
             **kwargs,
         )
         return artifacts.curve
@@ -640,11 +629,6 @@ class BaseRobustnessIndex(ABC):
             evaluation_unit=evaluation_unit,
         )
 
-    @staticmethod
-    def _compute_mean_from_curve(curve: dict[int, float]) -> tuple[float, float]:
-        vals = [v for _, v in sorted(curve.items())]
-        return float(np.mean(vals)), float(np.std(vals))
-
     @classmethod
     def _compute_artifacts(
         cls,
@@ -657,8 +641,6 @@ class BaseRobustnessIndex(ABC):
         selected_k: int | None = None,
         include_selected_result: bool = True,
         warn_selected_result: bool = False,
-        prune_ss_oo: bool = False,
-        summarize_by_mean: bool = False,
         **kwargs: float,
     ) -> _RobustnessArtifacts:
         cls._validate_inputs(features, manifest)
@@ -678,19 +660,14 @@ class BaseRobustnessIndex(ABC):
                 prepared=prepared,
                 k_values=candidates,
                 dataset_name=dataset_name,
-                prune_ss_oo=prune_ss_oo,
                 **kwargs,
             )
             evaluation_unit = "sample"
             if include_selected_result and selected_k is None:
-                selected_k = (
-                    max(candidates)
-                    if (prune_ss_oo or summarize_by_mean)
-                    else cls._select_dataset_wide_k(
-                        prepared=prepared,
-                        k_candidates=candidates,
-                        dataset_name=dataset_name,
-                    )
+                selected_k = cls._select_dataset_wide_k(
+                    prepared=prepared,
+                    k_candidates=candidates,
+                    dataset_name=dataset_name,
                 )
         else:
             subsets = cls._build_subsets(
@@ -702,20 +679,15 @@ class BaseRobustnessIndex(ABC):
                 subsets=subsets,
                 k_values=candidates,
                 dataset_name=dataset_name,
-                prune_ss_oo=prune_ss_oo,
                 **kwargs,
             )
             evaluation_unit = "occurrence"
             if include_selected_result and selected_k is None:
-                selected_k = (
-                    max(candidates)
-                    if (prune_ss_oo or summarize_by_mean)
-                    else cls._select_subset_k(
-                        features=features,
-                        subsets=subsets,
-                        k_candidates=candidates,
-                        dataset_name=dataset_name,
-                    )
+                selected_k = cls._select_subset_k(
+                    features=features,
+                    subsets=subsets,
+                    k_candidates=candidates,
+                    dataset_name=dataset_name,
                 )
 
         curve = {int(k): float(by_k[int(k)][0]) for k in candidates if int(k) in by_k}
@@ -736,9 +708,6 @@ class BaseRobustnessIndex(ABC):
                 k=int(selected_k),
                 scored_entry=by_k[int(selected_k)],
             )
-            if summarize_by_mean:
-                mean_val, mean_std = cls._compute_mean_from_curve(curve)
-                result = replace(result, value=mean_val, std=mean_std)
             tail = compute_tail_metrics(result.sample_values, alpha=0.10)
             median_val = (
                 float(np.median(result.sample_values))
@@ -900,7 +869,6 @@ class BaseRobustnessIndex(ABC):
         features: np.ndarray,
         df: pd.DataFrame,
         k_values: list[int] | tuple[int, ...],
-        prune_ss_oo: bool = False,
         assume_normalized: bool = False,
     ) -> _PreparedNeighborSubset:
         """Prepare the single whole-dataset neighbour cache once for reuse.
@@ -918,8 +886,6 @@ class BaseRobustnessIndex(ABC):
             prepared.features,
             prepared.slide_ids,
             kmax,
-            labels=prepared.labels if prune_ss_oo else None,
-            centers=prepared.centers if prune_ss_oo else None,
         )
         return _PreparedNeighborSubset(
             subset_id=prepared.subset_id,
@@ -966,7 +932,6 @@ class BaseRobustnessIndex(ABC):
         prepared: _PreparedSubsetInputs,
         k_values: list[int] | tuple[int, ...],
         dataset_name: str,
-        prune_ss_oo: bool = False,
         **kwargs: float,
     ) -> dict[
         int,
@@ -991,8 +956,6 @@ class BaseRobustnessIndex(ABC):
             prepared.features,
             prepared.slide_ids,
             kmax,
-            labels=prepared.labels if prune_ss_oo else None,
-            centers=prepared.centers if prune_ss_oo else None,
         )
         prepared_neighbors = _PreparedNeighborSubset(
             subset_id=prepared.subset_id,
@@ -1410,7 +1373,6 @@ class BaseRobustnessIndex(ABC):
         selected_k: int | None = None,
         include_selected_result: bool = True,
         warn_selected_result: bool = False,
-        summarize_by_mean: bool = False,
         **kwargs: float,
     ) -> _RobustnessArtifacts:
         """Dataset-wide artifacts from a shared neighbour cache (mirror of the paired path)."""
@@ -1445,9 +1407,6 @@ class BaseRobustnessIndex(ABC):
                 k=int(selected_k),
                 scored_entry=by_k[int(selected_k)],
             )
-            if summarize_by_mean:
-                mean_val, mean_std = cls._compute_mean_from_curve(curve)
-                result = replace(result, value=mean_val, std=mean_std)
             tail = compute_tail_metrics(result.sample_values, alpha=0.10)
             median_val = (
                 float(np.median(result.sample_values))
@@ -1479,7 +1438,6 @@ class BaseRobustnessIndex(ABC):
         subsets: list[EvaluationSubset],
         k_values: list[int] | tuple[int, ...],
         dataset_name: str,
-        prune_ss_oo: bool = False,
         **kwargs: float,
     ) -> dict[
         int,
@@ -1533,8 +1491,6 @@ class BaseRobustnessIndex(ABC):
                 prepared.features,
                 prepared.slide_ids,
                 kmax,
-                labels=prepared.labels if prune_ss_oo else None,
-                centers=prepared.centers if prune_ss_oo else None,
             )
             all_k_results = cls._score_all_k_from_neighbors(
                 labels=prepared.labels,

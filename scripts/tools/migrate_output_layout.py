@@ -30,13 +30,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "scripts" / "bench"))
-sys.path.insert(0, str(ROOT / "src"))
+_HERE = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(_HERE))
+sys.path.insert(0, str(_HERE / "scripts" / "bench"))
+sys.path.insert(0, str(_HERE / "src"))
 
 import layout  # noqa: E402
 from benchmarks import BENCHMARKS  # noqa: E402
+
+#: Read data/ and output/ off the same root layout uses, so a mismatch is impossible.
+ROOT = layout.REPO
 
 from croma.alignment import (  # noqa: E402
     build_embedding_source_manifest,
@@ -71,12 +74,10 @@ RESCUE_CONFOUNDER_NAME = "data_provider"
 
 RUN_SOURCES: dict[str, dict[str, str]] = {
     "k-star": {
-        "camelyon": "output/faithful/k-star/pathorob-camelyon-faithful",
-        "tolkach": "output/faithful/k-star/pathorob-tolkach-esca-faithful",
-        "tcga-2x2": "output/faithful/k-star/pathorob-tcga-2x2",
-        "tcga-4x4": "output/faithful/k-star/pathorob-tcga-4x4",
-        "camelyon-full": "output/pathorob-camelyon",
-        "tolkach-full": "output/pathorob-tolkach-esca",
+        "pathorob-camelyon": "output/faithful/k-star/pathorob-camelyon-faithful",
+        "pathorob-tolkach-esca": "output/faithful/k-star/pathorob-tolkach-esca-faithful",
+        "pathorob-tcga-2x2": "output/faithful/k-star/pathorob-tcga-2x2",
+        "pathorob-tcga-4x4": "output/faithful/k-star/pathorob-tcga-4x4",
         "prostate": "output/prostate-shift-binary-kirumc",
         "prostate-4class": "output/prostate-shift-4class-kirumc-paired",
         "prostate-gradebal": "output/prostate-shift-gradebal-binary-kirumc-paired",
@@ -84,10 +85,10 @@ RUN_SOURCES: dict[str, dict[str, str]] = {
         "panda-isup": "output/panda-wsi-isup-paired-2x2",
     },
     "median-k": {
-        "camelyon": "output/faithful/median/camelyon-median",
-        "tolkach": "output/faithful/median/tolkach-median",
-        "tcga-2x2": "output/faithful/median/pathorob-tcga-2x2",
-        "tcga-4x4": "output/faithful/median/tcga4x4-median",
+        "pathorob-camelyon": "output/faithful/median/camelyon-median",
+        "pathorob-tolkach-esca": "output/faithful/median/tolkach-median",
+        "pathorob-tcga-2x2": "output/faithful/median/pathorob-tcga-2x2",
+        "pathorob-tcga-4x4": "output/faithful/median/tcga4x4-median",
         "prostate": "output/faithful/median/prostate-median",
         "panda": "output/faithful/median/panda-median",
         "panda-isup": "output/faithful/median/panda-isup-median-paired",
@@ -235,7 +236,7 @@ def verify() -> bool:
         tm_path = layout.tileset_manifest(spec.tileset)
         man_path = ROOT / spec.manifest
         if not tm_path.exists():
-            print(f"  FAIL {name:18s} missing tileset manifest {tm_path.relative_to(ROOT)}")
+            print(f"  FAIL {name:18s} missing tileset manifest {tm_path}")
             ok = False
             continue
         if not man_path.exists():

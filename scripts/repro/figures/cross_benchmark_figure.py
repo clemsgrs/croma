@@ -27,9 +27,9 @@ from plotting import (  # noqa: E402
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
 BENCHMARKS = [
-    ("Camelyon", "output/metrics/k-star/camelyon"),
-    ("TCGA (4$\\times$4)", "output/metrics/k-star/tcga-4x4"),
-    ("Tolkach-ESCA", "output/metrics/k-star/tolkach"),
+    ("Camelyon", "output/metrics/k-star/pathorob-camelyon"),
+    ("TCGA (4$\\times$4)", "output/metrics/k-star/pathorob-tcga-4x4"),
+    ("Tolkach-ESCA", "output/metrics/k-star/pathorob-tolkach-esca"),
 ]
 # Models whose pretraining data overlaps TCGA (leakage): their TCGA CRoMa/rank is not
 # trustworthy. Flagged in-figure (dashed line + dagger) rather than dropped, so the

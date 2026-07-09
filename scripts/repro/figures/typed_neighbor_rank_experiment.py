@@ -38,7 +38,7 @@ from _neighbor_analysis import load_meta, prepare_embedding  # noqa: E402
 import views  # noqa: E402
 
 PROTOCOL = "k-star"
-view = views.load_view("camelyon")  # row-view over the pathorob-camelyon tileset
+view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
 METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
 STUDIES = view.studies_dir(PROTOCOL)
 FIGDIR = Path("paper/figures/results/pathorob-camelyon-faithful/pdf")

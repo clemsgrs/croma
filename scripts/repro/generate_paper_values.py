@@ -38,19 +38,19 @@ USE_MEDIAN_K = True
 
 # macro prefix (LaTeX commands take letters only -> spell digits out) -> metrics.csv
 _FAITHFUL: list[tuple[str, str]] = [
-    ("Camelyon", "output/metrics/k-star/camelyon/results/metrics.csv"),
-    ("TcgaTwoByTwo", "output/metrics/k-star/tcga-2x2/results/metrics.csv"),
-    ("TcgaFourByFour", "output/metrics/k-star/tcga-4x4/results/metrics.csv"),
-    ("Tolkach", "output/metrics/k-star/tolkach/results/metrics.csv"),
+    ("Camelyon", "output/metrics/k-star/pathorob-camelyon/results/metrics.csv"),
+    ("TcgaTwoByTwo", "output/metrics/k-star/pathorob-tcga-2x2/results/metrics.csv"),
+    ("TcgaFourByFour", "output/metrics/k-star/pathorob-tcga-4x4/results/metrics.csv"),
+    ("Tolkach", "output/metrics/k-star/pathorob-tolkach-esca/results/metrics.csv"),
     ("Panda", "output/metrics/k-star/panda/results/metrics.csv"),
     ("PandaIsup", "output/metrics/k-star/panda-isup/results/metrics.csv"),
     ("Prostate", "output/metrics/k-star/prostate/results/metrics.csv"),
 ]
 _MEDIAN: list[tuple[str, str]] = [
-    ("Camelyon", "output/metrics/median-k/camelyon/results/metrics.csv"),
-    ("TcgaTwoByTwo", "output/metrics/median-k/tcga-2x2/results/metrics.csv"),
-    ("TcgaFourByFour", "output/metrics/median-k/tcga-4x4/results/metrics.csv"),
-    ("Tolkach", "output/metrics/median-k/tolkach/results/metrics.csv"),
+    ("Camelyon", "output/metrics/median-k/pathorob-camelyon/results/metrics.csv"),
+    ("TcgaTwoByTwo", "output/metrics/median-k/pathorob-tcga-2x2/results/metrics.csv"),
+    ("TcgaFourByFour", "output/metrics/median-k/pathorob-tcga-4x4/results/metrics.csv"),
+    ("Tolkach", "output/metrics/median-k/pathorob-tolkach-esca/results/metrics.csv"),
     ("Panda", "output/metrics/median-k/panda/results/metrics.csv"),
     ("PandaIsup", "output/metrics/k-star/panda-isup/results/metrics.csv"),  # k* (see note)
     ("Prostate", "output/metrics/median-k/prostate/results/metrics.csv"),
@@ -62,7 +62,7 @@ BENCHMARKS: list[tuple[str, str]] = _MEDIAN if USE_MEDIAN_K else _FAITHFUL
 # fixed-k SS-pocket prevalence (fraction with no typed neighbour among the k nearest).
 SS_SHELL_SUMMARY = (
     "Camelyon",
-    "output/metrics/k-star/camelyon/studies/typed_neighbor_rank_summary.csv",
+    "output/metrics/k-star/pathorob-camelyon/studies/typed_neighbor_rank_summary.csv",
 )
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
@@ -71,8 +71,8 @@ SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 # (CSV) and the cross-model Spearman correlations with bootstrap CIs (JSON).
 UNCERTAINTY_SUMMARY = (
     "Camelyon",
-    "output/metrics/k-star/camelyon/results/bootstrap_uncertainty.json",
-    "output/metrics/k-star/camelyon/results/bootstrap_uncertainty.csv",
+    "output/metrics/k-star/pathorob-camelyon/results/bootstrap_uncertainty.json",
+    "output/metrics/k-star/pathorob-camelyon/results/bootstrap_uncertainty.csv",
 )
 
 # Downstream-validation scalars: the APD<->metric rank correlations that fill

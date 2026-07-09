@@ -75,32 +75,6 @@ def _per_sample_metrics_by_model_dir(results_dir: Path) -> Path:
     return results_dir / "per_sample_metrics_by_model"
 
 
-def _render_manifest_path(results_dir: Path) -> Path:
-    return results_dir / "render_manifest.json"
-
-
-def _write_render_manifest(
-    results_dir: Path, *, summarize_by_mean: bool, prune_ss_oo: bool
-) -> None:
-    """Persist the flags render.py needs to reproduce the exact figure set.
-
-    The compute driver produces no plots, but the conditional figures (cumulative-mean
-    k-sweeps, RI/MaRI sample distributions) are gated on run-time flags that are not
-    otherwise recoverable from the metrics rows. Writing them here keeps benchmark.py the
-    single source of run configuration while render.py owns the plot sequence.
-    """
-    _render_manifest_path(results_dir).write_text(
-        json.dumps(
-            {
-                "summarize_by_mean": bool(summarize_by_mean),
-                "prune_ss_oo": bool(prune_ss_oo),
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-
 def _per_sample_metrics_by_model_paths(
     results_dir: Path, model: str
 ) -> tuple[Path, Path]:
@@ -239,7 +213,18 @@ def _parse_args() -> argparse.Namespace:
         "--k-max",
         type=_positive_int,
         default=None,
-        help="Override the benchmark's registered k_max (dense sweep over 1..k_max).",
+        help="Override the benchmark's registered k_max (sweep ceiling).",
+    )
+    parser.add_argument(
+        "--k-grid",
+        choices=K_GRIDS,
+        default="dense",
+        help=(
+            "How the k sweep is discretised. 'dense' (default): every integer 1..k_max. "
+            "'sparse': PathoROB's grid, [1,3,5,7,9] + arange(11, k_max, 10) -- note k_max "
+            "is exclusive in the tail, so k_max=100 sweeps up to 91. The operating point "
+            "is chosen from these values, so this is part of the protocol, not display."
+        ),
     )
     parser.add_argument(
         "--tau",
@@ -286,23 +271,6 @@ def _parse_args() -> argparse.Namespace:
         action="store_true",
         help="Force recomputation of metrics even if compatible cache exists.",
     )
-    parser.add_argument(
-        "--prune-ss-oo",
-        action="store_true",
-        help=(
-            "Prune SS and OO neighbours before counting k. "
-            "Each sample's neighbourhood contains only SO/OS neighbours, "
-            "eliminating undefined samples caused by SS/OO dominance."
-        ),
-    )
-    parser.add_argument(
-        "--summarize-by-mean",
-        action="store_true",
-        help=(
-            "Summarize RI/MaRI as the mean over the full k-curve instead of "
-            "selecting a single k via kNN biological accuracy."
-        ),
-    )
     return parser.parse_args()
 
 
@@ -313,10 +281,34 @@ def _positive_int(value: str) -> int:
     return int(parsed)
 
 
-def _resolve_sweep_k_values(k_max: int) -> list[int]:
+#: How the k sweep is discretised. The operating point is picked from these values, so
+#: the grid bounds which k a model can select -- it is part of the protocol, not a
+#: display setting. The chosen grid is recorded verbatim in the ``k_values`` column.
+K_GRIDS = ("dense", "sparse")
+
+
+def _resolve_sweep_k_values(k_max: int, grid: str = "dense") -> list[int]:
+    """The k values swept, for a ceiling and a grid.
+
+    ``dense`` sweeps every integer ``1..k_max``.
+
+    ``sparse`` reproduces PathoROB's grid, ``[1, 3, 5, 7, 9] + arange(11, k_max, 10)``
+    (``robustness_index_utils.get_k_values``). Note ``k_max`` is *exclusive* in the
+    arange tail, exactly as upstream: with ``k_max=100`` the largest swept k is 91.
+    Values above ``k_max`` are dropped, so small ceilings degrade gracefully.
+    """
     if int(k_max) <= 0:
         raise ValueError("k_max must be strictly positive")
-    return list(range(1, int(k_max) + 1))
+    k_max = int(k_max)
+    if grid == "dense":
+        return list(range(1, k_max + 1))
+    if grid == "sparse":
+        candidates = [1, 3, 5, 7, 9, *range(11, k_max, 10)]
+        values = sorted({k for k in candidates if 1 <= k <= k_max})
+        if not values:
+            raise ValueError(f"sparse grid is empty for k_max={k_max}")
+        return values
+    raise ValueError(f"unknown k grid {grid!r}; expected one of {list(K_GRIDS)}")
 
 
 def _prepare_eval_manifest(
@@ -764,7 +756,7 @@ def main() -> int:
     cache = MetricsArtifactCache(results_dir=results_dir)
 
     k_max = int(args.k_max) if args.k_max is not None else int(bench.k_max)
-    k_values = _resolve_sweep_k_values(k_max)
+    k_values = _resolve_sweep_k_values(k_max, str(args.k_grid))
     croma_m_values = list(range(1, int(args.croma_m_max) + 1))
     # Headline m must be inside the swept range; clamp down if the sweep is shorter.
     croma_headline_m = min(int(CROMA_HEADLINE_M), max(croma_m_values))
@@ -818,14 +810,22 @@ def main() -> int:
     n_tileset_rows = int(len(tileset_manifest))
 
     # --- Pre-pass: collect per-model best k to determine dataset-wide median k ---
+    #
+    # Every model must contribute. A model that silently dropped out would shift the
+    # median without trace, and a pre-pass that produced nothing at all would leave
+    # dataset_median_k as None -- which used to fall back to per-model k*, writing
+    # non-median-k results into a directory named median-k. Both now fail loudly.
     dataset_median_k: int | None = None
-    if use_median_k and not (args.prune_ss_oo or args.summarize_by_mean):
-        per_model_best_k: list[int] = []
+    if use_median_k:
+        per_model_best_k: dict[str, int] = {}
         for model in models:
+            output_path = layout.embedding_path(bench.tileset, model)
+            if not output_path.exists():
+                raise SystemExit(
+                    f"[benchmark] median-k pre-pass: no embeddings for model {model!r} "
+                    f"at {output_path}; every model must contribute to the median"
+                )
             try:
-                output_path = layout.embedding_path(bench.tileset, model)
-                if not output_path.exists():
-                    continue
                 embedding_fp = embedding_fingerprint(output_path)
                 input_fp_pre = {
                     "manifest_fingerprint": base_manifest_fingerprint,
@@ -854,7 +854,6 @@ def main() -> int:
                             features=features_pre_norm,
                             subsets=resolve_manifest_subsets(eval_manifest),
                             k_values=k_values,
-                            prune_ss_oo=bool(args.prune_ss_oo),
                         )
                         if evaluation_design == "paired_2x2"
                         else None
@@ -869,21 +868,29 @@ def main() -> int:
                         prepared_subsets=prepared_subsets_pre,
                     )
                     cache.put_json(key=knn_bio_key, payload=_curve_payload(knn_bacc_pre))
-                per_model_best_k.append(
-                    _select_k_from_balanced_accuracy(k_values=k_values, scores=knn_bacc_pre)
-                )
-            except Exception:  # noqa: BLE001
-                pass
-        if per_model_best_k:
-            dataset_median_k = int(np.median(per_model_best_k))
-            progress_write(
-                f"[benchmark] use-median-k: per-model optimal k = {per_model_best_k}",
-                enabled=progress_enabled,
+            except Exception as exc:  # noqa: BLE001
+                raise SystemExit(
+                    f"[benchmark] median-k pre-pass failed for model {model!r}: {exc}"
+                ) from exc
+            per_model_best_k[model] = _select_k_from_balanced_accuracy(
+                k_values=k_values, scores=knn_bacc_pre
             )
-            progress_write(
-                f"[benchmark] use-median-k: dataset median k = {dataset_median_k}",
-                enabled=progress_enabled,
+        if not per_model_best_k:
+            raise SystemExit(
+                "[benchmark] median-k pre-pass produced no per-model k: refusing to fall "
+                "back to per-model k* under --protocol median-k"
             )
+        # int() floors the .5 that an even model count can produce. Deliberate and stable.
+        dataset_median_k = int(np.median(list(per_model_best_k.values())))
+        progress_write(
+            f"[benchmark] use-median-k: per-model optimal k = {per_model_best_k}",
+            enabled=progress_enabled,
+        )
+        progress_write(
+            f"[benchmark] use-median-k: dataset median k = {dataset_median_k} "
+            f"(over {len(per_model_best_k)} models)",
+            enabled=progress_enabled,
+        )
 
     for i, model in enumerate(models):
         with model_block(model, i + 1, len(models), enabled=progress_enabled) as ticker:
@@ -916,8 +923,6 @@ def main() -> int:
                 # cache key: it can only collide across runs that would produce the same
                 # per-model tau anyway. An explicit override keys on its numeric value.
                 tau_value = float(args.tau) if args.tau is not None else "auto"
-                prune_ss_oo_value = bool(args.prune_ss_oo)
-                summarize_by_mean_value = bool(args.summarize_by_mean)
                 use_median_k_value = bool(use_median_k)
 
                 keys = {
@@ -949,8 +954,6 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "mari_curve": build_cache_key(
@@ -962,8 +965,6 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                         },
                     ),
                     "ri_summary": build_cache_key(
@@ -974,8 +975,6 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -987,8 +986,6 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1000,8 +997,6 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1013,8 +1008,6 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1027,8 +1020,6 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1041,8 +1032,6 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1055,8 +1044,6 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1069,8 +1056,6 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1082,8 +1067,6 @@ def main() -> int:
                             "evaluation_design": evaluation_design,
                             "k_values": k_values_param,
                             "tau": tau_value,
-                            "prune_ss_oo": prune_ss_oo_value,
-                            "summarize_by_mean": summarize_by_mean_value,
                             "use_median_k": use_median_k_value,
                         },
                     ),
@@ -1283,7 +1266,6 @@ def main() -> int:
                             features=_ensure_eval_features_norm(),
                             subsets=resolve_manifest_subsets(eval_manifest),
                             k_values=k_values,
-                            prune_ss_oo=bool(args.prune_ss_oo),
                         )
                     return paired_subset_cache
 
@@ -1301,7 +1283,6 @@ def main() -> int:
                             features=_ensure_eval_features_norm(),
                             df=df_norm,
                             k_values=k_values,
-                            prune_ss_oo=bool(args.prune_ss_oo),
                             assume_normalized=True,
                         )
                     return dataset_wide_cache
@@ -1347,11 +1328,10 @@ def main() -> int:
                         payload=_curve_payload(knn_confounder_bacc_by_k),
                     )
 
+                # The pre-pass guarantees dataset_median_k is set whenever use_median_k.
                 selected_k = (
-                    max(k_values)
-                    if (args.prune_ss_oo or args.summarize_by_mean)
-                    else dataset_median_k
-                    if use_median_k and dataset_median_k is not None
+                    dataset_median_k
+                    if use_median_k
                     else _select_k_from_balanced_accuracy(
                         k_values=k_values,
                         scores=knn_bacc_by_k,
@@ -1396,7 +1376,6 @@ def main() -> int:
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
-                            summarize_by_mean=bool(args.summarize_by_mean),
                         )
                     ri_curve = dict(ri_artifacts.curve)
                     if ri_artifacts.result is None:
@@ -1524,7 +1503,6 @@ def main() -> int:
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
-                            summarize_by_mean=bool(args.summarize_by_mean),
                             tau=model_tau,
                         )
                     mari_curve = dict(mari_artifacts.curve)
@@ -1952,14 +1930,6 @@ def main() -> int:
             rows=croma_m_sweep_rows,
             csv_path=croma_m_sweep_csv,
             json_path=croma_m_sweep_json,
-        )
-        # Persist the render-relevant flags so the (matplotlib-free) compute driver stays
-        # the single source of run configuration; scripts/bench/render.py reads this to
-        # decide which conditional figures to emit. No metric value depends on it.
-        _write_render_manifest(
-            results_dir,
-            summarize_by_mean=bool(args.summarize_by_mean),
-            prune_ss_oo=bool(args.prune_ss_oo),
         )
 
     progress_write("\n[benchmark] === summary ===", enabled=progress_enabled)

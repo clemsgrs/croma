@@ -11,10 +11,11 @@ the biology-dominant end and inflates them near the contested boundary -- so a
 raw gap conflates the TCGA effect with where a model sits on the curve. Sorted by
 boost (descending); the TCGA-only-pretrained Midnight-12k is the clear outlier.
 
-NOTE: this legacy output dir stores the typed-distance RATIO r = dbar^OS/dbar^SO
-in its croma_m* columns (values > 1), not the bounded margin. We convert per
-sample to CRoMa = (r-1)/(r+1) before aggregating; a guard fires if the column is
-ever regenerated as the bounded margin (so the conversion is not applied twice).
+The per-sample CSV is produced by ``scripts/studies/pretraining_overlap.py`` and stores
+the bounded CRoMa margin in (-1, 1) directly in its ``croma_m*`` columns -- NOT the legacy
+typed-distance ratio r = dbar^OS/dbar^SO. We aggregate the margin as-is; a guard fires if a
+legacy ratio-scale file (values outside (-1, 1)) is ever fed in, which would be
+double-converted by ``_odds``.
 
 Run: python scripts/repro/generate_pretraining_overlap_table.py
 """
@@ -25,7 +26,7 @@ import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
 
-PER_SAMPLE = Path("output/metrics/k-star/tolkach-full/results/per_sample_metrics.csv")
+PER_SAMPLE = Path("output/studies/pretraining-overlap/per_sample_metrics.csv")
 TCGA_CENTER = "VALSET3_TCGA"
 HEADLINE_COL = f"croma_m{int(CROMA_HEADLINE_M)}"
 OUT = Path("paper/sections/supp_pretraining_overlap.tex")
@@ -38,16 +39,17 @@ def _odds(croma: float) -> float:
 
 def build() -> str:
     df = pd.read_csv(PER_SAMPLE, usecols=["model", "confounder", HEADLINE_COL])
-    assert df[HEADLINE_COL].max() > 1.5, (
-        f"{PER_SAMPLE} column {HEADLINE_COL} does not look like the legacy ratio r "
-        "(max <= 1.5): it may already be the bounded CRoMa margin -- drop the conversion."
+    assert df[HEADLINE_COL].abs().max() < 1.0, (
+        f"{PER_SAMPLE} column {HEADLINE_COL} is out of (-1, 1): it looks like a legacy "
+        "typed-distance ratio r, not the bounded CRoMa margin. Feeding a ratio-scale file "
+        "here would double-convert it in _odds -- regenerate via "
+        "scripts/studies/pretraining_overlap.py."
     )
-    df["croma"] = (df[HEADLINE_COL] - 1.0) / (df[HEADLINE_COL] + 1.0)
 
     rows = []
     for model, g in df.groupby("model"):
-        tcga = g.loc[g.confounder == TCGA_CENTER, "croma"].median()
-        rest = g.loc[g.confounder != TCGA_CENTER, "croma"].median()
+        tcga = g.loc[g.confounder == TCGA_CENTER, HEADLINE_COL].median()
+        rest = g.loc[g.confounder != TCGA_CENTER, HEADLINE_COL].median()
         rows.append({"model": model, "tcga": tcga, "rest": rest,
                      "boost": _odds(tcga) / _odds(rest)})
     r = pd.DataFrame(rows).sort_values("boost", ascending=False).reset_index(drop=True)

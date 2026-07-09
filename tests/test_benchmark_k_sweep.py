@@ -141,6 +141,32 @@ def test_benchmark_rejects_removed_k_sweep_flags(
     assert excinfo.value.code == 2
 
 
+def test_median_k_prepass_exits_when_a_model_npy_is_missing(bench_env, monkeypatch) -> None:
+    # Every model must contribute to the shared median; a model whose embeddings vanish
+    # before the pre-pass reads them must fail loudly (naming the model), never silently
+    # shift the median or fall back to per-model k*.
+    import layout
+
+    models = ["M1", "M2"]
+    _setup(bench_env, models=models)
+
+    # The availability glob still sees both .npy, so the roster check passes and the run
+    # enters the median-k pre-pass. There, embedding_path for M2 resolves to a file that
+    # does not exist, exercising the pre-pass's own existence guard.
+    real_embedding_path = layout.embedding_path
+
+    def fake_embedding_path(tileset: str, model: str):
+        if model == "M2":
+            return layout.embeddings_dir(tileset) / "vanished-M2.npy"
+        return real_embedding_path(tileset, model)
+
+    monkeypatch.setattr(layout, "embedding_path", fake_embedding_path)
+
+    with pytest.raises(SystemExit) as excinfo:
+        bench_env.run("toy", "median-k", "--progress", "off")
+    assert "M2" in str(excinfo.value)
+
+
 def test_benchmark_uses_benchmark_name_for_dataset(bench_env) -> None:
     # The manifest may carry a stale ``dataset`` column; the run must label rows with the
     # registered benchmark name, not the manifest stem or the manifest's own column.
@@ -197,7 +223,6 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(bench_env) -> None:
         results_dir / "k_sweep_metrics.csv",
         results_dir / "croma_m_sweep_metrics.csv",
         results_dir / "per_sample_metrics.csv",
-        results_dir / "render_manifest.json",
         per_model_dir / "M1.csv",
         per_model_dir / "M2.csv",
     ):
@@ -285,7 +310,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
         selected_k: int,
         include_selected_result: bool,
         warn_selected_result: bool,
-        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         assert include_selected_result is True
         assert warn_selected_result is True
@@ -305,7 +329,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
         include_selected_result: bool,
         warn_selected_result: bool,
         tau: float,
-        summarize_by_mean: bool = False,
     ) -> SimpleNamespace:
         assert include_selected_result is True
         assert warn_selected_result is True
@@ -432,3 +455,56 @@ def test_benchmark_can_select_different_confounder_k(bench_env) -> None:
     assert int(metrics_df.loc[0, "selected_k_confounder"]) == 3
     assert int(k_sweep_df.loc[0, "selected_k"]) == 1
     assert int(k_sweep_df.loc[0, "selected_k_confounder"]) == 3
+
+
+# --- k-grid: dense (default) vs PathoROB's sparse grid -------------------------------
+
+
+def test_dense_grid_is_every_integer_up_to_k_max() -> None:
+    assert bm._resolve_sweep_k_values(10) == list(range(1, 11))
+    assert bm._resolve_sweep_k_values(10, "dense") == list(range(1, 11))
+
+
+@pytest.mark.parametrize("k_max", [100, 600, 1000, 1200])
+def test_sparse_grid_reproduces_pathorob_get_k_values(k_max: int) -> None:
+    """PathoROB: ``[1,3,5,7,9] + np.arange(11, max_k, 10)`` -- k_max exclusive in the tail."""
+    expected = [1, 3, 5, 7, 9] + list(range(11, k_max, 10))
+    assert bm._resolve_sweep_k_values(k_max, "sparse") == expected
+
+
+def test_sparse_grid_excludes_k_max_in_the_tail() -> None:
+    # Upstream's arange stops before max_k, so a ceiling of 100 sweeps only up to 91.
+    values = bm._resolve_sweep_k_values(100, "sparse")
+    assert values[-1] == 91
+    assert 100 not in values
+
+
+def test_sparse_grid_degrades_gracefully_for_small_ceilings() -> None:
+    assert bm._resolve_sweep_k_values(5, "sparse") == [1, 3, 5]
+    assert bm._resolve_sweep_k_values(1, "sparse") == [1]
+
+
+def test_unknown_k_grid_is_rejected() -> None:
+    with pytest.raises(ValueError, match="unknown k grid"):
+        bm._resolve_sweep_k_values(10, "bogus")
+
+
+def test_k_grid_sparse_is_recorded_in_the_swept_k_values(bench_env) -> None:
+    """The grid is part of the protocol, so the run must record which k it actually swept."""
+    _setup(bench_env, models=["M1"])
+    bench_env.respec("toy", k_max=9)
+
+    assert bench_env.run("toy", "k-star", "--k-grid", "sparse", "--progress", "off") == 0
+
+    k_sweep_df = pd.read_csv(bench_env.results_dir("toy") / "k_sweep_metrics.csv")
+    assert sorted(k_sweep_df["k"].unique().tolist()) == [1, 3, 5, 7, 9]
+
+
+def test_k_grid_defaults_to_dense(bench_env) -> None:
+    _setup(bench_env, models=["M1"])
+    bench_env.respec("toy", k_max=5)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    k_sweep_df = pd.read_csv(bench_env.results_dir("toy") / "k_sweep_metrics.csv")
+    assert sorted(k_sweep_df["k"].unique().tolist()) == [1, 2, 3, 4, 5]

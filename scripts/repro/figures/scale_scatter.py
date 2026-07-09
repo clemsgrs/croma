@@ -64,9 +64,9 @@ DEFAULT_OUT = REPO / "paper" / "figures" / "scale_scatter.pdf"
 # Each entry lists candidate run dirs (first existing wins), mirroring the loading in
 # ``cross_benchmark_figure.py`` on the output/metrics/<protocol>/<benchmark> layout.
 BENCHMARKS: list[tuple[str, tuple[str, ...]]] = [
-    ("Camelyon", ("output/metrics/k-star/camelyon",)),
-    ("TCGA-4x4", ("output/metrics/k-star/tcga-4x4",)),
-    ("Tolkach", ("output/metrics/k-star/tolkach",)),
+    ("Camelyon", ("output/metrics/k-star/pathorob-camelyon",)),
+    ("TCGA-4x4", ("output/metrics/k-star/pathorob-tcga-4x4",)),
+    ("Tolkach", ("output/metrics/k-star/pathorob-tolkach-esca",)),
 ]
 
 # LaTeX-scale unit suffixes -> multiplier.
