@@ -23,13 +23,18 @@ therefore never owns embeddings -- it borrows a row-view of its tileset's. See
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
-#: Repo root, and the output tree beneath it. Both are read at call time by the helpers
-#: below, so a test (or a scratch run) can retarget the tree by rebinding them.
-REPO = Path(os.environ.get("CROMA_REPO", Path(__file__).resolve().parents[2]))
-OUTPUT_ROOT = Path(os.environ.get("CROMA_OUTPUT_ROOT", REPO / "output"))
+#: Repo root, and the output tree beneath it. There is exactly one of each: scripts are
+#: run from the repo root, so a bare ``data/`` or ``output/`` elsewhere in the tree names
+#: the same place these do. Resist adding an env override -- the rest of the codebase
+#: reaches for those paths directly, so a second root would make ``layout`` and its
+#: callers silently disagree about where the artifacts are.
+#:
+#: The helpers below read these at call time, so a test can retarget the tree by
+#: rebinding them (see ``tests/conftest.py``).
+REPO = Path(__file__).resolve().parents[2]
+OUTPUT_ROOT = REPO / "output"
 
 #: Name of the row-order contract inside every tileset directory.
 TILESET_MANIFEST_NAME = "manifest.csv"

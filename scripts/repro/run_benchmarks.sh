@@ -24,10 +24,9 @@ shift
 OMP_THREADS="${OMP_NUM_THREADS:-8}"
 export PYTHONPATH="src:scripts/bench"
 
-# Where the artifacts live. layout honours CROMA_REPO / CROMA_OUTPUT_ROOT, so this script
-# can run from a worktree while reading data/ and writing output/ in the main checkout.
-# Resolving `output/` relative to the cd above would silently look inside the worktree.
-OUT_ROOT="$(python -c 'import layout; print(layout.OUTPUT_ROOT)')" || exit 1
+# The cd above puts us at the repo root, which is the only root there is: `output/` here
+# is the same tree scripts/bench/layout.py resolves.
+OUT_ROOT="output"
 
 # The k grid is part of the protocol (it bounds which k a model can select), so it is
 # recorded in each run's `k_values` column rather than being a display setting.
