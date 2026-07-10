@@ -76,7 +76,14 @@ def main() -> None:
     ri_parser = sub.add_parser("ri", parents=[shared], help="Compute RI.")
     mari_parser = sub.add_parser("mari", parents=[shared], help="Compute MaRI.")
     mari_parser.add_argument(
-        "--tau", type=float, default=0.2, help="Distance-decay temperature (>0)."
+        "--tau",
+        type=float,
+        default=None,
+        help=(
+            "Distance-decay temperature (>0). Default (omit): auto -- this dataset's "
+            "median typed-neighbour distance at the operating k, the on-scale value. "
+            "Pass a float to pin it; the resolved tau is reported either way."
+        ),
     )
 
     build_parser = sub.add_parser(
@@ -234,6 +241,7 @@ def main() -> None:
             evaluation_design=str(args.evaluation_design),
             k_candidates=args.k_candidates,
         )
+        payload = _result_payload(result)
     else:
         result = MaRI.compute(
             features=features,
@@ -241,9 +249,11 @@ def main() -> None:
             confounder_column=str(args.confounder_column),
             evaluation_design=str(args.evaluation_design),
             k_candidates=args.k_candidates,
-            tau=float(args.tau),
+            tau=None if args.tau is None else float(args.tau),
         )
-    payload = _result_payload(result)
+        payload = _result_payload(result)
+        payload["tau"] = result.tau
+        payload["tau_source"] = "auto" if args.tau is None else "fixed"
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 

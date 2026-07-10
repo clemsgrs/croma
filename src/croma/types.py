@@ -27,6 +27,9 @@ class RobustnessResult:
     median_value: float = float("nan")
     q_alpha: float = float("nan")
     ltm_alpha: float = float("nan")
+    # The temperature MaRI actually scored with, whether the caller pinned it or it was
+    # resolved automatically. ``nan`` on RI, which carries no temperature.
+    tau: float = float("nan")
 
 
 @dataclass(frozen=True)
