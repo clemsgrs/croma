@@ -837,6 +837,45 @@ class BaseRobustnessIndex(ABC):
         )
 
     @classmethod
+    def _select_operating_k(
+        cls,
+        *,
+        features: np.ndarray,
+        manifest: pd.DataFrame,
+        confounder_column: str,
+        k_candidates: list[int] | tuple[int, ...],
+        evaluation_design: str,
+    ) -> int:
+        """Resolve the operating ``k`` without scoring the metric.
+
+        ``k`` is selected by biological kNN balanced accuracy, which never consults the
+        neighbour weighting. RI and MaRI therefore agree on ``k``, and MaRI's ``tau`` can be
+        put on the scale of the typed neighbours at that ``k`` before any scoring happens --
+        the auto-``tau`` path is a two-step resolution, not a circular one.
+        """
+        cls._validate_inputs(features, manifest)
+        df = cls._normalize_manifest_inputs(
+            manifest, confounder_column=confounder_column
+        )
+        design = _normalize_evaluation_design(evaluation_design)
+        candidates = _normalize_k_values(k_candidates)
+        dataset_name = cls._infer_dataset_name(df)
+        if design == EVALUATION_DESIGN_DATASET_WIDE:
+            prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
+            return cls._select_dataset_wide_k(
+                prepared=prepared,
+                k_candidates=candidates,
+                dataset_name=dataset_name,
+            )
+        subsets = cls._build_subsets(df=df, dataset_name=dataset_name)
+        return cls._select_subset_k(
+            features=features,
+            subsets=subsets,
+            k_candidates=candidates,
+            dataset_name=dataset_name,
+        )
+
+    @classmethod
     def _select_dataset_wide_k(
         cls,
         *,
