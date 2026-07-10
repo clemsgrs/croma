@@ -229,3 +229,9 @@ scripts/render_one.py
 /croma-results-handoff.md
 /methods-feedback.md
 /results-feedback.md
+
+# Agent + scratch trees. These are untracked, and hatchling's sdist ships everything that
+# is not VCS-ignored, so leaving them unlisted would publish them to PyPI.
+.claude/
+/sections-save/
+/scripts/experiments/
