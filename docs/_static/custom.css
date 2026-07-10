@@ -1,0 +1,35 @@
+/* Landing-page card grid. Kept deliberately small: furo does the rest. */
+
+.croma-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0 2rem;
+}
+
+.croma-card {
+  display: block;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.75rem;
+  background: var(--color-background-secondary);
+  text-decoration: none !important;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.croma-card:hover {
+  border-color: var(--color-brand-primary);
+  transform: translateY(-2px);
+}
+
+.croma-card h3 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  color: var(--color-brand-primary);
+}
+
+.croma-card p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-foreground-secondary);
+}

@@ -68,6 +68,12 @@ dev = [
   "matplotlib>=3.8",
   "scipy>=1.11",
 ]
+docs = [
+  "sphinx>=8.1",
+  "furo",
+  "sphinx-copybutton",
+  "sphinx-autodoc-typehints",
+]
 encoders = [
   "musk @ git+https://github.com/lilab-stanford/MUSK.git",
   "conch @ git+https://github.com/Mahmoodlab/CONCH.git",
