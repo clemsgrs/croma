@@ -11,11 +11,16 @@ First public release of `croma`, a metrics-only library of representation-level
 robustness metrics for pathology foundation models (RI, MaRI, and the flagship
 cross-confounder margin metric).
 
-Nothing in this project has been published to PyPI before, so everything below
-describes the package as you first receive it. The bullets under *Changed* and
-*Removed* record decisions taken during pre-release development; they are here
-because they explain why the API looks the way it does, not because any released
-version behaved differently.
+This is the first release under the name `croma`. Everything below describes the
+package as you first receive it. The bullets under *Changed* and *Removed* record
+decisions taken during pre-release development; they are here because they explain
+why the API looks the way it does, not because any released version behaved
+differently.
+
+> The project was briefly distributed as `cross-margin` 1.0.0 (March 2026), before the
+> metric was renamed and before `tau` was resolved automatically. That name is retired;
+> `croma` is the only supported distribution. There is no upgrade path from it, and no
+> `cross-margin` code is carried forward.
 
 ### Added
 
