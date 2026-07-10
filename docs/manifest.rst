@@ -142,7 +142,7 @@ values, and at least one sample in each of the four ``(label, confounder)`` cell
    your scores come from fewer occurrences than you expected, check subset completeness
    first. If *no* subset is complete, the call raises.
 
-A minimal valid manifest -- one subset, four cells, one sample each:
+A minimal manifest -- one subset, four cells, one sample each:
 
 .. code-block:: text
 
@@ -151,6 +151,8 @@ A minimal valid manifest -- one subset, four cells, one sample each:
    s2,/data/2.png,tumor,slide-2,center_b,tumor_vs_normal__a_b
    s3,/data/3.png,normal,slide-3,center_a,tumor_vs_normal__a_b
    s4,/data/4.png,normal,slide-4,center_b,tumor_vs_normal__a_b
+
+It shows the required *shape*; see :ref:`sizing` before building one for real.
 
 A row carries exactly one ``subset`` value. To evaluate the same sample inside several 2x2
 comparisons, repeat the row once per subset -- and repeat its embedding row to match.
@@ -169,6 +171,36 @@ No ``subset`` column. Every row is scored against the whole cohort:
    s2,/data/2.png,tumor,slide-2,center_b
    s3,/data/3.png,normal,slide-3,center_a
    s4,/data/4.png,normal,slide-4,center_b
+
+.. _sizing:
+
+How big must it be?
+-------------------
+
+Both examples above show the required *shape*. Neither is large enough to score with the
+default settings. Two size rules govern this, and both are about the **neighbourhood
+scope** -- the subset under ``paired_2x2``, the whole retained dataset under
+``dataset_wide``.
+
+**RI and MaRI.** Every candidate ``k`` must be strictly less than the number of rows in the
+scope. Candidates that are not are dropped, and if none survive, the call raises:
+
+.. code-block:: text
+
+   RuntimeError: dataset: dataset-wide k-selection failed because no valid k candidates remain
+
+With the default ``k_candidates=[5, 11, 21]``, the scope needs at least 6 rows before even
+the smallest candidate is usable -- and a ``k`` barely under the scope size is not a
+meaningful neighbourhood anyway.
+
+**CRoMa.** A sample resolves only if ``m`` ``SO`` *and* ``m`` ``OS`` neighbours can be found
+for it. With the default ``m=5``, each of the four ``(label, confounder)`` cells wants at
+least 5 samples, on distinct slides. Unresolved samples are not silently dropped -- they are
+counted in ``result.undefined_frac``, and a run that could not resolve any of them returns
+``nan``.
+
+Neither rule can produce a *wrong* number: RI raises and CRoMa reports what it could not
+resolve. But an undersized manifest wastes a run.
 
 .. _deduplicated-embeddings:
 
