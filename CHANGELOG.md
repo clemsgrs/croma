@@ -11,8 +11,50 @@ First public release of `croma`, a metrics-only library of representation-level
 robustness metrics for pathology foundation models (RI, MaRI, and the flagship
 cross-confounder margin metric).
 
+Nothing in this project has been published to PyPI before, so everything below
+describes the package as you first receive it. The bullets under *Changed* and
+*Removed* record decisions taken during pre-release development; they are here
+because they explain why the API looks the way it does, not because any released
+version behaved differently.
+
+### Added
+
+- **Public API:** `RI`, `MaRI`, `CRoMa`, `expand_features_to_manifest`, and
+  `__version__`. The metric classes are namespaces of classmethods; nothing is
+  instantiated.
+- **`croma` CLI** with `ri`, `mari`, `croma`, `build-embedding-manifest`, and
+  `expand-embeddings` subcommands, each printing a JSON payload to stdout.
+- **Documentation site** built with Sphinx and published to GitHub Pages, covering the
+  metrics, the manifest and embedding contracts, the two evaluation designs, the CLI,
+  and an autodoc API reference. Installable with the new `docs` extra. See
+  `docs/adr/0009-docs-are-sphinx-on-github-pages.md`.
+- **`RobustnessResult.tau`**, reporting the temperature MaRI actually scored with. `nan`
+  on RI, which carries no temperature. `croma mari` additionally reports `tau_source`.
+- **Design documentation under version control:** `CONTEXT.md` (glossary and casing map)
+  and the architecture decision records in `docs/adr/`, so the reasoning behind the
+  numbers and figures in the paper survives in the repository.
+
 ### Changed
 
+- **MaRI's `tau` now defaults to automatic, per-dataset selection.** `MaRI.compute` and
+  `MaRI.compute_curve` take `tau=None` by default, resolving it to the median typed
+  (`SO`/`OS`) neighbour cosine distance at the operating `k`. Previously `tau` defaulted
+  to a fixed `0.2`.
+
+  This matters because MaRI weights neighbour evidence by `exp(-d / tau)`, so a
+  principled `tau` sits on the scale of the typed-neighbour distances — and that scale is
+  a property of each embedding. One fixed `tau` shared across models sharpens the margin
+  for some and flattens it for others, which is the distortion MaRI exists to remove. The
+  old default was off-scale enough to trip the package's own `warn_tau` check on the
+  package's own toy fixture. The benchmark pipeline had always resolved `tau` per model;
+  the library default now agrees with it.
+
+  Selecting `tau` this way is not circular: `k` is chosen by biological kNN balanced
+  accuracy, which never consults the weighting, so `k` is fixed before `tau` is chosen.
+  An explicit `tau` is still honoured, and still warned about when off-scale.
+- **The sdist is now an explicit include list** (`src`, `tests`, `docs`, `scripts`, and
+  the metadata files) rather than "everything not ignored by git", so untracked scratch
+  cannot reach PyPI.
 - **Renamed the flagship metric CCMR → CRoMa.** The Cross-Confounder Margin Ratio
   (`CCMR`) is now the Cross-confounder Robustness Margin (`CRoMa`), and the library
   is named after it. This is a **name-only change, not a behaviour change**: the
@@ -22,25 +64,6 @@ cross-confounder margin metric).
   Casing disambiguates the homonym: `croma` (all-lowercase) is always the library,
   `CRoMa` (mixed case) is always the metric. This is a clean break with no `CCMR`
   compatibility shims. See `docs/adr/0001-rename-ccmr-to-croma.md`.
-- **Widened the one-time `ccmr` → `croma` migration script** beyond its original
-  header-only design. In addition to renaming legacy `ccmr*` CSV column headers,
-  `scripts/experiments/migrate_ccmr_columns.py` now also rewrites the `ccmr`
-  identifier where it survives as a **cell value** (metric labels like `ccmr` /
-  `ccmr_m5` and comparison keys like `ccmr_vs_ri`, using the same leading-token
-  rule) and renames affected CSV **filenames** (e.g.
-  `model_specific_ccmr_subgroups.csv` → `model_specific_croma_subgroups.csv`).
-  This remains a pure identifier change with **no recompute** — every number is
-  preserved, and cells that merely contain `ccmr` as a substring (e.g. paths) are
-  left byte-for-byte unchanged. The migration stays idempotent. Accepted as a
-  documented exception in `docs/adr/0001-rename-ccmr-to-croma.md`.
-- **Extended the `ccmr` → `croma` migration to JSON result artifacts.**
-  `scripts/experiments/migrate_ccmr_columns.py` now also rewrites the `ccmr`
-  identifier in JSON files read by the paper figure generators (e.g.
-  `metrics.json`, `k_sweep_metrics.json`): legacy dict keys (`ccmr`, `ccmr_std`,
-  …) recursively through nested dicts/lists, whole-token string values (e.g.
-  `"metric": "ccmr"`), and `ccmr`-named `.json` filenames. Numbers/bools/null and
-  substring-only occurrences (paths) are preserved; the pass stays value-preserving
-  and idempotent.
 - **Renamed the optional extra `[bench]` → `[repro]`.** The extra that pulls in the
   paper-reproduction stack (data prep, embedding, plotting) is now installed with
   `pip install "croma[repro]"`. This is a name-only change; the dependency set is
@@ -78,12 +101,5 @@ cross-confounder margin metric).
     only these two flags) and the four figures that only made sense under them
     (RI/MaRI cumulative-mean k-sweeps and RI/MaRI sample-distribution plots).
     `plot_croma_sample_distributions` is retained.
-
-### Added
-
-- Tracked design documentation under version control: `CONTEXT.md` (glossary and
-  casing map), the architecture decision records in `docs/adr/`, and the
-  paper-reproduction/experiment scripts under `scripts/experiments/`, so the
-  numbers and figures in the paper are reproducible from a clean checkout.
 
 [0.1.0]: https://github.com/clemsgrs/croma/releases/tag/v0.1.0

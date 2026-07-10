@@ -25,14 +25,28 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine
 
+      # The repo has already carried a 1.0.0 tag while pyproject said 0.1.0. A version is
+      # immutable once uploaded, so catch the mismatch before it reaches PyPI, not after.
+      - name: Assert the release tag matches the package version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION=$(python -c "import pathlib, tomllib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          if [ "${TAG#v}" != "$VERSION" ]; then
+            echo "::error::release tag '${TAG}' does not match pyproject version '${VERSION}'"
+            exit 1
+          fi
+          echo "tag ${TAG} matches version ${VERSION}"
+
       - name: Build package
         run: python -m build
 
       - name: Validate distribution metadata
         run: twine check --strict dist/*
 
+      # `on: release` already implies github.ref is refs/tags/<tag>, so the old
+      # startsWith(github.ref, 'refs/tags/') guard could never be false.
       - name: Publish to PyPI
-        if: startsWith(github.ref, 'refs/tags/')
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}

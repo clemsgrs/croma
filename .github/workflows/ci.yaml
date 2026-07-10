@@ -31,3 +31,38 @@ jobs:
       - name: Run tests
         run: pytest -q
 
+  package:
+    name: Build and check distribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine
+
+      - name: Build package
+        run: python -m build
+
+      # release.yaml runs this same pair at publish time, where a failure means a broken
+      # tag. Running it per-PR moves packaging breakage to where it is cheap to fix.
+      - name: Validate distribution metadata
+        run: twine check --strict dist/*
+
+      # The sdist is an explicit include list, so a new top-level directory silently joins
+      # it. Fail loudly rather than shipping scratch to PyPI.
+      - name: Assert the sdist carries no scratch
+        run: |
+          if tar tzf dist/*.tar.gz | grep -E '(\.ipynb_checkpoints|__pycache__|/experiments/|/_build/)'; then
+            echo "::error::scratch files leaked into the sdist"
+            exit 1
+          fi
+

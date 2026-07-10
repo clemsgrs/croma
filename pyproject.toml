@@ -3,9 +3,6 @@ requires = ["hatchling>=1.25.0"]
 build-backend = "hatchling.build"
 
 [project]
-# Distribution name. Target is the bare `croma` (pending PyPI name acquisition);
-# if that name is unavailable, fall back to the reserved `croma-metrics`:
-# name = "croma-metrics"
 name = "croma"
 version = "0.1.0"
 description = "Metrics-only library for pathology foundation model robustness: RI, MaRI, and CRoMa."
@@ -46,6 +43,7 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://github.com/clemsgrs/croma"
+Documentation = "https://clemsgrs.github.io/croma/"
 Repository = "https://github.com/clemsgrs/croma"
 Issues = "https://github.com/clemsgrs/croma/issues"
 Changelog = "https://github.com/clemsgrs/croma/blob/main/CHANGELOG.md"
@@ -91,6 +89,28 @@ allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/croma"]
+
+# Enumerate the sdist explicitly rather than letting hatchling walk the repo root. The
+# working tree carries large, git-ignored trees (data/, output/, paper/) and untracked
+# scratch, and hatchling's default is "everything not VCS-ignored" -- which would both
+# ship scratch to PyPI and make the build crawl.
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/docs",
+  "/scripts",
+  "/README.md",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/pyproject.toml",
+]
+exclude = [
+  "/docs/_build",
+  "/scripts/experiments",
+  "**/.ipynb_checkpoints",
+  "**/__pycache__",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
