@@ -5,20 +5,53 @@ Fuses the two stories into one table, sorted by the headline pooled CRoMa:
   - tail cleanliness: nearest-OS rank for the CRoMa bottom decile vs the rest
 """
 
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
+from paper_manifest import by_benchmark
 
-ROOT = Path("output/metrics/k-star/pathorob-camelyon")
-rank = pd.read_csv(ROOT / "studies" / "typed_neighbor_rank_summary.csv").set_index("model")
-croma = pd.read_csv(ROOT / "results" / "metrics.csv").set_index("model")["croma"]
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from croma.plotstyle import CONTROL_MODEL  # noqa: E402
 
-df = rank.join(croma).sort_values("croma", ascending=False)
+ENTRY = by_benchmark("pathorob-camelyon")
+rank = pd.read_csv(Path(ENTRY.studies_rel) / "typed_neighbor_rank_summary.csv").set_index("model")
+croma = pd.read_csv(ENTRY.metrics_rel).set_index("model")["croma"]
+
+# The study caches a `croma` column for its own scatter, copied from this same metrics.csv.
+# Drop it and re-join from the source, so the table cannot show a stale cache.
+df = rank.drop(columns=["croma"], errors="ignore").join(croma, how="inner")
+if len(df) != len(rank):
+    missing = sorted(set(rank.index) - set(df.index))
+    raise SystemExit(f"models in the rank summary but not in {ENTRY.metrics_rel}: {missing}")
+df = df.sort_values("croma", ascending=False)
+# The natural-image control is a floor, not a competitor: it is excluded from the sort and
+# rendered in its own band below the rule, exactly as in the main results tables.
+ranked = df.drop(index=CONTROL_MODEL, errors="ignore")
+control = df.loc[[CONTROL_MODEL]] if CONTROL_MODEL in df.index else df.iloc[:0]
+
+
+def _row(model: str, r: pd.Series) -> str:
+    return (
+        f"{model} & {r['croma']:.2f} & {int(round(r['so_med']))} & "
+        f"{int(round(r['os_med']))} & {int(round(r['tail_os_rank_med']))} & "
+        f"{int(round(r['rest_os_rank_med']))} \\\\"
+    )
+
+
+def _control_clause() -> str:
+    if control.empty:
+        return ""
+    return (
+        rf" The natural-image control \code{{{CONTROL_MODEL}}} is shown below the rule and "
+        rf"excluded from the ordering."
+    )
+
 
 lines = [
-    r"\begin{table}[h]",
+    r"\begin{table}[!htbp]",
     r"\centering",
     r"\small",
     r"\begin{tabular}{lccccc}",
@@ -27,32 +60,25 @@ lines = [
     r"Model & \code{CRoMa} & \code{SO} & \code{OS} & tail & rest \\",
     r"\hline",
 ]
-for model, r in df.iterrows():
-    lines.append(
-        f"{model} & {r['croma']:.2f} & {int(round(r['so_med']))} & "
-        f"{int(round(r['os_med']))} & {int(round(r['tail_os_rank_med']))} & "
-        f"{int(round(r['rest_os_rank_med']))} \\\\"
-    )
+lines += [_row(model, r) for model, r in ranked.iterrows()]
+if not control.empty:
+    lines.append(r"\hline")
+    lines += [_row(model, r) for model, r in control.iterrows()]
+
 lines += [
     r"\hline",
     r"\end{tabular}",
-    r"\caption{\textbf{Per-model typed-neighbour ranks underpinning the global-ordering and "
-    rf"tail-cleanliness claims.}} Models are sorted by pooled $\mcode{{CRoMa}}(m{{=}}{int(CROMA_HEADLINE_M)})$. "
-    r"\emph{Median rank} columns give the rank (among non-self neighbours, ordered by "
-    r"increasing cosine distance, same-slide neighbours excluded as in \code{CRoMa}) at which "
-    r"the nearest \code{SO} (same-biology, other-confounder) and nearest \code{OS} "
-    r"(other-biology, same-confounder) neighbour first appear. Both are reached far from the "
-    r"immediate neighbourhood, and the \code{SO}/\code{OS} asymmetry tracks \code{CRoMa}: robust "
-    r"models reach a cross-confounder biological match early and the same-confounder impostor "
-    r"late, while fragile models reverse this. \emph{Nearest-\code{OS} rank} columns compare "
-    r"the \code{CRoMa} bottom decile (the \code{LTM} tail) against the rest: for every model the "
-    r"tail's same-confounder impostor is much nearer, confirming the lower tail flags real "
-    r"local shortcuts rather than ratio-compression artefacts.}",
+    r"\caption{\textbf{Typed-neighbour ranks on PathoROB Camelyon.} "
+    rf"Models are ordered by pooled $\mcode{{CRoMa}}(m{{=}}{int(CROMA_HEADLINE_M)})$. Median "
+    r"\code{SO} and \code{OS} ranks locate the nearest cross-confounder biological match and "
+    r"same-confounder biological distractor, respectively, after excluding self and same-slide "
+    r"samples. The final columns report nearest-\code{OS} rank in the lowest \code{CRoMa} decile "
+    r"and in the remaining samples." + _control_clause() + "}",
     r"\label{tab:typed-neighbour-ranks}",
     r"\end{table}",
 ]
 
-out = Path("paper/sections/supp_typed_neighbor_ranks.tex")
+out = Path("paper/sections/supp/typed_neighbor_ranks.tex")
 out.write_text("\n".join(lines) + "\n")
 print(df[["croma", "so_med", "os_med", "tail_os_rank_med", "rest_os_rank_med"]].round(2).to_string())
 print(f"\nwrote {out}")
