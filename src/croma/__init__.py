@@ -1,4 +1,5 @@
 from croma.alignment import expand_features_to_manifest
+from croma.downstream import napd
 from croma.metrics.croma import CrossConfounderRobustnessMargin
 from croma.metrics.mari import MarginAwareRobustnessIndex
 from croma.metrics.ri import RobustnessIndex
@@ -13,5 +14,6 @@ __all__ = [
     "MaRI",
     "CRoMa",
     "expand_features_to_manifest",
+    "napd",
     "__version__",
 ]

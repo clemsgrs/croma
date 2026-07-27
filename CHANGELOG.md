@@ -33,9 +33,17 @@ differently.
 
 ### Added
 
-- **Public API:** `RI`, `MaRI`, `CRoMa`, `expand_features_to_manifest`, and
+- **Public API:** `RI`, `MaRI`, `CRoMa`, `napd`, `expand_features_to_manifest`, and
   `__version__`. The metric classes are namespaces of classmethods; nothing is
   instantiated.
+- **`croma.downstream.napd`**, the skill-normalized Average Performance Drop, reducing
+  an `(n_splits, n_iterations)` matrix of balanced accuracies against an explicit
+  `chance = 1 / n_biological_classes`. Skill is accuracy above chance, so the value is
+  the share of *learnable* signal the confounder destroys and is comparable across tasks
+  with different class counts. It averages the replicate axis before taking the ratio,
+  unlike APD — the one deliberate deviation from PathoROB's reduction, recorded in
+  `docs/adr/0014-napd-averages-replicates-before-taking-the-ratio.md`. It carries no
+  skill floor: every admissible input yields a value.
 - **`croma` CLI** with `ri`, `mari`, `croma`, `build-embedding-manifest`, and
   `expand-embeddings` subcommands, each printing a JSON payload to stdout.
 - **Documentation site** built with Sphinx and published to GitHub Pages, covering the
