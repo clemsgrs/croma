@@ -22,9 +22,12 @@ import pandas as pd
 # Repo root autodetected from this file's location: scripts/studies/apd/loaders.py
 # -> parents[3] is the croma repo root, so the reproduction works from any checkout.
 REPO = Path(__file__).resolve().parents[3]
-if str(REPO / "scripts" / "bench") not in sys.path:
-    sys.path.insert(0, str(REPO / "scripts" / "bench"))
+for _p in (REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" / "repro"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>/...)
+from croma.plotstyle import CONTROL_MODEL  # noqa: E402
+from paper_manifest import by_benchmark  # noqa: E402
 
 # PathoROB is a SIBLING repo (not under croma), so it cannot be autodetected. Default to
 # a sibling checkout next to croma; override with PATHOROB_ROOT if it lives elsewhere.
@@ -39,10 +42,14 @@ if str(PATHOROB) not in sys.path:
 # (centre, biology) cell indexing matches the split schedule exactly. ``split_key``
 # is the name get_patches_map_to_split expects (note: tcga_4x4 -> "tcga"). ``src`` is
 # the *tileset* whose full embedding matrix (every row, ID + OOD centres) APD reads --
-# resolved via layout.embeddings_dir(); it is not a benchmark eval view.
+# resolved via layout.embeddings_dir(); it is not a benchmark eval view. ``benchmark``
+# is the paper_manifest key naming the *run* whose CRoMa/RI/MaRI this APD is correlated
+# against; it coincides with ``src`` for the PathoROB tilesets but not for prostate,
+# where one tileset ("prostate-shift") backs a run named "prostate".
 DATASETS = {
     "camelyon": dict(
         src="pathorob-camelyon",
+        benchmark="pathorob-camelyon",
         metadata="data/pathorob/metadata/camelyon.csv",
         split_key="camelyon",
         centers_id=["RUMC", "UMCU"],
@@ -52,6 +59,7 @@ DATASETS = {
     ),
     "tcga_4x4": dict(
         src="pathorob-tcga-4x4",
+        benchmark="pathorob-tcga-4x4",
         metadata="data/pathorob/metadata/tcga_4x4.csv",
         split_key="tcga",
         centers_id=["Asterand", "Christiana Healthcare", "Roswell Park", "University of Pittsburgh"],
@@ -61,6 +69,7 @@ DATASETS = {
     ),
     "tolkach": dict(
         src="pathorob-tolkach-esca",
+        benchmark="pathorob-tolkach-esca",
         metadata="data/pathorob/metadata/tolkach_esca.csv",
         split_key="tolkach_esca",
         centers_id=["VALSET2_WNS", "VALSET4_CHA_FULL"],
@@ -83,12 +92,30 @@ DATASETS = {
     # 24-79 patches/slide is irrelevant. See paper for the schedule-faithfulness note.
     "prostate": dict(
         src="prostate-shift",
+        benchmark="prostate",
         metadata="data/prostate/metadata/prostate_shift.csv",
         split_key="prostate",
         centers_id=["KI", "RUMC"],
         centers_ood=["NUS"],
         biological_classes=["benign", "tumor"],
         num_splits=9, num_slides_per_category=50, num_patches_per_slide=37,
+    ),
+    # pcabiop: slide-level APD. ID = PANDA's cancer-detection cohort (the published
+    # `panda` benchmark: 250 benign + 250 cancer per provider, a balanced 2x2 with 250
+    # slides/cell); held-out OOD = PAR, an external Leica-scanned prostate-biopsy cohort
+    # (162 benign / 162 cancer). One slide embedding per case, so num_patches_per_slide=1
+    # and pseudo-slides == real slides. The schedule is croma-authored (_pcabiop_split_map),
+    # anchored on Camelyon (the binary 2x2 PathoROB benchmark). Built by
+    # scripts/prep/prepare_pcabiop.py.
+    "pcabiop": dict(
+        src="pcabiop",
+        benchmark="panda",
+        metadata="data/pcabiop/metadata/pcabiop.csv",
+        split_key="pcabiop",
+        centers_id=["radboud", "karolinska"],
+        centers_ood=["PAR"],
+        biological_classes=["benign", "cancer"],
+        num_splits=11, num_slides_per_category=250, num_patches_per_slide=1,
     ),
 }
 
@@ -124,6 +151,84 @@ def _prostate_split_map(split, num_patches_per_slide):
     tss0_pairs = [(0, 0, favourable), (0, 1, unfavourable)]
     tss1_pairs = [(1, 0, unfavourable), (1, 1, favourable)]
     return sorted(tss0_pairs + tss1_pairs), 2 * M
+
+
+def _pcabiop_split_map(split, num_patches_per_slide):
+    """croma-authored slide-level split schedule for the PCaBiop APD experiment.
+
+    Same 2-centre x 2-class diagonal structure as Camelyon's schedule (PathoROB), the
+    binary 2x2 benchmark, re-parameterised for PANDA's 250 slides/cell:
+
+        balanced load   M     = 100 slides/cell
+        confounder step Delta = 10 slides/split
+        num_splits            = M/Delta + 1 = 11  (split 10: favourable cell -> 0)
+
+    max_train_slides = 2M = 200 (80% of the cell, matching Camelyon's 14/17 = 82%); total
+    train = 4M = 400 slides, conserved across splits. num_patches_per_slide is 1 (one
+    embedding per slide), so favourable/unfavourable counts are in slides directly.
+    Camelyon uses Delta=1 only because its cells hold 7 slides; the faithful invariant is
+    the number of points sampled on the Cramer's-V axis (Camelyon = 8), and 11 here just
+    samples the same 0->1 axis more densely. The two slide-level deviations from PathoROB
+    -- this schedule and the validation fraction in apd_experiment.compute -- are
+    documented as such in the paper.
+    """
+    M, delta = 100, 10
+    favourable = (M - delta * split) * num_patches_per_slide
+    unfavourable = (M + delta * split) * num_patches_per_slide
+    tss0_pairs = [(0, 0, favourable), (0, 1, unfavourable)]
+    tss1_pairs = [(1, 0, unfavourable), (1, 1, favourable)]
+    return sorted(tss0_pairs + tss1_pairs), 2 * M
+
+
+def _split_map(dataset, split, num_patches_per_slide=1):
+    """The (centre, class, train-patch-count) schedule for one split of ``dataset``.
+
+    PathoROB owns every schedule but prostate's, which is croma-authored above. Its
+    ``get_patches_map_to_split`` is imported lazily, exactly as ``load_data``'s is: the
+    figure that plots these correlations must not pull PathoROB in merely to draw a line.
+    """
+    cfg = DATASETS[dataset]
+    if cfg["split_key"] == "prostate":
+        return _prostate_split_map(split, num_patches_per_slide)[0]
+    if cfg["split_key"] == "pcabiop":
+        return _pcabiop_split_map(split, num_patches_per_slide)[0]
+    from pathorob.apd.utils import get_patches_map_to_split
+    return get_patches_map_to_split(cfg["split_key"], split, num_patches_per_slide)[0]
+
+
+def cramers_v(table):
+    """Cramer's V of a contingency table: 0 = independent, 1 = one row fixes the column.
+
+    Scale-invariant, so slide counts and patch counts give the same answer.
+    """
+    t = np.asarray(table, dtype=float)
+    n = t.sum()
+    expected = t.sum(axis=1, keepdims=True) * t.sum(axis=0, keepdims=True) / n
+    chi2 = ((t - expected) ** 2 / expected).sum()
+    return float(np.sqrt(chi2 / (n * (min(t.shape) - 1))))
+
+
+def training_correlations(dataset):
+    """Cramer's V of the (centre x biological class) *training-count* table, per split.
+
+    The schedule injects the spurious centre<->biology correlation by skewing how many
+    training patches each (centre, class) cell contributes. This is that skew, summarised in
+    one number per split, and it is what the per-split probe accuracies are plotted against.
+
+    PathoROB's own figures index the same schedule by the favourable cell's slide fraction
+    (7/14 ... 14/14 on Camelyon). That is monotone in V, but its lower endpoint moves with
+    the number of classes, so the three benchmarks cannot share one axis. V can: every
+    schedule starts balanced at 0 and ends fully confounded at 1.
+    """
+    cfg = DATASETS[dataset]
+    shape = (len(cfg["centers_id"]), len(cfg["biological_classes"]))
+    correlations = []
+    for split in range(cfg["num_splits"]):
+        table = np.zeros(shape)
+        for center_idx, bio_idx, num_patches in _split_map(dataset, split):
+            table[center_idx, bio_idx] = num_patches
+        correlations.append(cramers_v(table))
+    return correlations
 
 
 def load_data(model, dataset):
@@ -183,6 +288,10 @@ def load_data(model, dataset):
 # small out-of-domain centre (NUS: 300/class, no Gleason-3) and is reported separately
 # with that caveat -- do NOT read the 4-benchmark `pooled` APD_OOD as the headline.
 DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach", "prostate"]
+#: Everything this study reads and writes: the APD CSVs, the join, and the plots drawn from
+#: them. Figures land here beside their data rather than under ``paper/`` -- see the note on
+#: ``OUT`` in ``scripts/repro/figures/apd_figure.py``.
+STUDY_DIR = REPO / "output/studies/apd"
 # The headline validation table (tab:apd-correlation) pools over ONLY the three faithful
 # PathoROB benchmarks (48 model-benchmark pairs). Prostate is excluded from this pool: its
 # single-centre OOD arm cannot be pooled into a cross-benchmark APD_OOD statistic (see the
@@ -190,23 +299,33 @@ DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach", "prostate"]
 HEADLINE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
 CORR_METRICS = ["croma", "ri", "mari"]
 
-# Canonical faithful (n=20,400) metric dirs — the exact CSVs the paper's tables and
-# figures read, with CRoMa already on the signed-margin scale the paper defines. The
-# `dataset` column there holds the dir name, so we override it with the APD key below.
-METRIC_DIR = {
-    "camelyon": "output/metrics/k-star/pathorob-camelyon",
-    "tcga_4x4": "output/metrics/k-star/pathorob-tcga-4x4",
-    "tolkach": "output/metrics/k-star/pathorob-tolkach-esca",
-    "prostate": "output/metrics/k-star/prostate",
-}
+#: APD dataset key -> the metrics.csv of the run the paper reports for that benchmark.
+#: APD itself is protocol-free (it trains probes on embeddings, never on a k-NN graph), but
+#: the metrics it is correlated *against* are not: RI and MaRI are k-dependent, so a
+#: Spearman(RI, APD) must be computed at the protocol whose RI the paper prints. CRoMa is
+#: k-free, so its row of tab:apd-correlation is protocol-invariant. This used to name
+#: ``k-star/pathorob-*`` -- runs archived when the tile panel moved to ``median-k``, so the
+#: join could no longer run at all. See ADR-0010 and CONTEXT.md ("Study").
+METRIC_CSV = {ds: by_benchmark(cfg["benchmark"]).metrics_rel for ds, cfg in DATASETS.items()}
+
+
+def ranked(df):
+    """Drop the natural-image control: it is a floor, not a competitor, so it holds no
+    rank and enters no Spearman. Every cross-model statistic over APD goes through here,
+    so the figure's in-panel rho cannot drift from the table's."""
+    return df[df["model"] != CONTROL_MODEL]
 
 
 def load_joined(apd_csv):
-    """Join APD results with the faithful CRoMa/RI/MaRI metrics, per (dataset, model)."""
+    """Join APD results with the faithful CRoMa/RI/MaRI metrics, per (dataset, model).
+
+    The control is kept in the join so its APD stays on record; every consumer that ranks
+    or plots models drops it through ``ranked``.
+    """
     apd = pd.read_csv(apd_csv)
     frames = []
     for ds in DATASET_KEYS:
-        m = pd.read_csv(REPO / METRIC_DIR[ds] / "results/metrics.csv")
+        m = pd.read_csv(REPO / METRIC_CSV[ds])
         m["dataset"] = ds  # align with APD's dataset key (CSV stores the dir name)
         # Defensive: the canonical dirs are already signed-margin CRoMa; only convert
         # if a legacy ratio-scale CSV (any value > 1) is ever pointed at here.
@@ -227,4 +346,4 @@ def read_joined():
     Written by ``apd_croma_correlation.py`` with CRoMa already on the signed-margin
     scale (the paper's definition).
     """
-    return pd.read_csv(REPO / "output/studies/apd/apd_metrics_joined.csv")
+    return pd.read_csv(STUDY_DIR / "apd_metrics_joined.csv")
