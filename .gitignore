@@ -236,3 +236,18 @@ scripts/render_one.py
 .claude/
 /sections-save/
 /scripts/experiments/
+
+# Paper tooling, kept local for now. paper/ was already ignored; this is everything that
+# renders into it -- the .tex and figure generators, the manifest that maps runs to
+# artifacts, their tests, and the ADR governing them. They stay on disk and keep working
+# locally; they are simply not published while the manuscript is unpublished.
+#
+# What is NOT here, deliberately: scripts/bench/ (the benchmarking pipeline is a stated
+# deliverable), scripts/studies/ (the APD/nAPD source that croma.downstream is ported from,
+# see ADR-0011), scripts/prep/ and scripts/tools/.
+/scripts/repro/
+/tests/test_paper_artifacts.py
+/tests/test_generate_model_tables.py
+/tests/test_dataset_montage.py
+/tests/test_scale_scatter.py
+/docs/adr/0010-paper-sections-are-build-outputs.md
