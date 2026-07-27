@@ -5,16 +5,19 @@ faithful CRoMa/RI/MaRI metrics, and ``apd_figure.py`` plots it. They share the r
 root, the per-dataset APD configuration, and the data loaders collected here, so the
 paths and join logic live in exactly one place.
 
-PathoROB (``pathorob.*``) is imported lazily inside ``load_data`` (the only loader that
-needs it) so the pure-pandas loaders (``load_joined``, ``read_joined``) and the plotting
-entrypoint do not pull PathoROB/sklearn. Every function is byte-for-byte identical to the
-inline code it replaces.
+Nothing here computes a metric. The probe protocol and both reductions ship in
+``croma.downstream`` (ADR-0011), and the schedules PathoROB authored come from
+``croma.downstream.pathorob_schedule``; what this module owns is which rows a cohort
+consists of, how they are indexed, and the two schedules croma authored for the datasets
+PathoROB has none for. There is no PathoROB checkout in the picture -- its dataset files
+arrive under ``data/pathorob/`` like every other input, and its code arrives vendored,
+inside the installed package.
 """
 
 import json
-import os
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -26,14 +29,8 @@ for _p in (REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" / "repro")
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>/...)
+from croma.downstream import pathorob_schedule  # noqa: E402
 from croma.plotstyle import CONTROL_MODEL  # noqa: E402
-from paper_manifest import by_benchmark  # noqa: E402
-
-# PathoROB is a SIBLING repo (not under croma), so it cannot be autodetected. Default to
-# a sibling checkout next to croma; override with PATHOROB_ROOT if it lives elsewhere.
-PATHOROB = Path(os.environ.get("PATHOROB_ROOT", REPO.parent / "PathoROB"))
-if str(PATHOROB) not in sys.path:
-    sys.path.insert(0, str(PATHOROB))
 
 # ---------------------------------------------------------------------------
 # APD computation config (used by apd_experiment.py)
@@ -45,7 +42,10 @@ if str(PATHOROB) not in sys.path:
 # resolved via layout.embeddings_dir(); it is not a benchmark eval view. ``benchmark``
 # is the paper_manifest key naming the *run* whose CRoMa/RI/MaRI this APD is correlated
 # against; it coincides with ``src`` for the PathoROB tilesets but not for prostate,
-# where one tileset ("prostate-shift") backs a run named "prostate".
+# where one tileset ("prostate-shift") backs a run named "prostate". ``centers_id`` orders
+# the confounder axis of every schedule, so it is load-bearing; ``centers_ood`` records
+# which centres the held-out arm holds, but the partition itself is the metadata's
+# ``subset`` column, which is what ``load_data`` reads.
 DATASETS = {
     "camelyon": dict(
         src="pathorob-camelyon",
@@ -67,10 +67,18 @@ DATASETS = {
         biological_classes=["Breast_invasive_carcinoma", "Colon_adenocarcinoma", "Lung_adenocarcinoma", "Lung_squamous_cell_carcinoma"],
         num_splits=7, num_slides_per_category=12, num_patches_per_slide=30,
     ),
+    # tolkach_esca is the one cohort whose slides cannot be ordered freely: a case there
+    # contributes patches to several biological classes, so it may not be trained on in one
+    # and tested on in another. PathoROB enumerates the case splits that avoid this, and
+    # each replicate draws one and pushes its held-out cases to the tail (see
+    # ``case_arrangement``). ``case_splits`` is that enumeration -- PathoROB's own
+    # ``pathorob/resources/tolkach_splits.json``, copied under ``data/pathorob/`` exactly as
+    # its metadata CSVs are, because it describes the dataset rather than the protocol.
     "tolkach": dict(
         src="pathorob-tolkach-esca",
         benchmark="pathorob-tolkach-esca",
         metadata="data/pathorob/metadata/tolkach_esca.csv",
+        case_splits="data/pathorob/tolkach_splits.json",
         split_key="tolkach_esca",
         centers_id=["VALSET2_WNS", "VALSET4_CHA_FULL"],
         centers_ood=["VALSET1_UKK", "VALSET3_TCGA"],
@@ -180,20 +188,29 @@ def _pcabiop_split_map(split, num_patches_per_slide):
     return sorted(tss0_pairs + tss1_pairs), 2 * M
 
 
-def _split_map(dataset, split, num_patches_per_slide=1):
-    """The (centre, class, train-patch-count) schedule for one split of ``dataset``.
+#: The schedules croma authored, for the two datasets PathoROB has none for. Everything
+#: else routes to its own helper, in the package.
+CROMA_SPLIT_MAPS = {"prostate": _prostate_split_map, "pcabiop": _pcabiop_split_map}
 
-    PathoROB owns every schedule but prostate's, which is croma-authored above. Its
-    ``get_patches_map_to_split`` is imported lazily, exactly as ``load_data``'s is: the
-    figure that plots these correlations must not pull PathoROB in merely to draw a line.
+
+def split_schedule(dataset, num_patches_per_slide=1):
+    """The schedule the probe sweep walks for ``dataset``: one split per entry.
+
+    Each entry is the ``(split_map, max_train_slides)`` pair ``croma.probe_sweep`` reads --
+    how many training rows every (centre, class) cell contributes at that split, balanced
+    first and fully confounded last. PathoROB owns all three of its own schedules and they
+    come from the package, built by its vendored helper; prostate and pcabiop are
+    croma-authored above and are built here.
     """
     cfg = DATASETS[dataset]
-    if cfg["split_key"] == "prostate":
-        return _prostate_split_map(split, num_patches_per_slide)[0]
-    if cfg["split_key"] == "pcabiop":
-        return _pcabiop_split_map(split, num_patches_per_slide)[0]
-    from pathorob.apd.utils import get_patches_map_to_split
-    return get_patches_map_to_split(cfg["split_key"], split, num_patches_per_slide)[0]
+    split_map = CROMA_SPLIT_MAPS.get(cfg["split_key"])
+    if split_map is not None:
+        return [split_map(s, num_patches_per_slide) for s in range(cfg["num_splits"])]
+    return pathorob_schedule(
+        cfg["split_key"],
+        rows_per_slide=num_patches_per_slide,
+        n_splits=cfg["num_splits"],
+    )
 
 
 def cramers_v(table):
@@ -223,27 +240,47 @@ def training_correlations(dataset):
     cfg = DATASETS[dataset]
     shape = (len(cfg["centers_id"]), len(cfg["biological_classes"]))
     correlations = []
-    for split in range(cfg["num_splits"]):
+    for split_map, _ in split_schedule(dataset):
         table = np.zeros(shape)
-        for center_idx, bio_idx, num_patches in _split_map(dataset, split):
+        for center_idx, bio_idx, num_patches in split_map:
             table[center_idx, bio_idx] = num_patches
         correlations.append(cramers_v(table))
     return correlations
 
 
+class Cohort(NamedTuple):
+    """One (model, dataset) cohort, indexed the way ``croma.probe_sweep`` reads it.
+
+    ``embeddings`` holds the ID rows in metadata order, and ``confounders``/``labels`` give
+    each of them its (centre, biological class) cell as *indices into the schedule* -- the
+    schedule addresses cells by position, so the names are mapped here, once. The OOD rows
+    ride along as a test set the sweep scores but never trains on. ``slide_ids`` is what
+    Tolkach's case arrangement reads; it is the ID rows' own column, in the same order.
+    """
+
+    embeddings: np.ndarray
+    confounders: np.ndarray
+    labels: np.ndarray
+    ood_embeddings: np.ndarray
+    ood_labels: np.ndarray
+    slide_ids: list
+
+
 def load_data(model, dataset):
-    """croma-cache equivalent of PathoROB's apd.utils.load_data.
+    """Assemble one cohort out of croma's embedding cache and PathoROB's metadata.
 
-    Returns the same 8-tuple PathoROB's compute() expects:
-        centers_id, biological_classes, features, data_test_ood,
-        num_splits, num_slides_per_category, num_patches_per_slide, feasible_splits
+    This is the study's half of the arrangement ADR-0011 draws: the library consumes
+    embeddings and a split assignment and knows nothing about where a repository keeps its
+    files, so somebody has to read the manifest, pick the model's matrix out of the cache
+    and map centre and class names onto the schedule's indices. That is all this does.
 
-    where ``features[center_idx][bio_idx]`` is a list of
-    (feature_vector, center_idx, bio_idx, slide_id) tuples in metadata order, and
-    ``data_test_ood`` is a flat list of the same tuple shape for OOD centres.
+    The row order is the metadata's, which is what makes the cache usable at all: croma's
+    per-tileset embedding matrix is row-aligned with PathoROB's metadata CSV, so grouping
+    rows into cells in that order reproduces PathoROB's own per-cell pseudo-slide chunking
+    bit for bit.
     """
     cfg = DATASETS[dataset]
-    centers_id, centers_ood = cfg["centers_id"], cfg["centers_ood"]
+    centers_id = cfg["centers_id"]
     bio = cfg["biological_classes"]
 
     md = pd.read_csv(REPO / cfg["metadata"])
@@ -253,29 +290,73 @@ def load_data(model, dataset):
     md_id = md[md["subset"] == "ID"]
     md_ood = md[md["subset"] == "OOD"]
 
-    features = [[[] for _ in bio] for _ in centers_id]
-    for row in md_id.itertuples():
-        ci, bi = centers_id.index(row.medical_center), bio.index(row.biological_class)
-        features[ci][bi].append((emb[row.Index], ci, bi, row.slide_id))
+    return Cohort(
+        embeddings=emb[md_id.index.to_numpy()],
+        confounders=np.array([centers_id.index(c) for c in md_id["medical_center"]]),
+        labels=np.array([bio.index(b) for b in md_id["biological_class"]]),
+        ood_embeddings=emb[md_ood.index.to_numpy()],
+        ood_labels=np.array([bio.index(b) for b in md_ood["biological_class"]]),
+        slide_ids=list(md_id["slide_id"]),
+    )
 
-    data_test_ood = [
-        (emb[row.Index], centers_ood.index(row.medical_center), bio.index(row.biological_class), row.slide_id)
-        for row in md_ood.itertuples()
-    ]
 
-    feasible_splits = None
-    if dataset == "tolkach":
-        # Reused verbatim from PathoROB (numpy/sklearn only, no torch side-effects);
-        # imported lazily so the pure-pandas loaders and the figure do not pull PathoROB.
-        import importlib.resources as pkg_resources
+def arrangement_for(dataset, slide_ids):
+    """How ``dataset`` orders each cell's slides per replicate, or None for the default.
 
-        from pathorob import resources as pathorob_resources
-        with pkg_resources.files(pathorob_resources).joinpath("tolkach_splits.json").open("r") as f:
-            feasible_splits = json.load(f)
+    Only tolkach_esca needs one, and it needs it because of how its cases are annotated
+    rather than because of anything about the protocol -- which is why the sweep takes it
+    as an argument and this study supplies it.
+    """
+    cfg = DATASETS[dataset]
+    if "case_splits" not in cfg:
+        return None
+    path = REPO / cfg["case_splits"]
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{dataset}: {path} is missing. It is PathoROB's own "
+            "pathorob/resources/tolkach_splits.json -- copy it there, as the metadata CSVs "
+            "beside it were copied."
+        )
+    return case_arrangement(cfg["centers_id"], json.loads(path.read_text()), slide_ids)
 
-    return (centers_id, bio, features, data_test_ood,
-            cfg["num_splits"], cfg["num_slides_per_category"], cfg["num_patches_per_slide"],
-            feasible_splits)
+
+def case_arrangement(centers, feasible_splits, slide_ids):
+    """Order a replicate's slides so a drawn set of cases falls in the held-out tail.
+
+    Tolkach-ESCA's cases span biological classes, so a case trained on in one class and
+    tested on in another leaks. PathoROB enumerates the case splits that avoid it; each
+    replicate draws one per centre and moves those cases' slides to the back of every cell,
+    which is where the sweep's held-out rows come from.
+
+    Returned as the ``arrange_slides`` hook ``croma.downstream.probe_sweep_over_test_sets``
+    takes, so this is the only per-replicate logic the study still runs -- and it runs
+    inside the library's sweep rather than beside a copy of it. The draws come first and
+    the shuffle second, off the one generator, because that is the order the sweep's own
+    arrangement and PathoROB's driver both consume it in; swapping them would re-seed every
+    Tolkach number.
+
+    Known wart, inherited from that driver and kept deliberately: the intersection below is
+    a ``set``, so which of several drawn cases ends up outermost depends on string hashing,
+    which Python randomises per process. Tolkach accuracies are therefore reproducible only
+    at a fixed ``PYTHONHASHSEED`` -- verified against the pre-rewire driver, which has the
+    same property, so the stored Tolkach matrices were never bit-reproducible either.
+    Sorting the intersection would fix it and would change every Tolkach number away from
+    PathoROB's, which is not a trade this study may make on its own.
+    """
+
+    def arrange(cells, rng):
+        drawn = tuple(rng.randint(0, len(feasible_splits["train"][center]) - 1) for center in centers)
+        for i, center in enumerate(centers):
+            test_cases = feasible_splits["test"][center][drawn[i]]
+            for slides in cells[i]:
+                rng.shuffle(slides)
+                cases = [slide_ids[slide[0]] for slide in slides]
+                for test_case in list(set(test_cases) & set(cases)):
+                    at = [slide_ids[slide[0]] for slide in slides].index(test_case)
+                    slides.append(slides.pop(at))
+        return cells
+
+    return arrange
 
 
 # ---------------------------------------------------------------------------
@@ -299,14 +380,23 @@ STUDY_DIR = REPO / "output/studies/apd"
 HEADLINE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
 CORR_METRICS = ["croma", "ri", "mari"]
 
-#: APD dataset key -> the metrics.csv of the run the paper reports for that benchmark.
-#: APD itself is protocol-free (it trains probes on embeddings, never on a k-NN graph), but
-#: the metrics it is correlated *against* are not: RI and MaRI are k-dependent, so a
-#: Spearman(RI, APD) must be computed at the protocol whose RI the paper prints. CRoMa is
-#: k-free, so its row of tab:apd-correlation is protocol-invariant. This used to name
-#: ``k-star/pathorob-*`` -- runs archived when the tile panel moved to ``median-k``, so the
-#: join could no longer run at all. See ADR-0010 and CONTEXT.md ("Study").
-METRIC_CSV = {ds: by_benchmark(cfg["benchmark"]).metrics_rel for ds, cfg in DATASETS.items()}
+def metric_csv(dataset):
+    """The metrics.csv of the run the paper reports for ``dataset``'s benchmark.
+
+    APD itself is protocol-free (it trains probes on embeddings, never on a k-NN graph), but
+    the metrics it is correlated *against* are not: RI and MaRI are k-dependent, so a
+    Spearman(RI, APD) must be computed at the protocol whose RI the paper prints. CRoMa is
+    k-free, so its row of tab:apd-correlation is protocol-invariant. This used to name
+    ``k-star/pathorob-*`` -- runs archived when the tile panel moved to ``median-k``, so the
+    join could no longer run at all. See ADR-0010 and CONTEXT.md ("Study").
+
+    The manifest is imported here rather than at module scope because it is paper tooling,
+    absent from a clone (ADR-0012), and only the join needs it: computing APD must not
+    depend on the manuscript's build.
+    """
+    from paper_manifest import by_benchmark
+
+    return by_benchmark(DATASETS[dataset]["benchmark"]).metrics_rel
 
 
 def ranked(df):
@@ -325,7 +415,7 @@ def load_joined(apd_csv):
     apd = pd.read_csv(apd_csv)
     frames = []
     for ds in DATASET_KEYS:
-        m = pd.read_csv(REPO / METRIC_CSV[ds])
+        m = pd.read_csv(REPO / metric_csv(ds))
         m["dataset"] = ds  # align with APD's dataset key (CSV stores the dir name)
         # Defensive: the canonical dirs are already signed-margin CRoMa; only convert
         # if a legacy ratio-scale CSV (any value > 1) is ever pointed at here.

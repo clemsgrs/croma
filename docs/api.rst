@@ -85,7 +85,11 @@ Scoring unseen confounders
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 PathoROB scores every probe both on held-out rows of the confounders it trained on and on
-an unseen confounder. Both come off one training pass, so they are one call:
+an unseen confounder. Both come off one training pass, so they are one call. This form also
+takes ``arrange_slides``, which replaces the one step of a replicate that decides which
+slides a split trains on and which sit in the held-out tail -- for a cohort whose slides
+cannot be ordered freely. Its default is the sweep's own shuffle, which is the reference
+protocol.
 
 .. autofunction:: croma.downstream.probe_sweep_over_test_sets
 
@@ -94,8 +98,9 @@ PathoROB's schedules
 
 .. autofunction:: croma.downstream.pathorob_schedule
 
-These two are reachable under ``croma.downstream`` but are not promoted to the top level,
-so they carry no stability promise -- minimal-first, per ADR-0002.
+These two, and ``croma.downstream.IN_DOMAIN`` -- the key the sweep's own held-out matrix
+comes back under -- are reachable under ``croma.downstream`` but are not promoted to the
+top level, so they carry no stability promise: minimal-first, per ADR-0002.
 
 Downstream reductions
 ---------------------

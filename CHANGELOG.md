@@ -48,9 +48,14 @@ differently.
   and `tests/fixtures/pathorob_schedule_parity.json` holds the schedules upstream's own
   helper produces, which croma must reproduce exactly. `croma.downstream` also exposes
   `probe_sweep_over_test_sets`, which scores an unseen confounder off the same training
-  pass, and `pathorob_schedule`, which builds PathoROB's own schedules; neither is promoted
-  to the top level, so neither carries a stability promise. The protocol is numpy/sklearn
-  only and adds no install weight.
+  pass, `pathorob_schedule`, which builds PathoROB's own schedules, and `IN_DOMAIN`, the
+  key the sweep's own held-out matrix comes back under; none is promoted to the top level,
+  so none carries a stability promise. `probe_sweep_over_test_sets` additionally takes
+  `arrange_slides`, replacing the one step of a replicate that decides which slides a split
+  trains on and which sit in the held-out tail — for a cohort whose slides cannot be ordered
+  freely, such as PathoROB's Tolkach-ESCA and its per-replicate case split. Its default is
+  the sweep's own shuffle, so the reference protocol is unchanged; see ADR-0015. The
+  protocol is numpy/sklearn only and adds no install weight.
 - **`croma.downstream.apd`**, PathoROB's Average Performance Drop, reducing the same
   `(n_splits, n_iterations)` accuracy matrix as `napd` but against raw accuracy and with
   no `chance` argument. It is reported as the *faithful reference*, so its reduction is

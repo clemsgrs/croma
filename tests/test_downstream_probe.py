@@ -52,6 +52,28 @@ def _synthetic_cells(dim: int = 4, seed: int = 0, rows_per_cell: int = ROWS_PER_
     return np.concatenate(rows), np.array(confounders), np.array(labels)
 
 
+def _cells_with_impostors(rows_per_cell: int = 20):
+    """A slide-level 2x2 tileset where the first row of every cell carries the wrong class.
+
+    Biology is the only thing in the features and it is perfectly separable, so a probe
+    trained on any majority-clean sample scores 1.0 -- unless the rows it is *scored* on
+    are the mislabelled ones. Which rows those are is the arrangement's decision, so the
+    impostor row indices come back with the tileset.
+    """
+    rows, confounders, labels, impostors = [], [], [], set()
+    for confounder in (0, 1):
+        for label in (0, 1):
+            for position in range(rows_per_cell):
+                impostor = position == 0
+                if impostor:
+                    impostors.add(len(rows))
+                shown = 1 - label if impostor else label
+                rows.append([4.0 * shown - 2.0, 0.0])
+                confounders.append(confounder)
+                labels.append(label)
+    return np.array(rows), np.array(confounders), np.array(labels), impostors
+
+
 def _schedule(*, favourable_slides=(4, 2), balanced_load: int = 4, rows_per_slide=ROWS_PER_SLIDE):
     """A 2x2 schedule: split 0 balanced, later splits skewed towards the diagonal.
 
@@ -169,6 +191,115 @@ def test_probe_sweep_over_test_sets_scores_unseen_confounders_from_the_same_prob
     assert sweep["in_domain"] == pytest.approx(
         probe_sweep(embeddings, confounders, labels, schedule=_schedule(), **common)
     )
+
+
+def test_an_arrangement_that_shuffles_reproduces_the_sweeps_own_replicate_ordering() -> None:
+    # The hook replaces the one step of a replicate that decides which slides a split
+    # trains on and which sit in the held-out tail. Hand it back the sweep's own step --
+    # shuffle each cell's slides with the replicate's generator -- and the matrix has to
+    # come out identical, which is what says the cells and the generator a caller receives
+    # are the very ones the default path works with. A cohort that needs a different
+    # arrangement can then build it from a known starting point.
+    embeddings, confounders, labels = _synthetic_cells()
+    common = dict(
+        schedule=_schedule(favourable_slides=(4, 2)),
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=2,
+        seed=7,
+    )
+
+    def shuffle_each_cell(cells, rng):
+        arranged = []
+        for cell_row in cells:
+            arranged.append([])
+            for slides in cell_row:
+                slides = list(slides)
+                rng.shuffle(slides)
+                arranged[-1].append(slides)
+        return arranged
+
+    arranged = probe_sweep_over_test_sets(
+        embeddings, confounders, labels, arrange_slides=shuffle_each_cell, **common
+    )["in_domain"]
+
+    assert arranged == pytest.approx(probe_sweep(embeddings, confounders, labels, **common))
+
+
+def test_an_arrangement_decides_which_slides_land_in_the_held_out_tail() -> None:
+    # What the hook is for: PathoROB's Tolkach-ESCA sweep draws a train/test *case* split
+    # per replicate and pushes those cases' slides to the tail so they are tested on and
+    # never trained on. So the observable is exactly that -- rows an arrangement moves to
+    # the back are the rows the probe is scored on. Here two rows per cell carry the wrong
+    # class's features: kept up front they are trained on and the probe scores perfectly on
+    # a clean tail; pushed to the back they are what it is graded against, and cannot be.
+    embeddings, confounders, labels, impostors = _cells_with_impostors()
+    common = dict(
+        schedule=_schedule(favourable_slides=(5, 3), balanced_load=5, rows_per_slide=1),
+        rows_per_slide=1,
+        iterations=1,
+        validation_fraction=0.2,
+    )
+
+    def keep_input_order(cells, rng):
+        return cells
+
+    def impostors_to_the_tail(cells, rng):
+        return [
+            [
+                [slide for slide in slides if slide[0] not in impostors]
+                + [slide for slide in slides if slide[0] in impostors]
+                for slides in cell_row
+            ]
+            for cell_row in cells
+        ]
+
+    clean_tail = probe_sweep_over_test_sets(
+        embeddings, confounders, labels, arrange_slides=keep_input_order, **common
+    )["in_domain"]
+    impostor_tail = probe_sweep_over_test_sets(
+        embeddings, confounders, labels, arrange_slides=impostors_to_the_tail, **common
+    )["in_domain"]
+
+    assert np.all(clean_tail == 1.0)
+    assert np.all(impostor_tail < 1.0)
+
+
+def test_an_arrangement_may_reorder_the_slides_but_not_change_them() -> None:
+    # An arrangement is a permutation of a cell's slides and nothing else. Dropping a
+    # slide, inventing one, or breaking one apart would silently reshape the cohort under
+    # a schedule written for it -- the sweep would still return a matrix, computed on rows
+    # the caller never meant to be there.
+    embeddings, confounders, labels = _synthetic_cells()
+    common = dict(
+        schedule=_schedule(favourable_slides=(4, 2)),
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=1,
+    )
+
+    def drop_a_slide(cells, rng):
+        return [[list(slides)[1:] for slides in cell_row] for cell_row in cells]
+
+    def drop_a_slide_in_place(cells, rng):
+        # The sweep's own arrangement rearranges the lists it is handed and returns them,
+        # and so does every arrangement written by copying it -- so a guard that compares
+        # the return value against those same lists compares each one with itself and
+        # passes whatever was done to them.
+        for cell_row in cells:
+            for slides in cell_row:
+                del slides[0]
+        return cells
+
+    def split_a_slide(cells, rng):
+        return [
+            [[[row] for slide in slides for row in slide] for slides in cell_row]
+            for cell_row in cells
+        ]
+
+    for arrangement in (drop_a_slide, drop_a_slide_in_place, split_a_slide):
+        with pytest.raises(ValueError, match="same slides"):
+            probe_sweep_over_test_sets(
+                embeddings, confounders, labels, arrange_slides=arrangement, **common
+            )
 
 
 def test_a_slide_level_sweep_needs_an_explicit_validation_fraction() -> None:
