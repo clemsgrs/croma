@@ -256,3 +256,62 @@ NAMED_EMBEDDINGS = {
     "confounder_dominant": confounder_dominant,
     "contested": contested,
 }
+
+
+def _cycled_cells(n_per_cell: int) -> tuple[list[str], list[str]]:
+    """Label/confounder assignments cycling through the four cells, ``n_per_cell`` times each.
+
+    The cycle is fixed rather than sampled, so the four label-confounder cells are exactly
+    balanced. For an embedding whose geometry carries no label or confounder structure that
+    balance is what makes the null anchor exact: SO and OS are equally available a priori.
+    """
+    labels: list[str] = []
+    confounders: list[str] = []
+    for _ in range(int(n_per_cell)):
+        for label in LABELS:
+            for confounder in CONFOUNDERS:
+                labels.append(label)
+                confounders.append(confounder)
+    return labels, confounders
+
+
+def constant_embedding(
+    *, n_per_cell: int = CELL_DEPTH, dim: int = 8
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Every row the same vector, so every cosine distance is exactly zero.
+
+    The degenerate embedding: an encoder that has collapsed. Distances carry no information,
+    which is a different thing from carrying neutral information, and the metrics part ways
+    here. CRoMa's ``(d_OS - d_SO) / (d_OS + d_SO)`` has a zero denominator and is undefined;
+    RI and MaRI still count neighbours (MaRI's weights are ``exp(-0 / tau) = 1``) and so
+    degrade to a count ratio over an arbitrary tie-break rather than to nothing.
+
+    Deliberately **not** in :data:`NAMED_EMBEDDINGS`: the shared properties there compare
+    scores with ``pytest.approx``, under which NaN is unequal to NaN, so a metric that is
+    undefined everywhere would turn a rotation-invariance failure into a NaN-comparison
+    artifact. Tests that want this embedding ask for it by name.
+    """
+    labels, confounders = _cycled_cells(n_per_cell)
+    features = np.ones((len(labels), int(dim)), dtype=float)
+    return features, toy_manifest(labels, confounders)
+
+
+def isotropic_gaussian(
+    *, n_per_cell: int = 250, dim: int = 32, seed: int = 20260727
+) -> tuple[np.ndarray, pd.DataFrame]:
+    """Seeded iid Gaussian rows, labelled and confounded independently of the geometry.
+
+    The null: neither the label nor the confounder is encoded, so neighbourhoods are typed at
+    chance and the metrics have nothing to say. Cells are assigned by a fixed cycle over rows
+    the features know nothing about, which is what makes the independence exact rather than
+    approximate. ``n_per_cell`` is large so the sampling error around the null stays small
+    enough to be asserted tightly.
+
+    Not in :data:`NAMED_EMBEDDINGS` either: its geometry is known only in distribution, while
+    that registry is documented as embeddings whose neighbour types are known by
+    construction, and the properties parametrized over it are exact.
+    """
+    labels, confounders = _cycled_cells(n_per_cell)
+    rng = np.random.default_rng(int(seed))
+    features = rng.standard_normal((len(labels), int(dim)))
+    return features, toy_manifest(labels, confounders)
