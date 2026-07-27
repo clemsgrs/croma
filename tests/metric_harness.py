@@ -249,10 +249,43 @@ def contested(
     return np.asarray(rows, dtype=float), toy_manifest(labels, confounders)
 
 
+#: Cycles around :func:`type_interleaved_ring`. Also the depth of each of its four cells, so
+#: it is at least :data:`CELL_DEPTH`; the surplus is what leaves the search room to grow.
+RING_CYCLES = 8
+
+
+def type_interleaved_ring(*, n_cycles: int = RING_CYCLES) -> tuple[np.ndarray, pd.DataFrame]:
+    """The four label-confounder cells repeating around a circle, in a fixed period-4 order.
+
+    ``4 * n_cycles`` unit vectors are spaced evenly around a circle and labelled by position
+    modulo four, in the order ``(A,V1), (A,V2), (B,V1), (B,V2)``. Cosine distance is monotone
+    in angular separation, so a sample's neighbours arrive in order of ``|offset|`` and every
+    sample sees the same typed pattern: its SO neighbours sit at ``|offset|`` 1, 3, 5, 7, 9,
+    ... and its OS neighbours at 2, 2, 6, 6, 10, 10, ....
+
+    That is what makes the embedding useful for the search schedule: the ``m``-th SO and
+    ``m``-th OS neighbour are at a *known* offset, so the number of neighbours a sample needs
+    before CRoMa is defined on it is known too. At ``m = DEFAULT_M`` that is 20 -- comfortably
+    below the ``4 * n_cycles - 1`` neighbours the search can ever fetch, so every sample
+    resolves well before the search runs out of radius to grow into.
+
+    Distances at ``+d`` and ``-d`` are exact ties, but a tie only ever pairs neighbours whose
+    recorded distance is identical, so the tie-break cannot change the answer.
+    """
+    cells = [(label, confounder) for label in LABELS for confounder in CONFOUNDERS]
+    n = 4 * int(n_cycles)
+    angles = 2.0 * np.pi * np.arange(n, dtype=float) / float(n)
+    features = np.column_stack([np.cos(angles), np.sin(angles)])
+    labels = [cells[i % 4][0] for i in range(n)]
+    confounders = [cells[i % 4][1] for i in range(n)]
+    return features, toy_manifest(labels, confounders)
+
+
 #: Every named embedding, by name. Shared properties parametrize over this; add a new
 #: constructor here and it is picked up by all of them.
 NAMED_EMBEDDINGS = {
     "biology_dominant": biology_dominant,
     "confounder_dominant": confounder_dominant,
     "contested": contested,
+    "type_interleaved_ring": type_interleaved_ring,
 }
