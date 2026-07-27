@@ -1,4 +1,5 @@
 import inspect
+import re
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,16 @@ from croma.metrics.croma import (
     CROMA_HEADLINE_M,
     CrossConfounderRobustnessMargin,
     _compute_sample_croma,
+    _sample_croma_with_causes,
 )
+from metric_harness import constant_embedding
+
+
+def _croma_warning(caplog: pytest.LogCaptureFixture) -> str:
+    """The single ``[CRoMa]`` warning the run logged, as text."""
+    messages = [rec.message for rec in caplog.records if rec.message.startswith("[CRoMa]")]
+    assert len(messages) == 1, messages
+    return messages[0]
 
 
 def _make_manifest(
@@ -83,6 +93,25 @@ class TestComputeSampleCRoMa:
 
         assert np.isfinite(croma[0])
         assert np.isnan(croma[1])
+
+    def test_the_two_causes_partition_the_undefined_samples(self) -> None:
+        """An unfilled slot is the search's failure; an all-zero one is the denominator's.
+
+        The masks have to be disjoint and cover the NaN set exactly, because the warning
+        reports counts taken from them: any overlap double-counts a sample and any gap
+        leaves one undefined for a reason nobody is told.
+        """
+        so_dists = np.array([[0.1], [np.inf], [0.0], [0.3]])
+        os_dists = np.array([[0.3], [0.2], [0.0], [np.inf]])
+
+        scored = _sample_croma_with_causes(so_dists, os_dists)
+
+        assert scored.unresolved.tolist() == [False, True, False, True]
+        assert scored.zero_distance.tolist() == [False, False, True, False]
+        assert not np.any(scored.unresolved & scored.zero_distance)
+        np.testing.assert_array_equal(
+            scored.unresolved | scored.zero_distance, np.isnan(scored.values)
+        )
 
 
 class TestCRoMaCompute:
@@ -250,8 +279,61 @@ class TestCRoMaCompute:
 
         assert result.k_final == 3
         assert result.undefined_frac > 0.0
-        assert any("could not find" in rec.message for rec in caplog.records)
-        assert any("dataset 'toy' (dataset_wide)" in rec.message for rec in caplog.records)
+        message = _croma_warning(caplog)
+        assert "dataset 'toy' (dataset_wide)" in message
+        # The cause here really is the search: it ran out of radius before finding both
+        # types. The message must say so, and must not offer the other cause as well.
+        assert "the neighbour search could not find 1 SO and 1 OS neighbor(s)" in message
+        assert "denominator" not in message
+
+    def test_a_collapsed_embedding_does_not_blame_the_neighbour_search(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Every distance zero: the search resolves completely, and every sample is NaN.
+
+        The two causes of a NaN sample come apart here. The search finds its ``m`` SO and
+        ``m`` OS neighbours for every sample -- nothing about it failed -- and CRoMa is
+        undefined anyway, because ``d_OS + d_SO`` is zero. Reading the cause off the NaN
+        output cannot tell these apart, and blaming the search sends the reader to grow
+        ``start_k`` on an embedding whose radius was never the problem.
+        """
+        features, manifest = constant_embedding()
+
+        result = CRoMa.compute(
+            features,
+            manifest,
+            confounder_column="scanner_vendor",
+            evaluation_design="dataset_wide",
+            m=1,
+        )
+
+        assert result.undefined_frac == pytest.approx(1.0)
+        message = _croma_warning(caplog)
+        assert "could not find" not in message
+        assert "denominator" in message
+        assert "collapsed" in message
+
+    def test_undefined_causes_account_for_every_undefined_sample(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Whichever causes are reported, together they must add up to ``undefined_frac``.
+
+        A cause breakdown that does not close is a third way to misreport: it would leave
+        some NaN samples silently unaccounted for.
+        """
+        features, manifest = constant_embedding()
+
+        result = CRoMa.compute(
+            features,
+            manifest,
+            confounder_column="scanner_vendor",
+            evaluation_design="dataset_wide",
+            m=1,
+        )
+
+        n_undefined = int(round(result.undefined_frac * len(manifest)))
+        counted = sum(int(n) for n in re.findall(r"(\d+) where ", _croma_warning(caplog)))
+        assert counted == n_undefined == len(manifest)
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
