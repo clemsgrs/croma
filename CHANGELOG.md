@@ -16,11 +16,6 @@ reductions, APD and nAPD).
 `croma.downstream` is numpy/sklearn-only and adds no install weight; `torch` remains
 confined to the `[repro]` extra. See ADR-0011.
 
-> **Not yet implemented.** `croma.downstream` lands via issues #79–#84, and `0.1.0` is
-> deliberately held until it does, so that every metric the paper names ships in the first
-> release. Its API bullets join *Added* below as the code lands; this paragraph states the
-> release's scope, not the current tree.
-
 This is the first release under the name `croma`. Everything below describes the
 package as you first receive it. The bullets under *Changed* and *Removed* record
 decisions taken during pre-release development; they are here because they explain

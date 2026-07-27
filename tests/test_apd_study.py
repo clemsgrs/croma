@@ -7,20 +7,24 @@ tests below hold it to that. Two of them read the study's source rather than run
 because what they assert is about the *import graph*: that no metric arrives from a
 sibling PathoROB checkout, and that none is defined here instead.
 
-The third is behavioural, and covers the one piece of per-replicate logic the study still
+The rest are behavioural. One covers the one piece of per-replicate logic the study still
 owns: Tolkach-ESCA's train/test case split, which reaches the sweep through its
 ``arrange_slides`` hook. Its expected ordering comes from the driver loop the rewire
 replaced, transcribed below -- so the test asks whether the two agree, not whether the new
-code does what the new code does.
+code does what the new code does. The last two cover the other thing a driver owns, its
+reporting: that the CSV it assembles gates nothing, and that the arm whose cell the gate
+used to blank still reaches no correlation scope.
 """
 
 from __future__ import annotations
 
 import ast
+import json
 import random
 import sys
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -164,3 +168,65 @@ def test_the_tolkach_arrangement_reproduces_the_driver_loop_it_replaced(seed: in
     assert [
         [[row for slide in cell for row in slide] for cell in cell_row] for cell_row in arranged
     ] == expected
+
+
+#: One embedding per slide, which is what makes a cohort the slide arm.
+SLIDE_LEVEL_ROWS_PER_SLIDE = 1
+
+#: The headroom over chance of the cell the retired skill floor used to blank: the slide
+#: arm's OOD baseline for Prov-GigaPath cleared chance by this much, of a possible 0.5.
+SUPPRESSED_CELL_HEADROOM = 0.048
+
+
+def test_the_assembled_csv_reports_a_value_for_every_cell(tmp_path: Path) -> None:
+    # The driver used to carry a skill floor and a paired *_gated column, and blanked nAPD
+    # for any cell whose baseline retained too little headroom. The shipped reduction has no
+    # gate (ADR-0014), so a near-chance cell is reported like any other and the reader
+    # decides what to lean on. The stand-in below is a cell with the headroom of the one the
+    # floor used to blank; it is read out of the resume cache, so no sweep runs for it.
+    import apd_experiment
+    from loaders import DATASETS
+
+    chance = 1.0 / len(DATASETS["pcabiop"]["biological_classes"])
+    cached = dict(  # what a swept cell leaves behind; the reductions read the two matrices
+        apd_id=-0.1,
+        apd_ood=-0.2,
+        id_test_accuracies=[[0.9], [0.8], [0.7]],
+        ood_test_accuracies=[
+            [chance + SUPPRESSED_CELL_HEADROOM],
+            [chance + SUPPRESSED_CELL_HEADROOM / 2],
+            [chance],
+        ],
+    )
+    (tmp_path / "pcabiop").mkdir()
+    (tmp_path / "pcabiop" / "Stand-In.json").write_text(json.dumps(cached), encoding="utf-8")
+
+    reported = apd_experiment.run(
+        ["pcabiop"], ["Stand-In"], iterations=1, out_dir=tmp_path, overwrite=False
+    )
+    written = pd.read_csv(tmp_path / "apd.csv")
+
+    assert [column for column in written.columns if column.endswith("_gated")] == []
+    assert not written.isna().to_numpy().any()
+    assert reported["napd_ood"].notna().all()
+    assert reported["napd_ood"].iloc[0] < 0
+
+
+def test_the_slide_arm_reaches_no_correlation_scope() -> None:
+    # Reporting that cell is safe only because the slide arm is correlated against nothing:
+    # four models is not a rank correlation. Every scope the APD<->metric table carries --
+    # the per-benchmark ones, `headline` and `pooled` -- is cut out of DATASET_KEYS, which is
+    # also the list the join reads, so the exclusion *is* the absence of every slide-level
+    # cohort from it. Were one added, un-blanking a cell would move a number the paper
+    # reports, and would move it invisibly. Hence asserted rather than remembered.
+    import loaders
+
+    slide_level = {
+        dataset
+        for dataset, config in loaders.DATASETS.items()
+        if config["num_patches_per_slide"] == SLIDE_LEVEL_ROWS_PER_SLIDE
+    }
+
+    assert slide_level, "no slide-level cohort is configured, so the exclusion asserts nothing"
+    assert not slide_level & set(loaders.DATASET_KEYS)
+    assert set(loaders.HEADLINE_DATASETS) <= set(loaders.DATASET_KEYS)
