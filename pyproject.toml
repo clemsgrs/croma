@@ -93,6 +93,14 @@ allow-direct-references = true
 [tool.hatch.build.targets.wheel]
 packages = ["src/croma"]
 
+# The BSD 3-Clause licence croma vendors PathoROB's APD reduction under requires the
+# copyright notice to travel with binary redistributions too, so NOTICE has to be inside
+# the wheel and not merely committed. hatchling's default license-files glob already
+# mirrors it into dist-info/licenses/, but that is an implicit default we do not declare;
+# this places it next to the package explicitly, where an installed croma can point at it.
+[tool.hatch.build.targets.wheel.force-include]
+"NOTICE" = "croma/NOTICE"
+
 # Enumerate the sdist explicitly rather than letting hatchling walk the repo root. The
 # working tree carries large, git-ignored trees (data/, output/, paper/) and untracked
 # scratch, and hatchling's default is "everything not VCS-ignored" -- which would both
@@ -107,6 +115,7 @@ include = [
   "/CHANGELOG.md",
   "/CITATION.cff",
   "/LICENSE",
+  "/NOTICE",
   "/pyproject.toml",
 ]
 exclude = [
@@ -136,6 +145,13 @@ line-length = 100
 # refuses its own safety check when run on an older interpreter than the one it formatted for.
 target-version = ["py310"]
 include = '^/(src|tests)/.*\.py$'
+# Vendored third-party code is frozen: it must stay byte-identical to the upstream
+# revision it was copied from, because "APD" only means PathoROB's APD if croma runs
+# PathoROB's own code. black 26.5 happens to leave it unchanged, but a formatter is not
+# something to be lucky about across version bumps -- `force-exclude` applies even when
+# the path is reached through an explicit `src tests` argument, so the exclusion holds
+# for the CI invocation as written.
+force-exclude = '^/src/croma/downstream/_pathorob\.py$'
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

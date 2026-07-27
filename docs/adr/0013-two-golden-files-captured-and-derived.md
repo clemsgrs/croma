@@ -4,6 +4,15 @@ The repository carries two golden metric files. They share a mechanism — a com
 JSON of numbers, compared against a fresh computation — but not their authority, and
 the difference is deliberate.
 
+This record governs the files that lock **croma's own metric values**, and only those.
+`tests/fixtures/pathorob_apd_parity.json` reuses the mechanism but is not a third golden
+file: it locks agreement with a *third party*, pairing accuracy matrices PathoROB
+published with the APD values PathoROB published for them. Its authority is neither
+captured nor derived but **lifted** — neither side of a pair may be computed by croma, so
+a mismatch is evidence that the vendored reduction drifted from upstream rather than that
+a snapshot went stale. It is named for parity rather than for goldenness to keep the two
+kinds apart. See ADR-0011.
+
 | | `fixtures/compute_golden_metrics.json` | `fixtures/library_golden_metrics.json` |
 |---|---|---|
 | Locks | the benchmark pipeline's output, end to end | metric values on the public API |
