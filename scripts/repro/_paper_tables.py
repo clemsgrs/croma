@@ -15,11 +15,59 @@ inline expression it replaces, so importing it here does not change any emitted
 import sys
 from pathlib import Path
 
-# The generators live in ``scripts/repro``; the repo root is two levels up. Do
-# the shim once here so each generator can import the constant from this module rather
-# than repeating the ``sys.path`` dance.
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+import pandas as pd
+
+# The generators live in ``scripts/repro``; ``croma`` lives under ``src/`` and is not
+# pip-installed. Do the shim once here so each generator can import the constant from this
+# module rather than repeating the ``sys.path`` dance. This pointed at the repo root, which
+# holds no ``croma/`` package -- so every generator importing it needed ``PYTHONPATH=src``
+# from the caller, and ``python scripts/repro/build_paper.py`` on its own could not run.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402,F401  (re-exported)
+
+
+class CaptionClaimError(AssertionError):
+    """A rendered sentence asserts something the data no longer supports. See ADR-0010.
+
+    Six generators each declared their own copy of this class, so they were six unrelated
+    types: ``pytest.raises(generate_results_table.CaptionClaimError)`` would sail straight
+    past a ``generate_cross_benchmark_float.CaptionClaimError``, and a caller wanting to
+    catch "any broken claim" had no type to name. One definition, re-exported by each
+    generator so ``<module>.CaptionClaimError`` still resolves.
+    """
+
+
+def detect_croma_scale(croma: pd.Series) -> str:
+    """Return ``"margin"`` or ``"ratio"`` from the value range.
+
+    Margin lives in ``(-1, 1)`` (neutral at 0); ratio lives in ``(0, inf)`` (neutral at 1).
+    A negative value is decisive for margin; a value above 1 is decisive for ratio; an
+    all-``[0, 1]`` column (every model biology-dominant) is ambiguous and defaults to
+    margin, the paper's canonical scale.
+    """
+    if (croma < 0.0).any():
+        return "margin"
+    if (croma > 1.0 + 1e-9).any():
+        return "ratio"
+    return "margin"
+
+
+def to_margin(croma: pd.Series, scale: str) -> pd.Series:
+    """Map a CRoMa column onto the paper's canonical margin scale."""
+    if scale == "ratio":
+        return (croma - 1.0) / (croma + 1.0)
+    return croma
+
+
+def croma_as_margin(croma: pd.Series) -> pd.Series:
+    """Detect the stored scale and normalise. Every emitter must go through this.
+
+    Historically the value generator normalised while the table generator printed the raw
+    column, so a benchmark stored as ratio would have put ``1.50`` in a table cell and
+    ``0.20`` in the prose macro beside it. Both now share this one path.
+    """
+    croma = croma.astype(float)
+    return to_margin(croma, detect_croma_scale(croma))
 
 
 def num_math(value: float, decimals: int = 2) -> str:
