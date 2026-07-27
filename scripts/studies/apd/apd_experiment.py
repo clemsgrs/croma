@@ -39,7 +39,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from loaders import DATASETS, REPO, load_data, slide_arrangement, split_schedule  # noqa: E402
+from loaders import DATASETS, REPO, arrangement_for, load_data, split_schedule  # noqa: E402
 
 import layout  # noqa: E402  (loaders put scripts/bench on sys.path on import above)
 
@@ -80,10 +80,11 @@ def compute(model, dataset, iterations=20):
         test_sets={OUT_OF_DOMAIN: (cohort.ood_embeddings, cohort.ood_labels)},
         rows_per_slide=rows_per_slide,
         iterations=iterations,
-        # PathoROB's own rule at patch level; at slide level it underflows to zero, which
-        # is the first of this study's two documented slide-level deviations.
+        # PathoROB's own rule at patch level; at slide level it underflows to zero, so the
+        # study states a fraction instead -- one of its two documented slide-level
+        # deviations, the other being loaders._pcabiop_split_map's schedule.
         validation_fraction=None if rows_per_slide > 1 else VAL_FRACTION,
-        arrange_slides=slide_arrangement(dataset, cohort.slide_ids),
+        arrange_slides=arrangement_for(dataset, cohort.slide_ids),
     )
     id_accuracies, ood_accuracies = accuracies[IN_DOMAIN], accuracies[OUT_OF_DOMAIN]
     return dict(
@@ -102,7 +103,7 @@ def _reductions(res, chance):
     is a reporting decision for whoever renders the table, not a property of the metric
     (ADR-0014), so nothing is suppressed here.
     """
-    out = {"chance": chance}
+    out = {}
     for domain, key in (("id", "id_test_accuracies"), ("ood", "ood_test_accuracies")):
         acc = np.asarray(res[key], dtype=float)
         out[f"{domain}_baseline"] = float(acc[0].mean())  # balanced-acc at split 0

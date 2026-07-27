@@ -42,7 +42,10 @@ from croma.plotstyle import CONTROL_MODEL  # noqa: E402
 # resolved via layout.embeddings_dir(); it is not a benchmark eval view. ``benchmark``
 # is the paper_manifest key naming the *run* whose CRoMa/RI/MaRI this APD is correlated
 # against; it coincides with ``src`` for the PathoROB tilesets but not for prostate,
-# where one tileset ("prostate-shift") backs a run named "prostate".
+# where one tileset ("prostate-shift") backs a run named "prostate". ``centers_id`` orders
+# the confounder axis of every schedule, so it is load-bearing; ``centers_ood`` records
+# which centres the held-out arm holds, but the partition itself is the metadata's
+# ``subset`` column, which is what ``load_data`` reads.
 DATASETS = {
     "camelyon": dict(
         src="pathorob-camelyon",
@@ -185,6 +188,11 @@ def _pcabiop_split_map(split, num_patches_per_slide):
     return sorted(tss0_pairs + tss1_pairs), 2 * M
 
 
+#: The schedules croma authored, for the two datasets PathoROB has none for. Everything
+#: else routes to its own helper, in the package.
+CROMA_SPLIT_MAPS = {"prostate": _prostate_split_map, "pcabiop": _pcabiop_split_map}
+
+
 def split_schedule(dataset, num_patches_per_slide=1):
     """The schedule the probe sweep walks for ``dataset``: one split per entry.
 
@@ -195,10 +203,9 @@ def split_schedule(dataset, num_patches_per_slide=1):
     croma-authored above and are built here.
     """
     cfg = DATASETS[dataset]
-    if cfg["split_key"] == "prostate":
-        return [_prostate_split_map(s, num_patches_per_slide) for s in range(cfg["num_splits"])]
-    if cfg["split_key"] == "pcabiop":
-        return [_pcabiop_split_map(s, num_patches_per_slide) for s in range(cfg["num_splits"])]
+    split_map = CROMA_SPLIT_MAPS.get(cfg["split_key"])
+    if split_map is not None:
+        return [split_map(s, num_patches_per_slide) for s in range(cfg["num_splits"])]
     return pathorob_schedule(
         cfg["split_key"],
         rows_per_slide=num_patches_per_slide,
@@ -273,7 +280,7 @@ def load_data(model, dataset):
     bit for bit.
     """
     cfg = DATASETS[dataset]
-    centers_id, centers_ood = cfg["centers_id"], cfg["centers_ood"]
+    centers_id = cfg["centers_id"]
     bio = cfg["biological_classes"]
 
     md = pd.read_csv(REPO / cfg["metadata"])
@@ -293,7 +300,7 @@ def load_data(model, dataset):
     )
 
 
-def slide_arrangement(dataset, slide_ids):
+def arrangement_for(dataset, slide_ids):
     """How ``dataset`` orders each cell's slides per replicate, or None for the default.
 
     Only tolkach_esca needs one, and it needs it because of how its cases are annotated
@@ -327,6 +334,14 @@ def case_arrangement(centers, feasible_splits, slide_ids):
     the shuffle second, off the one generator, because that is the order the sweep's own
     arrangement and PathoROB's driver both consume it in; swapping them would re-seed every
     Tolkach number.
+
+    Known wart, inherited from that driver and kept deliberately: the intersection below is
+    a ``set``, so which of several drawn cases ends up outermost depends on string hashing,
+    which Python randomises per process. Tolkach accuracies are therefore reproducible only
+    at a fixed ``PYTHONHASHSEED`` -- verified against the pre-rewire driver, which has the
+    same property, so the stored Tolkach matrices were never bit-reproducible either.
+    Sorting the intersection would fix it and would change every Tolkach number away from
+    PathoROB's, which is not a trade this study may make on its own.
     """
 
     def arrange(cells, rng):

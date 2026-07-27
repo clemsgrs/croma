@@ -9,6 +9,13 @@ Neither owns a metric. The probe sweep and both reductions come from ``croma.dow
 produced by it. What is left here is the dataset configuration, the two croma-authored
 schedules, the model roster, the resume cache and the CSVs.
 
+Inputs, all under ``data/`` and none of them code: each cohort's PathoROB metadata CSV in
+``data/pathorob/metadata/``, and -- for tolkach_esca only -- ``data/pathorob/
+tolkach_splits.json``, which is PathoROB's own ``pathorob/resources/tolkach_splits.json``
+copied there the way those metadata CSVs were. It enumerates the train/test *case* splits
+that cohort's cross-class cases permit; ``loaders.case_arrangement`` draws one per
+replicate. A PathoROB checkout is not needed to run any of this.
+
 The CRoMa-vs-APD scatter that consumes these outputs lives in
 ``scripts/repro/figures/apd_figure.py`` (a paper-figure emitter); it reaches the
 shared data loaders and per-dataset configuration in ``loaders.py`` here via a

@@ -279,13 +279,23 @@ def test_an_arrangement_may_reorder_the_slides_but_not_change_them() -> None:
     def drop_a_slide(cells, rng):
         return [[list(slides)[1:] for slides in cell_row] for cell_row in cells]
 
+    def drop_a_slide_in_place(cells, rng):
+        # The sweep's own arrangement rearranges the lists it is handed and returns them,
+        # and so does every arrangement written by copying it -- so a guard that compares
+        # the return value against those same lists compares each one with itself and
+        # passes whatever was done to them.
+        for cell_row in cells:
+            for slides in cell_row:
+                del slides[0]
+        return cells
+
     def split_a_slide(cells, rng):
         return [
             [[[row] for slide in slides for row in slide] for slides in cell_row]
             for cell_row in cells
         ]
 
-    for arrangement in (drop_a_slide, split_a_slide):
+    for arrangement in (drop_a_slide, drop_a_slide_in_place, split_a_slide):
         with pytest.raises(ValueError, match="same slides"):
             probe_sweep_over_test_sets(
                 embeddings, confounders, labels, arrange_slides=arrangement, **common

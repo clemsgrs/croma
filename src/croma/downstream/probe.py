@@ -508,14 +508,18 @@ def _arrange(
         ]
         for cell_row in cells
     ]
+    # Snapshot before the call, not after: an arrangement is free to rearrange the lists it
+    # is handed and return them -- the sweep's own does -- and checking the result against
+    # those same lists would be checking each against itself.
+    handed_out = [[sorted(map(tuple, cell)) for cell in cell_row] for cell_row in slides]
     arranged = arrangement(slides, rng)
-    _check_same_slides(arranged, slides)
+    _check_same_slides(arranged, handed_out)
     for cell_row, arranged_row in zip(cells, arranged):
         for index, cell in enumerate(arranged_row):
             cell_row[index] = [row for slide in cell for row in slide]
 
 
-def _check_same_slides(arranged: SlideCells, slides: SlideCells) -> None:
+def _check_same_slides(arranged: SlideCells, handed_out: list[list[list[tuple[int, ...]]]]) -> None:
     """Refuse an arrangement that is not a rearrangement.
 
     A schedule was written for a cohort of a known shape, so an arrangement that loses a
@@ -526,11 +530,11 @@ def _check_same_slides(arranged: SlideCells, slides: SlideCells) -> None:
         "arrange_slides must return the same slides it was handed, reordered -- "
         "one list per confounder, one per class inside it, holding that cell's slides"
     )
-    if len(arranged) != len(slides):
-        raise ValueError(f"{complaint}; got {len(arranged)} confounder(s), not {len(slides)}")
-    for arranged_row, row in zip(arranged, slides):
+    if len(arranged) != len(handed_out):
+        raise ValueError(f"{complaint}; got {len(arranged)} confounder(s), not {len(handed_out)}")
+    for arranged_row, row in zip(arranged, handed_out):
         if len(arranged_row) != len(row):
             raise ValueError(f"{complaint}; got {len(arranged_row)} class(es), not {len(row)}")
         for arranged_cell, cell in zip(arranged_row, row):
-            if sorted(map(tuple, arranged_cell)) != sorted(map(tuple, cell)):
+            if sorted(map(tuple, arranged_cell)) != cell:
                 raise ValueError(complaint)
