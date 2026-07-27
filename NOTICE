@@ -16,12 +16,23 @@ Copyright (c) 2025, BIFOLD Pathomics
 Licensed under the BSD 3-Clause License.
 Source: https://github.com/bifold-pathomics/PathoROB
 
-croma vendors the Average Performance Drop (APD) reduction from PathoROB verbatim,
-in src/croma/downstream/_pathorob.py, where the full BSD 3-Clause text — copyright
-notice, conditions and disclaimer — is retained. croma reports APD as the faithful
-PathoROB reference, which requires running PathoROB's own reduction rather than a
-re-derivation of it; the code is vendored rather than depended on because PathoROB
-is not published on PyPI and PyPI rejects direct-URL dependencies.
+croma vendors three functions from PathoROB verbatim, in
+src/croma/downstream/_pathorob.py, where the full BSD 3-Clause text — copyright
+notice, conditions and disclaimer — is retained:
+
+  - the Average Performance Drop (APD) reduction, compute_apd;
+  - the split-mapping helper, get_patches_map_to_split, which fixes how many training
+    rows each (medical centre, biological class) cell contributes at each split of the
+    confounder-biased schedule;
+  - the logistic-probe trainer, train_logistic_regression, with the module-level helper
+    it maps over its regularisation grid, fit_and_evaluate.
+
+Between them they are the downstream shortcut-susceptibility protocol. croma reports APD
+as the faithful PathoROB reference, which requires running PathoROB's own code rather
+than a re-derivation of it — and the reduction alone would not be enough for that, since
+the schedule the probe is trained under and the search it is trained with decide the
+accuracies the reduction reduces. The code is vendored rather than depended on because
+PathoROB is not published on PyPI and PyPI rejects direct-URL dependencies.
 
 The vendored code is frozen: upstream changes deliberately do not propagate, because
 these functions are the frozen definition of the reference metric. See
