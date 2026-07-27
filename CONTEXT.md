@@ -64,6 +64,16 @@ and by 0.35 in CRoMa), has no zero to be signed about, has a chance level that m
 the number of confounder classes, and — being a scalar — admits no tail.
 _Avoid_: "linear probe" (it is $k$-NN), "shortcut score".
 
+**Confounder-biased probe sweep**:
+The downstream protocol APD and nAPD reduce (`croma.probe_sweep`): a *logistic* probe is
+trained to predict the **biological class** while a schedule walks the training set from
+balanced to fully confounded, and is scored on test rows that do not move. The result is
+an `(n_splits, n_iterations)` matrix of balanced accuracies, row `0` the balanced baseline.
+Note the confounder is what *biases the training composition* here, not what the probe
+predicts — the opposite of the confounder probe above, which is $k$-NN and recovers the
+confounder itself. The two share a word and nothing else.
+_Avoid_: calling it "the confounder probe", "the linear probe" without saying which.
+
 **Pooled score**:
 Any single scalar summarising a model's robustness over a whole benchmark: RI, MaRI, the
 CRoMa median, $F(0)$. Contrast with the per-sample CRoMa _distribution_, from which the

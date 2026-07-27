@@ -249,6 +249,45 @@ def test_probe_sweep_rejects_a_schedule_the_cells_are_too_small_for() -> None:
         )
 
 
+def test_probe_sweep_rejects_a_schedule_asking_a_cell_for_more_rows_than_it_holds() -> None:
+    # Short-serving a cell would be the quiet failure: the sweep still runs, but at a
+    # weaker confounder bias than the schedule describes, so the accuracies belong to a
+    # protocol nobody specified. Here one cell came up short of the cohort -- four slides
+    # rather than ten -- while the schedule was written for the cohort.
+    embeddings, confounders, labels = _synthetic_cells()
+    short_cell = slice(4 * ROWS_PER_SLIDE, ROWS_PER_CELL)
+    kept = np.ones(len(embeddings), dtype=bool)
+    kept[short_cell] = False
+
+    with pytest.raises(ValueError, match="cell \\(0, 0\\) holds 12 rows"):
+        probe_sweep(
+            embeddings[kept],
+            confounders[kept],
+            labels[kept],
+            schedule=_schedule(),
+            rows_per_slide=ROWS_PER_SLIDE,
+        )
+
+
+def test_probe_sweep_rejects_a_schedule_built_for_a_different_rows_per_slide() -> None:
+    # A schedule counts rows, and how many rows a slide carries is stated twice: once when
+    # the schedule is built, once when the sweep is run. Disagree, and the tail offset --
+    # which is in slides -- lands somewhere the row counts were never meant for. The
+    # disagreement is visible, because no cell may contribute more training rows than
+    # `max_train_slides` slides' worth, and every schedule reaches that bound at its most
+    # confounded split.
+    embeddings, confounders, labels = _synthetic_cells()
+
+    with pytest.raises(ValueError, match="max_train_slides"):
+        probe_sweep(
+            embeddings,
+            confounders,
+            labels,
+            schedule=_schedule(rows_per_slide=ROWS_PER_SLIDE),
+            rows_per_slide=1,
+        )
+
+
 def test_probe_sweep_rejects_a_schedule_naming_a_cell_no_row_carries() -> None:
     embeddings, confounders, labels = _synthetic_cells()
     split_map, max_train_slides = _schedule()[0]
@@ -328,6 +367,19 @@ def test_pathorob_schedule_drives_the_sweep_without_the_caller_reshaping_it() ->
 def test_pathorob_schedule_rejects_a_dataset_it_has_no_schedule_for() -> None:
     with pytest.raises(ValueError, match="prostate"):
         pathorob_schedule("prostate", rows_per_slide=1)
+
+
+def test_pathorob_schedule_walks_a_prefix_but_never_past_the_reference_protocol() -> None:
+    # A shorter walk is a smoke run, and stays a prefix of the reference: split s means
+    # the same training composition either way. Walking *past* upstream's last split is
+    # not an extrapolation of the protocol -- the formulas run the favourable cells
+    # negative -- so it is refused rather than silently continued.
+    prefix = pathorob_schedule("camelyon", rows_per_slide=1, n_splits=3)
+
+    assert prefix == pathorob_schedule("camelyon", rows_per_slide=1)[:3]
+
+    with pytest.raises(ValueError, match="8 splits"):
+        pathorob_schedule("camelyon", rows_per_slide=1, n_splits=9)
 
 
 def test_schedule_parity_fixture_records_where_it_came_from_and_how_to_recapture_it() -> None:

@@ -74,14 +74,18 @@ def pathorob_schedule(
             per-slide counts are multiplied by. PathoROB publishes 300 for ``camelyon``,
             30 for ``tcga`` and 100 for ``tolkach_esca``; a slide-level sweep passes ``1``.
         n_splits: How far to walk the schedule. Defaults to the number of splits PathoROB
-            runs for this dataset (:data:`PATHOROB_SPLITS`).
+            runs for this dataset (:data:`PATHOROB_SPLITS`), and cannot exceed it -- past
+            that point the formulas run the favourable cells negative, so a longer walk
+            would not be more confounded, it would be undefined. A shorter one is a prefix
+            of the reference protocol, which is what a smoke run wants.
 
     Returns:
         One :data:`SplitPlan` per split, balanced baseline first.
 
     Raises:
-        ValueError: If ``dataset`` is not one PathoROB has a schedule for, or if
-            ``n_splits`` or ``rows_per_slide`` is not positive.
+        ValueError: If ``dataset`` is not one PathoROB has a schedule for, if
+            ``rows_per_slide`` is not positive, or if ``n_splits`` is not positive or runs
+            past the schedule's last split.
     """
     if dataset not in PATHOROB_SPLITS:
         raise ValueError(
@@ -91,9 +95,15 @@ def pathorob_schedule(
         )
     if rows_per_slide < 1:
         raise ValueError(f"rows_per_slide must be at least 1, got {rows_per_slide}")
-    splits = PATHOROB_SPLITS[dataset] if n_splits is None else n_splits
+    defined = PATHOROB_SPLITS[dataset]
+    splits = defined if n_splits is None else n_splits
     if splits < 1:
         raise ValueError(f"n_splits must be at least 1, got {splits}")
+    if splits > defined:
+        raise ValueError(
+            f"PathoROB's {dataset!r} schedule has {defined} splits, so it cannot be walked "
+            f"for {splits}; past the last one the favourable cells go negative"
+        )
     return [get_patches_map_to_split(dataset, split, rows_per_slide) for split in range(splits)]
 
 
@@ -154,10 +164,15 @@ def probe_sweep(
 
     Raises:
         ValueError: If the inputs are not aligned rectangular arrays of non-negative
-            indices, if the schedule holds fewer than two splits or names a cell that
-            holds no rows, if ``iterations`` or ``rows_per_slide`` is not positive, if
-            ``validation_fraction`` is outside ``[0, 1)``, or if the schedule leaves some
-            split with no training rows, no validation rows or no test rows.
+            integer indices; if ``rows_per_slide`` or ``iterations`` is not positive, or
+            ``iterations`` exceeds the 10,000 seeds a replicate can be drawn from; if
+            ``validation_fraction`` is outside ``[0, 1)``; or if the schedule holds fewer
+            than two splits, names a cell no row carries, asks a cell for more rows than
+            it holds or than ``max_train_slides`` allows, or leaves some split with no
+            training, validation or test rows. Those last few are the same fault wearing
+            different clothes: a schedule and a cohort that were not written for each
+            other, which would otherwise run to completion at a confounder bias nobody
+            asked for.
     """
     return probe_sweep_over_test_sets(
         embeddings,
@@ -237,7 +252,7 @@ def probe_sweep_over_test_sets(
     for column, replicate_seed in enumerate(replicate_seeds):
         _shuffle_slides(cells, rows_per_slide, random.Random(replicate_seed))
         for row, plan in enumerate(plans):
-            train, validation, held_out = _slice(cells, plan)
+            train, validation, held_out = plan.slice(cells)
             _, _, scores = train_logistic_regression(
                 features[train],
                 label_of_row[train],
@@ -263,6 +278,7 @@ class _Plan:
         validation_fraction: float | None,
     ) -> None:
         self.split_map = [(int(i), int(j), int(take)) for i, j, take in split_map]
+        self.max_train_rows = max_train_slides * rows_per_slide
         if validation_fraction is None:
             # PathoROB's rule: each cell reserves the number of rows one training slide
             # would carry if the widest training block were spread over max_train_slides.
@@ -275,6 +291,24 @@ class _Plan:
             self.first_held_out = (
                 max_train_slides + round(validation_fraction * max_train_slides) + 1
             ) * rows_per_slide
+
+    def slice(self, cells: list[list[list[int]]]) -> tuple[list[int], list[int], list[int]]:
+        """Cut this split's training, validation and held-out row indices out of the cells.
+
+        Training rows come off the front of each cell, validation directly behind them, and
+        the held-out tail from a fixed offset every split shares -- so the test rows are the
+        same rows at every confounder bias, and only the training composition moves.
+        """
+        train = [row for i, j, take in self.split_map for row in cells[i][j][:take]]
+        validation = [
+            row
+            for (i, j, take), reserve in zip(self.split_map, self.validation_take)
+            for row in cells[i][j][take : take + reserve]
+        ]
+        held_out = [
+            row for cell_row in cells for cell in cell_row for row in cell[self.first_held_out :]
+        ]
+        return train, validation, held_out
 
 
 def _validated_rows(
@@ -367,14 +401,32 @@ def _validated_schedule(
             rows_per_slide=rows_per_slide,
             validation_fraction=validation_fraction,
         )
-        for i, j, take in plan.split_map:
+        for (i, j, take), reserve in zip(plan.split_map, plan.validation_take):
             if not 0 <= i < len(cells) or not 0 <= j < n_classes:
                 raise ValueError(
                     f"split {split}: schedule names cell ({i}, {j}), which no row carries"
                 )
             if take < 0:
                 raise ValueError(f"split {split}: cell ({i}, {j}) asks for {take} rows")
-        train, validation, held_out = _slice(cells, plan)
+            if take > plan.max_train_rows:
+                # Every schedule spends its whole training budget on one cell at its most
+                # confounded split, so a cell above the bound is not a schedule croma can
+                # read -- in practice it is a schedule built for a different
+                # rows_per_slide than the sweep was given, which would also put the
+                # held-out tail (counted in slides) in the wrong place.
+                raise ValueError(
+                    f"split {split}: cell ({i}, {j}) asks for {take} training rows, more "
+                    f"than max_train_slides allows ({plan.max_train_rows} rows at "
+                    f"{rows_per_slide} row(s) per slide). A schedule and the sweep that "
+                    "runs it must agree on how many rows a slide carries."
+                )
+            if take + reserve > len(cells[i][j]):
+                raise ValueError(
+                    f"split {split}: cell ({i}, {j}) holds {len(cells[i][j])} rows, too "
+                    f"few for the {take} training and {reserve} validation rows the "
+                    "schedule asks it for"
+                )
+        train, validation, held_out = plan.slice(cells)
         for what, rows in (("training", train), ("validation", validation), ("test", held_out)):
             if not rows:
                 raise ValueError(
@@ -410,22 +462,3 @@ def _shuffle_slides(cells: list[list[list[int]]], rows_per_slide: int, rng: rand
             ]
             rng.shuffle(slides)
             cell_row[index] = [row for slide in slides for row in slide]
-
-
-def _slice(cells: list[list[list[int]]], plan: _Plan) -> tuple[list[int], list[int], list[int]]:
-    """Cut one split's training, validation and held-out row indices out of the cells.
-
-    Training rows come off the front of each cell, validation directly behind them, and
-    the held-out tail from a fixed offset every split shares -- so the test rows are the
-    same rows at every confounder bias, and only the training composition moves.
-    """
-    train = [row for i, j, take in plan.split_map for row in cells[i][j][:take]]
-    validation = [
-        row
-        for (i, j, take), reserve in zip(plan.split_map, plan.validation_take)
-        for row in cells[i][j][take : take + reserve]
-    ]
-    held_out = [
-        row for cell_row in cells for cell in cell_row for row in cell[plan.first_held_out :]
-    ]
-    return train, validation, held_out
