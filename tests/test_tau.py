@@ -7,6 +7,7 @@ import pytest
 
 from croma import MaRI
 from croma.metrics.tau import TauAssessment, assess_tau, format_tau_warning
+from metric_harness import CONFOUNDER_COLUMN, PINNED_K, constant_embedding
 
 # ---------------------------------------------------------------------------
 # Pure assessment: typed-distance median sets the principled window [median/f, median*f].
@@ -234,6 +235,44 @@ def test_auto_tau_falls_back_when_no_typed_neighbour_exists() -> None:
         )
     assert result.tau == pytest.approx(TAU_FALLBACK)
     assert result.undefined_frac == pytest.approx(1.0)
+
+
+def test_auto_tau_fallback_on_a_collapsed_embedding_names_the_collapse() -> None:
+    """Typed neighbours at distance zero is a different fault from having none at all.
+
+    A collapsed encoder puts every typed neighbour at distance ``0``, so the median typed
+    distance is ``0`` and auto-tau has no scale to sit on -- the same fallback, a different
+    cause. MaRI is *not* undefined here: ``exp(-0 / tau) = 1`` at any positive tau, so the
+    score degenerates to the count-based RI and is reported. A warning that said the score
+    was undefined would invite the reader to ignore a number they are about to read.
+    """
+    from croma.metrics.mari import TAU_FALLBACK
+
+    features, manifest = constant_embedding()
+
+    with pytest.warns(RuntimeWarning) as caught:
+        result = MaRI.compute(
+            features=features,
+            manifest=manifest,
+            confounder_column=CONFOUNDER_COLUMN,
+            k_candidates=[PINNED_K],
+            evaluation_design="dataset_wide",
+        )
+
+    tau_warnings = [str(w.message) for w in caught if "tau" in str(w.message)]
+    assert len(tau_warnings) == 1
+    message = tau_warnings[0]
+    # The two claims the shared fallback branch used to make, both false here.
+    assert "no typed" not in message
+    assert "undefined" not in message
+    # What is true instead: typed neighbours exist at distance 0, and MaRI degrades to RI.
+    assert "distance 0" in message
+    assert "collapsed" in message
+    assert "RI" in message
+
+    assert result.tau == pytest.approx(TAU_FALLBACK)
+    assert np.isfinite(result.value)
+    assert result.undefined_frac == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize("bad_tau", [0.0, -1.0])

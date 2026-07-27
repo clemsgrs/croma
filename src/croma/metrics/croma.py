@@ -44,11 +44,27 @@ class _CRoMaSearchMeta:
     retries: int
 
 
-def _compute_sample_croma(
+@dataclass(frozen=True)
+class _SampleCRoMa:
+    """Per-sample CRoMa together with *why* each undefined sample is undefined.
+
+    A NaN in ``values`` has two possible causes, and the output cannot tell them apart:
+    the search never found ``m`` neighbors of both types (``unresolved``), or it found
+    them all at distance zero so the margin has no denominator (``zero_distance``). The
+    two masks are disjoint and their union is exactly the NaN set, so a report built from
+    them accounts for every undefined sample and attributes none of them by inference.
+    """
+
+    values: np.ndarray
+    unresolved: np.ndarray
+    zero_distance: np.ndarray
+
+
+def _sample_croma_with_causes(
     so_dists: np.ndarray,
     os_dists: np.ndarray,
-) -> np.ndarray:
-    """Per-sample CRoMa as a signed, normalized margin in ``(-1, 1)``.
+) -> _SampleCRoMa:
+    """Per-sample CRoMa as a signed, normalized margin in ``(-1, 1)``, plus its NaN causes.
 
     ``CRoMa_i = (d_OS - d_SO) / (d_OS + d_SO)`` where ``d_SO``/``d_OS`` are the
     mean cosine distances to the ``m`` nearest ``SO``/``OS`` neighbors. The sign
@@ -58,10 +74,14 @@ def _compute_sample_croma(
     impostor accounts for a fraction ``(1 + CRoMa_i) / 2`` of the total typed
     distance ``d_OS + d_SO`` and the biological match the remaining
     ``(1 - CRoMa_i) / 2``.
+
+    An unfilled slot is ``inf``, which is the search's own record that it ran out of
+    radius before filling it -- so ``unresolved`` reads the cause off the search rather
+    than off the NaN it produces.
     """
     has_inf_so = np.any(np.isinf(so_dists), axis=1)
     has_inf_os = np.any(np.isinf(os_dists), axis=1)
-    undefined = has_inf_so | has_inf_os
+    unresolved = has_inf_so | has_inf_os
 
     mean_so = np.mean(so_dists, axis=1)
     mean_os = np.mean(os_dists, axis=1)
@@ -70,9 +90,18 @@ def _compute_sample_croma(
     with np.errstate(divide="ignore", invalid="ignore"):
         croma = (mean_os - mean_so) / denom
 
-    croma[undefined] = np.nan
-    croma[denom == 0.0] = np.nan
-    return croma
+    zero_distance = ~unresolved & (denom == 0.0)
+    croma[unresolved] = np.nan
+    croma[zero_distance] = np.nan
+    return _SampleCRoMa(values=croma, unresolved=unresolved, zero_distance=zero_distance)
+
+
+def _compute_sample_croma(
+    so_dists: np.ndarray,
+    os_dists: np.ndarray,
+) -> np.ndarray:
+    """Per-sample CRoMa alone; see :func:`_sample_croma_with_causes` for the definition."""
+    return _sample_croma_with_causes(so_dists, os_dists).values
 
 
 def _scan_typed_neighbors_for_query_rows(
@@ -287,6 +316,10 @@ class CrossConfounderRobustnessMargin:
         }
         occurrence_total = 0
         total_undefined: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
+        # The undefined count, split by the cause each sample actually had. Kept apart from
+        # ``total_undefined`` so the warning names a cause instead of inferring one.
+        total_unresolved: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
+        total_zero_distance: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
 
         k_start_values: list[int] = []
         k_final_values: list[int] = []
@@ -325,11 +358,14 @@ class CrossConfounderRobustnessMargin:
             retries_values.append(int(search_meta.retries))
 
             for mm in unique_m_values:
-                sample_croma = _compute_sample_croma(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
+                scored = _sample_croma_with_causes(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
+                sample_croma = scored.values
                 informative = np.isfinite(sample_croma)
                 n_informative = int(informative.sum())
                 n_undefined = int(n_sub - n_informative)
                 total_undefined[int(mm)] += n_undefined
+                total_unresolved[int(mm)] += int(scored.unresolved.sum())
+                total_zero_distance[int(mm)] += int(scored.zero_distance.sum())
 
                 occurrence_values_by_m[int(mm)].append(np.asarray(sample_croma, dtype=float))
                 occurrence_subsets_by_m[int(mm)].append(
@@ -379,10 +415,23 @@ class CrossConfounderRobustnessMargin:
             )
 
             if total_undefined[int(mm)] > 0:
+                causes: list[str] = []
+                if total_unresolved[int(mm)] > 0:
+                    causes.append(
+                        f"{total_unresolved[int(mm)]} where the neighbour search could not "
+                        f"find {mm} SO and {mm} OS neighbor(s) before reaching its radius cap"
+                    )
+                if total_zero_distance[int(mm)] > 0:
+                    causes.append(
+                        f"{total_zero_distance[int(mm)]} where the search did find them, all "
+                        f"at distance 0, so the margin's denominator d_OS + d_SO is 0 -- what "
+                        f"a collapsed embedding, or a manifest that duplicates rows, produces"
+                    )
                 logger.warning(
-                    f"[CRoMa] dataset '{dataset_name}' ({evaluation_design}) has "
-                    f"{total_undefined[int(mm)]}/{occurrence_total} unresolved samples "
-                    f"({undefined_frac * 100.0:.1f}%) could not find {mm} SO and {mm} OS neighbor(s)."
+                    f"[CRoMa] dataset '{dataset_name}' ({evaluation_design}) leaves "
+                    f"{total_undefined[int(mm)]}/{occurrence_total} samples "
+                    f"({undefined_frac * 100.0:.1f}%) undefined at m={mm}: "
+                    f"{'; '.join(causes)}."
                 )
 
             tail = compute_tail_metrics(sample_values, alpha=alpha)

@@ -8,10 +8,16 @@ from croma.metrics.base import BaseRobustnessIndex
 from croma.metrics.tau import assess_tau, format_tau_warning
 from croma.types import RobustnessResult
 
-#: Temperature used only when auto-``tau`` cannot be resolved, i.e. when no typed (SO/OS)
-#: neighbour exists within the top-``k`` set anywhere in the dataset. MaRI is undefined for
-#: every sample in that case, so no choice of ``tau`` changes the result; this constant just
-#: keeps ``exp(-d / tau)`` well-formed.
+#: Temperature used only when auto-``tau`` cannot be put on a distance scale. Two different
+#: datasets get here, and they are not the same situation:
+#:
+#: * no typed (SO/OS) neighbour exists within the top-``k`` set anywhere -- MaRI is undefined
+#:   for every sample, so no ``tau`` changes anything;
+#: * the median typed distance is exactly ``0`` -- a collapsed embedding (or duplicated rows).
+#:   MaRI *is* defined here: ``exp(-0 / tau) = 1`` at any positive ``tau``, so the score
+#:   degenerates to the count-based RI and again does not depend on this constant.
+#:
+#: Either way the choice cannot move the score; it only keeps ``exp(-d / tau)`` well-formed.
 TAU_FALLBACK = 0.2
 
 
@@ -33,8 +39,10 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
     ) -> float:
         """Recommended ``tau`` for this dataset: the median typed (SO/OS) neighbour distance.
 
-        Returns ``nan`` when no typed neighbour exists within the top-``k`` set (so ``tau``
-        cannot be put on a meaningful scale).
+        Returns ``nan`` when no typed neighbour exists within the top-``k`` set, and ``0.0``
+        when typed neighbours exist but half or more of them sit at distance ``0`` (a
+        collapsed embedding, or a manifest that duplicates rows). Neither can be put on a
+        meaningful scale, but they are distinct datasets: see :data:`TAU_FALLBACK`.
         """
         typed = cls._collect_typed_neighbor_distances(
             features=features,
@@ -63,12 +71,25 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
             k=int(k),
             evaluation_design=evaluation_design,
         )
-        if not np.isfinite(tau) or tau <= 0.0:
+        if not np.isfinite(tau):
             warnings.warn(
                 f"no typed (SO/OS) neighbour within the top-{int(k)} set anywhere in the "
                 f"dataset, so tau cannot be put on a distance scale; falling back to "
                 f"tau={TAU_FALLBACK}. MaRI is undefined for every sample here, so this "
                 f"choice does not affect the score.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            return TAU_FALLBACK
+        if tau <= 0.0:
+            warnings.warn(
+                f"the median typed (SO/OS) neighbour distance within the top-{int(k)} set "
+                f"is 0, so tau cannot be put on a distance scale; falling back to "
+                f"tau={TAU_FALLBACK}. Typed neighbours do exist here -- they sit at "
+                f"distance 0, which is what a collapsed embedding, or a manifest that "
+                f"duplicates rows, produces. The score is still defined and still reported: "
+                f"exp(-0 / tau) = 1 at any positive tau, so on those neighbours MaRI carries "
+                f"no margin information and degenerates to the count-based RI.",
                 RuntimeWarning,
                 stacklevel=3,
             )
