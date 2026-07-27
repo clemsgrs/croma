@@ -1,7 +1,8 @@
 """Plot 1 -- CRoMa vs pretraining scale (#WSIs), PathoROB-style scatter (#63).
 
-A single scatter over the 16-model tile panel that asks whether *pretraining
-scale* predicts robustness. The empirical direction is NOT assumed here: a weak
+A single scatter over the pathology tile-model panel (the natural-image control is
+excluded; see ``CONTROL_MODELS``) that asks whether *pretraining scale* predicts
+robustness. The empirical direction is NOT assumed here: a weak
 or absent relationship is itself the message, so the figure only *shows* the
 points (plus a direction-neutral Spearman summary) and lets the reader judge.
 
@@ -48,25 +49,35 @@ import pandas as pd  # noqa: E402
 
 # Repo root: scripts/repro/figures/scale_scatter.py -> parents[3].
 REPO = Path(__file__).resolve().parents[3]
-if str(REPO / "src") not in sys.path:
-    sys.path.insert(0, str(REPO / "src"))
+for _p in (REPO / "src", REPO / "scripts" / "repro"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 # Identity only from croma.plotstyle (registers fonts + rcParams on import). We do
 # NOT import scripts/bench/plotting.py so this figure stays self-contained.
 from croma import plotstyle  # noqa: E402
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
+# The run directory backing each benchmark -- and thus the protocol -- is owned by
+# paper_manifest, never spelled out here. This figure once hard-coded k-star run dirs; when
+# the tile panel was re-run at median-k those runs were archived, so it silently read a
+# directory that no longer existed and skipped its render. Ask the manifest instead.
+from paper_manifest import by_benchmark  # noqa: E402
+
 HERE = Path(__file__).resolve().parent
 DEFAULT_METADATA = HERE.parent / "model_metadata.csv"
-DEFAULT_OUT = REPO / "paper" / "figures" / "scale_scatter.pdf"
+# Rendered beside the study data it reads, under plots/{pdf,png}/ -- the same convention as
+# cross_benchmark_figure.py. Nothing writes into paper/figures/; a human copies the PDF a
+# float earns, and check_paper_figures.py reports when that copy falls behind this render.
+DEFAULT_OUT = REPO / "output" / "studies" / "scale-scatter" / "plots" / "scale_scatter.pdf"
 
-# The three tile benchmarks whose ``croma`` column is averaged into the y-axis.
-# Each entry lists candidate run dirs (first existing wins), mirroring the loading in
-# ``cross_benchmark_figure.py`` on the output/metrics/<protocol>/<benchmark> layout.
-BENCHMARKS: list[tuple[str, tuple[str, ...]]] = [
-    ("Camelyon", ("output/metrics/k-star/pathorob-camelyon",)),
-    ("TCGA-4x4", ("output/metrics/k-star/pathorob-tcga-4x4",)),
-    ("Tolkach", ("output/metrics/k-star/pathorob-tolkach-esca",)),
+# The three tile benchmarks whose ``croma`` column is averaged into the y-axis, as
+# (display name, manifest benchmark key). The run directory -- and thus the protocol
+# (median-k for the tile panel) -- comes from paper_manifest, so it is never named here.
+BENCHMARKS: list[tuple[str, str]] = [
+    ("Camelyon", "pathorob-camelyon"),
+    ("TCGA-4x4", "pathorob-tcga-4x4"),
+    ("Tolkach", "pathorob-tolkach-esca"),
 ]
 
 #: Models excluded from this figure by construction, not by missing data. The x-axis is
@@ -183,24 +194,18 @@ def load_metadata(path: Path = DEFAULT_METADATA) -> pd.DataFrame:
     return pd.read_csv(path, keep_default_na=False, na_values=[])
 
 
-def _metrics_path(repo: Path, candidates: tuple[str, ...]) -> Path | None:
-    for rel in candidates:
-        candidate = Path(repo) / rel / "results" / "metrics.csv"
-        if candidate.exists():
-            return candidate
-    return None
-
-
 def load_per_dataset_croma(repo: Path = REPO) -> dict[str, dict[str, float]] | None:
-    """Load ``{dataset: {model: croma}}`` from the three benchmark outputs.
+    """Load ``{dataset: {model: croma}}`` from the three tile benchmark runs.
 
-    Returns ``None`` when any benchmark's ``metrics.csv`` is absent (the caller's
-    data-availability guard), so a fresh checkout skips the render cleanly.
+    Each benchmark's run directory is resolved through ``paper_manifest`` at the protocol the
+    paper reports (median-k for the tile panel), so no run directory is named here. Returns
+    ``None`` when any benchmark's ``metrics.csv`` is absent (the caller's data-availability
+    guard), so a fresh checkout skips the render cleanly.
     """
     per: dict[str, dict[str, float]] = {}
-    for name, candidates in BENCHMARKS:
-        path = _metrics_path(repo, candidates)
-        if path is None:
+    for name, benchmark in BENCHMARKS:
+        path = Path(repo) / by_benchmark(benchmark).metrics_rel
+        if not path.exists():
             return None
         series = pd.read_csv(path).set_index("model")["croma"]
         per[name] = {str(k): float(v) for k, v in series.items()}
@@ -227,6 +232,36 @@ def _marker_sizes(
         norm = (logp - logp.min()) / spread if spread > 0 else np.zeros_like(logp)
         sizes[known] = smin + norm * (smax - smin)
     return sizes, known
+
+
+#: Cosmetic label placement only. By default a model's label sits just above its marker; an
+#: entry here sends it in another direction to break an overprint in the crowded mid-panel.
+#: This is a rendering hint keyed by name for legibility -- not a roster: a model not listed
+#: falls back to "above", and one absent from the run is simply never drawn.
+_LABEL_DIR: dict[str, str] = {
+    "CONCHv1.5": "left",
+    "GPFM": "left",
+    "Prov-GigaPath": "below",
+    "H-optimus-0": "below",
+    "Hibou-B": "right",
+    "Prost40M": "right",
+}
+
+
+def _label_offset(direction: str, radius_pts: float, pad: float = 4.0):
+    """Offset ``(dx, dy)`` in points and ``(ha, va)`` placing a label just outside a marker.
+
+    The gap is measured from the marker *edge* (its radius in points), so labels hug markers
+    of every size by the same visual margin instead of a fixed centre offset that a large
+    marker would swallow.
+    """
+    gap = radius_pts + pad
+    return {
+        "above": (0.0, gap, "center", "bottom"),
+        "below": (0.0, -gap, "center", "top"),
+        "left": (-gap, 0.0, "right", "center"),
+        "right": (gap, 0.0, "left", "center"),
+    }[direction]
 
 
 def render_scale_scatter(frame: pd.DataFrame, out_path: Path = DEFAULT_OUT) -> Path:
@@ -261,16 +296,24 @@ def render_scale_scatter(frame: pd.DataFrame, out_path: Path = DEFAULT_OUT) -> P
             alpha=0.9,
             zorder=3,
         )
+        radius_pts = float(np.sqrt(sizes[i] / np.pi))
+        dx, dy, ha, va = _label_offset(_LABEL_DIR.get(model, "above"), radius_pts)
         ax.annotate(
             model,
             (xs[i], ys[i]),
-            xytext=(0, 7),
+            xytext=(dx, dy),
             textcoords="offset points",
-            ha="center",
-            va="bottom",
+            ha=ha,
+            va=va,
             fontsize=plotstyle.FS_ANNOT,
             color=plotstyle.TEXT_COLOR,
         )
+
+    # Headroom so the top marker's label clears the subtitle and the fanned-out and
+    # below-set labels stay inside the axes; the log x-axis gets a little side padding so
+    # the leftmost and rightmost labels do not run into the spines.
+    ax.set_xlim(10**3.05, 10**6.85)
+    ax.set_ylim(float(ys.min()) - 0.05, float(ys.max()) + 0.055)
 
     ax.set_xlabel("Disclosed pretraining scale (#WSIs, log)")
     ax.set_ylabel(rf"Cross-dataset CRoMa ($m{{=}}{int(CROMA_HEADLINE_M)}$)")
@@ -286,15 +329,14 @@ def render_scale_scatter(frame: pd.DataFrame, out_path: Path = DEFAULT_OUT) -> P
 
     fig.subplots_adjust(left=0.14, right=0.97, top=0.86, bottom=0.13)
     out_path = Path(out_path)
-    (out_path.parent / "png").mkdir(parents=True, exist_ok=True)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(
-        out_path.parent / "png" / out_path.with_suffix(".png").name,
-        dpi=plotstyle.DEFAULT_DPI,
-    )
-    fig.savefig(out_path)  # flat pdf for \graphicspath
+    pdf_path = out_path.parent / "pdf" / out_path.name
+    png_path = out_path.parent / "png" / out_path.with_suffix(".png").name
+    for sub in (pdf_path, png_path):
+        sub.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(png_path, dpi=plotstyle.DEFAULT_DPI)
+    fig.savefig(pdf_path)
     plt.close(fig)
-    return out_path
+    return pdf_path
 
 
 def _annotate_spearman(ax, xs: np.ndarray, ys: np.ndarray) -> None:
@@ -306,12 +348,14 @@ def _annotate_spearman(ax, xs: np.ndarray, ys: np.ndarray) -> None:
     except Exception:  # noqa: BLE001 - annotation is best-effort
         return
     rho, _ = spearmanr(np.log10(xs), ys)
+    # Lower-right corner: the bottom-left is occupied by Prost40M and the top by Midnight-12k,
+    # so the empty high-#WSIs / low-CRoMa corner is the one that collides with nothing.
     ax.text(
-        0.03,
-        0.05,
+        0.98,
+        0.04,
         rf"Spearman $\rho = {rho:.2f}$",
         transform=ax.transAxes,
-        ha="left",
+        ha="right",
         va="bottom",
         fontsize=plotstyle.FS_ANNOT,
         color=plotstyle.MUTED_TEXT_COLOR,
@@ -372,7 +416,8 @@ def main(argv: "list[str] | None" = None) -> int:
     print(f"scale scatter: {len(frame)} tile models over {list(per_dataset)}")
     print(frame.to_string(index=False))
     out = render_scale_scatter(frame, args.out)
-    print(f"\nwrote {out} and {out.parent / 'png' / out.with_suffix('.png').name}")
+    png = out.parent.parent / "png" / out.with_suffix(".png").name
+    print(f"\nwrote {out} and {png}")
     return 0
 
 

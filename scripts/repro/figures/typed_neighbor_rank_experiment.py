@@ -32,16 +32,37 @@ import numpy as np
 import pandas as pd
 
 import sys
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+_REPO = Path(__file__).resolve().parents[3]
+for _p in [_REPO / "src"] + [_REPO / "scripts" / d for d in ("studies", "bench", "repro")]:
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 from _neighbor_analysis import load_meta, prepare_embedding  # noqa: E402
+from paper_manifest import by_benchmark  # noqa: E402
 import views  # noqa: E402
 
-PROTOCOL = "k-star"
-view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
+import matplotlib  # noqa: E402
+matplotlib.use("Agg")  # lock a headless backend before plotstyle/pyplot is imported
+from croma import plotstyle  # noqa: E402
+
+# The natural-image control (DINOv2-B) is a floor, not a pathology encoder: it is excluded
+# from the pooled rank stat the manuscript quotes ("pooled across all pathology models"),
+# while the descriptive figure below still pools every model. Reporting both prevents the
+# roster from being silently re-confused later.
+CONTROL_MODEL = plotstyle.CONTROL_MODEL
+
+BENCHMARK = "pathorob-camelyon"
+# The quantities here are protocol-free (neighbour ranks and SS-shell depth are geometry;
+# pooled CRoMa is k-free). The protocol only picks the run to read and write beside, so it
+# must be the one the paper reports -- it was pinned to a k-star run that no longer exists.
+PROTOCOL = by_benchmark(BENCHMARK).protocol
+view = views.load_view(BENCHMARK)  # row-view over the pathorob-camelyon tileset
 METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
 STUDIES = view.studies_dir(PROTOCOL)
-FIGDIR = Path("paper/figures/results/pathorob-camelyon-faithful/pdf")
+# Beside the run this study reads, never in the manuscript tree: a figure written straight
+# into paper/ is a copy nobody owns, and it drifts from its run in silence. Derived from
+# STUDIES so it follows PROTOCOL rather than restating it. Copy what earns a float by hand;
+# scripts/repro/check_paper_figures.py reports which copies have fallen behind.
+FIGDIR = STUDIES / "plots" / "pdf"
 ALPHA = 0.10  # bottom decile, matches reported LTM_10%
 SS_DEPTH_K = (10, 25, 50)  # fixed reference k for SS-pocket prevalence (k*-free)
 
@@ -167,16 +188,35 @@ pd.set_option("display.width", 200, "display.max_columns", 40)
 print(summary.round(1).to_string(index=False))
 
 PS, PO = np.concatenate(pooled_so), np.concatenate(pooled_os)
-both_all = np.maximum(PS, PO)
+both_all = np.maximum(PS, PO)  # rank at which BOTH typed neighbours are available
+first_all = np.minimum(PS, PO)  # rank of the FIRST typed neighbour (SS-shell exit / coverage)
 TS, TO = np.concatenate(pooled_tail_so), np.concatenate(pooled_tail_os)
 tail_both = np.maximum(TS, TO)
 nontail_both = both_all  # approx pop; tail is 10% of it
 
+# Ranked pathology panel (the manuscript's roster): pooled_so/pooled_os hold one array per
+# model in `models` order, so dropping the control's chunk yields the pooled stat quoted as
+# "pooled across all pathology models". first-typed = coverage threshold, both = contest depth.
+_ranked = [i for i, m in enumerate(models) if m != CONTROL_MODEL]
+PS_r = np.concatenate([pooled_so[i] for i in _ranked])
+PO_r = np.concatenate([pooled_os[i] for i in _ranked])
+both_ranked = np.maximum(PS_r, PO_r)
+first_ranked = np.minimum(PS_r, PO_r)
+tmask_ranked = np.concatenate([pooled_tail_mask[i] for i in _ranked])  # LTM-tail mask over ranked samples
+
 print("\n=== POOLED (all defined samples, all models) ===")
 for p in (50, 75, 90, 95, 99):
-    print(f"  rank where BOTH typed neighbours found  p{p:>2}: {np.percentile(both_all, p):7.1f}")
-print(f"  frac with both typed neighbours within rank 10 : {np.mean(both_all <= 10):.3f}")
+    print(
+        f"  rank of FIRST typed neighbour (>=1 SO or OS) p{p:>2}: {np.percentile(first_all, p):7.1f}"
+        f"   |  rank where BOTH found p{p:>2}: {np.percentile(both_all, p):7.1f}"
+    )
+print(f"  frac with a typed neighbour within rank 10 : {np.mean(first_all <= 10):.3f}   (both: {np.mean(both_all <= 10):.3f})")
 print(f"  frac within rank 20 : {np.mean(both_all <= 20):.3f}   rank 50 : {np.mean(both_all <= 50):.3f}")
+
+print(f"\n=== POOLED (ranked pathology panel: {len(_ranked)} models, excludes {CONTROL_MODEL}) ===")
+print(f"  FIRST typed (>=1 SO or OS) median {np.percentile(first_ranked, 50):7.1f}   <-- quoted in results.tex")
+print(f"  BOTH typed  (SO and OS)    median {np.percentile(both_ranked, 50):7.1f}   <-- fig:croma-rank left panel")
+print(f"  BOTH frac within rank 10 {np.mean(both_ranked <= 10):.4f}   rank 50 {np.mean(both_ranked <= 50):.4f}")
 
 print("\n=== TAIL CLEANLINESS (CRoMa bottom decile vs all) ===")
 print(f"  bottom-decile 'both-found' rank   median {np.percentile(tail_both,50):.1f}  p90 {np.percentile(tail_both,90):.1f}")
@@ -188,6 +228,16 @@ out = STUDIES / "typed_neighbor_rank_summary.csv"
 summary.to_csv(out, index=False)
 json.dump(
     dict(
+        ranked_n_models=len(_ranked),
+        pooled_first_percentiles_ranked={str(p): float(np.percentile(first_ranked, p)) for p in (50, 75, 90, 95, 99)},
+        pooled_both_percentiles_ranked={str(p): float(np.percentile(both_ranked, p)) for p in (50, 75, 90, 95, 99)},
+        pooled_frac_first_le10_ranked=float(np.mean(first_ranked <= 10)),
+        pooled_frac_first_le50_ranked=float(np.mean(first_ranked <= 50)),
+        pooled_frac_both_le10_ranked=float(np.mean(both_ranked <= 10)),
+        pooled_frac_both_le50_ranked=float(np.mean(both_ranked <= 50)),
+        pooled_first_percentiles={str(p): float(np.percentile(first_all, p)) for p in (50, 75, 90, 95, 99)},
+        pooled_frac_first_le10=float(np.mean(first_all <= 10)),
+        pooled_frac_first_le50=float(np.mean(first_all <= 50)),
         pooled_both_percentiles={str(p): float(np.percentile(both_all, p)) for p in (50, 75, 90, 95, 99)},
         pooled_frac_both_le10=float(np.mean(both_all <= 10)),
         pooled_frac_both_le50=float(np.mean(both_all <= 50)),
@@ -212,8 +262,6 @@ from croma import plotstyle
 ACCENT = plotstyle.NEIGHBOR_TYPE_COLOR["OS"]  # red (impostor / tail)
 REST = plotstyle.NEIGHBOR_TYPE_COLOR["SO"]    # steel blue (rest)
 
-tmask = np.concatenate(pooled_tail_mask)
-
 
 def ecdf(a):
     a = np.sort(a)
@@ -229,13 +277,13 @@ def _panel_tag(ax, tag):
 
 fig, (axL, axR) = plt.subplots(1, 2, figsize=(plotstyle.COL_DOUBLE, 3.4))
 
-x, y = ecdf(both_all)
+x, y = ecdf(both_ranked)
 plotstyle.style_axes(axL)
 axL.plot(x, y, color=plotstyle.TEXT_COLOR, lw=plotstyle.LW_SERIES)
 for r in (10, 50):
     axL.axvline(r, color=ACCENT, ls=":", lw=plotstyle.LW_REFERENCE)
     axL.text(
-        r, 0.04, f" rank {r}\n {np.mean(both_all<=r)*100:.1f}%",
+        r, 0.04, f" rank {r}\n {np.mean(both_ranked<=r)*100:.1f}%",
         color=ACCENT, fontsize=plotstyle.FS_ANNOT, va="bottom",
     )
 axL.axhline(0.5, color=plotstyle.REFERENCE_LINE_COLOR, ls="--", lw=plotstyle.LW_REFERENCE)
@@ -243,13 +291,13 @@ axL.set_xscale("log")
 axL.set_xlabel("rank at which both nearest SO and OS neighbour are found")
 axL.set_ylabel("Fraction of samples (ECDF)")
 plotstyle.title_with_subtitle(
-    axL, "Typed neighbours are reached deep, not locally", "pooled, 16 models"
+    axL, "Typed neighbours are reached deep, not locally", f"pooled, {len(_ranked)} pathology models"
 )
 axL.set_xlim(1, n)
 _panel_tag(axL, "a")
 
-xr_t, yr_t = ecdf(PO[tmask])
-xr_r, yr_r = ecdf(PO[~tmask])
+xr_t, yr_t = ecdf(PO_r[tmask_ranked])
+xr_r, yr_r = ecdf(PO_r[~tmask_ranked])
 plotstyle.style_axes(axR)
 axR.plot(xr_t, yr_t, color=ACCENT, lw=plotstyle.LW_SERIES, label="CRoMa bottom decile (LTM tail)")
 axR.plot(xr_r, yr_r, color=REST, lw=plotstyle.LW_SERIES, label="rest")
@@ -289,7 +337,9 @@ print(
     f"{ss_frac_pretyped:.4f}  (the shell that is traversed is SS, not OO)"
 )
 
-have_croma = summary["croma"].notna()
+# Cross-model statistics run on the ranked panel: the natural-image control is a floor, and
+# its off-trend support/biology would pull every rho. Its per-model rows stay in the CSV.
+have_croma = summary["croma"].notna() & (summary["model"] != plotstyle.CONTROL_MODEL)
 if have_croma.sum() >= 3:
     sub = summary[have_croma]
 
@@ -347,7 +397,7 @@ ax2.set_xlabel("CRoMa  (biology-vs-confounder ordering)")
 ax2.set_ylabel("Local SS-saturation\n(fraction with no typed neighbour in 10 nearest)")
 plotstyle.title_with_subtitle(
     ax2, "CRoMa robustness does not imply local disentanglement",
-    "16 models; even CRoMa leaders are majority SS-pocketed",
+    f"{len(scat)} models; even CRoMa leaders are majority SS-pocketed",
 )
 handles, labels = ax2.get_legend_handles_labels()
 fig2.legend(

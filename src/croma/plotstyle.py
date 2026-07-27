@@ -67,6 +67,11 @@ REFERENCE_LINE_COLOR = "#6b7280"
 PANEL_FACE_COLOR = "#ffffff"
 FRAGILE_SHADE_COLOR = "#f3e3d2"
 
+# Guide-to-the-eye trend fits. Dotted and faint so they never compete with the dashed
+# reference geometry (which marks exact, meaningful values) or with the data points.
+TREND_LINE_COLOR = "#5b6b7b"
+TREND_ALPHA = 0.55
+
 # ---------------------------------------------------------------------------
 # Model -> family mapping and family hue + within-family tone palette.
 # Families share a hue; tones (light -> dark) distinguish members.
@@ -163,6 +168,20 @@ CANONICAL_MODEL_ORDER: list[str] = [
     "mSTAR", "GPFM", "MUSK", "GenBio-PathFM",
     "DINOv2-B",
 ]
+
+# The natural-image control: pretrained on LVD-142M, never on a whole-slide image. It is a
+# floor, not a competitor -- it is excluded from rankings, from per-column bolding, and from
+# every cross-model correlation. Its positive CRoMa is an artifact of weak structure of
+# either kind (it has the lowest biological k-NN accuracy of the panel), which is precisely
+# what makes it useful: it calibrates what a positive margin means on a poor representation.
+CONTROL_MODEL = "DINOv2-B"
+
+# Regime hues for the pretraining-scale figure. This is the one figure whose colour encodes
+# a model *attribute* rather than its family, because every point is directly labelled.
+REGIME_PALETTE: dict[str, str] = {
+    "vision-only": "#2f86b8",  # steel blue
+    "VLFM": "#c2222f",         # red
+}
 
 # Fixed colour per metric (for single-metric accents and cross-metric panels).
 METRIC_COLOR: dict[str, str] = {

@@ -1,8 +1,8 @@
 """Distribution archetype: per-sample ridge-line distributions across models.
 
-Covers the per-sample CRoMa distributions (with an adjacent numeric info panel).
-The CRoMa variant shares the ``_draw_croma_sample_distributions`` drawer with its
-``plot_*`` wrapper.
+Covers the per-sample CRoMa distributions. ``_load_croma_sample_rows`` reads and ranks
+the per-model sample arrays, ``_draw_croma_sample_distributions`` renders them onto a
+supplied axes, and ``plot_croma_sample_distributions`` is the figure-level wrapper.
 """
 
 from pathlib import Path
@@ -20,8 +20,6 @@ from croma.plotstyle import (
     COL_DOUBLE,
     FRAGILE_SHADE_COLOR,
     MUTED_TEXT_COLOR,
-    PREC_METRIC,
-    PREC_PERCENT,
     REFERENCE_LINE_COLOR,
     SPINE_COLOR,
     TEXT_COLOR,
@@ -30,21 +28,43 @@ from croma.plotstyle import (
 from .base import _color_for_model, _style_axes
 from .export import _finalize_figure
 
+# Per-sample CRoMa is a signed, normalised margin bounded by construction to (-1, 1)
+# -- see croma.metrics.croma._compute_sample_croma. Framing every benchmark on the
+# full domain keeps the zero-margin boundary at the centre (so the shaded fragile
+# region reads as exactly half the panel) and makes the figure comparable across
+# benchmarks, which data-driven limits would not be.
+CROMA_DOMAIN = (-1.0, 1.0)
+CROMA_TICKS = (-1.0, -0.5, 0.0, 0.5, 1.0)
 
-def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
-    croma_rows = [
-        r
-        for r in rows
-        if "croma_samples_path" in r
-        and "croma_q_alpha" in r
-        and np.isfinite(float(r.get("croma", float("nan"))))
-    ]
-    if not croma_rows:
-        ax.set_visible(False)
-        return
+# One ridgeline per model, so the figure height scales with the roster: 3.5in for the
+# 4 slide encoders, 10.3in for the 21 tile encoders. Reserve the title and axis-label
+# bands in inches rather than in figure fractions -- a fraction that leaves room for
+# the x-label on the tall figure silently clips it off the short one.
+_TITLE_BAND_IN = 0.60  # suptitle + subtitle, above the axes
+_XLABEL_BAND_IN = 0.52  # tick labels + x-label, below the axes
+_TITLE_BASELINE_IN = 0.16  # suptitle baseline, below the figure top
+_SUBTITLE_BASELINE_IN = 0.36  # subtitle baseline, below the figure top
 
-    model_data = []
-    for row in croma_rows:
+
+def _load_croma_sample_rows(
+    rows: list[dict], models: list[str] | None = None
+) -> list[dict]:
+    """Load each model's per-sample CRoMa array, ranked by pooled CRoMa (best first).
+
+    ``models`` optionally restricts the roster to a curated subset, selected by model name
+    and order-independent -- the returned rows are always ranked by pooled CRoMa so a subset
+    stays a faithful zoom-in of the full ridgeline, best on top. A name in ``models`` with no
+    finite CRoMa row is silently skipped, same as any other missing row.
+    """
+    wanted = set(models) if models is not None else None
+    model_data: list[dict] = []
+    for row in rows:
+        if "croma_samples_path" not in row:
+            continue
+        if wanted is not None and str(row["model"]) not in wanted:
+            continue
+        if not np.isfinite(float(row.get("croma", float("nan")))):
+            continue
         path = Path(str(row["croma_samples_path"]))
         if not path.exists():
             continue
@@ -52,32 +72,26 @@ def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
         values = values[np.isfinite(values)]
         if len(values) < 2:
             continue
-        alpha = float(row["croma_alpha"])
-        alpha_pct = int(round(alpha * 100))
         model_data.append(
             {
                 "model": str(row["model"]),
                 "values": values,
-                "q_alpha": float(row["croma_q_alpha"]),
-                "alpha": alpha,
-                "alpha_pct": alpha_pct,
                 "croma": float(row["croma"]),
-                "neg_frac": float(np.mean(values < 0.0)),
             }
         )
-
-    if not model_data:
-        ax.set_visible(False)
-        return
-
-    model_data = sorted(
+    return sorted(
         model_data,
         key=lambda d: (float(d["croma"]), str(d["model"])),
         reverse=True,
     )
-    all_values = np.concatenate([d["values"] for d in model_data])
-    x_min = float(np.nanpercentile(all_values, 1)) - 0.1
-    x_max = float(np.nanpercentile(all_values, 99)) + 0.1
+
+
+def _draw_croma_sample_distributions(ax, model_data: list[dict]) -> None:
+    if not model_data:
+        ax.set_visible(False)
+        return
+
+    x_min, x_max = CROMA_DOMAIN
     x_grid = np.linspace(x_min, x_max, 512)
 
     _style_axes(ax)
@@ -87,10 +101,8 @@ def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
     ax.grid(False)
     ax.set_yticks([])
 
-    # Shade the fragile region (CRoMa < 0)
-    shade_right = min(0.0, x_max)
-    if shade_right > x_min:
-        ax.axvspan(x_min, shade_right, color=FRAGILE_SHADE_COLOR, alpha=0.55, zorder=1)
+    # Shade the fragile region (CRoMa < 0), exactly the left half of the domain.
+    ax.axvspan(x_min, 0.0, color=FRAGILE_SHADE_COLOR, alpha=0.45, zorder=1)
     ax.axvline(
         x=0.0,
         linestyle="--",
@@ -101,9 +113,7 @@ def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
     )
 
     row_centers = np.arange(len(model_data), 0, -1, dtype=float)
-    row_spacing = 1.0
     amplitude = 0.72
-    global_peak = 0.0
     rendered_rows: list[tuple[dict, np.ndarray, np.ndarray | None, np.ndarray, float]] = []
     for d in model_data:
         values = d["values"]
@@ -113,19 +123,14 @@ def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
             density = None
 
         if density is None:
-            counts, edges = np.histogram(values, bins=40, density=True)
-            centers = 0.5 * (edges[:-1] + edges[1:])
+            counts, edges = np.histogram(values, bins=40, range=(x_min, x_max), density=True)
+            x_values = 0.5 * (edges[:-1] + edges[1:])
             y_values = counts
-            x_values = centers
         else:
             y_values = density
             x_values = x_grid
         peak = float(np.nanmax(y_values)) if len(y_values) > 0 else 0.0
-        global_peak = max(global_peak, peak)
         rendered_rows.append((d, np.asarray(x_values, dtype=float), density, np.asarray(y_values, dtype=float), peak))
-
-    if global_peak <= 0.0:
-        global_peak = 1.0
 
     for row_center, rendered in zip(row_centers, rendered_rows):
         d, x_values, density, y_values, peak = rendered
@@ -170,19 +175,6 @@ def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
                 zorder=3,
             )
 
-        q = float(d["q_alpha"])
-        if np.isfinite(q) and x_min <= q <= x_max:
-            ax.vlines(
-                x=q,
-                ymin=row_center - 0.18,
-                ymax=row_center + amplitude,
-                color=color,
-                linestyle=":",
-                linewidth=1.2,
-                alpha=0.95,
-                zorder=4,
-            )
-
         ax.text(
             -0.02,
             row_center,
@@ -193,103 +185,52 @@ def _draw_croma_sample_distributions(ax, rows: list[dict]) -> None:
             fontsize=plotstyle.FS_TICK,
             color=TEXT_COLOR,
         )
-    alpha_pct = int(model_data[0]["alpha_pct"])
+
     ax.set_xlim(x_min, x_max)
+    ax.set_xticks(list(CROMA_TICKS))
     ax.set_ylim(0.5, float(len(model_data)) + 0.95)
     ax.set_xlabel("Per-sample CRoMa")
     ax.set_ylabel("")
 
 
-def plot_croma_sample_distributions(rows: list[dict], out_path: Path) -> None:
-    valid_rows = [
-        r
-        for r in rows
-        if "croma_samples_path" in r
-        and "croma_q_alpha" in r
-        and np.isfinite(float(r.get("croma", float("nan"))))
-    ]
-    fig_height = max(3.5, 0.85 + 0.45 * max(1, len(valid_rows)))
-    fig, (ax, info_ax) = plt.subplots(
-        1,
-        2,
-        figsize=(COL_DOUBLE, fig_height),
-        gridspec_kw={"width_ratios": [5.0, 1.6]},
-    )
-    alpha_values = [
-        int(round(float(r["croma_alpha"]) * 100))
-        for r in valid_rows
-        if "croma_alpha" in r and np.isfinite(float(r["croma_alpha"]))
-    ]
-    alpha_pct = alpha_values[0] if alpha_values else 10
-    _draw_croma_sample_distributions(ax, rows)
-    info_ax.set_axis_off()
-    if ax.get_visible():
-        info_ax.set_ylim(ax.get_ylim())
-        info_ax.set_xlim(0.0, 1.0)
-        # Right edges of the numeric columns (right-aligned so digits line up).
-        col_x = (0.26, 0.62, 0.99)
-        header_y = float(len(valid_rows)) + 0.72
-        for label, x_pos in zip(("CRoMa", f"Q{alpha_pct}", "%<0"), col_x):
-            info_ax.text(
-                x_pos,
-                header_y,
-                label,
-                ha="right",
-                va="center",
-                fontsize=plotstyle.FS_ANNOT,
-                color=TEXT_COLOR,
-                weight="bold",
-            )
-        model_data: list[dict[str, float | str]] = []
-        for row in valid_rows:
-            path = Path(str(row["croma_samples_path"]))
-            if not path.exists():
-                continue
-            values = np.load(path)
-            values = values[np.isfinite(values)]
-            if len(values) < 2:
-                continue
-            model_data.append(
-                {
-                    "model": str(row["model"]),
-                    "croma": float(row["croma"]),
-                    "q_alpha": float(row["croma_q_alpha"]),
-                    "neg_frac": float(np.mean(values < 0.0)),
-                }
-            )
-        model_data = sorted(
-            model_data,
-            key=lambda d: (float(d["croma"]), str(d["model"])),
-            reverse=True,
-        )
-        row_centers = np.arange(len(model_data), 0, -1, dtype=float)
-        for row_center, row in zip(row_centers, model_data):
-            cells = (
-                f"{float(row['croma']):.{PREC_METRIC}f}",
-                f"{float(row['q_alpha']):.{PREC_METRIC}f}",
-                f"{100.0 * float(row['neg_frac']):.{PREC_PERCENT}f}%",
-            )
-            for value, x_pos in zip(cells, col_x):
-                info_ax.text(
-                    x_pos,
-                    float(row_center),
-                    value,
-                    ha="right",
-                    va="center",
-                    fontsize=plotstyle.FS_ANNOT,
-                    color=TEXT_COLOR,
-                )
+def _ridgeline_figure_height(n_models: int) -> float:
+    return max(3.5, 0.85 + 0.45 * max(1, n_models))
+
+
+def _ridgeline_bands(fig_height: float) -> dict[str, float]:
+    """Figure-fraction positions for a fixed physical title and x-label band."""
+    return {
+        "top": 1.0 - _TITLE_BAND_IN / fig_height,
+        "bottom": _XLABEL_BAND_IN / fig_height,
+        "title_y": 1.0 - _TITLE_BASELINE_IN / fig_height,
+        "subtitle_y": 1.0 - _SUBTITLE_BASELINE_IN / fig_height,
+    }
+
+
+def plot_croma_sample_distributions(
+    rows: list[dict], out_path: Path, models: list[str] | None = None
+) -> None:
+    """Render the per-sample CRoMa ridgeline for ``rows`` (optionally a subset).
+
+    Passing ``models`` restricts the figure to a curated subset; the default draws the full
+    roster. The clean ridgeline style is fixed either way.
+    """
+    model_data = _load_croma_sample_rows(rows, models=models)
+    fig_height = _ridgeline_figure_height(len(model_data))
+    bands = _ridgeline_bands(fig_height)
+    fig, ax = plt.subplots(figsize=(COL_DOUBLE, fig_height))
+    _draw_croma_sample_distributions(ax, model_data)
     fig.suptitle(
         "Per-sample CRoMa distributions",
         fontsize=plotstyle.FS_TITLE,
         weight="bold",
-        y=0.985,
+        y=bands["title_y"],
         color=TEXT_COLOR,
     )
     fig.text(
         0.5,
-        0.935,
-        f"sorted by CRoMa; dotted: $Q_{{{alpha_pct}}}$; shaded: CRoMa < 0",
+        bands["subtitle_y"],
+        "sorted by CRoMa; shaded: CRoMa < 0 (confounder-dominant)",
         ha="center",
         va="center",
         fontsize=plotstyle.FS_ANNOT,
@@ -298,11 +239,10 @@ def plot_croma_sample_distributions(rows: list[dict], out_path: Path) -> None:
     _finalize_figure(
         fig,
         out_path=out_path,
-        legend_axes=[ax, info_ax],
+        legend_axes=[ax],
         add_legend=False,
-        left=0.165,
-        right=0.94,
-        top=0.885,
-        bottom=0.095,
-        wspace=0.01,
+        left=0.135,
+        right=0.985,
+        top=bands["top"],
+        bottom=bands["bottom"],
     )

@@ -1,27 +1,32 @@
-"""Dataset example montage (PathoROB-style): biology x center, one block per dataset.
+"""Dataset example montage (PathoROB-style): biology x confounder, one block per dataset.
 
-Composite figure for the paper (Plot 2). One small block per tile benchmark
-(Camelyon, TCGA, Tolkach-ESCA, prostate-shift); each block is a 2x2 grid of real
-tiles with rows = biology class and columns = center (the confounder). The block
-title is the dataset name, row labels are the biological classes, and column
-labels are the centers -- mirroring the subcaption composite described in the
-paper and the cell layout of ``fig:dataset-cardinality`` in
+Supplementary figure for the paper. One block per tile benchmark (Camelyon, TCGA,
+Tolkach-ESCA, prostate-shift), packed two per row into a wide, short composite;
+each block shows two representative biological classes (rows) across *every* confounder level of that
+benchmark (columns) -- so the reader sees biology-matched, confounder-different
+tiles side by side and can judge how much the acquisition site changes the
+picture. The block title is the dataset name, row labels are the biological
+classes, and column labels are the confounder levels. Confounder width therefore
+varies by benchmark (Camelyon 2 centres, TCGA 4, Tolkach 3, prostate 2), mirroring
+the per-cell layout of ``fig:dataset-cardinality`` in
 ``paper/sections/dataset_summary.tex``.
 
-The class/center pair per block is the canonical paired subset that dataset's
-main result is computed on, so the picture matches the reported numbers:
+The class/confounder grid per block is drawn from the manifest that benchmark's
+main result is computed on, so the picture matches the reported configuration:
 
-* Camelyon      -- native 2x2: normal/tumour x RUMC/UMCU (the PathoROB in-domain
-  RI set, ``pathorob-camelyon-faithful.csv``, evaluated dataset-wide).
-* Prostate      -- native 2x2: benign/tumour x Karolinska/Radboud
+* Camelyon      -- native 2 centres: normal/tumour x RUMC/UMCU (the PathoROB
+  in-domain RI set, ``pathorob-camelyon-faithful.csv``, evaluated dataset-wide).
+* TCGA (4x4)    -- the headline TCGA configuration reported in the main text:
+  four cancer types across four medical centres (``pathorob-tcga-4x4.csv``). We
+  show two representative cancer types (breast/colon) across all four headline
+  centres (Asterand, Christiana Healthcare, Roswell Park, University of
+  Pittsburgh). PathoROB's paired TCGA-2x2 configuration is reported only in the
+  supplement, so the example patches follow the 4x4 headline, not that pair.
+* Tolkach-ESCA  -- the main result is dataset-wide over 6 classes x 3 cohorts; we
+  show a documented representative contrast, Tumour vs Oesophageal mucosa, across
+  all three cohorts (UKK, WNS, CHA).
+* Prostate      -- native 2 providers: benign/tumour x Karolinska/Radboud
   (``prostate-shift-binary-kirumc.csv``, evaluated dataset-wide).
-* TCGA (2x2)    -- the main result averages 94 balanced two-class x two-center
-  quartets, so there is no single canonical pair; we show one representative
-  quartet (the alphabetically-first subset, ``BLCA_BRCA``), matching the paper's
-  "one representative quartet is shown".
-* Tolkach-ESCA  -- the main result is dataset-wide over 6 classes x 3 cohorts, so
-  there is no canonical 2x2 pair; we use a documented placeholder contrast,
-  Tumour vs Oesophageal mucosa across the UKK and WNS cohorts.
 
 Tile selection is deterministic from a fixed seed via :func:`select_montage_tiles`
 (a pure function over a manifest DataFrame). Actual image loading and PDF
@@ -126,12 +131,16 @@ def select_montage_tiles(
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
 class MontageSpec:
-    """One dataset block: which manifest, which canonical 2x2, and pretty labels."""
+    """One dataset block: which manifest, which biology/confounder grid, and labels.
+
+    ``classes`` is always the two representative biology rows; ``centers`` is that
+    benchmark's confounder levels (columns) and its length varies by benchmark.
+    """
 
     name: str
     manifest: str  # repo-relative path to the dataset's main-result manifest
-    classes: tuple[str, str]  # canonical biology pair (rows)
-    centers: tuple[str, str]  # canonical center pair (columns)
+    classes: tuple[str, str]  # representative biology pair (rows)
+    centers: tuple[str, ...]  # confounder levels (columns); length varies by benchmark
     class_column: str = "label"
     center_column: str = "medical_center"
     path_column: str = "image_path"
@@ -163,9 +172,10 @@ class MontageSpec:
         return working.reset_index(drop=True)
 
 
-# The four tile benchmarks. Camelyon and prostate are native 2x2 (canonical pair
-# fully determined). TCGA shows one representative quartet; Tolkach uses a
-# documented placeholder contrast (see module docstring).
+# The four tile benchmarks, each shown as two biology rows across all of its
+# confounder levels. Camelyon and prostate are native two-level confounders; TCGA
+# uses the 4x4 headline configuration (four centres); Tolkach uses a documented
+# representative class contrast across all three cohorts (see module docstring).
 SPECS: tuple[MontageSpec, ...] = (
     MontageSpec(
         name="Camelyon",
@@ -175,44 +185,54 @@ SPECS: tuple[MontageSpec, ...] = (
         center_column="medical_center",
         class_labels={"normal": "Normal", "tumor": "Tumour"},
         center_labels={"RUMC": "RUMC", "UMCU": "UMCU"},
-        note="canonical native 2x2 (PathoROB in-domain RI set)",
+        note="native 2 centres (PathoROB in-domain RI set)",
     ),
     MontageSpec(
-        name="TCGA (2x2)",
-        manifest="data/pathorob/manifests/pathorob-tcga-2x2.csv",
-        classes=("Bladder_Urothelial_Carcinoma", "Breast_invasive_carcinoma"),
-        centers=("MD Anderson", "University of Pittsburgh"),
+        name=r"TCGA (4$\times$4)",
+        manifest="data/pathorob/manifests/pathorob-tcga-4x4.csv",
+        classes=("Breast_invasive_carcinoma", "Colon_adenocarcinoma"),
+        centers=(
+            "Asterand",
+            "Christiana Healthcare",
+            "Roswell Park",
+            "University of Pittsburgh",
+        ),
         center_column="medical_center",
-        subset="BLCA_BRCA",
         class_labels={
-            "Bladder_Urothelial_Carcinoma": "Bladder UC",
             "Breast_invasive_carcinoma": "Breast IC",
+            "Colon_adenocarcinoma": "Colon AC",
         },
         center_labels={
-            "MD Anderson": "MD Anderson",
-            "University of Pittsburgh": "U. Pittsburgh",
+            "Asterand": "Asterand",
+            "Christiana Healthcare": "Christiana",
+            "Roswell Park": "Roswell",
+            "University of Pittsburgh": "U. Pitt",
         },
-        note="representative quartet (subset BLCA_BRCA); main result averages 94 quartets",
+        note="headline 4x4: 2 representative cancer types x the 4 headline centres",
     ),
     MontageSpec(
         name="Tolkach-ESCA",
         manifest="data/pathorob/manifests/pathorob-tolkach-esca-faithful.csv",
         classes=("TUMOR", "SH_OES"),
-        centers=("VALSET1_UKK", "VALSET2_WNS"),
+        centers=("VALSET1_UKK", "VALSET2_WNS", "VALSET4_CHA_FULL"),
         center_column="medical_center",
-        class_labels={"TUMOR": "Tumour", "SH_OES": "Oesophageal mucosa"},
-        center_labels={"VALSET1_UKK": "UKK", "VALSET2_WNS": "WNS"},
-        note="documented placeholder (main result is dataset-wide over 6 classes x 3 cohorts)",
+        class_labels={"TUMOR": "Tumour", "SH_OES": "Mucosa"},
+        center_labels={
+            "VALSET1_UKK": "UKK",
+            "VALSET2_WNS": "WNS",
+            "VALSET4_CHA_FULL": "CHA",
+        },
+        note="representative class contrast (Tumour vs mucosa) across all 3 cohorts",
     ),
     MontageSpec(
-        name="Prostate (H&E)",
+        name="PCaBiop",
         manifest="data/prostate-shift-binary-kirumc.csv",
         classes=("benign", "tumor"),
         centers=("KI", "RUMC"),
         center_column="medical_center",
         class_labels={"benign": "Benign", "tumor": "Cancer"},
-        center_labels={"KI": "Karolinska", "RUMC": "Radboud"},
-        note="canonical native 2x2 (prostate-shift binary, dataset-wide)",
+        center_labels={"KI": "KI", "RUMC": "RUMC"},
+        note="native 2 providers (prostate-shift binary, dataset-wide)",
     ),
 )
 
@@ -275,9 +295,18 @@ def _read_tile(path: str):
 
 
 def render_montage(blocks: "list[MontageBlock]", out_path: Path) -> Path:
-    """Render the composite montage (one 2x2 biology x center block per dataset).
+    """Render the composite montage (one biology x confounder block per dataset).
 
-    Requires every block's four tiles to exist on disk; callers guard this behind a
+    Blocks are packed two per row into a wide, short composite (rather than a tall
+    single column, which does not sit well on a manuscript page). Layout is in
+    fixed inches: every tile is the same square regardless of how many confounder
+    columns its benchmark has, and each block is only as wide as its own confounder
+    count. Within a row, blocks are packed left-to-right, so a benchmark with fewer
+    confounder levels leaves no dead columns -- the next block simply starts sooner.
+    Each block reserves a top band for its title + column labels and a left strip
+    for the class (row) labels.
+
+    Requires every block's tiles to exist on disk; callers guard this behind a
     data-availability check. Writes a flat PDF at ``out_path`` (for the paper's
     ``\\graphicspath``) plus a PNG sibling under ``png/``.
     """
@@ -288,25 +317,56 @@ def render_montage(blocks: "list[MontageBlock]", out_path: Path) -> Path:
     n = len(blocks)
     if n == 0:
         raise ValueError("no blocks to render")
-    ncols = 2 if n > 1 else 1
-    nrows = (n + ncols - 1) // ncols
+    n_class = max(len(block.spec.classes) for block in blocks)
 
-    fig = plt.figure(figsize=(plotstyle.COL_DOUBLE, plotstyle.COL_DOUBLE * 0.58 * nrows))
-    subfigs = np.atleast_1d(fig.subfigures(nrows, ncols, wspace=0.05, hspace=0.14)).ravel()
+    # Layout constants (inches).
+    tile = 0.95  # tile edge (square)
+    gap = 0.03  # gap between adjacent tiles
+    lab_w = 0.42  # left strip per block for the rotated class labels
+    title_h = 0.34  # per-block band for the cohort title + column labels
+    block_gap_x = 0.50  # horizontal space between blocks in a row
+    block_gap_y = 0.35  # vertical space between block rows
+    margin = 0.10  # outer figure margin
 
-    for panel, block in enumerate(blocks):
-        subfig = subfigs[panel]
+    def block_width(spec: MontageSpec) -> float:
+        c = len(spec.centers)
+        return lab_w + c * tile + (c - 1) * gap
+
+    block_cols = 2 if n > 1 else 1
+    block_rows = (n + block_cols - 1) // block_cols
+    block_row_h = title_h + n_class * tile + (n_class - 1) * gap
+
+    # Figure size: width from the widest packed row, height from the block rows.
+    row_width = [0.0] * block_rows
+    for i, block in enumerate(blocks):
+        row_width[i // block_cols] += block_width(block.spec)
+    for r in range(block_rows):
+        count = min(block_cols, n - r * block_cols)
+        row_width[r] += block_gap_x * (count - 1)
+    fig_w = margin + max(row_width) + margin
+    fig_h = margin + block_rows * block_row_h + block_gap_y * (block_rows - 1) + margin
+
+    fig = plt.figure(figsize=(fig_w, fig_h))
+
+    x_cursor = [margin] * block_rows  # running left edge for each row
+    for i, block in enumerate(blocks):
         spec = block.spec
-        subfig.suptitle(
-            spec.name,
-            fontsize=plotstyle.FS_TITLE,
-            weight="bold",
-            color=plotstyle.TEXT_COLOR,
-        )
-        axes = np.atleast_2d(subfig.subplots(2, 2))
+        r = i // block_cols
+        bx = x_cursor[r]
+        by_top = margin + r * (block_row_h + block_gap_y)  # block top, from fig top
+        x_cursor[r] = bx + block_width(spec) + block_gap_x
+        tiles_x0 = bx + lab_w
+        tiles_y0_top = by_top + title_h
         for row, klass in enumerate(spec.classes):
             for col, center in enumerate(spec.centers):
-                ax = axes[row, col]
+                ax = fig.add_axes(
+                    [
+                        (tiles_x0 + col * (tile + gap)) / fig_w,
+                        (fig_h - (tiles_y0_top + row * (tile + gap)) - tile) / fig_h,
+                        tile / fig_w,
+                        tile / fig_h,
+                    ]
+                )
                 ax.imshow(_read_tile(block.tiles[(klass, center)]))
                 ax.set_xticks([])
                 ax.set_yticks([])
@@ -314,7 +374,7 @@ def render_montage(blocks: "list[MontageBlock]", out_path: Path) -> Path:
                     spine.set_visible(True)
                     spine.set_color(plotstyle.SPINE_COLOR)
                     spine.set_linewidth(plotstyle.LW_SPINE)
-                if row == 0:  # columns = center (confounder)
+                if row == 0:  # columns = confounder level
                     ax.set_title(
                         spec.center_label(center),
                         fontsize=plotstyle.FS_ANNOT,
@@ -327,10 +387,18 @@ def render_montage(blocks: "list[MontageBlock]", out_path: Path) -> Path:
                         fontsize=plotstyle.FS_ANNOT,
                         color=plotstyle.TEXT_COLOR,
                     )
-
-    # Blank any unused panels (e.g. an odd dataset count).
-    for panel in range(n, len(subfigs)):
-        subfigs[panel].set_facecolor("none")
+        # Cohort title, centred over this block's tiles in the reserved top band.
+        block_tiles_w = len(spec.centers) * tile + (len(spec.centers) - 1) * gap
+        fig.text(
+            (tiles_x0 + block_tiles_w / 2) / fig_w,
+            (fig_h - by_top - 0.02) / fig_h,
+            spec.name,
+            ha="center",
+            va="top",
+            fontsize=plotstyle.FS_TITLE,
+            weight="bold",
+            color=plotstyle.TEXT_COLOR,
+        )
 
     out_path = Path(out_path)
     (out_path.parent / "png").mkdir(parents=True, exist_ok=True)

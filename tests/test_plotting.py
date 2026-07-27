@@ -10,18 +10,27 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from plotting import (
+    CROMA_DOMAIN,
     _color_for_model,
+    _draw_croma_sample_distributions,
+    _draw_trend_line,
+    _load_croma_sample_rows,
+    _pareto_frontier_max_max,
     _pdf_export_path,
     _png_export_path,
+    _ridgeline_bands,
+    _ridgeline_figure_height,
     _support_plot_rows,
     plot_bio_vs_confounder_scatter,
     plot_croma_ltm_bars,
     plot_croma_ltm_scatter,
+    plot_croma_pareto,
     plot_croma_m_sweep,
     plot_croma_sample_distributions,
     plot_knn_confounder_k_sweep,
     plot_mari_k_sweep,
     plot_q_alpha_vs_croma_scatter,
+    plot_rank_pareto,
     plot_ri_mari_support,
     plot_ri_k_sweep,
 )
@@ -169,10 +178,11 @@ def _sample_croma_ltm_rows() -> list[dict]:
 
 
 def _sample_croma_distribution_rows(tmp_path: Path) -> list[dict]:
-    # CRoMa is the signed margin in (-1, 1); per-sample arrays straddle 0 so the
-    # "%<0" fragile-fraction column is exercised (Virchow2 25%, UNI 75%).
+    # CRoMa is the signed margin in (-1, 1); per-sample arrays straddle 0, and each
+    # row's pooled ``croma`` is the median of its own samples so the ranking the plot
+    # sorts on is the one the arrays imply (Virchow2 > CONCH > UNI).
     by_model = {
-        "Virchow2": np.asarray([-0.10, 0.10, 0.32, 0.45], dtype=float),
+        "Virchow2": np.asarray([-0.10, 0.20, 0.42, 0.55], dtype=float),
         "UNI": np.asarray([-0.30, -0.15, -0.05, 0.20], dtype=float),
         "CONCH": np.asarray([0.02, 0.18, 0.28, 0.35], dtype=float),
     }
@@ -183,8 +193,8 @@ def _sample_croma_distribution_rows(tmp_path: Path) -> list[dict]:
         rows.append(
             {
                 "model": model,
-                "croma": {"Virchow2": 1.55, "UNI": 0.97, "CONCH": 1.21}[model],
-                "croma_q_alpha": {"Virchow2": 0.82, "UNI": 0.60, "CONCH": 1.02}[model],
+                "croma": float(np.median(values)),
+                "croma_q_alpha": float(np.percentile(values, 10)),
                 "croma_alpha": 0.10,
                 "croma_samples_path": str(path),
             }
@@ -228,18 +238,6 @@ def test_plot_writes_matching_pdf_export(tmp_path: Path) -> None:
     out_path = tmp_path / "bio_vs_confounder_scatter.png"
 
     plot_bio_vs_confounder_scatter(rows=_sample_summary_rows(), out_path=out_path)
-
-    assert _png_export_path(out_path).exists()
-    pdf_path = _pdf_export_path(out_path)
-    assert pdf_path.exists()
-    assert pdf_path.stat().st_size > 0
-
-
-def test_croma_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
-    rows = _sample_croma_distribution_rows(tmp_path)
-    out_path = tmp_path / "croma_sample_distributions.png"
-
-    plot_croma_sample_distributions(rows=rows, out_path=out_path)
 
     assert _png_export_path(out_path).exists()
     pdf_path = _pdf_export_path(out_path)
@@ -413,6 +411,211 @@ def test_plot_croma_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(
     assert {(1.30, 1.10), (1.05, 0.82), (0.96, 0.61)} == set(points)
     # A horizontal CRoMa=0 robustness threshold is drawn (not a y=x diagonal).
     assert hlines == [0.0]
+
+
+def test_pareto_frontier_keeps_only_the_undominated_under_max_max() -> None:
+    # A dominates C on both axes; B trades a lower median for a milder tail, so A and B are
+    # both non-dominated. D ties A's x but has a worse y, so it is dominated off the tie.
+    points = [
+        ("A", 0.20, -0.10),
+        ("B", 0.15, -0.05),
+        ("C", 0.10, -0.30),
+        ("D", 0.20, -0.25),
+    ]
+    # Returned x-ascending: B (milder tail, lower median) then A (higher median, deeper tail).
+    assert _pareto_frontier_max_max(points) == ["B", "A"]
+
+
+def test_pareto_frontier_collapses_to_one_when_a_point_wins_both_axes() -> None:
+    points = [("win", 0.30, -0.05), ("lose1", 0.10, -0.20), ("lose2", 0.29, -0.06)]
+    assert _pareto_frontier_max_max(points) == ["win"]
+
+
+def test_plot_croma_pareto_rings_labels_the_frontier_and_marks_the_exposed(
+    tmp_path: Path,
+) -> None:
+    """Every panel rings the frontier, writes a bold label on each ringed encoder, and flags the
+    encoders exposed to the benchmark's cohort with a dagger after their name in the legend. No
+    contrast callout, no direction cue."""
+    import matplotlib.axes
+
+    ring_calls: list[int] = []
+    scatter_labels: list[str] = []
+    annotate_texts: list[str] = []
+    original_scatter = matplotlib.axes.Axes.scatter
+    original_annotate = matplotlib.axes.Axes.annotate
+
+    def spy_scatter(self, x, y, *args, **kwargs):
+        # The frontier halo is the one scatter drawn with hollow markers; capture how many
+        # points it rings so the test pins the frontier size the drawer computed. Exposure is not
+        # drawn on the point -- it is a dagger appended to the exposed models' legend labels, so
+        # capture every per-model scatter label and count the daggered ones.
+        if kwargs.get("facecolors") == "none":
+            ring_calls.append(int(np.asarray(x, dtype=float).size))
+        label = kwargs.get("label")
+        if isinstance(label, str):
+            scatter_labels.append(label)
+        return original_scatter(self, x, y, *args, **kwargs)
+
+    def spy_annotate(self, text, *args, **kwargs):
+        annotate_texts.append(text)
+        return original_annotate(self, text, *args, **kwargs)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    monkeypatch.setattr(matplotlib.axes.Axes, "annotate", spy_annotate)
+    try:
+        # Virchow2 (highest median) and GenBio-PathFM (mildest tail) are the two undominated
+        # encoders; CONCH ties Virchow2's median with a deeper tail, so it is dominated, and
+        # Phikon is dominated outright. GenBio-PathFM is exposed, so it carries both a frontier
+        # label and a legend dagger; Virchow2 is a labelled frontier member with no dagger.
+        rows = [
+            {"model": "Virchow2", "croma": 0.20, "croma_ltm_alpha": -0.11, "croma_alpha": 0.1},
+            {"model": "GenBio-PathFM", "croma": 0.19, "croma_ltm_alpha": -0.07, "croma_alpha": 0.1},
+            {"model": "CONCH", "croma": 0.20, "croma_ltm_alpha": -0.20, "croma_alpha": 0.1},
+            {"model": "Phikon", "croma": -0.20, "croma_ltm_alpha": -0.50, "croma_alpha": 0.1},
+        ]
+        out_path = tmp_path / "croma_pareto.png"
+        plot_croma_pareto(rows=rows, out_path=out_path, exposed={"GenBio-PathFM"})
+    finally:
+        monkeypatch.undo()
+
+    assert _png_export_path(out_path).exists()
+    assert _pdf_export_path(out_path).exists()
+    # Exactly the two undominated encoders are ringed; CONCH (median tie, deeper tail) is not.
+    assert ring_calls == [2]
+    # Both ringed encoders are labelled in bold.
+    assert any(t == "Virchow2" for t in annotate_texts)
+    assert any(t == "GenBio-PathFM" for t in annotate_texts)
+    # The single exposed encoder gets a dagger in its legend label; nothing is drawn on the point,
+    # so no standalone dagger annotation, no contrast callout, no direction cue.
+    assert [l for l in scatter_labels if r"$\dagger$" in l] == [r"GenBio-PathFM $\dagger$"]
+    assert not any(t == r"$\dagger$" for t in annotate_texts)
+    assert not any("dominated" in t for t in annotate_texts)
+    assert not any("more robust" in t for t in annotate_texts)
+
+
+def test_plot_croma_pareto_labels_every_frontier_member_and_marks_off_frontier(
+    tmp_path: Path,
+) -> None:
+    """What the supplementary panels used to suppress is now always drawn: a larger, clustered
+    frontier still gets a bold label on every ringed member, and an exposed encoder gets a legend
+    dagger whether or not it sits on the frontier, so the ring count and the exposure count are
+    independent."""
+    import matplotlib.axes
+
+    ring_calls: list[int] = []
+    scatter_labels: list[str] = []
+    annotate_texts: list[str] = []
+    original_scatter = matplotlib.axes.Axes.scatter
+    original_annotate = matplotlib.axes.Axes.annotate
+
+    def spy_scatter(self, x, y, *args, **kwargs):
+        if kwargs.get("facecolors") == "none":
+            ring_calls.append(int(np.asarray(x, dtype=float).size))
+        label = kwargs.get("label")
+        if isinstance(label, str):
+            scatter_labels.append(label)
+        return original_scatter(self, x, y, *args, **kwargs)
+
+    def spy_annotate(self, text, *args, **kwargs):
+        annotate_texts.append(text)
+        return original_annotate(self, text, *args, **kwargs)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    monkeypatch.setattr(matplotlib.axes.Axes, "annotate", spy_annotate)
+    try:
+        # Midnight-12k (highest median), CONCHv1.5 and H-optimus-1 (mildest tail) form the
+        # frontier; Phikon is dominated. Midnight-12k (frontier) and Phikon (dominated) are
+        # exposed, so two legend daggers are drawn while three points are ringed.
+        rows = [
+            {"model": "Midnight-12k", "croma": 0.40, "croma_ltm_alpha": -0.21, "croma_alpha": 0.1},
+            {"model": "H-optimus-1", "croma": 0.09, "croma_ltm_alpha": -0.10, "croma_alpha": 0.1},
+            {"model": "CONCHv1.5", "croma": 0.15, "croma_ltm_alpha": -0.13, "croma_alpha": 0.1},
+            {"model": "Phikon", "croma": 0.02, "croma_ltm_alpha": -0.20, "croma_alpha": 0.1},
+        ]
+        out_path = tmp_path / "croma_pareto_supp.png"
+        plot_croma_pareto(rows=rows, out_path=out_path, exposed={"Midnight-12k", "Phikon"})
+    finally:
+        monkeypatch.undo()
+
+    assert _png_export_path(out_path).exists()
+    # The three-member frontier is ringed (Midnight, CONCHv1.5, H-optimus-1)...
+    assert ring_calls == [3]
+    # ...and every ringed member is now labelled.
+    for name in ("Midnight-12k", "CONCHv1.5", "H-optimus-1"):
+        assert any(t == name for t in annotate_texts)
+    # Two exposed encoders get a legend dagger (one on the frontier, one dominated); nothing is
+    # drawn on the point, so no standalone dagger annotation, no direction cue.
+    assert sorted(l for l in scatter_labels if r"$\dagger$" in l) == sorted(
+        [r"Midnight-12k $\dagger$", r"Phikon $\dagger$"]
+    )
+    assert not any(t == r"$\dagger$" for t in annotate_texts)
+    assert not any("more robust" in t for t in annotate_texts)
+
+
+def test_plot_rank_pareto_rings_labels_the_frontier_and_marks_the_exposed(
+    tmp_path: Path,
+) -> None:
+    """The mean-rank overview rings the min-min frontier, writes a bold label on each ringed
+    encoder (as the per-benchmark panels do), and flags every TCGA-exposed encoder with a legend
+    dagger. One exposed encoder is on the frontier, one is dominated, so the ring count and the
+    exposure count are genuinely independent."""
+    import matplotlib.axes
+
+    ring_calls: list[int] = []
+    scatter_labels: list[str] = []
+    annotate_texts: list[str] = []
+    original_scatter = matplotlib.axes.Axes.scatter
+    original_annotate = matplotlib.axes.Axes.annotate
+
+    def spy_scatter(self, x, y, *args, **kwargs):
+        if kwargs.get("facecolors") == "none":
+            ring_calls.append(int(np.asarray(x, dtype=float).size))
+        label = kwargs.get("label")
+        if isinstance(label, str):
+            scatter_labels.append(label)
+        return original_scatter(self, x, y, *args, **kwargs)
+
+    def spy_annotate(self, text, *args, **kwargs):
+        annotate_texts.append(text)
+        return original_annotate(self, text, *args, **kwargs)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    monkeypatch.setattr(matplotlib.axes.Axes, "annotate", spy_annotate)
+    try:
+        # CONCH (best median), CONCHv1.5, GenBio-PathFM and H-optimus-1 (best tail) form the
+        # frontier; Midnight-12k (good median, deep tail) is dominated. GenBio-PathFM is an
+        # exposed frontier member, Midnight-12k an exposed dominated one, so the ring count (4)
+        # and the exposure count (2) are genuinely independent, overlapping only at GenBio-PathFM.
+        rows = [
+            {"model": "CONCH", "median_rank": 2.5, "tail_rank": 7.0, "exposed": False},
+            {"model": "CONCHv1.5", "median_rank": 3.5, "tail_rank": 4.0, "exposed": False},
+            {"model": "H-optimus-1", "median_rank": 8.0, "tail_rank": 3.0, "exposed": False},
+            {"model": "GenBio-PathFM", "median_rank": 3.0, "tail_rank": 6.0, "exposed": True},
+            {"model": "Midnight-12k", "median_rank": 3.0, "tail_rank": 15.0, "exposed": True},
+        ]
+        out_path = tmp_path / "rank_pareto.png"
+        plot_rank_pareto(rows=rows, out_path=out_path, n_benchmarks=3)
+    finally:
+        monkeypatch.undo()
+
+    assert _png_export_path(out_path).exists()
+    assert _pdf_export_path(out_path).exists()
+    # The four undominated encoders are ringed; Midnight-12k (good median, deep tail) is not.
+    assert ring_calls == [4]
+    # ...and each ringed frontier member carries a bold in-plot label, like the per-benchmark panels.
+    for name in ("CONCH", "CONCHv1.5", "H-optimus-1", "GenBio-PathFM"):
+        assert any(t == name for t in annotate_texts)
+    # A legend dagger is added for each of the two exposed encoders; nothing on the point, so no
+    # standalone dagger annotation, no direction cue.
+    assert sorted(l for l in scatter_labels if r"$\dagger$" in l) == sorted(
+        [r"GenBio-PathFM $\dagger$", r"Midnight-12k $\dagger$"]
+    )
+    assert not any(t == r"$\dagger$" for t in annotate_texts)
+    assert not any("more robust" in t for t in annotate_texts)
 
 
 def test_plot_croma_ltm_bars_sorts_descending_with_threshold_and_local_legend(
@@ -741,17 +944,142 @@ def test_croma_distribution_plot_emits_summary_annotations(
         out_path=tmp_path / "croma_sample_distributions.png",
     )
 
+    # The pooled CRoMa / Q10 / %<0 side panel was removed: CRoMa and F(0) are table
+    # columns, and the numbers only added clutter beside the ridgelines.
     joined = "\n".join(annotation_texts)
-    assert "CRoMa" in joined
-    assert "Q10" in joined
-    assert "%<0" in joined
-    assert "1.550" in joined
-    assert "0.820" in joined
-    assert "25.0%" in joined
-    assert "0.970" in joined
-    assert "75.0%" in joined
+    assert "Q10" not in joined
+    assert "%<0" not in joined
+    assert not any(text.endswith("%") for text in annotation_texts)
+    # Only the model labels are drawn onto the axes.
+    assert set(annotation_texts) == {"Virchow2", "CONCH", "UNI"}
     assert "Per-sample CRoMa distributions" in titles
     assert any("sorted by CRoMa" in text for text in figure_texts)
     assert len(title_y_positions) == 1
     assert len(subtitle_y_positions) == 1
     assert title_y_positions[0] - subtitle_y_positions[0] >= 0.045
+
+
+def test_croma_distribution_plot_frames_the_full_margin_domain(tmp_path: Path) -> None:
+    """The x-axis spans CRoMa's whole codomain, not the sampled range.
+
+    The samples here reach only [-0.30, 0.55], but the frame stays at (-1, 1) so the
+    zero-margin boundary sits at the centre and the figure is comparable across
+    benchmarks. Data-driven limits would also clip the KDE tails mid-slope.
+    """
+    import matplotlib.pyplot as plt
+
+    model_data = _load_croma_sample_rows(_sample_croma_distribution_rows(tmp_path))
+    fig, ax = plt.subplots()
+    try:
+        _draw_croma_sample_distributions(ax, model_data)
+        assert CROMA_DOMAIN == (-1.0, 1.0)
+        assert ax.get_xlim() == CROMA_DOMAIN
+        assert [d["model"] for d in model_data] == ["Virchow2", "CONCH", "UNI"]
+    finally:
+        plt.close(fig)
+
+
+def test_croma_distribution_bands_are_physically_constant_across_rosters() -> None:
+    """The title and x-label bands keep a fixed size in inches, not in figure fractions.
+
+    The ridgeline grows one row per model, so the figure is 3.5in tall for the 4 slide
+    encoders and ~10.3in for the 21 tile encoders. A fixed *fractional* bottom margin
+    that clears the x-label on the tall figure leaves only ~0.26in on the short one,
+    which clipped the "Per-sample CRoMa" label off the slide-level figures entirely.
+    """
+    short = _ridgeline_figure_height(4)
+    tall = _ridgeline_figure_height(21)
+    assert short == 3.5
+    assert tall > 10.0
+
+    for height in (short, tall):
+        bands = _ridgeline_bands(height)
+        # Reserved bands, converted back to inches, stay constant.
+        assert bands["bottom"] * height == pytest.approx(0.52)
+        assert (1.0 - bands["top"]) * height == pytest.approx(0.60)
+        # Subtitle sits below the title and above the axes, at both heights.
+        assert bands["title_y"] > bands["subtitle_y"] > bands["top"]
+
+
+def test_croma_distribution_plot_renders_without_q_alpha(tmp_path: Path) -> None:
+    """Rows lacking ``croma_q_alpha`` still render now that the Q10 markers are gone.
+
+    The drawer used to require the key, so a run that never wrote it silently dropped
+    the whole figure rather than the one annotation that needed it.
+    """
+    rows = _sample_croma_distribution_rows(tmp_path)
+    for row in rows:
+        row.pop("croma_q_alpha")
+        row.pop("croma_alpha")
+    out_path = tmp_path / "croma_sample_distributions.png"
+
+    plot_croma_sample_distributions(rows=rows, out_path=out_path)
+
+    assert _png_export_path(out_path).exists()
+    assert _png_export_path(out_path).stat().st_size > 0
+
+
+def _trend_line_segment(ax) -> tuple[np.ndarray, np.ndarray]:
+    """The one dotted line the trend drawer adds (the only ':' line on a bare axes)."""
+    dotted = [ln for ln in ax.get_lines() if ln.get_linestyle() == ":"]
+    assert len(dotted) == 1
+    return dotted[0].get_xdata(), dotted[0].get_ydata()
+
+
+def test_trend_line_spans_only_the_data_range_and_reports_its_slope() -> None:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    xs = np.array([1.0, 2.0, 3.0, 10.0])
+    slope = _draw_trend_line(ax, xs, 2.0 * xs + 1.0)
+    xdata, ydata = _trend_line_segment(ax)
+    plt.close(fig)
+
+    assert slope == pytest.approx(2.0)
+    # Drawn across the observed x-range only: never extrapolated past the outermost model.
+    assert xdata == pytest.approx([1.0, 10.0])
+    assert ydata == pytest.approx([3.0, 21.0])
+
+
+def test_trend_line_slope_sign_tracks_a_negative_relationship() -> None:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    slope = _draw_trend_line(ax, [0.0, 1.0, 2.0, 3.0], [5.0, 3.0, 2.0, -1.0])
+    plt.close(fig)
+    assert slope is not None and slope < 0
+
+
+def test_trend_line_ignores_non_finite_points() -> None:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    xs = [1.0, 2.0, 3.0, float("nan"), 4.0]
+    ys = [2.0, 4.0, 6.0, 100.0, float("inf")]
+    slope = _draw_trend_line(ax, xs, ys)
+    xdata, _ = _trend_line_segment(ax)
+    plt.close(fig)
+
+    # The NaN-x and inf-y rows are dropped, so the fit is the exact y = 2x of the rest.
+    assert slope == pytest.approx(2.0)
+    assert xdata == pytest.approx([1.0, 3.0])
+
+
+@pytest.mark.parametrize(
+    "xs, ys",
+    [
+        ([1.0, 2.0], [1.0, 2.0]),          # two points make a line, not a trend
+        ([1.0, 1.0, 1.0], [1.0, 2.0, 3.0]),  # constant x has no slope to estimate
+        ([], []),
+    ],
+)
+def test_trend_line_draws_nothing_when_there_is_no_trend_to_fit(xs, ys) -> None:
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots()
+    slope = _draw_trend_line(ax, xs, ys)
+    dotted = [ln for ln in ax.get_lines() if ln.get_linestyle() == ":"]
+    plt.close(fig)
+
+    assert slope is None
+    assert dotted == []

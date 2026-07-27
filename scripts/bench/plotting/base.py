@@ -11,6 +11,7 @@ import math
 
 import numpy as np
 import matplotlib
+from scipy.stats import linregress
 
 matplotlib.use("Agg", force=True)
 
@@ -178,14 +179,20 @@ def _draw_model_scatter(
     diagonal: bool = False,
     hline: float | None = None,
     vline: float | None = None,
+    marker_size: float = 52.0,
+    exposed: set[str] | frozenset[str] | None = None,
 ) -> None:
     """Shared one-point-per-model scatter with the project's visual identity.
 
     Points and the figure legend follow the canonical (family-grouped) model
     order. The data box is forced square via ``set_box_aspect``. Reference
     geometry is configurable: a ``y = x`` diagonal and/or horizontal/vertical
-    threshold lines.
+    threshold lines. ``marker_size`` overrides the point area (the Pareto panels
+    enlarge it so the family colour reads); ``exposed``, when given, suffixes those
+    models' legend labels with a dagger (used when exposure is flagged in the
+    legend rather than on the point).
     """
+    exposed = set(exposed or ())
     points = [
         (str(r["model"]), float(r[x_key]), float(r[y_key]))
         for r in rows
@@ -211,16 +218,17 @@ def _draw_model_scatter(
         ax.axvline(x=vline, **ref_kw)
 
     for model, x, y in points:
+        label = rf"{model} $\dagger$" if model in exposed else model
         ax.scatter(
             [x],
             [y],
-            s=52,
+            s=marker_size,
             color=_color_for_model(model),
             edgecolors="white",
             linewidths=0.7,
             alpha=0.9,
             zorder=3,
-            label=model,
+            label=label,
         )
 
     if xlim is not None:
@@ -231,6 +239,45 @@ def _draw_model_scatter(
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     _set_panel_title(ax, title)
+
+
+def _draw_trend_line(ax, xs, ys) -> float | None:
+    """Faint dotted least-squares fit across the observed x-range: a guide to the eye.
+
+    Returns the fitted slope (``None`` when there is nothing to fit), so a caller that
+    also annotates a rank correlation can assert the two agree in sign -- a dotted line
+    sloping against the rho printed beside it would be a panel that contradicts itself.
+
+    Least squares, not the rank-robust Theil--Sen that a Spearman rho would otherwise
+    suggest: where the relation saturates (CRoMa vs APD on TCGA and Tolkach), the median
+    pairwise slope is set by the steep low-CRoMa cluster and the line leaves the panel
+    over half its span, tracking no part of the cloud. Minimising vertical residuals is
+    what makes a line *look* like the trend. The sign guard above is what keeps that
+    convenience honest.
+
+    Drawn beneath the points and only across the data range -- never extrapolated to the
+    panel edge, which would assert a fit outside the observed models.
+    """
+    x = np.asarray(xs, dtype=float)
+    y = np.asarray(ys, dtype=float)
+    finite = np.isfinite(x) & np.isfinite(y)
+    x, y = x[finite], y[finite]
+    # Two points make a line, not a trend; a constant x has no slope to estimate.
+    if x.size < 3 or float(np.ptp(x)) <= 0.0:
+        return None
+
+    fit = linregress(x, y)
+    ends = np.array([x.min(), x.max()])
+    ax.plot(
+        ends,
+        fit.intercept + fit.slope * ends,
+        linestyle=":",
+        linewidth=plotstyle.LW_REFERENCE,
+        color=plotstyle.TREND_LINE_COLOR,
+        alpha=plotstyle.TREND_ALPHA,
+        zorder=2,
+    )
+    return float(fit.slope)
 
 
 def _padded_signed_limits(values: np.ndarray) -> tuple[float, float]:
@@ -255,6 +302,30 @@ def _padded_signed_limits(values: np.ndarray) -> tuple[float, float]:
     if hi <= lo:
         hi = lo + 1.0
     return float(lo), float(hi)
+
+
+def _pareto_frontier_max_max(points: list[tuple[str, float, float]]) -> list[str]:
+    """Names of the non-dominated points under a *max-max* preference.
+
+    Each point is ``(name, x, y)``; larger ``x`` **and** larger ``y`` are both better (for the
+    Pareto figure, ``x`` is the median margin and ``y`` is ``LTM`` -- a milder, less-negative
+    tail is the larger value). A point ``p`` is dominated iff some other point ``q`` satisfies
+    ``q.x >= p.x`` and ``q.y >= p.y`` with at least one inequality strict; points equal on both
+    coordinates keep each other. The returned names are ordered by ``x`` ascending -- the order
+    the frontier staircase is drawn, upper-left (mildest tail) to lower-right (highest median).
+
+    Ties on ``x`` are resolved before the sweep by ordering ``y`` descending, so an equal-``x``
+    point with a smaller ``y`` is correctly dropped as dominated.
+    """
+    ordered = sorted(points, key=lambda p: (-p[1], -p[2]))
+    frontier: list[tuple[str, float, float]] = []
+    best_y = -math.inf
+    for name, x, y in ordered:
+        if y > best_y:
+            frontier.append((name, x, y))
+            best_y = y
+    frontier.sort(key=lambda p: (p[1], -p[2]))
+    return [name for name, _x, _y in frontier]
 
 
 def _valid_croma_ltm_rows(rows: list[dict]) -> list[dict]:

@@ -180,8 +180,9 @@ def test_collect_blocks_reports_missing_manifest(tmp_path: Path) -> None:
     assert {name for name, _ in problems} == {spec.name for spec in dm.SPECS}
 
 
-def test_specs_are_two_by_two() -> None:
-    # Every committed spec is a genuine 2x2 with distinct classes and centers.
+def test_specs_are_valid_grids() -> None:
+    # Every committed spec has exactly two distinct biology rows and at least two
+    # distinct confounder columns (the column count varies by benchmark).
     for spec in dm.SPECS:
         assert len(spec.classes) == 2 and len(set(spec.classes)) == 2
-        assert len(spec.centers) == 2 and len(set(spec.centers)) == 2
+        assert len(spec.centers) >= 2 and len(set(spec.centers)) == len(spec.centers)
