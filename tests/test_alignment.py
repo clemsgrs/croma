@@ -22,9 +22,7 @@ def _write_repeated_subset_manifest(path: Path) -> pd.DataFrame:
     payload = ["sample_id,image_path,label,scanner_vendor,slide_id,subset"]
     for subset in ("pair1", "pair2"):
         for sample_id, image_path, label, confounder, slide_id in rows:
-            payload.append(
-                ",".join([sample_id, image_path, label, confounder, slide_id, subset])
-            )
+            payload.append(",".join([sample_id, image_path, label, confounder, slide_id, subset]))
     path.write_text("\n".join(payload) + "\n", encoding="utf-8")
     return pd.read_csv(path, dtype=str)
 
@@ -73,9 +71,7 @@ def test_expand_features_to_manifest_rejects_length_mismatch(tmp_path: Path) -> 
     embedding_manifest, _ = build_embedding_source_manifest(manifest)
     features = np.asarray([[1.0, 0.0], [2.0, 0.0], [3.0, 0.0]], dtype=float)
 
-    with pytest.raises(
-        ValueError, match="embeddings rows must match embedding manifest rows"
-    ):
+    with pytest.raises(ValueError, match="embeddings rows must match embedding manifest rows"):
         expand_features_to_manifest(
             features=features,
             manifest=manifest,

@@ -65,6 +65,9 @@ dev = [
   "pytest>=8.0",
   "matplotlib>=3.8",
   "scipy>=1.11",
+  # Capped below the next major: black's style changes between majors, so an unpinned
+  # formatter turns a green CI red on code nobody touched.
+  "black~=26.5",
 ]
 docs = [
   "sphinx>=8.1",
@@ -111,6 +114,16 @@ exclude = [
   "**/.ipynb_checkpoints",
   "**/__pycache__",
 ]
+
+# Formatting is enforced on the packaged code and its tests only -- the paths a PyPI user
+# or a reviewer actually reads. scripts/ is repro machinery and is deliberately not gated;
+# see the lint job in .github/workflows/ci.yaml.
+[tool.black]
+line-length = 100
+# Match requires-python. Black 26 otherwise targets the newest Python it knows, and then
+# refuses its own safety check when run on an older interpreter than the one it formatted for.
+target-version = ["py310"]
+include = '^/(src|tests)/.*\.py$'
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

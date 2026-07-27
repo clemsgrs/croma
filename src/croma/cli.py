@@ -16,9 +16,7 @@ from croma.metrics.pairs import load_manifest
 def _parse_k_candidates(s: str) -> list[int]:
     values = [int(v.strip()) for v in s.split(",") if v.strip()]
     if not values:
-        raise argparse.ArgumentTypeError(
-            "k-candidates must include at least one integer"
-        )
+        raise argparse.ArgumentTypeError("k-candidates must include at least one integer")
     return values
 
 
@@ -89,9 +87,7 @@ def main() -> None:
     build_parser = sub.add_parser(
         "build-embedding-manifest", help="Build a deduplicated embedding manifest."
     )
-    build_parser.add_argument(
-        "--manifest", required=True, help="Path to evaluation manifest CSV."
-    )
+    build_parser.add_argument("--manifest", required=True, help="Path to evaluation manifest CSV.")
     build_parser.add_argument(
         "--confounder-column",
         required=True,
@@ -107,9 +103,7 @@ def main() -> None:
         "expand-embeddings",
         help="Expand deduplicated embeddings back to manifest-row order.",
     )
-    expand_parser.add_argument(
-        "--manifest", required=True, help="Path to evaluation manifest CSV."
-    )
+    expand_parser.add_argument("--manifest", required=True, help="Path to evaluation manifest CSV.")
     expand_parser.add_argument(
         "--confounder-column",
         required=True,
@@ -155,9 +149,7 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.command == "build-embedding-manifest":
-        manifest = load_manifest(
-            str(args.manifest), confounder_column=str(args.confounder_column)
-        )
+        manifest = load_manifest(str(args.manifest), confounder_column=str(args.confounder_column))
         embedding_manifest, _ = build_embedding_source_manifest(manifest)
         out_path = Path(args.out)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -172,9 +164,7 @@ def main() -> None:
         return
 
     if args.command == "expand-embeddings":
-        manifest = load_manifest(
-            str(args.manifest), confounder_column=str(args.confounder_column)
-        )
+        manifest = load_manifest(str(args.manifest), confounder_column=str(args.confounder_column))
         embedding_manifest = load_manifest(
             str(args.embedding_manifest), confounder_column="confounder"
         )

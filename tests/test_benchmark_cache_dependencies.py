@@ -56,9 +56,7 @@ TOY_TILESET = "toy-tiles"
 
 def _tileset_manifest() -> pd.DataFrame:
     manifest = _toy_manifest().drop(columns=["subset", "dataset"])
-    return manifest.drop_duplicates(subset=["sample_id", "image_path"]).reset_index(
-        drop=True
-    )
+    return manifest.drop_duplicates(subset=["sample_id", "image_path"]).reset_index(drop=True)
 
 
 def _setup(bench_env, *, name: str = "toy", k_max: int = 3) -> None:
@@ -128,9 +126,7 @@ def test_tau_change_recomputes_only_mari(bench_env) -> None:
     mp = bench_env._monkeypatch
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
-    mp.setattr(
-        bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared
-    )
+    mp.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
@@ -197,18 +193,13 @@ def test_croma_search_change_recomputes_only_croma(bench_env) -> None:
     mp = bench_env._monkeypatch
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
-    mp.setattr(
-        bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared
-    )
+    mp.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
-    assert (
-        bench_env.run("toy", "k-star", "--croma-start-k", "300", "--progress", "off")
-        == 0
-    )
+    assert bench_env.run("toy", "k-star", "--croma-start-k", "300", "--progress", "off") == 0
 
     assert calls["croma"] > 0
     assert calls["ri"] == 0
@@ -342,9 +333,7 @@ def test_evaluation_design_change_recomputes_all_artifacts(bench_env) -> None:
     mp = bench_env._monkeypatch
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
-    mp.setattr(
-        bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared
-    )
+    mp.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
@@ -391,9 +380,7 @@ def test_recompute_metrics_flag_forces_all(bench_env) -> None:
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
-    assert (
-        bench_env.run("toy", "k-star", "--recompute-metrics", "--progress", "off") == 0
-    )
+    assert bench_env.run("toy", "k-star", "--recompute-metrics", "--progress", "off") == 0
 
     assert calls["ri"] > 0
     assert calls["mari"] > 0

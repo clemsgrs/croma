@@ -117,9 +117,7 @@ def test_prepare_benchmark_embeddings_writes_tileset(bench_env, tmp_path: Path) 
         assert sidecar["manifest"] == str(layout.tileset_manifest("toy-tiles"))
 
 
-def test_prepare_benchmark_embeddings_rejects_missing_rows(
-    bench_env, tmp_path: Path
-) -> None:
+def test_prepare_benchmark_embeddings_rejects_missing_rows(bench_env, tmp_path: Path) -> None:
     manifest_path = tmp_path / "toy.csv"
     mapping_path = tmp_path / "mapping.csv"
     _repeated_subset_manifest().to_csv(manifest_path, index=False)

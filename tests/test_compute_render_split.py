@@ -158,10 +158,20 @@ def test_compute_is_deterministic(bench_env) -> None:
     run_dir = run_compute(bench_env)
     rows_a = _stable_rows(run_dir)
     # A forced recompute over the same benchmark must reproduce the metrics exactly.
-    assert bench_env.run(
-        "toy", "k-star", "--models", ",".join(MODELS), "--k-max", "5",
-        "--recompute-metrics", "--progress", "off",
-    ) == 0
+    assert (
+        bench_env.run(
+            "toy",
+            "k-star",
+            "--models",
+            ",".join(MODELS),
+            "--k-max",
+            "5",
+            "--recompute-metrics",
+            "--progress",
+            "off",
+        )
+        == 0
+    )
     rows_b = _stable_rows(run_dir)
     _assert_rows_match(rows_a, rows_b)
 

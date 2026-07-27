@@ -6,6 +6,30 @@ on:
     branches: [main]
 
 jobs:
+  lint:
+    name: Format (black)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install black
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "black~=26.5"
+
+      # The README carries a black badge, so this is what makes it a fact rather than a
+      # claim. Scope, line length and target version all come from [tool.black] in
+      # pyproject.toml -- passing paths here instead would let the two disagree.
+      - name: Check formatting
+        run: black --check --diff src tests
+
   test:
     name: Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

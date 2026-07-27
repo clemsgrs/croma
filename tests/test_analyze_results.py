@@ -64,9 +64,7 @@ def _per_sample_row(
         "dataset": dataset,
         "model": model,
         "evaluation_design": evaluation_design,
-        "evaluation_unit": (
-            "sample" if evaluation_design == "dataset_wide" else "occurrence"
-        ),
+        "evaluation_unit": ("sample" if evaluation_design == "dataset_wide" else "occurrence"),
         "subset": subset,
         "sample_id": sample_id,
         "slide_id": f"slide-{sample_id}",
@@ -594,9 +592,7 @@ def test_subgroup_rows_include_tier_metrics_and_statuses() -> None:
     ]
     assert len(borderline_umcu) == 1
 
-    borderline_tumor = ar._build_croma_subgroup_analysis(
-        _borderline_fragility_per_sample_df()
-    )[0]
+    borderline_tumor = ar._build_croma_subgroup_analysis(_borderline_fragility_per_sample_df())[0]
     borderline_tumor_row = borderline_tumor[
         (borderline_tumor["scope"] == "label") & (borderline_tumor["label"] == "tumor")
     ].iloc[0]
@@ -626,15 +622,11 @@ def test_subgroup_rows_include_tier_metrics_and_statuses() -> None:
 
     # Replicate the builder's subgroup LTM/drop (compute_tail_metrics at alpha=0.25)
     # on the margin-valued hidden-pocket stratum (tumor, RUMC).
-    hp_m = np.array(
-        [_m(v) for v in (0.70, 0.85, 0.95, 1.20, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50)]
-    )
+    hp_m = np.array([_m(v) for v in (0.70, 0.85, 0.95, 1.20, 1.25, 1.30, 1.35, 1.40, 1.45, 1.50)])
     hp_q = np.percentile(hp_m, 25)
     hp_ltm = float(hp_m[hp_m <= hp_q].mean())
     assert float(hidden_row["subgroup_ltm_alpha"]) == pytest.approx(hp_ltm)
-    assert float(hidden_row["internal_tail_drop"]) == pytest.approx(
-        float(np.median(hp_m) - hp_ltm)
-    )
+    assert float(hidden_row["internal_tail_drop"]) == pytest.approx(float(np.median(hp_m) - hp_ltm))
     assert float(hidden_row["croma_neg_frac"]) == pytest.approx(0.3)
     assert int(hidden_row["croma_neg_count"]) == 3
     assert hidden_row["tier2_status"] == "hidden_pocket"
@@ -795,9 +787,7 @@ def test_tier1_status_distinguishes_broad_relative_and_aggravated_weakness() -> 
 
 
 def test_markdown_renders_three_tier_tables_per_context() -> None:
-    subgroup_df, context_df = ar._build_croma_subgroup_analysis(
-        _tier2_supported_per_sample_df()
-    )
+    subgroup_df, context_df = ar._build_croma_subgroup_analysis(_tier2_supported_per_sample_df())
 
     markdown = ar._render_croma_subgroup_markdown(subgroup_df, context_df)
 
@@ -831,9 +821,7 @@ def test_markdown_renders_three_tier_tables_per_context() -> None:
 
 
 def test_tail_tier_distinguishes_enriched_and_severe_cases_independently() -> None:
-    subgroup_df, context_df = ar._build_croma_subgroup_analysis(
-        _sharp_tail_only_per_sample_df()
-    )
+    subgroup_df, context_df = ar._build_croma_subgroup_analysis(_sharp_tail_only_per_sample_df())
 
     markdown = ar._render_croma_subgroup_markdown(subgroup_df, context_df)
     assert (
@@ -1002,20 +990,16 @@ def test_paired_contexts_are_analyzed_independently() -> None:
 
     assert set(context_df["context_id"]) == {"A+B__X_Y", "A+C__X_Y"}
     ab_rows = subgroup_df[
-        (subgroup_df["context_id"] == "A+B__X_Y")
-        & (subgroup_df["scope"] != "confounder")
+        (subgroup_df["context_id"] == "A+B__X_Y") & (subgroup_df["scope"] != "confounder")
     ]
     ac_rows = subgroup_df[
-        (subgroup_df["context_id"] == "A+C__X_Y")
-        & (subgroup_df["scope"] != "confounder")
+        (subgroup_df["context_id"] == "A+C__X_Y") & (subgroup_df["scope"] != "confounder")
     ]
     assert set(ab_rows["label"]) == {"A", "B"}
     assert set(ac_rows["label"]) == {"A", "C"}
 
 
-def test_low_support_groups_remain_in_markdown_with_insufficient_support_status() -> (
-    None
-):
+def test_low_support_groups_remain_in_markdown_with_insufficient_support_status() -> None:
     per_sample_df = pd.DataFrame(
         [
             _per_sample_row(
@@ -1093,9 +1077,7 @@ def test_main_writes_model_specific_croma_subgroup_outputs(
     assert ar.main() == 0
 
     subgroup_df = pd.read_csv(out_dir / "model_specific_croma_subgroups.csv")
-    markdown = (out_dir / "model_specific_croma_subgroups.md").read_text(
-        encoding="utf-8"
-    )
+    markdown = (out_dir / "model_specific_croma_subgroups.md").read_text(encoding="utf-8")
 
     assert set(subgroup_df["scope"]) == {"stratum", "label", "confounder"}
     assert "tumor" in markdown
@@ -1148,12 +1130,8 @@ def test_model_action_flags_keep_only_coverage_embedding_and_ltm_tail_flags() ->
         "tail_gap_ltm_high",
     }
     assert "tail_gap_q_high" not in set(flags["flag"])
-    assert not any(
-        str(flag).startswith("entangled_clusters_") for flag in flags["flag"]
-    )
-    assert not any(
-        str(flag).startswith("ss_dominated_undefined_") for flag in flags["flag"]
-    )
+    assert not any(str(flag).startswith("entangled_clusters_") for flag in flags["flag"])
+    assert not any(str(flag).startswith("ss_dominated_undefined_") for flag in flags["flag"])
     coverage_flag = flags[flags["flag"] == "coverage_risk"].iloc[0]
     poor_embedding_flag = flags[flags["flag"] == "poor_embedding"].iloc[0]
     assert float(coverage_flag["value"]) == pytest.approx(0.30)

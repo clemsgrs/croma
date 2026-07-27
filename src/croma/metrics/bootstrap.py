@@ -57,9 +57,7 @@ class RankStability:
     n_boot: int
 
 
-def _percentile_ci(
-    boot: np.ndarray, point: float, level: float, n_boot: int
-) -> BootstrapCI:
+def _percentile_ci(boot: np.ndarray, point: float, level: float, n_boot: int) -> BootstrapCI:
     finite = boot[np.isfinite(boot)]
     if finite.size == 0:
         return BootstrapCI(point, float("nan"), float("nan"), level, 0)
@@ -155,9 +153,7 @@ def paired_rank_stability(
 
     groups = _cluster_row_groups(cluster_ids)
     n_clusters = len(groups)
-    cluster_values = {
-        m: [a[g][np.isfinite(a[g])] for g in groups] for m, a in arrs.items()
-    }
+    cluster_values = {m: [a[g][np.isfinite(a[g])] for g in groups] for m, a in arrs.items()}
 
     def _pooled_median(per_cluster: list[np.ndarray], pick: np.ndarray) -> float:
         pooled = np.concatenate([per_cluster[i] for i in pick])
@@ -207,8 +203,7 @@ def paired_rank_stability(
     rank_lo = {m: int(np.percentile(rank_draws[m], lo_q)) for m in models}
     rank_hi = {m: int(np.percentile(rank_draws[m], hi_q)) for m in models}
     value_ci = {
-        m: _percentile_ci(value_draws[m], point_value[m], level, int(n_boot))
-        for m in models
+        m: _percentile_ci(value_draws[m], point_value[m], level, int(n_boot)) for m in models
     }
     pairwise = {
         (a_name, b_name): float(win[idx_of[a_name], idx_of[b_name]])

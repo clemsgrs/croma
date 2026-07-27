@@ -105,9 +105,7 @@ _REMOVED_FLAGS = [
 
 
 @pytest.mark.parametrize("argv_tail", _REMOVED_FLAGS)
-def test_benchmark_rejects_removed_flags(
-    monkeypatch, argv_tail: list[str]
-) -> None:
+def test_benchmark_rejects_removed_flags(monkeypatch, argv_tail: list[str]) -> None:
     argv = ["benchmark.py", "--benchmark", "toy", "--protocol", "k-star", *argv_tail]
     monkeypatch.setattr(sys, "argv", argv)
     with pytest.raises(SystemExit) as excinfo:
@@ -122,9 +120,7 @@ def test_benchmark_rejects_removed_flags(
         ["--continuous-k-sweep-max", "4"],
     ],
 )
-def test_benchmark_rejects_removed_k_sweep_flags(
-    monkeypatch, argv_tail: list[str]
-) -> None:
+def test_benchmark_rejects_removed_k_sweep_flags(monkeypatch, argv_tail: list[str]) -> None:
     argv = [
         "benchmark.py",
         "--benchmark",
@@ -205,17 +201,11 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(bench_env) -> None:
     expected_rows = len(_toy_manifest()) * len(models)
     assert len(per_sample_df) == expected_rows
     for model in models:
-        model_rows = per_sample_df[per_sample_df["model"] == model].sort_values(
-            "occurrence_index"
-        )
-        assert model_rows["occurrence_index"].tolist() == list(
-            range(len(_toy_manifest()))
-        )
+        model_rows = per_sample_df[per_sample_df["model"] == model].sort_values("occurrence_index")
+        assert model_rows["occurrence_index"].tolist() == list(range(len(_toy_manifest())))
         assert model_rows["sample_index"].tolist() == list(range(len(_toy_manifest())))
         model_df = pd.read_csv(per_model_dir / f"{model}.csv")
-        assert model_df["occurrence_index"].tolist() == list(
-            range(len(_toy_manifest()))
-        )
+        assert model_df["occurrence_index"].tolist() == list(range(len(_toy_manifest())))
         assert set(model_df["model"]) == {model}
 
     for path in (
@@ -270,12 +260,8 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.sample_values_aligned = aligned
             self.sample_undefined_types = np.asarray(undef_types, dtype=int)
             self.undefined_frac = float((~informative).mean())
-            self.ss_dominated_undefined_frac = float(
-                np.mean(self.sample_undefined_types == 1)
-            )
-            self.oo_dominated_undefined_frac = float(
-                np.mean(self.sample_undefined_types == 2)
-            )
+            self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
+            self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
             self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
             self.evaluation_design = "dataset_wide"
             self.evaluation_unit = "sample"
@@ -371,13 +357,9 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
     )
     bench_env._monkeypatch.setattr(bm_mod.CRoMa, "compute", fake_croma_compute)
 
-    assert (
-        bench_env.run("toy", "k-star", "--croma-m-max", "2", "--progress", "off") == 0
-    )
+    assert bench_env.run("toy", "k-star", "--croma-m-max", "2", "--progress", "off") == 0
 
-    per_sample_df = pd.read_csv(
-        bench_env.results_dir("toy") / "per_sample_metrics.csv"
-    )
+    per_sample_df = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
     assert len(per_sample_df) == len(manifest)
     assert per_sample_df["sample_index"].tolist() == list(range(len(manifest)))
     assert per_sample_df["ri_defined"].tolist() == [
@@ -433,9 +415,7 @@ def test_benchmark_can_select_different_confounder_k(bench_env) -> None:
         # its balanced accuracy peaks at k=3. The biological label is [0,0,1,1,...] and
         # peaks at k=1. This decouples the two selected-k values.
         if np.array_equal(labels, np.array([0, 1, 0, 1, 0, 1, 0, 1], dtype=int)):
-            return {
-                int(k): v for k, v in zip(k_values, [0.60, 0.75, 0.92], strict=False)
-            }
+            return {int(k): v for k, v in zip(k_values, [0.60, 0.75, 0.92], strict=False)}
         return {int(k): v for k, v in zip(k_values, [0.90, 0.70, 0.68], strict=False)}
 
     _setup(bench_env, models=["M1"])

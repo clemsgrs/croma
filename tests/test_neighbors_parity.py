@@ -17,9 +17,7 @@ def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
         ],
         dtype=int,
     )
-    slide_ids = np.array(
-        ["slide-a", "slide-a", "slide-b", "slide-c", "slide-d"], dtype=object
-    )
+    slide_ids = np.array(["slide-a", "slide-a", "slide-b", "slide-c", "slide-d"], dtype=object)
 
     neigh, valid_counts = nb._filter_neighbors_excluding_same_slide(
         raw_neighbors=raw_neighbors,
@@ -122,15 +120,11 @@ def test_warn_when_reduced_effective_k_exceeds_ten_percent(
 def test_initial_neighbor_budget_uses_slide_aware_buffer() -> None:
     slide_ids_small = np.array([f"s{i // 10}" for i in range(100)], dtype=object)
     assert nb._max_tiles_per_slide(slide_ids_small) == 10
-    assert (
-        nb._initial_n_neighbors(kmax=21, slide_ids=slide_ids_small, n_samples=100) == 85
-    )
+    assert nb._initial_n_neighbors(kmax=21, slide_ids=slide_ids_small, n_samples=100) == 85
 
     slide_ids_large = np.array(["a"] * 70 + [f"s{i}" for i in range(30)], dtype=object)
     assert nb._max_tiles_per_slide(slide_ids_large) == 70
-    assert (
-        nb._initial_n_neighbors(kmax=21, slide_ids=slide_ids_large, n_samples=100) == 91
-    )
+    assert nb._initial_n_neighbors(kmax=21, slide_ids=slide_ids_large, n_samples=100) == 91
 
 
 def test_prepare_neighbors_grows_when_coverage_below_target(
@@ -162,9 +156,7 @@ def test_prepare_neighbors_grows_when_coverage_below_target(
         n = int(raw_neighbors.shape[0])
         width = int(raw_neighbors.shape[1])
         valid_counts = (
-            np.full((n,), kmax, dtype=int)
-            if width >= 99
-            else np.full((n,), kmax - 1, dtype=int)
+            np.full((n,), kmax, dtype=int) if width >= 99 else np.full((n,), kmax - 1, dtype=int)
         )
         neigh = np.full((n, kmax), -1, dtype=int)
         dist = np.full((n, kmax), np.inf, dtype=float)
@@ -322,9 +314,7 @@ def test_knn_balanced_accuracy_by_k_matches_optimal_selection() -> None:
     assert set(scores) == set(k_values)
     assert all(0.0 <= float(v) <= 1.0 for v in scores.values())
 
-    best_from_scores = nb._select_k_from_balanced_accuracy(
-        k_values=k_values, scores=scores
-    )
+    best_from_scores = nb._select_k_from_balanced_accuracy(k_values=k_values, scores=scores)
     best_from_existing = nb._optimal_k_by_knn_balanced_accuracy(
         features=features,
         labels=labels,

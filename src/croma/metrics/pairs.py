@@ -63,9 +63,7 @@ def normalize_manifest(
         out["subset"] = out["subset"].map(_normalize_str)
 
     out.attrs["confounder_column"] = confounder_column
-    out.attrs["confounder_display_name"] = infer_confounder_display_name(
-        confounder_column
-    )
+    out.attrs["confounder_display_name"] = infer_confounder_display_name(confounder_column)
     return out.reset_index(drop=True)
 
 
@@ -101,9 +99,7 @@ def _subset_indices_from_manifest(
     return subset_to_indices
 
 
-def _subset_frame(
-    df: pd.DataFrame, indices: list[int], *, subset_id: str
-) -> pd.DataFrame:
+def _subset_frame(df: pd.DataFrame, indices: list[int], *, subset_id: str) -> pd.DataFrame:
     subset_df = df.iloc[indices].copy()
     subset_df["source_sample_index"] = subset_df.index.astype(int)
     subset_df["subset"] = str(subset_id)

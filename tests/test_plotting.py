@@ -250,9 +250,7 @@ def test_precomputed_model_aliases_reuse_family_colors() -> None:
     assert _color_for_model("TITAN") == _color_for_model("CONCHv1.5")
 
 
-def test_scatter_uses_figure_level_bottom_legend(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_scatter_uses_figure_level_bottom_legend(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
     import matplotlib.figure
 
@@ -272,9 +270,7 @@ def test_scatter_uses_figure_level_bottom_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_bio_vs_confounder_scatter(
-        rows=_sample_summary_rows(), out_path=tmp_path / "scatter.png"
-    )
+    plot_bio_vs_confounder_scatter(rows=_sample_summary_rows(), out_path=tmp_path / "scatter.png")
 
     assert not axes_legend_calls
     assert len(figure_legend_calls) == 1
@@ -286,9 +282,7 @@ def test_scatter_uses_figure_level_bottom_legend(
     assert float(bbox[1]) >= 0.0
 
 
-def test_multi_panel_plot_uses_single_figure_level_legend(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_multi_panel_plot_uses_single_figure_level_legend(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
     import matplotlib.figure
 
@@ -308,9 +302,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_croma_m_sweep(
-        rows=_sample_croma_m_rows(), out_path=tmp_path / "croma_m_sweep.png"
-    )
+    plot_croma_m_sweep(rows=_sample_croma_m_rows(), out_path=tmp_path / "croma_m_sweep.png")
 
     assert not axes_legend_calls
     assert len(figure_legend_calls) == 1
@@ -319,7 +311,9 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
-def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_worst_first_order() -> None:
+def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_worst_first_order() -> (
+    None
+):
     rows = _support_plot_rows(_sample_support_rows())
 
     assert [row["model"] for row in rows] == [
@@ -359,9 +353,7 @@ def test_support_plot_uses_single_colour_without_threshold_legend(
 
     def spy_legend(self, *args, **kwargs):
         handles = list(args[0]) if args else list(kwargs.get("handles", []))
-        legend_labels.extend(
-            str(getattr(handle, "get_label", lambda: "")()) for handle in handles
-        )
+        legend_labels.extend(str(getattr(handle, "get_label", lambda: "")()) for handle in handles)
         return original_legend(self, *args, **kwargs)
 
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_legend)
@@ -634,9 +626,7 @@ def test_plot_croma_ltm_bars_sorts_descending_with_threshold_and_local_legend(
 
     def spy_bar(self, x, height, *args, **kwargs):
         if "LTM@" in str(kwargs.get("label", "")):
-            ltm_heights.extend(
-                float(v) for v in np.asarray(height, dtype=float).tolist()
-            )
+            ltm_heights.extend(float(v) for v in np.asarray(height, dtype=float).tolist())
         return original_bar(self, x, height, *args, **kwargs)
 
     def spy_axhline(self, y=0, *args, **kwargs):
@@ -696,9 +686,7 @@ def test_selected_k_markers_are_highlighted(monkeypatch, tmp_path: Path) -> None
     assert 3 in star_x_values
 
 
-def test_dense_k_sweeps_use_human_friendly_integer_ticks(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_dense_k_sweeps_use_human_friendly_integer_ticks(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
 
     xtick_calls: list[list[int]] = []
@@ -760,9 +748,7 @@ def test_plot_writes_matching_pdf_export(tmp_path: Path) -> None:
     assert pdf_path.stat().st_size > 0
 
 
-def test_scatter_uses_figure_level_bottom_legend(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_scatter_uses_figure_level_bottom_legend(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
 
     figure_legend_calls: list[dict] = []
@@ -781,9 +767,7 @@ def test_scatter_uses_figure_level_bottom_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_bio_vs_confounder_scatter(
-        rows=_sample_summary_rows(), out_path=tmp_path / "scatter.png"
-    )
+    plot_bio_vs_confounder_scatter(rows=_sample_summary_rows(), out_path=tmp_path / "scatter.png")
 
     assert not axes_legend_calls
     assert len(figure_legend_calls) == 1
@@ -795,9 +779,7 @@ def test_scatter_uses_figure_level_bottom_legend(
     assert float(bbox[1]) >= 0.0
 
 
-def test_multi_panel_plot_uses_single_figure_level_legend(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_multi_panel_plot_uses_single_figure_level_legend(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
 
     figure_legend_calls: list[dict] = []
@@ -816,9 +798,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     monkeypatch.setattr(matplotlib.axes.Axes, "legend", spy_axes_legend)
 
-    plot_croma_m_sweep(
-        rows=_sample_croma_m_rows(), out_path=tmp_path / "croma_m_sweep.png"
-    )
+    plot_croma_m_sweep(rows=_sample_croma_m_rows(), out_path=tmp_path / "croma_m_sweep.png")
 
     assert not axes_legend_calls
     assert len(figure_legend_calls) == 1
@@ -827,9 +807,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(
     assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
-def test_croma_m_sweep_uses_human_friendly_m_ticks(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_croma_m_sweep_uses_human_friendly_m_ticks(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
 
     xtick_calls: list[list[int]] = []
@@ -842,7 +820,8 @@ def test_croma_m_sweep_uses_human_friendly_m_ticks(
     monkeypatch.setattr(matplotlib.axes.Axes, "set_xticks", spy_set_xticks)
 
     plot_croma_m_sweep(
-        rows=_sample_croma_m_rows() + [
+        rows=_sample_croma_m_rows()
+        + [
             {"model": "Virchow2", "m": 20, "croma": 1.05, "croma_ltm_alpha": 0.82},
             {"model": "UNI", "m": 20, "croma": 1.00, "croma_ltm_alpha": 0.78},
         ],
@@ -864,9 +843,7 @@ def test_croma_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
     assert pdf_path.stat().st_size > 0
 
 
-def test_croma_distribution_plot_uses_no_legend_and_ranks_rows(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_croma_distribution_plot_uses_no_legend_and_ranks_rows(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
 
     figure_legend_calls: list[dict] = []
@@ -904,9 +881,7 @@ def test_croma_distribution_plot_uses_no_legend_and_ranks_rows(
     assert model_label_order == ["Virchow2", "CONCH", "UNI"]
 
 
-def test_croma_distribution_plot_emits_summary_annotations(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_croma_distribution_plot_emits_summary_annotations(monkeypatch, tmp_path: Path) -> None:
     import matplotlib.axes
     import matplotlib.figure
     import matplotlib.text
@@ -1068,7 +1043,7 @@ def test_trend_line_ignores_non_finite_points() -> None:
 @pytest.mark.parametrize(
     "xs, ys",
     [
-        ([1.0, 2.0], [1.0, 2.0]),          # two points make a line, not a trend
+        ([1.0, 2.0], [1.0, 2.0]),  # two points make a line, not a trend
         ([1.0, 1.0, 1.0], [1.0, 2.0, 3.0]),  # constant x has no slope to estimate
         ([], []),
     ],
