@@ -7,8 +7,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Keyed by ref: a new push cancels that branch's superseded run and nothing else. A
+# constant group would share one slot across every branch, so merging to main would
+# cancel the docs run of every open PR -- and a cancelled run reads as a failure.
 concurrency:
-  group: docs
+  group: docs-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
