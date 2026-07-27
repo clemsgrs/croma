@@ -1,0 +1,52 @@
+{
+  "about": "Library-level golden: metric values pinned on croma's public API, called directly on the named embeddings in tests/metric_harness.py with k pinned. Nothing under scripts/ is involved, so no value here depends on the benchmark driver's k-star selection. Read by tests/test_library_golden.py; governed by docs/adr/0013-two-golden-files-captured-and-derived.md.",
+  "rule": "Derived values only. An entry may be pinned only if its value follows from the construction of the embedding, and it must state that argument in its derivation field. There is deliberately NO regeneration script and no --update flag: a mismatch has to be argued and re-derived, not re-recorded. A value that can only be obtained by running the code does not belong here -- put its coverage in the property suite as sign, bounds or an ordering instead.",
+  "k": 3,
+  "m": 5,
+  "confounder_column": "scanner_vendor",
+  "evaluation_design": "dataset_wide",
+  "entries": [
+    {
+      "embedding": "confounder_dominant",
+      "metric": "RI",
+      "value": 0.0,
+      "derivation": "Each confounder value owns its own basis direction and every label-confounder cell is deeper than k=3, so every top-k neighbour of every sample is same-confounder: the typed neighbours are OS, never SO, and so_total == 0. RI = so_total / (so_total + os_total) = 0 / os_total = 0 exactly, per sample and therefore pooled. os_total > 0 because the two labels alternate along the within-cluster axis, so the ratio is defined."
+    },
+    {
+      "embedding": "confounder_dominant",
+      "metric": "MaRI",
+      "value": 0.0,
+      "derivation": "Same neighbourhoods as the RI entry: so_total == 0. MaRI replaces the counts with sums of exp(-d / tau), which are strictly positive and finite for every tau > 0, so the numerator is a sum over an empty set -- zero -- and the denominator stays positive. MaRI = 0 exactly for ANY tau, which is why this literal does not move when auto-tau resolves differently."
+    },
+    {
+      "embedding": "biology_dominant",
+      "metric": "RI",
+      "value": 1.0,
+      "derivation": "The mirror of confounder_dominant: each label owns a basis direction, so every top-k neighbour is same-label and the typed neighbours are SO, never OS -- os_total == 0. RI = so_total / (so_total + 0) = 1 exactly, per sample and pooled. so_total > 0 because the two confounder values alternate within each label cluster."
+    },
+    {
+      "embedding": "biology_dominant",
+      "metric": "MaRI",
+      "value": 1.0,
+      "derivation": "Same neighbourhoods as the RI entry: os_total == 0. The distance weights exp(-d / tau) are strictly positive for every tau > 0, so the weighted OS sum is zero and the weighted SO sum is positive, leaving the ratio at 1 exactly. Tau-independent for the same reason as the confounder_dominant entry: the temperature scales both sides of a ratio one of whose terms is empty."
+    },
+    {
+      "embedding": "contested",
+      "metric": "RI",
+      "value": 0.5,
+      "derivation": "Each block places the SO and the OS neighbour on perpendicular corners of a square, equidistant from the sample, and the OO neighbour on the opposite corner strictly farther away. At k=3 the top-k set of every sample is therefore exactly {its SO neighbour, its OS neighbour, its OO neighbour} -- the two typed ones tie to the bit, so both are inside whatever the tie-break does, and OO counts towards neither side. so_total == os_total == 1 per sample, so RI = so_total / (2 * so_total) = 0.5 exactly, per sample and pooled."
+    },
+    {
+      "embedding": "contested",
+      "metric": "MaRI",
+      "value": 0.5,
+      "derivation": "Same top-k set as the RI entry, in which the one SO and the one OS neighbour sit at the same distance. exp(-d / tau) is a function of distance alone, so at equal distances it contributes the same weight to each side whatever tau is: the weighted sums are equal and MaRI = 0.5 exactly for ANY tau. Tau-independent, so this literal survives a change to auto-tau."
+    },
+    {
+      "embedding": "contested",
+      "metric": "CRoMa",
+      "value": 0.0,
+      "derivation": "CRoMa is (d_OS - d_SO) / (d_OS + d_SO) with d_SO / d_OS the mean cosine distance to the m nearest SO / OS neighbours. The square layout makes a sample's SO and OS corners equidistant inside its own block, and equidistant in every other block as well, so the m nearest SO distances and the m nearest OS distances are the same multiset for m up to n_blocks: d_SO == d_OS, the margin is 0 / (2 * d_SO) = 0 exactly per sample, and so is the pooled value. This is the only embedding on which CRoMa is derivable -- on the dominance embeddings its value depends on the specific within- and cross-cluster distances, so it is deliberately absent from this file."
+    }
+  ]
+}
