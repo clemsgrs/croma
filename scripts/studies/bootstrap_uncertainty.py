@@ -16,9 +16,14 @@ Outputs, per benchmark, under <dir>/results/:
   - bootstrap_uncertainty.csv   (per-model: croma + CI, point/mean rank + CI)
   - bootstrap_uncertainty.json  (correlations, adjacent-pair win probs, meta)
 
+Note the correlations are protocol-dependent while the CIs are not: CRoMa is k-free, so its
+per-sample values are bit-identical across protocols, but RI and MaRI move with k (by 0.13 on
+PANDA). Spearman(CRoMa, RI) must therefore be computed at the protocol whose RI the paper
+prints, which is why the run directory comes from ``paper_manifest`` rather than a constant.
+
 Usage:
-  python scripts/studies/bootstrap_uncertainty.py [n_boot] [bench1 bench2 ...]
-  (defaults: n_boot=2000, all benchmarks)
+  python scripts/studies/bootstrap_uncertainty.py [n_boot] [Prefix1 Prefix2 ...]
+  (defaults: n_boot=2000, every benchmark in the manifest)
 """
 
 import json
@@ -29,21 +34,20 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+# ``croma`` lives under src/ and is not installed; ROOT alone never resolved it.
+for _p in (ROOT / "src", ROOT / "scripts" / "repro"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 from croma.metrics.bootstrap import (  # noqa: E402
     bootstrap_spearman,
     paired_rank_stability,
 )
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
+from croma.plotstyle import CONTROL_MODEL  # noqa: E402
+from paper_manifest import TABLES  # noqa: E402
 
-# name -> benchmark output directory (relative to repo root)
-BENCHMARKS: dict[str, str] = {
-    "camelyon": "output/metrics/k-star/pathorob-camelyon",
-    "tcga2x2": "output/metrics/k-star/pathorob-tcga-2x2",
-    "tcga4x4": "output/metrics/k-star/pathorob-tcga-4x4",
-    "tolkach": "output/metrics/k-star/pathorob-tolkach-esca",
-    "panda": "output/metrics/k-star/panda-isup",
-}
+#: macro prefix -> run directory, at each benchmark's reported protocol. See ADR-0010.
+BENCHMARKS: dict[str, str] = {t.prefix: t.run_rel for t in TABLES}
 
 SEED = 12345
 MIN_MODELS_FOR_CORR = 8  # Spearman over models is meaningless for tiny suites
@@ -58,7 +62,11 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
     """
     cols = ["model", "occurrence_index", "sample_index", "slide_id", f"croma_m{m}"]
     ps = pd.read_csv(ps_path, usecols=cols)
-    models = sorted(ps["model"].unique())
+    # Both outputs of this study rank models against each other, so both are computed on the
+    # ranked panel: the natural-image control is a floor, not a competitor (see CONTEXT.md).
+    # Leaving it in would give it a rank interval among the pathology encoders and would pull
+    # every Spearman, since it sits off-trend on support and biological accuracy alike.
+    models = sorted(m_ for m_ in ps["model"].unique() if m_ != CONTROL_MODEL)
     ref_slides: np.ndarray | None = None
     model_values: dict[str, np.ndarray] = {}
     for model in models:
@@ -75,10 +83,14 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
 
 def _correlations(metrics_csv: Path, n_boot: int) -> dict:
     df = pd.read_csv(metrics_csv).set_index("model")
+    df = df.drop(index=CONTROL_MODEL, errors="ignore")  # ranked panel only
     n_models = len(df)
+    # The artifact carries the floor it was computed under, so the table generator can
+    # explain a blank row without keeping its own copy of the threshold.
+    base = {"n_models": int(n_models), "min_models": MIN_MODELS_FOR_CORR}
     if n_models < MIN_MODELS_FOR_CORR or not {"ri", "mari", "croma"} <= set(df.columns):
-        return {"n_models": int(n_models), "skipped": True}
-    out: dict = {"n_models": int(n_models), "skipped": False}
+        return {**base, "skipped": True}
+    out: dict = {**base, "skipped": False}
     for other in ("ri", "mari"):
         ci = bootstrap_spearman(
             df["croma"].to_numpy(float),

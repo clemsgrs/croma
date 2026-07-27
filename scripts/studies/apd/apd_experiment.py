@@ -38,7 +38,7 @@ import numpy as np
 import pandas as pd
 from tqdm import trange
 
-from loaders import DATASETS, REPO, _prostate_split_map, load_data  # noqa: E402
+from loaders import DATASETS, REPO, _pcabiop_split_map, _prostate_split_map, load_data  # noqa: E402
 
 import layout  # noqa: E402  (loaders put scripts/bench on sys.path on import above)
 
@@ -46,6 +46,65 @@ import layout  # noqa: E402  (loaders put scripts/bench on sys.path on import ab
 # ``loaders`` above puts the PathoROB checkout on sys.path so these resolve.
 from pathorob.apd.utils import get_patches_map_to_split, compute_apd  # noqa: E402
 from pathorob.apd.train_model import train_logistic_regression  # noqa: E402
+
+#: Slide-level (num_patches_per_slide == 1) validation fraction. PathoROB reserves
+#: int(num_patches / max_train_slides) validation samples per cell -- a fraction
+#: 1/max_train_slides of that cell's training count -- but at slide level both operands
+#: are in slides, so that ratio underflows to 0. We set the fraction explicitly instead.
+#: 0.1 sits inside PathoROB's own effective range (Camelyon 1/14 = 7%, TCGA 1/8 = 12.5%,
+#: Tolkach 1/6 = 17%). See loaders._pcabiop_split_map.
+VAL_FRACTION = 0.1
+
+#: nAPD (normalized Average Performance Drop) gate. nAPD divides the per-split drop by
+#: the baseline's *skill* (balanced accuracy above chance) rather than by raw accuracy,
+#: so it measures the fraction of *learnable* signal a confounder destroys. When the
+#: probe barely beats chance at the balanced split there is almost no skill to lose, the
+#: skill ratio is dominated by noise, and nAPD is not meaningful -- we report it as
+#: undefined instead. The gate is on *normalized* skill = skill / (1 - chance), the
+#: fraction of achievable headroom attained at baseline (= informedness for a binary task,
+#: class-count invariant in [0, 1]), so one floor applies across 2-, 4- and 6-class tasks.
+NAPD_NORM_SKILL_FLOOR = 0.15
+
+
+def compute_napd(accuracies, chance):
+    """nAPD reduction: the skill-normalized performance drop on the iteration-averaged
+    accuracy curve (ratio-of-means).
+
+    Skill = balanced accuracy above ``chance``. Like APD, nAPD averages the per-split
+    ratio of confounded-split performance to the balanced split and subtracts 1, but on
+    skill instead of raw accuracy: ``nAPD = mean_{split>0}(skill_split / skill_0) - 1``.
+
+    It deviates from PathoROB's ``compute_apd`` in exactly one way: it averages the
+    ``iterations`` replicates per split *before* taking the ratio, not after. This is
+    deliberate. Per replicate ``nAPD = APD * acc_0 / (acc_0 - chance)``, so the
+    mean-of-ratios reduction PathoROB uses for APD explodes whenever a *single* replicate's
+    baseline dips near chance (``acc_0 -> chance``) -- a blow-up a gate on the *mean*
+    baseline cannot catch (observed on prostate/Prost40M and pcabiop/MOOZY, where
+    mean-of-ratios flips the sign). Ratio-of-means is stable, agrees with APD's ranking away
+    from chance (Spearman >= 0.94 on every tile benchmark), and diverges only near chance,
+    exactly where mean-of-ratios is unreliable. ``accuracies`` is (num_splits, iterations).
+    """
+    s = np.asarray(accuracies, dtype=float).mean(axis=1) - chance  # per-split mean skill
+    return float((s[1:] / s[0]).mean() - 1)
+
+
+def _napd_summary(res, chance):
+    """Derive nAPD fields from a result dict's stored accuracy matrices (post-hoc, no
+    re-run). ``napd_id``/``napd_ood`` are None when the baseline fails the skill gate;
+    the ungated value is always kept in ``napd_id_raw``/``napd_ood_raw`` for provenance."""
+    out = {"chance": chance}
+    for dom, key in (("id", "id_test_accuracies"), ("ood", "ood_test_accuracies")):
+        acc = np.asarray(res[key], dtype=float)
+        base = float(acc[0].mean())                       # balanced-acc at split 0
+        norm_skill = (base - chance) / (1 - chance)       # fraction of achievable headroom
+        gated = norm_skill < NAPD_NORM_SKILL_FLOOR
+        raw = compute_napd(acc, chance)  # already a scalar (ratio-of-means)
+        out[f"{dom}_baseline"] = base
+        out[f"{dom}_norm_skill"] = norm_skill
+        out[f"{dom}_gated"] = bool(gated)
+        out[f"napd_{dom}_raw"] = raw
+        out[f"napd_{dom}"] = None if gated else raw
+    return out
 
 
 def compute(model, dataset, iterations=20):
@@ -87,17 +146,30 @@ def compute(model, dataset, iterations=20):
         for split in trange(num_splits, desc=f"{model}/{dataset} iter {idx + 1}/{len(seeds)}", leave=False):
             if split_key == "prostate":
                 split_map, max_train_slides = _prostate_split_map(split, num_patches_per_slide)
+            elif split_key == "pcabiop":
+                split_map, max_train_slides = _pcabiop_split_map(split, num_patches_per_slide)
             else:
                 split_map, max_train_slides = get_patches_map_to_split(split_key, split, num_patches_per_slide)
 
             data_train = [features[i][j][:num_patches] for i, j, num_patches in split_map]
             data_train = [t for cls in data_train for t in cls]
 
-            data_validation = [features[i][j][num_patches:num_patches + int(num_patches / max_train_slides)]
-                               for i, j, num_patches in split_map]
+            # Validation slice, per cell, placed right after that cell's training block --
+            # PathoROB's structure exactly, so val inherits the schedule's marginal balance.
+            # Patch level (npps > 1): int(num_patches / max_train_slides), byte-identical to
+            # PathoROB. Slide level (npps == 1): that ratio underflows to 0, so use an explicit
+            # fraction and push idxTest out to clear the widest train+val block. See VAL_FRACTION.
+            if num_patches_per_slide == 1:
+                val_take = [round(VAL_FRACTION * num_patches) for _, _, num_patches in split_map]
+                idxTest = max_train_slides + round(VAL_FRACTION * max_train_slides) + 1
+            else:
+                val_take = [int(num_patches / max_train_slides) for _, _, num_patches in split_map]
+                idxTest = (max_train_slides + 1) * num_patches_per_slide
+
+            data_validation = [features[i][j][num_patches:num_patches + take]
+                               for (i, j, num_patches), take in zip(split_map, val_take)]
             data_validation = [t for cls in data_validation for t in cls]
 
-            idxTest = (max_train_slides + 1) * num_patches_per_slide
             data_test_id = [features[i][j][idxTest:]
                             for i in range(len(medical_centers)) for j in range(len(biological_classes))]
             data_test_id = [t for cls in data_test_id for t in cls]
@@ -114,12 +186,14 @@ def compute(model, dataset, iterations=20):
 
     apd_id = float(np.mean(compute_apd(id_test_accuracies)))
     apd_ood = float(np.mean(compute_apd(ood_test_accuracies)))
-    return dict(
+    res = dict(
         apd_id=apd_id, apd_ood=apd_ood,
         id_accuracy_means=[float(np.mean(a)) for a in id_test_accuracies],
         ood_accuracy_means=[float(np.mean(a)) for a in ood_test_accuracies],
         id_test_accuracies=id_test_accuracies, ood_test_accuracies=ood_test_accuracies,
     )
+    res.update(_napd_summary(res, chance=1.0 / len(biological_classes)))
+    return res
 
 
 def model_list(dataset):
@@ -139,8 +213,17 @@ def _job(args):
         raw_path.parent.mkdir(parents=True, exist_ok=True)
         raw_path.write_text(json.dumps(res, indent=2))
         tag = "done"
-    print(f"[{tag}] {dataset}/{model}: APD_ID={res['apd_id']*100:.2f}% APD_OOD={res['apd_ood']*100:.2f}%", flush=True)
-    return dict(dataset=dataset, model=model, apd_id=res["apd_id"], apd_ood=res["apd_ood"])
+    # nAPD is derived from the stored accuracy matrices, so cached JSONs (which predate
+    # nAPD) get it here without a re-run. chance = 1 / n biological classes.
+    nap = _napd_summary(res, chance=1.0 / len(DATASETS[dataset]["biological_classes"]))
+    fmt = lambda v: "gated" if v is None else f"{v*100:.2f}%"
+    print(f"[{tag}] {dataset}/{model}: nAPD_ID={fmt(nap['napd_id'])} nAPD_OOD={fmt(nap['napd_ood'])} "
+          f"(APD_ID={res['apd_id']*100:.2f}% APD_OOD={res['apd_ood']*100:.2f}%)", flush=True)
+    return dict(dataset=dataset, model=model,
+                napd_id=nap["napd_id"], napd_ood=nap["napd_ood"],
+                apd_id=res["apd_id"], apd_ood=res["apd_ood"],
+                id_baseline=nap["id_baseline"], ood_baseline=nap["ood_baseline"],
+                id_gated=nap["id_gated"], ood_gated=nap["ood_gated"])
 
 
 def run(datasets, models, iterations, out_dir, overwrite, jobs=1):
