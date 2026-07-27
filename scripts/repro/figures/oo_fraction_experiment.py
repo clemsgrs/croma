@@ -28,13 +28,24 @@ import pandas as pd
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "studies"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "bench"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "src"))
 from _neighbor_analysis import load_meta, prepare_embedding  # noqa: E402
 import views  # noqa: E402
+
+import matplotlib  # noqa: E402
+matplotlib.use("Agg")  # lock a headless backend before plotstyle/pyplot is imported
+from croma import plotstyle  # noqa: E402
+
+# The natural-image control (DINOv2-B) is not a pathology encoder; exclude it so the pooled
+# composition matches the manuscript's 20-pathology-model roster (see typed_neighbor_rank).
+CONTROL_MODEL = plotstyle.CONTROL_MODEL
 
 PROTOCOL = "k-star"
 view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
 STUDIES = view.studies_dir(PROTOCOL)
-FIGDIR = Path("paper/figures/results/pathorob-camelyon-faithful/pdf")
+# Beside the run this study reads, never in the manuscript tree (see check_paper_figures.py).
+# Derived from STUDIES, so it follows PROTOCOL instead of restating it.
+FIGDIR = STUDIES / "plots" / "pdf"
 
 K_GRID = [3, 5, 10, 20, 30, 50, 75, 100, 150, 200]
 COL_CAP = 400  # leading sorted columns scanned to collect up to max(K_GRID) valid ones
@@ -43,8 +54,8 @@ df = view.eval_manifest
 labels, conf, slide = load_meta(df, compact=True)
 n = len(df)
 
-models = view.models
-print(f"{n} samples, {len(models)} models\n")
+models = [m for m in view.models if m != CONTROL_MODEL]  # 20 pathology encoders (drop control)
+print(f"{n} samples, {len(models)} pathology models (control {CONTROL_MODEL} excluded)\n")
 
 self_idx = np.arange(n)
 # pooled per-sample type fractions at each k, stacked over all models
@@ -157,7 +168,7 @@ ax.set_ylim(0, 1)
 plotstyle.title_with_subtitle(
     ax,
     "OO neighbours never dominate the local neighbourhood",
-    "pooled, 16 models; OO band = IQR",
+    f"pooled, {len(models)} pathology models; OO band = IQR",
 )
 ax.legend(fontsize=plotstyle.FS_ANNOT, loc="center right")
 fig.tight_layout()

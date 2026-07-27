@@ -8,7 +8,7 @@ plot_ri_k_sweep`` and ``import plotting`` keep working unchanged.
 Archetype submodules:
 
 * :mod:`plotting.base` — visual-identity wrappers, geometry/limit helpers, and
-  the shared ``_draw_model_scatter`` primitive.
+  the shared ``_draw_model_scatter`` / ``_draw_trend_line`` primitives.
 * :mod:`plotting.export` — legend collection and the ``_finalize_*`` save helpers.
 * :mod:`plotting.ksweep` — k-sweep curves (bio/confounder accuracy, RI, MaRI).
 * :mod:`plotting.curves` — cumulative-mean curves and the CRoMa(m) trajectory.
@@ -48,6 +48,7 @@ from .base import (
     _color_for_model,
     _confounder_display_name,
     _draw_model_scatter,
+    _draw_trend_line,
     _family_for_model,
     _group_k_rows,
     _highlight_selected,
@@ -55,6 +56,7 @@ from .base import (
     _ltm_label,
     _padded_signed_limits,
     _padded_unit_interval_limits,
+    _pareto_frontier_max_max,
     _set_k_axis,
     _set_panel_title,
     _style_axes,
@@ -96,14 +98,21 @@ from .scatter import (
     _draw_croma_vs_mari_scatter,
     _draw_mari_vs_ri_scatter,
     _draw_q_alpha_vs_croma_scatter,
+    _pareto_boundary,
     plot_bio_vs_confounder_scatter,
     plot_croma_ltm_scatter,
+    plot_croma_pareto,
     plot_croma_vs_mari_scatter,
     plot_mari_vs_ri_scatter,
     plot_q_alpha_vs_croma_scatter,
+    plot_rank_pareto,
 )
 from .distributions import (
+    CROMA_DOMAIN,
     _draw_croma_sample_distributions,
+    _load_croma_sample_rows,
+    _ridgeline_bands,
+    _ridgeline_figure_height,
     plot_croma_sample_distributions,
 )
 
@@ -122,6 +131,8 @@ __all__ = [
     "plot_bio_vs_confounder_scatter",
     "plot_mari_vs_ri_scatter",
     "plot_croma_ltm_scatter",
+    "plot_croma_pareto",
+    "plot_rank_pareto",
     "plot_croma_vs_mari_scatter",
     "plot_q_alpha_vs_croma_scatter",
     # distributions

@@ -38,7 +38,9 @@ PROTOCOL = "k-star"
 view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
 METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
 STUDIES = view.studies_dir(PROTOCOL)
-FIGDIR = REPO / "paper/figures/results/pathorob-camelyon-faithful/pdf"
+# Beside the run this study reads, never in the manuscript tree (see check_paper_figures.py).
+# Derived from STUDIES, so it follows PROTOCOL instead of restating it.
+FIGDIR = STUDIES / "plots" / "pdf"
 
 TAUS = [0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 1.0]
 TAU_REF = 0.2

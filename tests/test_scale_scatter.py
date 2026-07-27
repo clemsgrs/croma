@@ -106,5 +106,7 @@ def test_render_produces_a_file(tmp_path: Path) -> None:
     matplotlib = pytest.importorskip("matplotlib")  # noqa: F841
     frame = ss.build_scale_frame(_synthetic_metadata(), _synthetic_croma())
     out = ss.render_scale_scatter(frame, tmp_path / "scale_scatter.pdf")
+    # Written under plots/{pdf,png}/ siblings (the study convention), not flat.
+    assert out == tmp_path / "pdf" / "scale_scatter.pdf"
     assert out.exists()
-    assert (out.parent / "png" / "scale_scatter.png").exists()
+    assert (tmp_path / "png" / "scale_scatter.png").exists()

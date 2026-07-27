@@ -221,7 +221,7 @@ def test_render_cli_runs(bench_env) -> None:
 
 
 def test_render_into_custom_plots_dir(bench_env) -> None:
-    """The plots_dir override (used by regen_paper_figs_faithful.py) redirects output."""
+    """The plots_dir override (``render.py <run_dir> --plots-dir``) redirects output."""
     run_dir = run_compute(bench_env)
     scratch = run_dir / "results" / "plots_scratch"
     render.render_run(run_dir, plots_dir=scratch)
