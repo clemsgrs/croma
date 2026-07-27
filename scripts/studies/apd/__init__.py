@@ -7,5 +7,7 @@ Entrypoints (run as scripts, e.g. ``python scripts/studies/apd/apd_experiment.py
 The CRoMa-vs-APD scatter that consumes these outputs lives in
 ``scripts/repro/figures/apd_figure.py`` (a paper-figure emitter); it reaches the
 shared data loaders and per-dataset configuration in ``loaders.py`` here via a
-``sys.path`` shim.
+``sys.path`` shim. That emitter is local-only while the manuscript is unpublished and is
+absent from a clone (ADR-0012), as is the ``paper_manifest`` that ``loaders.py`` imports
+-- so these studies do not currently run from a fresh checkout.
 """

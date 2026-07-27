@@ -1,7 +1,17 @@
-# croma is a metrics-only library; benchmarking lives elsewhere
+# croma is a lean metrics library; benchmarking lives elsewhere
 
-`croma` ships as a lean, metrics-only Python library. General benchmarking is the
-job of a separate package; the `scripts/` in this repo are paper-reproduction
+> **Narrowed by [ADR-0011](0011-downstream-shortcut-susceptibility-ships-in-the-library.md).**
+> `croma.downstream` ships the confounder-biased probe protocol and both of its
+> reductions, so the library is no longer *metrics-only*. The constraint that survives is
+> leanness: `croma.downstream` is numpy/sklearn-only and adds zero install weight, and
+> torch stays confined to the `[repro]` extra. General multi-model benchmarking is still
+> out of scope.
+>
+> **See also [ADR-0012](0012-paper-tooling-stays-local.md)** for the current status of
+> `scripts/` — the paper generators are local-only while the manuscript is unpublished.
+
+`croma` ships as a lean Python library of robustness metrics. General benchmarking is
+the job of a separate package; the `scripts/` in this repo are paper-reproduction
 tooling, not a shipped product.
 
 ## Why
@@ -27,15 +37,19 @@ was never in the wheel. `pip install ...[bench]` gave dependencies and no pipeli
   `CRoMaResult`, not as separate exports.
 - **`scripts/` (repo-only):** reproduces *this paper* — it writes
   `paper/sections/generated_values.tex`, the result tables, and the figures.
-  Committed to git but excluded from the wheel. The generators are public; the
-  paper `.tex` source stays local (arXiv is its home). See ADR-0003 for what is
-  and isn't committed.
+  Excluded from the wheel. The paper `.tex` source stays local (arXiv is its home),
+  and per ADR-0012 the generators that render into it are local-only too while the
+  manuscript is unpublished; the benchmarking pipeline and studies remain committed.
+  See ADR-0003 and ADR-0012 for what is and isn't committed.
 - **Extras:** the `[bench]` extra is renamed `[repro]` — the deps needed to
   regenerate the paper from a clone, not to run a general benchmark.
 
 ## Distribution name
 
-Import name is `croma`. The bare `croma` distribution on PyPI is held by an
-unrelated dormant project; acquisition is being pursued. Until then the dist name
-is a single, trivially reversible pyproject line with free brand-aligned fallbacks
-(`croma-metrics`, etc.). Not worth blocking the release.
+Import name and distribution name are both `croma`. **Resolved:** the name is ours on
+PyPI — the project exists there with zero files, which `0.1.0` claims. The
+`croma-metrics` fallback contemplated here is not needed and was never used.
+
+The project was briefly distributed as `cross-margin` 1.0.0, before the metric was
+renamed (ADR-0001) and before `tau` was resolved automatically. That name is retired and
+no code is carried forward from it.
