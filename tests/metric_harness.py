@@ -1,6 +1,6 @@
 """Harness for the metric property suite: named embeddings plus a metric adapter.
 
-Two things live here, and nothing else:
+Three kinds of thing live here, and nothing else:
 
 *Named embeddings.* Small synthetic embeddings whose geometry is known by construction,
 each a constructor returning ``(features, manifest)``. The names come from the glossary in
@@ -11,6 +11,12 @@ test reads as a claim about a neighbourhood regime rather than about an array.
 ``CRoMa`` takes ``m``/``start_k``/``k_growth_factor`` and returns a ``CRoMaResult``.
 :func:`compute_metric` hides that signature difference and nothing else, so a shared
 property can parametrize over ``METRICS`` instead of being written once per metric.
+
+*Fixtures the registry cannot hold.* Embeddings that do not fit the one-constructor,
+fed-to-every-shared-property shape of :data:`NAMED_EMBEDDINGS`, and are deliberately kept out
+of it -- among them :func:`count_matched_pair`, which is *two* embeddings over one shared
+manifest, matched on their SO/OS neighbour counts and mirrored in their neighbour distances.
+Tests that want one of these ask for it by name.
 
 To add a named embedding: write a constructor returning ``(features, manifest)`` -- build
 the manifest with :func:`toy_manifest` so the required columns and the one-tile-per-slide
@@ -348,3 +354,129 @@ def isotropic_gaussian(
     rng = np.random.default_rng(int(seed))
     features = rng.standard_normal((len(labels), int(dim)))
     return features, toy_manifest(labels, confounders)
+
+
+# ---------------------------------------------------------------------------
+# The count-matched pair: two embeddings over ONE manifest.
+#
+# Deliberately not in NAMED_EMBEDDINGS -- everything registered there is a single
+# ``(features, manifest)`` constructor fed to the shared orthogonal-invariance and sizing
+# properties, and this is a pair whose whole point is that the manifest is shared.
+# ---------------------------------------------------------------------------
+
+#: The two typed-neighbour cosine distances the pair is built from. Both embeddings place
+#: their typed neighbours at exactly these two distances; they differ only in *which* type
+#: gets which. Both are well inside the intra-block ceiling of 0.4 (see below).
+NEAR_TYPED_DISTANCE = 0.05
+FAR_TYPED_DISTANCE = 0.30
+
+#: The RI both embeddings of the pair score, exactly. Non-degenerate on purpose: a pair
+#: matched at RI = 0.5 could be dismissed as engineered to RI's tie point.
+COUNT_MATCHED_RI = 2.0 / 3.0
+
+#: Geometry of one block: a block-identifying basis direction of norm ``_BLOCK_AXIS_NORM``
+#: plus an in-block offset of norm ``_BLOCK_CIRCLE_RADIUS`` in a shared 2-plane. Every point
+#: then has the same norm, so the cosine distance between two points of one block is
+#: ``_INTRA_BLOCK_DISTANCE_SCALE * (1 - cos dtheta)`` -- at most 0.4 -- while any cross-block
+#: pair sits at least 0.8 apart. Each sample's top-``PINNED_K`` neighbourhood is therefore
+#: exactly the other three points of its block, *whatever* the angles are. That is what makes
+#: the neighbour counts identical across the pair by construction rather than by luck.
+_BLOCK_AXIS_NORM = 1.0
+_BLOCK_CIRCLE_RADIUS = 0.5
+_INTRA_BLOCK_DISTANCE_SCALE = _BLOCK_CIRCLE_RADIUS**2 / (
+    _BLOCK_AXIS_NORM**2 + _BLOCK_CIRCLE_RADIUS**2
+)
+
+#: The label-confounder cell of each of the four slots in a block, for the two block layouts.
+#: Slot 0 is the block's mixed centre; slots 1 and 2 are its two SO partners and slot 3 its
+#: single OS partner. Reading the SO/OS relation off slot 0 of the first layout: its cell is
+#: ``(A, V1)``, so its SO cell is ``(A, V2)`` (slots 1-2) and its OS cell ``(B, V1)`` (slot 3).
+#:
+#: The counts that follow are fixed by the layout alone. In the first layout, slot 0 sees
+#: 2 SO + 1 OS, slots 1 and 2 each see 1 SO (slot 0) and no OS, and slot 3 sees 1 OS (slot 0)
+#: and no SO: 4 SO against 2 OS per block, i.e. RI = 2/3. The second layout is the first with
+#: the label and the confounder both flipped, which leaves that count untouched while making
+#: all four cells equally populated across a pair of blocks.
+_COUNT_MATCHED_BLOCK_CELLS = (
+    (("A", "V1"), ("A", "V2"), ("A", "V2"), ("B", "V1")),
+    (("B", "V1"), ("B", "V2"), ("B", "V2"), ("A", "V1")),
+)
+
+#: Where each slot sits in the block's plane: which side of the centre, and whether it takes
+#: the SO role or the OS role. Four slots -- ``PINNED_K + 1`` -- so a block *is* one sample's
+#: top-``PINNED_K`` set. The pair is this table read twice -- once with the SO slots at
+#: :data:`NEAR_TYPED_DISTANCE` and the OS slot at :data:`FAR_TYPED_DISTANCE`, once with those
+#: two swapped. Cosine distance is scale-invariant, so the two embeddings cannot differ by a
+#: rescaling: the points move angularly, and only angularly.
+_SLOT_LAYOUT = (
+    (0.0, ""),  # slot 0: the block's mixed centre, at angle zero
+    (+1.0, "so"),  # slot 1: an SO partner of the centre
+    (-1.0, "so"),  # slot 2: the other SO partner
+    (+1.0, "os"),  # slot 3: the centre's single OS partner
+)
+
+#: Blocks in the default pair. Six alternating blocks leave every label-confounder cell
+#: exactly :data:`CELL_DEPTH` rows deep and the manifest 24 rows long, comfortably above
+#: :data:`PINNED_K`.
+COUNT_MATCHED_N_BLOCKS = 6
+
+
+def _block_angle(distance: float) -> float:
+    """In-block angular separation (radians) realizing a given intra-block cosine distance."""
+    return float(np.arccos(1.0 - float(distance) / _INTRA_BLOCK_DISTANCE_SCALE))
+
+
+@dataclass(frozen=True)
+class CountMatchedPair:
+    """Two models on one manifest: identical neighbour counts, mirrored neighbour margins.
+
+    ``so_near`` puts each block centre's two SO neighbours at :data:`NEAR_TYPED_DISTANCE` and
+    its OS neighbour at :data:`FAR_TYPED_DISTANCE`; ``os_near`` mirrors that. Neither the
+    neighbour *sets* nor their SO/OS types change between the two -- only the distances -- so
+    RI, which counts, is identical to the bit, while MaRI, which weights by distance,
+    separates.
+    """
+
+    so_near: np.ndarray
+    os_near: np.ndarray
+    manifest: pd.DataFrame
+    n_blocks: int
+
+
+def count_matched_pair(*, n_blocks: int = COUNT_MATCHED_N_BLOCKS) -> CountMatchedPair:
+    """Build the count-matched pair over ``n_blocks`` blocks of four samples.
+
+    The two block layouts alternate, so an even ``n_blocks`` leaves all four label-confounder
+    cells equally deep -- ``n_blocks / 2`` pairs of blocks contribute two rows to each.
+    """
+    n_blocks = int(n_blocks)
+    if n_blocks < 2 or n_blocks % 2:
+        raise ValueError("n_blocks must be an even number >= 2 so both layouts are used")
+
+    angle = {"so": _block_angle(NEAR_TYPED_DISTANCE), "os": _block_angle(FAR_TYPED_DISTANCE)}
+    mirrored = {"so": angle["os"], "os": angle["so"]}
+    dim = n_blocks + 2
+
+    so_near_rows: list[np.ndarray] = []
+    os_near_rows: list[np.ndarray] = []
+    labels: list[str] = []
+    confounders: list[str] = []
+    for block in range(n_blocks):
+        cells = _COUNT_MATCHED_BLOCK_CELLS[block % len(_COUNT_MATCHED_BLOCK_CELLS)]
+        for (side, role), (label, confounder) in zip(_SLOT_LAYOUT, cells):
+            for angles, rows in ((angle, so_near_rows), (mirrored, os_near_rows)):
+                theta = side * angles.get(role, 0.0)
+                vec = np.zeros(dim, dtype=float)
+                vec[block] = _BLOCK_AXIS_NORM
+                vec[n_blocks] = _BLOCK_CIRCLE_RADIUS * np.cos(theta)
+                vec[n_blocks + 1] = _BLOCK_CIRCLE_RADIUS * np.sin(theta)
+                rows.append(vec)
+            labels.append(label)
+            confounders.append(confounder)
+
+    return CountMatchedPair(
+        so_near=np.asarray(so_near_rows, dtype=float),
+        os_near=np.asarray(os_near_rows, dtype=float),
+        manifest=toy_manifest(labels, confounders),
+        n_blocks=n_blocks,
+    )
