@@ -338,9 +338,7 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
         ],
     ],
 )
-def test_cli_rejects_removed_flags(
-    argv: list[str], monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_cli_rejects_removed_flags(argv: list[str], monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "argv", argv)
 
     with pytest.raises(SystemExit) as excinfo:

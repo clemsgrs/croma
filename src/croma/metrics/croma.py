@@ -170,14 +170,12 @@ def _iterative_typed_neighbor_search(
             features[query_indices], n_neighbors=fetch_neighbors
         )
 
-        neigh_idx, neigh_dist, valid_counts = (
-            _filter_query_neighbors_excluding_same_slide(
-                raw_neighbors=raw_neighbors,
-                raw_distances=distances,
-                query_indices=query_indices,
-                slide_ids=slide_ids,
-                kmax=int(k_current),
-            )
+        neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_slide(
+            raw_neighbors=raw_neighbors,
+            raw_distances=distances,
+            query_indices=query_indices,
+            slide_ids=slide_ids,
+            kmax=int(k_current),
         )
 
         newly_defined = _scan_typed_neighbors_for_query_rows(
@@ -260,9 +258,7 @@ class CrossConfounderRobustnessMargin:
         if len(features) != len(manifest):
             raise ValueError("features row count must match manifest row count")
 
-        df = normalize_manifest(
-            manifest, confounder_column=confounder_column, source="manifest"
-        )
+        df = normalize_manifest(manifest, confounder_column=confounder_column, source="manifest")
         ensure_canonical_manifest_columns(df, "manifest")
         dataset_name = cls._infer_dataset_name(df)
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
@@ -329,26 +325,20 @@ class CrossConfounderRobustnessMargin:
             retries_values.append(int(search_meta.retries))
 
             for mm in unique_m_values:
-                sample_croma = _compute_sample_croma(
-                    so_dists[:, : int(mm)], os_dists[:, : int(mm)]
-                )
+                sample_croma = _compute_sample_croma(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
                 informative = np.isfinite(sample_croma)
                 n_informative = int(informative.sum())
                 n_undefined = int(n_sub - n_informative)
                 total_undefined[int(mm)] += n_undefined
 
-                occurrence_values_by_m[int(mm)].append(
-                    np.asarray(sample_croma, dtype=float)
-                )
+                occurrence_values_by_m[int(mm)].append(np.asarray(sample_croma, dtype=float))
                 occurrence_subsets_by_m[int(mm)].append(
                     np.full(n_sub, str(subset.subset_id), dtype=object)
                 )
                 occurrence_sources_by_m[int(mm)].append(idx.astype(int))
 
                 if n_informative > 0:
-                    pair_medians[int(mm)].append(
-                        float(np.median(sample_croma[informative]))
-                    )
+                    pair_medians[int(mm)].append(float(np.median(sample_croma[informative])))
                 else:
                     pair_medians[int(mm)].append(float("nan"))
 
@@ -362,11 +352,7 @@ class CrossConfounderRobustnessMargin:
             finite_mask = np.isfinite(finite_pair)
             if finite_mask.any():
                 value = float(np.median(finite_pair[finite_mask]))
-                std = (
-                    float(finite_pair[finite_mask].std(ddof=0))
-                    if finite_mask.sum() > 1
-                    else 0.0
-                )
+                std = float(finite_pair[finite_mask].std(ddof=0)) if finite_mask.sum() > 1 else 0.0
             else:
                 value = float("nan")
                 std = 0.0
@@ -387,13 +373,9 @@ class CrossConfounderRobustnessMargin:
                 else np.empty((0,), dtype=int)
             )
             occurrence_defined_mask = np.isfinite(occurrence_values)
-            sample_values = occurrence_values[np.isfinite(occurrence_values)].astype(
-                float
-            )
+            sample_values = occurrence_values[np.isfinite(occurrence_values)].astype(float)
             undefined_frac = (
-                float(total_undefined[int(mm)] / occurrence_total)
-                if occurrence_total > 0
-                else 0.0
+                float(total_undefined[int(mm)] / occurrence_total) if occurrence_total > 0 else 0.0
             )
 
             if total_undefined[int(mm)] > 0:

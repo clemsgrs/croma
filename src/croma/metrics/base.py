@@ -40,9 +40,7 @@ def _ratio_or_default(so: float, os: float, default: float = 0.5) -> float:
 def _normalize_evaluation_design(value: object) -> str:
     normalized = str(value).strip().lower()
     if normalized not in VALID_EVALUATION_DESIGNS:
-        raise ValueError(
-            f"evaluation_design must be one of {list(VALID_EVALUATION_DESIGNS)}"
-        )
+        raise ValueError(f"evaluation_design must be one of {list(VALID_EVALUATION_DESIGNS)}")
     return normalized
 
 
@@ -133,9 +131,7 @@ class BaseRobustnessIndex(ABC):
         eff_k = np.minimum(valid_counts, target_k)
 
         col_indices = np.arange(min(target_k, neigh_idx.shape[1]))[np.newaxis, :]
-        slot_valid = (col_indices < eff_k[:, np.newaxis]) & (
-            neigh_idx[:, :target_k] >= 0
-        )
+        slot_valid = (col_indices < eff_k[:, np.newaxis]) & (neigh_idx[:, :target_k] >= 0)
 
         idx = neigh_idx[:, :target_k]
         dist = neigh_dist[:, :target_k]
@@ -177,9 +173,7 @@ class BaseRobustnessIndex(ABC):
             )
         undefined_type[undef_no_neigh] = 3
 
-        pooled = _ratio_or_default(
-            float(so_per_sample.sum()), float(os_per_sample.sum())
-        )
+        pooled = _ratio_or_default(float(so_per_sample.sum()), float(os_per_sample.sum()))
         return pooled, sample_scores, informative, undefined_type
 
     @classmethod
@@ -192,18 +186,14 @@ class BaseRobustnessIndex(ABC):
         valid_counts: np.ndarray,
         k_values: list[int],
         **kwargs: float,
-    ) -> dict[
-        int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
-    ]:
+    ) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
         n = len(labels)
         kmax = int(max(k_values))
         actual_cols = min(kmax, neigh_idx.shape[1])
 
         col_indices = np.arange(actual_cols)[np.newaxis, :]
         eff_k_max = np.minimum(valid_counts, kmax)
-        slot_valid = (col_indices < eff_k_max[:, np.newaxis]) & (
-            neigh_idx[:, :actual_cols] >= 0
-        )
+        slot_valid = (col_indices < eff_k_max[:, np.newaxis]) & (neigh_idx[:, :actual_cols] >= 0)
 
         idx = neigh_idx[:, :actual_cols]
         dist = neigh_dist[:, :actual_cols]
@@ -325,9 +315,7 @@ class BaseRobustnessIndex(ABC):
             prepared = cls._prepare_subset_inputs(features=features, subset=subset)
             if prepared is None:
                 continue
-            sub_candidates = [
-                int(k) for k in k_candidates if int(k) < len(prepared.source_indices)
-            ]
+            sub_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
             if not sub_candidates:
                 continue
             scores = _knn_balanced_accuracy_by_k(
@@ -340,9 +328,7 @@ class BaseRobustnessIndex(ABC):
             all_scores.append(scores)
 
         if not all_scores:
-            raise RuntimeError(
-                f"{dataset_name}: subset k-selection failed on all subsets"
-            )
+            raise RuntimeError(f"{dataset_name}: subset k-selection failed on all subsets")
 
         all_k = sorted({k for scores in all_scores for k in scores})
         averaged: dict[int, float] = {}
@@ -408,9 +394,7 @@ class BaseRobustnessIndex(ABC):
                 encoded = prepared.centers
             else:
                 raise ValueError(f"Unsupported prepared-subset target: {target}")
-            valid_k = [
-                int(k) for k in candidates if int(k) < len(prepared.source_indices)
-            ]
+            valid_k = [int(k) for k in candidates if int(k) < len(prepared.source_indices)]
             if not valid_k:
                 continue
             subset_scores.append(
@@ -444,9 +428,7 @@ class BaseRobustnessIndex(ABC):
     ) -> int:
         all_scores: list[dict[int, float]] = []
         for prepared in prepared_subsets:
-            sub_candidates = [
-                int(k) for k in k_candidates if int(k) < len(prepared.source_indices)
-            ]
+            sub_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
             if not sub_candidates:
                 continue
             all_scores.append(
@@ -459,9 +441,7 @@ class BaseRobustnessIndex(ABC):
             )
 
         if not all_scores:
-            raise RuntimeError(
-                f"{dataset_name}: subset k-selection failed on all subsets"
-            )
+            raise RuntimeError(f"{dataset_name}: subset k-selection failed on all subsets")
 
         all_k = sorted({k for scores in all_scores for k in scores})
         averaged: dict[int, float] = {}
@@ -482,9 +462,7 @@ class BaseRobustnessIndex(ABC):
         oo_dominated_undefined_frac: float,
         mixed_undefined_frac: float,
     ) -> None:
-        unit_label = (
-            "subset occurrences" if str(evaluation_unit) == "occurrence" else "samples"
-        )
+        unit_label = "subset occurrences" if str(evaluation_unit) == "occurrence" else "samples"
         if undefined_frac > 0.0:
             warnings.warn(
                 f"{dataset_name}: RI/MaRI undefined coverage is {undefined_frac * 100.0:.1f}% across {unit_label}.",
@@ -510,9 +488,7 @@ class BaseRobustnessIndex(ABC):
         mixed_undefined: int,
     ) -> _UndefinedBreakdown:
         if occurrence_total <= 0:
-            return _UndefinedBreakdown(
-                total_frac=0.0, ss_frac=0.0, oo_frac=0.0, mixed_frac=0.0
-            )
+            return _UndefinedBreakdown(total_frac=0.0, ss_frac=0.0, oo_frac=0.0, mixed_frac=0.0)
 
         total_undefined = ss_undefined + oo_undefined + mixed_undefined
         denominator = float(occurrence_total)
@@ -645,9 +621,7 @@ class BaseRobustnessIndex(ABC):
     ) -> _RobustnessArtifacts:
         cls._validate_inputs(features, manifest)
 
-        df = cls._normalize_manifest_inputs(
-            manifest, confounder_column=confounder_column
-        )
+        df = cls._normalize_manifest_inputs(manifest, confounder_column=confounder_column)
         dataset_name = cls._infer_dataset_name(df)
         evaluation_design = _normalize_evaluation_design(evaluation_design)
         if evaluation_design == EVALUATION_DESIGN_PAIRED_2X2:
@@ -694,9 +668,7 @@ class BaseRobustnessIndex(ABC):
         result: RobustnessResult | None = None
         if include_selected_result:
             if selected_k is None:
-                raise RuntimeError(
-                    "selected_k must be resolved when include_selected_result=True"
-                )
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
             if int(selected_k) not in by_k:
                 raise RuntimeError(
                     f"selected_k={selected_k} is not available in scored-by-k results"
@@ -778,9 +750,7 @@ class BaseRobustnessIndex(ABC):
             return np.empty(0, dtype=float)
         col = np.arange(actual_cols)[np.newaxis, :]
         eff_k = np.minimum(valid_counts, k)
-        slot_valid = (col < eff_k[:, np.newaxis]) & (
-            neigh_idx[:, :actual_cols] >= 0
-        )
+        slot_valid = (col < eff_k[:, np.newaxis]) & (neigh_idx[:, :actual_cols] >= 0)
         safe_idx = np.where(slot_valid, neigh_idx[:, :actual_cols], 0)
         same_label = labels[safe_idx] == labels[:, np.newaxis]
         same_center = centers[safe_idx] == centers[:, np.newaxis]
@@ -817,9 +787,7 @@ class BaseRobustnessIndex(ABC):
         evaluation_design: str,
     ) -> np.ndarray:
         """Pool the typed (SO/OS) neighbour distances at ``k`` for the given design."""
-        df = cls._normalize_manifest_inputs(
-            manifest, confounder_column=confounder_column
-        )
+        df = cls._normalize_manifest_inputs(manifest, confounder_column=confounder_column)
         design = _normalize_evaluation_design(evaluation_design)
         if design == EVALUATION_DESIGN_DATASET_WIDE:
             prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
@@ -832,9 +800,7 @@ class BaseRobustnessIndex(ABC):
             if (prepared := cls._prepare_subset_inputs(features=features, subset=subset))
             is not None
         ]
-        return (
-            np.concatenate(chunks) if chunks else np.empty(0, dtype=float)
-        )
+        return np.concatenate(chunks) if chunks else np.empty(0, dtype=float)
 
     @classmethod
     def _select_operating_k(
@@ -854,9 +820,7 @@ class BaseRobustnessIndex(ABC):
         the auto-``tau`` path is a two-step resolution, not a circular one.
         """
         cls._validate_inputs(features, manifest)
-        df = cls._normalize_manifest_inputs(
-            manifest, confounder_column=confounder_column
-        )
+        df = cls._normalize_manifest_inputs(manifest, confounder_column=confounder_column)
         design = _normalize_evaluation_design(evaluation_design)
         candidates = _normalize_k_values(k_candidates)
         dataset_name = cls._infer_dataset_name(df)
@@ -883,9 +847,7 @@ class BaseRobustnessIndex(ABC):
         k_candidates: list[int],
         dataset_name: str,
     ) -> int:
-        valid_candidates = [
-            int(k) for k in k_candidates if int(k) < len(prepared.source_indices)
-        ]
+        valid_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
         if not valid_candidates:
             raise RuntimeError(
                 f"{dataset_name}: dataset-wide k-selection failed because no valid k candidates remain"
@@ -897,9 +859,7 @@ class BaseRobustnessIndex(ABC):
             k_values=valid_candidates,
             warn_context=f"{dataset_name} dataset-wide k-selection",
         )
-        return _select_k_from_balanced_accuracy(
-            k_values=valid_candidates, scores=scores
-        )
+        return _select_k_from_balanced_accuracy(k_values=valid_candidates, scores=scores)
 
     @classmethod
     def _prepare_dataset_wide_neighbor_cache(
@@ -946,9 +906,7 @@ class BaseRobustnessIndex(ABC):
         dataset_name: str,
     ) -> int:
         valid_candidates = [
-            int(k)
-            for k in k_candidates
-            if int(k) < len(prepared_neighbors.source_indices)
+            int(k) for k in k_candidates if int(k) < len(prepared_neighbors.source_indices)
         ]
         if not valid_candidates:
             raise RuntimeError(
@@ -960,9 +918,7 @@ class BaseRobustnessIndex(ABC):
             valid_counts=prepared_neighbors.valid_counts,
             k_values=valid_candidates,
         )
-        return _select_k_from_balanced_accuracy(
-            k_values=valid_candidates, scores=scores
-        )
+        return _select_k_from_balanced_accuracy(k_values=valid_candidates, scores=scores)
 
     @classmethod
     def _score_dataset_wide_by_k(
@@ -1072,9 +1028,9 @@ class BaseRobustnessIndex(ABC):
         ).astype(str)
         occurrence_sources = prepared_neighbors.source_indices.astype(int)
         for k in candidates:
-            pooled, per_sample, informative_mask, undefined_type, _so_arr, _os_arr = (
-                all_k_results[int(k)]
-            )
+            pooled, per_sample, informative_mask, undefined_type, _so_arr, _os_arr = all_k_results[
+                int(k)
+            ]
             sample_arr = np.asarray(per_sample[informative_mask], dtype=float)
             undefined_breakdown = cls._compute_undefined_breakdown(
                 occurrence_total=len(per_sample),
@@ -1147,21 +1103,11 @@ class BaseRobustnessIndex(ABC):
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
         per_k_so_total: dict[int, float] = {int(k): 0.0 for k in candidates}
         per_k_os_total: dict[int, float] = {int(k): 0.0 for k in candidates}
-        per_k_occurrence_values: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_defined: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_types: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_subsets: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_sources: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
+        per_k_occurrence_values: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_defined: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_types: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_subsets: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_sources: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
         per_k_undefined_counts: dict[int, dict[int, int]] = {
             int(k): {1: 0, 2: 0, 3: 0} for k in candidates
         }
@@ -1191,33 +1137,19 @@ class BaseRobustnessIndex(ABC):
                 per_k_occurrence_total[int(k)] += int(len(per_sample))
                 per_k_so_total[int(k)] += float(so_arr.sum())
                 per_k_os_total[int(k)] += float(os_arr.sum())
-                per_k_occurrence_values[int(k)].append(
-                    np.asarray(per_sample, dtype=float)
-                )
-                per_k_occurrence_defined[int(k)].append(
-                    np.asarray(informative_mask, dtype=bool)
-                )
-                per_k_occurrence_types[int(k)].append(
-                    np.asarray(undefined_type, dtype=int)
-                )
+                per_k_occurrence_values[int(k)].append(np.asarray(per_sample, dtype=float))
+                per_k_occurrence_defined[int(k)].append(np.asarray(informative_mask, dtype=bool))
+                per_k_occurrence_types[int(k)].append(np.asarray(undefined_type, dtype=int))
                 per_k_occurrence_subsets[int(k)].append(
                     np.full(len(per_sample), prepared.subset_id, dtype=object)
                 )
                 per_k_occurrence_sources[int(k)].append(prepared.source_indices)
-                per_k_undefined_counts[int(k)][1] += int(
-                    np.count_nonzero(undefined_type == 1)
-                )
-                per_k_undefined_counts[int(k)][2] += int(
-                    np.count_nonzero(undefined_type == 2)
-                )
-                per_k_undefined_counts[int(k)][3] += int(
-                    np.count_nonzero(undefined_type == 3)
-                )
+                per_k_undefined_counts[int(k)][1] += int(np.count_nonzero(undefined_type == 1))
+                per_k_undefined_counts[int(k)][2] += int(np.count_nonzero(undefined_type == 2))
+                per_k_undefined_counts[int(k)][3] += int(np.count_nonzero(undefined_type == 3))
 
         if not any(per_k_pair_values[int(k)] for k in candidates):
-            raise RuntimeError(
-                f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets"
-            )
+            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets")
 
         out: dict[
             int,
@@ -1243,19 +1175,11 @@ class BaseRobustnessIndex(ABC):
 
             pooled = _ratio_or_default(per_k_so_total[int(k)], per_k_os_total[int(k)])
             pair_arr = np.asarray(pair_values, dtype=float)
-            occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(
-                float
-            )
-            occurrence_defined_mask = np.concatenate(
-                per_k_occurrence_defined[int(k)]
-            ).astype(bool)
+            occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(float)
+            occurrence_defined_mask = np.concatenate(per_k_occurrence_defined[int(k)]).astype(bool)
             undef_type_arr = np.concatenate(per_k_occurrence_types[int(k)]).astype(int)
-            occurrence_subsets = np.concatenate(
-                per_k_occurrence_subsets[int(k)]
-            ).astype(str)
-            occurrence_source_indices = np.concatenate(
-                per_k_occurrence_sources[int(k)]
-            ).astype(int)
+            occurrence_subsets = np.concatenate(per_k_occurrence_subsets[int(k)]).astype(str)
+            occurrence_source_indices = np.concatenate(per_k_occurrence_sources[int(k)]).astype(int)
             sample_arr = occurrence_values[occurrence_defined_mask].astype(float)
 
             undefined_breakdown = cls._compute_undefined_breakdown(
@@ -1310,9 +1234,7 @@ class BaseRobustnessIndex(ABC):
         result: RobustnessResult | None = None
         if include_selected_result:
             if selected_k is None:
-                raise RuntimeError(
-                    "selected_k must be resolved when include_selected_result=True"
-                )
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
             if int(selected_k) not in by_k:
                 raise RuntimeError(
                     f"selected_k={selected_k} is not available in scored-by-k results"
@@ -1365,9 +1287,7 @@ class BaseRobustnessIndex(ABC):
         result: RobustnessResult | None = None
         if include_selected_result:
             if selected_k is None:
-                raise RuntimeError(
-                    "selected_k must be resolved when include_selected_result=True"
-                )
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
             if int(selected_k) not in by_k:
                 raise RuntimeError(
                     f"selected_k={selected_k} is not available in scored-by-k results"
@@ -1432,9 +1352,7 @@ class BaseRobustnessIndex(ABC):
         result: RobustnessResult | None = None
         if include_selected_result:
             if selected_k is None:
-                raise RuntimeError(
-                    "selected_k must be resolved when include_selected_result=True"
-                )
+                raise RuntimeError("selected_k must be resolved when include_selected_result=True")
             if int(selected_k) not in by_k:
                 raise RuntimeError(
                     f"selected_k={selected_k} is not available in scored-by-k results"
@@ -1501,21 +1419,11 @@ class BaseRobustnessIndex(ABC):
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
         per_k_so_total: dict[int, float] = {int(k): 0.0 for k in candidates}
         per_k_os_total: dict[int, float] = {int(k): 0.0 for k in candidates}
-        per_k_occurrence_values: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_defined: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_types: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_subsets: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
-        per_k_occurrence_sources: dict[int, list[np.ndarray]] = {
-            int(k): [] for k in candidates
-        }
+        per_k_occurrence_values: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_defined: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_types: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_subsets: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
+        per_k_occurrence_sources: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
         per_k_undefined_counts: dict[int, dict[int, int]] = {
             int(k): {1: 0, 2: 0, 3: 0} for k in candidates
         }
@@ -1554,33 +1462,19 @@ class BaseRobustnessIndex(ABC):
                 per_k_occurrence_total[int(k)] += int(len(per_sample))
                 per_k_so_total[int(k)] += float(so_arr.sum())
                 per_k_os_total[int(k)] += float(os_arr.sum())
-                per_k_occurrence_values[int(k)].append(
-                    np.asarray(per_sample, dtype=float)
-                )
-                per_k_occurrence_defined[int(k)].append(
-                    np.asarray(informative_mask, dtype=bool)
-                )
-                per_k_occurrence_types[int(k)].append(
-                    np.asarray(undefined_type, dtype=int)
-                )
+                per_k_occurrence_values[int(k)].append(np.asarray(per_sample, dtype=float))
+                per_k_occurrence_defined[int(k)].append(np.asarray(informative_mask, dtype=bool))
+                per_k_occurrence_types[int(k)].append(np.asarray(undefined_type, dtype=int))
                 per_k_occurrence_subsets[int(k)].append(
                     np.full(len(per_sample), prepared.subset_id, dtype=object)
                 )
                 per_k_occurrence_sources[int(k)].append(prepared.source_indices)
-                per_k_undefined_counts[int(k)][1] += int(
-                    np.count_nonzero(undefined_type == 1)
-                )
-                per_k_undefined_counts[int(k)][2] += int(
-                    np.count_nonzero(undefined_type == 2)
-                )
-                per_k_undefined_counts[int(k)][3] += int(
-                    np.count_nonzero(undefined_type == 3)
-                )
+                per_k_undefined_counts[int(k)][1] += int(np.count_nonzero(undefined_type == 1))
+                per_k_undefined_counts[int(k)][2] += int(np.count_nonzero(undefined_type == 2))
+                per_k_undefined_counts[int(k)][3] += int(np.count_nonzero(undefined_type == 3))
 
         if not any(per_k_pair_values[int(k)] for k in candidates):
-            raise RuntimeError(
-                f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets"
-            )
+            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets")
 
         out: dict[
             int,
@@ -1606,19 +1500,11 @@ class BaseRobustnessIndex(ABC):
 
             pooled = _ratio_or_default(per_k_so_total[int(k)], per_k_os_total[int(k)])
             pair_arr = np.asarray(pair_values, dtype=float)
-            occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(
-                float
-            )
-            occurrence_defined_mask = np.concatenate(
-                per_k_occurrence_defined[int(k)]
-            ).astype(bool)
+            occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(float)
+            occurrence_defined_mask = np.concatenate(per_k_occurrence_defined[int(k)]).astype(bool)
             undef_type_arr = np.concatenate(per_k_occurrence_types[int(k)]).astype(int)
-            occurrence_subsets = np.concatenate(
-                per_k_occurrence_subsets[int(k)]
-            ).astype(str)
-            occurrence_source_indices = np.concatenate(
-                per_k_occurrence_sources[int(k)]
-            ).astype(int)
+            occurrence_subsets = np.concatenate(per_k_occurrence_subsets[int(k)]).astype(str)
+            occurrence_source_indices = np.concatenate(per_k_occurrence_sources[int(k)]).astype(int)
             sample_arr = occurrence_values[occurrence_defined_mask].astype(float)
 
             undefined_breakdown = cls._compute_undefined_breakdown(

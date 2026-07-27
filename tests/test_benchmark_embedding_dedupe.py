@@ -115,9 +115,7 @@ def test_benchmark_run_over_repeated_tile_emits_per_occurrence_rows(bench_env) -
 
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
 
-    per_sample_df = pd.read_csv(
-        bench_env.results_dir("toy") / "per_sample_metrics.csv"
-    )
+    per_sample_df = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
     assert len(per_sample_df) == 8
     assert set(per_sample_df["subset"]) == {"pair1", "pair2"}
     # The repeated tile s0 yields one per-sample row per occurrence (one per subset).

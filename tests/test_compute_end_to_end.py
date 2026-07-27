@@ -148,9 +148,7 @@ def test_dataset_wide_compute_returns_expected_exact_value(metric_cls) -> None:
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
 @pytest.mark.parametrize("evaluation_design", ["paired_2x2", "dataset_wide"])
-def test_compute_curve_matches_single_k_compute(
-    metric_cls, evaluation_design: str
-) -> None:
+def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: str) -> None:
     if evaluation_design == "paired_2x2":
         manifest = _paired_manifest_single_subset()
         features = _paired_features_single_subset()

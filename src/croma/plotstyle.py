@@ -108,21 +108,21 @@ MODEL_FAMILY_MAP: dict[str, str] = {
 
 # Per-family tones ordered light -> dark. Saturated for a lively, readable look.
 FAMILY_PALETTE: dict[str, list[str]] = {
-    "paige": ["#fb9a3c", "#e2660c"],      # orange
-    "uni": ["#4cc183", "#1f9d55"],        # green
-    "conch": ["#ee4d5a", "#c2222f"],      # red (cooler, away from orange)
-    "phikon": ["#9b80e6", "#5b3fc4"],     # violet
+    "paige": ["#fb9a3c", "#e2660c"],  # orange
+    "uni": ["#4cc183", "#1f9d55"],  # green
+    "conch": ["#ee4d5a", "#c2222f"],  # red (cooler, away from orange)
+    "phikon": ["#9b80e6", "#5b3fc4"],  # violet
     "hoptimus": ["#67b0d0", "#2f86b8", "#1f5f88"],  # steel blue (3 tones)
-    "gigapath": ["#e0a01a"],              # gold / amber
-    "midnight": ["#16b6c4"],              # cyan / teal
-    "hibou": ["#e07ad0", "#b1318f"],      # magenta
-    "prost": ["#8a8682"],                 # neutral grey
+    "gigapath": ["#e0a01a"],  # gold / amber
+    "midnight": ["#16b6c4"],  # cyan / teal
+    "hibou": ["#e07ad0", "#b1318f"],  # magenta
+    "prost": ["#8a8682"],  # neutral grey
     # Ported from slide2vec — provisional single-tone hues (validate via dataviz).
-    "mstar": ["#6d5bd0"],                 # indigo
-    "gpfm": ["#d94a8c"],                  # rose
-    "musk": ["#2aa198"],                  # teal
-    "genbio": ["#9a7d0a"],                # olive / amber
-    "dinov2": ["#5f6b7a"],                # slate grey — natural-image control
+    "mstar": ["#6d5bd0"],  # indigo
+    "gpfm": ["#d94a8c"],  # rose
+    "musk": ["#2aa198"],  # teal
+    "genbio": ["#9a7d0a"],  # olive / amber
+    "dinov2": ["#5f6b7a"],  # slate grey — natural-image control
     "other": ["#aab2bb", "#7e8790", "#565d65"],
 }
 
@@ -155,17 +155,29 @@ MODEL_TONE_INDEX: dict[str, int] = {
 
 # Canonical model order: grouped by family, newest/strongest first within group.
 CANONICAL_MODEL_ORDER: list[str] = [
-    "Virchow2", "Virchow", "PRISM",
-    "UNI2-h", "UNI",
-    "CONCHv1.5", "CONCH", "TITAN",
-    "Phikon-v2", "Phikon",
-    "H-optimus-1", "H-optimus-0", "H0-mini",
+    "Virchow2",
+    "Virchow",
+    "PRISM",
+    "UNI2-h",
+    "UNI",
+    "CONCHv1.5",
+    "CONCH",
+    "TITAN",
+    "Phikon-v2",
+    "Phikon",
+    "H-optimus-1",
+    "H-optimus-0",
+    "H0-mini",
     "Prov-GigaPath",
     "Midnight-12k",
-    "Hibou-L", "Hibou-B",
+    "Hibou-L",
+    "Hibou-B",
     "Prost40M",
     # Ported from slide2vec; DINOv2-B last as the natural-image control.
-    "mSTAR", "GPFM", "MUSK", "GenBio-PathFM",
+    "mSTAR",
+    "GPFM",
+    "MUSK",
+    "GenBio-PathFM",
     "DINOv2-B",
 ]
 
@@ -180,7 +192,7 @@ CONTROL_MODEL = "DINOv2-B"
 # a model *attribute* rather than its family, because every point is directly labelled.
 REGIME_PALETTE: dict[str, str] = {
     "vision-only": "#2f86b8",  # steel blue
-    "VLFM": "#c2222f",         # red
+    "VLFM": "#c2222f",  # red
 }
 
 # Fixed colour per metric (for single-metric accents and cross-metric panels).
@@ -216,7 +228,7 @@ NEIGHBOR_TYPE_COLOR: dict[str, str] = {
 # encoders take the steel blue already used for the SO neighbour role. The result
 # is a strong, print- and colourblind-safe red/blue split.
 REGIME_COLOR: dict[str, str] = {
-    "VLFM": "#c2222f",         # vision--language (CONCH-family red)
+    "VLFM": "#c2222f",  # vision--language (CONCH-family red)
     "vision-only": "#2f86b8",  # vision-only (steel blue)
 }
 
@@ -228,7 +240,7 @@ SUPPORT_STATUS_COLORS: dict[str, tuple[str, str]] = {
 }
 
 # Number formatting precision.
-PREC_METRIC = 3   # RI / MaRI / CRoMa values
+PREC_METRIC = 3  # RI / MaRI / CRoMa values
 PREC_PERCENT = 1  # percentage annotations
 
 

@@ -224,9 +224,7 @@ class TestCRoMaCompute:
         assert result.occurrence_defined_mask.tolist() == [False] * len(manifest)
         assert np.isnan(result.sample_values_aligned).all()
 
-    def test_unresolved_rows_at_cap_warn(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_unresolved_rows_at_cap_warn(self, caplog: pytest.LogCaptureFixture) -> None:
         labels = ["A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2"]
         slides = ["s1", "s1", "s2", "s2"]
@@ -253,9 +251,7 @@ class TestCRoMaCompute:
         assert result.k_final == 3
         assert result.undefined_frac > 0.0
         assert any("could not find" in rec.message for rec in caplog.records)
-        assert any(
-            "dataset 'toy' (dataset_wide)" in rec.message for rec in caplog.records
-        )
+        assert any("dataset 'toy' (dataset_wide)" in rec.message for rec in caplog.records)
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -268,9 +264,7 @@ class TestCRoMaCompute:
         )
         assert result.k_start == len(manifest) - 1
 
-    def test_growth_schedule_follows_factor(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_growth_schedule_follows_factor(self, monkeypatch: pytest.MonkeyPatch) -> None:
         labels = ["A", "A", "A", "B", "B", "B", "A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2", "C1", "C2", "C2", "C1", "C2", "C1"]
         manifest = _make_manifest(n=10, labels=labels, centers=centers)
@@ -288,9 +282,7 @@ class TestCRoMaCompute:
             def fit(self, _x: np.ndarray) -> "_FakeNN":
                 return self
 
-            def kneighbors(
-                self, x: np.ndarray, n_neighbors: int
-            ) -> tuple[np.ndarray, np.ndarray]:
+            def kneighbors(self, x: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
                 q = int(x.shape[0])
                 d = np.zeros((q, n_neighbors), dtype=float)
                 idx = np.tile(np.arange(n_neighbors, dtype=int) % 10, (q, 1))
@@ -301,9 +293,7 @@ class TestCRoMaCompute:
             return np.zeros((len(query_indices),), dtype=bool)
 
         monkeypatch.setattr(croma_mod, "NearestNeighbors", _FakeNN)
-        monkeypatch.setattr(
-            croma_mod, "_scan_typed_neighbors_for_query_rows", _never_define
-        )
+        monkeypatch.setattr(croma_mod, "_scan_typed_neighbors_for_query_rows", _never_define)
 
         result = _compute_croma(
             features=features,
@@ -340,9 +330,7 @@ class TestCRoMaCompute:
             def fit(self, _x: np.ndarray) -> "_FakeNN":
                 return self
 
-            def kneighbors(
-                self, x: np.ndarray, n_neighbors: int
-            ) -> tuple[np.ndarray, np.ndarray]:
+            def kneighbors(self, x: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
                 q = int(x.shape[0])
                 query_sizes.append(q)
                 d = np.zeros((q, n_neighbors), dtype=float)
@@ -382,9 +370,7 @@ class TestCRoMaCompute:
     def test_invalid_evaluation_design_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(ValueError, match="evaluation_design"):
-            _compute_croma(
-                features=features, manifest=manifest, evaluation_design="auto", m=1
-            )
+            _compute_croma(features=features, manifest=manifest, evaluation_design="auto", m=1)
 
     def test_paired_requires_subset_metadata(self) -> None:
         features, manifest = _toy_features_so_closer()

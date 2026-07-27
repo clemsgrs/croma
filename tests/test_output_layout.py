@@ -67,9 +67,9 @@ def test_benchmark_manifests_are_repo_relative_csv_paths() -> None:
     for spec in benchmarks.BENCHMARKS.values():
         assert spec.manifest.endswith(".csv")
         assert not spec.manifest.startswith("/")
-        assert not spec.manifest.startswith("output/"), (
-            f"{spec.name}: eval manifests are inputs and belong under data/"
-        )
+        assert not spec.manifest.startswith(
+            "output/"
+        ), f"{spec.name}: eval manifests are inputs and belong under data/"
 
 
 def test_unknown_benchmark_is_rejected_with_the_registered_names() -> None:

@@ -31,9 +31,7 @@ def bench_env(tmp_path, monkeypatch):
     """Retarget layout at a temp tree and give a builder for tilesets/benchmarks."""
     monkeypatch.setattr(layout_module, "REPO", tmp_path)
     monkeypatch.setattr(layout_module, "OUTPUT_ROOT", tmp_path / "output")
-    monkeypatch.setattr(
-        benchmarks_module, "BENCHMARKS", dict(benchmarks_module.BENCHMARKS)
-    )
+    monkeypatch.setattr(benchmarks_module, "BENCHMARKS", dict(benchmarks_module.BENCHMARKS))
     return _BenchEnv(tmp_path, monkeypatch)
 
 

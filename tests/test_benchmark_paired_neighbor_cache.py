@@ -109,9 +109,7 @@ def test_paired_cached_artifacts_match_uncached_metric_outputs() -> None:
         assert cached.result.k == uncached.result.k
         assert cached.result.value == uncached.result.value
         assert cached.result.std == uncached.result.std
-        np.testing.assert_array_equal(
-            cached.result.pair_values, uncached.result.pair_values
-        )
+        np.testing.assert_array_equal(cached.result.pair_values, uncached.result.pair_values)
         np.testing.assert_allclose(
             cached.result.sample_values,
             uncached.result.sample_values,
@@ -146,9 +144,7 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(bench_env) -> None:
     # The eval manifest repeats each tile across pair1/pair2, so the tileset holds one
     # embedding per distinct tile (4), and the benchmark gathers a row-view of them.
     tileset = _tileset_from(manifest)
-    bench_env.write_tileset(
-        "paired-tiles", tileset, {"M1": _paired_features()[: len(tileset)]}
-    )
+    bench_env.write_tileset("paired-tiles", tileset, {"M1": _paired_features()[: len(tileset)]})
     bench_env.register(
         "toy",
         tileset="paired-tiles",
@@ -219,9 +215,7 @@ def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
     """
     manifest = _dataset_wide_manifest()
     tileset = _tileset_from(manifest)
-    bench_env.write_tileset(
-        "wide-tiles", tileset, {"M1": _dataset_wide_features(tileset)}
-    )
+    bench_env.write_tileset("wide-tiles", tileset, {"M1": _dataset_wide_features(tileset)})
     bench_env.register(
         "toy",
         tileset="wide-tiles",

@@ -58,9 +58,7 @@ def _direct_artifacts(metric, **kwargs):
 
 def _cached_artifacts(metric, **kwargs):
     df = metric._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
-    cache = metric._prepare_dataset_wide_neighbor_cache(
-        features=FEATURES, df=df, k_values=K_VALUES
-    )
+    cache = metric._prepare_dataset_wide_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
     return metric._compute_artifacts_from_prepared_dataset_wide(
         prepared_neighbors=cache,
         dataset_name=metric._infer_dataset_name(df),
@@ -79,9 +77,7 @@ def _assert_artifacts_equal(direct, cached) -> None:
     for k in direct.curve:
         assert cached.curve[k] == pytest.approx(direct.curve[k], abs=0, rel=0)
     assert cached.result.value == pytest.approx(direct.result.value, abs=0, rel=0)
-    assert cached.result.undefined_frac == pytest.approx(
-        direct.result.undefined_frac, abs=0, rel=0
-    )
+    assert cached.result.undefined_frac == pytest.approx(direct.result.undefined_frac, abs=0, rel=0)
     np.testing.assert_array_equal(
         np.asarray(cached.result.sample_values_aligned, dtype=float),
         np.asarray(direct.result.sample_values_aligned, dtype=float),
@@ -93,18 +89,17 @@ def test_ri_dataset_wide_cache_matches_direct() -> None:
 
 
 def test_mari_dataset_wide_cache_matches_direct() -> None:
-    _assert_artifacts_equal(
-        _direct_artifacts(MaRI, tau=0.2), _cached_artifacts(MaRI, tau=0.2)
-    )
+    _assert_artifacts_equal(_direct_artifacts(MaRI, tau=0.2), _cached_artifacts(MaRI, tau=0.2))
 
 
 def test_knn_curves_from_cache_match_direct() -> None:
     df = RI._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
     prepared_inputs = RI._prepare_dataset_wide_inputs(features=FEATURES, df=df)
-    cache = RI._prepare_dataset_wide_neighbor_cache(
-        features=FEATURES, df=df, k_values=K_VALUES
-    )
-    for target, encoded in (("label", prepared_inputs.labels), ("confounder", prepared_inputs.centers)):
+    cache = RI._prepare_dataset_wide_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
+    for target, encoded in (
+        ("label", prepared_inputs.labels),
+        ("confounder", prepared_inputs.centers),
+    ):
         direct = _knn_balanced_accuracy_by_k(
             features=prepared_inputs.features,
             labels=encoded,
@@ -126,9 +121,7 @@ def test_knn_curves_from_cache_match_direct() -> None:
 def test_k_selection_from_cache_matches_direct() -> None:
     df = RI._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
     prepared_inputs = RI._prepare_dataset_wide_inputs(features=FEATURES, df=df)
-    cache = RI._prepare_dataset_wide_neighbor_cache(
-        features=FEATURES, df=df, k_values=K_VALUES
-    )
+    cache = RI._prepare_dataset_wide_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
     direct_k = RI._select_dataset_wide_k(
         prepared=prepared_inputs, k_candidates=K_VALUES, dataset_name="toy"
     )

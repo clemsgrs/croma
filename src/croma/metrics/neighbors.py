@@ -319,9 +319,7 @@ def _knn_balanced_accuracy_by_k(
     candidates = _normalize_k_values(k_values)
     kmax = int(max(candidates))
 
-    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(
-        features, slide_ids, kmax
-    )
+    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
     capped = (
         ", capped"
         if prep_meta.hit_neighbor_cap and prep_meta.coverage < prep_meta.target_coverage

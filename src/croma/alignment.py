@@ -21,9 +21,7 @@ def _normalize_key_value(value: object) -> str:
 def ensure_embedding_source_columns(df: pd.DataFrame, source: str) -> None:
     missing = [col for col in EMBEDDING_SOURCE_COLUMNS if col not in df.columns]
     if missing:
-        raise ValueError(
-            f"{source} is missing required columns for embedding alignment: {missing}"
-        )
+        raise ValueError(f"{source} is missing required columns for embedding alignment: {missing}")
 
 
 def build_embedding_source_manifest(
@@ -69,9 +67,7 @@ def build_manifest_row_to_embedding_index(
 
     row_to_embedding: list[int] = []
     for row_idx, row in enumerate(
-        manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(
-            index=False, name=None
-        )
+        manifest_df.loc[:, list(EMBEDDING_SOURCE_COLUMNS)].itertuples(index=False, name=None)
     ):
         key = tuple(_normalize_key_value(value) for value in row)
         idx = key_to_index.get(key)
@@ -151,7 +147,5 @@ def expand_features_to_manifest(
     feature_array = np.asarray(features)
     if int(feature_array.shape[0]) != int(len(embedding_manifest)):
         raise ValueError("embeddings rows must match embedding manifest rows")
-    row_to_embedding = build_manifest_row_to_embedding_index(
-        manifest, embedding_manifest
-    )
+    row_to_embedding = build_manifest_row_to_embedding_index(manifest, embedding_manifest)
     return feature_array[row_to_embedding]

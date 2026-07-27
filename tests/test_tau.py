@@ -8,7 +8,6 @@ import pytest
 from croma import MaRI
 from croma.metrics.tau import TauAssessment, assess_tau, format_tau_warning
 
-
 # ---------------------------------------------------------------------------
 # Pure assessment: typed-distance median sets the principled window [median/f, median*f].
 # typed_distances = [0.2, 0.3, 0.4] -> median 0.3; with factor 4 -> window [0.075, 1.2].

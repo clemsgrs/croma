@@ -67,10 +67,7 @@ def test_benchmark_evaluates_models_present_only_as_npy(bench_env) -> None:
         confounder_column="scanner_vendor",
     )
 
-    assert (
-        bench_env.run("toy", "k-star", "--models", "PRISM,TITAN", "--progress", "off")
-        == 0
-    )
+    assert bench_env.run("toy", "k-star", "--models", "PRISM,TITAN", "--progress", "off") == 0
 
     metrics_df = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
     assert metrics_df["model"].tolist() == ["PRISM", "TITAN"]
