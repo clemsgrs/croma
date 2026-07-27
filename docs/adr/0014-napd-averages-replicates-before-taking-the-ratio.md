@@ -71,11 +71,11 @@ reference.
   tile benchmark) and diverge near it, by design.
 - `napd` carries **no gate**: no skill floor, no sentinel, no `None`. Ratio-of-means
   removes the failure mode a gate would have been guarding against, and the floor the
-  study-layer implementation still carries (`NAPD_NORM_SKILL_FLOOR = 0.15` in
-  `scripts/studies/apd/apd_experiment.py`, retired when that driver moves onto the
-  library) sits inside a wide insensitive basin — a cut point with nothing to recommend
-  it. Deciding a cell is too imprecise to interpret is a reporting decision, made by
-  whoever renders the table. See ADR-0011.
+  study layer used to carry (`NAPD_NORM_SKILL_FLOOR = 0.15`, retired with the paired
+  `*_gated` result columns when that driver moved onto the library) sat inside a wide
+  insensitive basin — a cut point with nothing to recommend it. Deciding a cell is too
+  imprecise to interpret is a reporting decision, made by whoever renders the table. See
+  ADR-0011.
 - What `napd` does reject is its domain running out, not a judgement about precision: a
   baseline at or below chance has no positive denominator, so the skill ratio does not
   exist and every ratio below chance would silently invert its sign. That is a
