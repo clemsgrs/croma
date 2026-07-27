@@ -1,5 +1,11 @@
 # Reproducibility posture: commit the generators, not the manuscript or the blobs
 
+> **Partly superseded by [ADR-0012](0012-paper-tooling-stays-local.md).** While the
+> manuscript is unpublished, the `.tex` and figure generators are local-only rather than
+> committed. The reasoning below still governs everything else — the library, the tests,
+> the benchmarking pipeline and the studies — and applies again in full once the paper is
+> public.
+
 The public repo contains everything needed to *reproduce* the paper — the library,
 tests, and all scripts including `scripts/experiments/` (the figure/table/value
 generators) — plus `CONTEXT.md` and `docs/adr/`. It does **not** contain the paper

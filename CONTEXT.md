@@ -117,6 +117,12 @@ Prevalence and severity are independent; a quantile is neither.
 
 The vocabulary of the output layout (see ADR-0007).
 
+Entries below that name `scripts/repro/` paths — *generated artifact*, *caption claim*,
+*float basis*, *prose claim*, and the manifest referenced under *run* — describe tooling
+that is local-only while the manuscript is unpublished (ADR-0012). The terms are defined
+here because the vocabulary is the project's, not the tree's; the files themselves are
+absent from a clone.
+
 **Tileset**:
 A physical set of tiles that was pushed through the encoders, holding one embedding
 matrix per model under `output/embeddings/<tileset>/`. Its `manifest.csv` is the
