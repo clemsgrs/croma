@@ -42,7 +42,7 @@ differently.
   vendored verbatim from PathoROB (BSD 3-Clause, © 2025 BIFOLD Pathomics) rather than
   reimplemented — vendored rather than depended on, because PathoROB is not on PyPI and
   PyPI rejects direct-URL dependencies. The vendored code is frozen: upstream changes
-  deliberately do not propagate. `tests/fixtures/pathorob_apd_golden.json` pairs accuracy
+  deliberately do not propagate. `tests/fixtures/pathorob_apd_parity.json` pairs accuracy
   matrices PathoROB published with the APD values PathoROB published for them, and the
   reduction must reproduce them exactly; the fixture is hermetic, so it runs in CI with no
   PathoROB checkout and no skip path. Attribution ships in the distribution as `NOTICE`.

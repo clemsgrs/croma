@@ -1,16 +1,20 @@
 """VENDORED THIRD-PARTY CODE -- DO NOT EDIT.
 
-Verbatim copies of functions from PathoROB, the reference implementation of the
-downstream shortcut-susceptibility protocol:
+Verbatim copies from PathoROB, the reference implementation of the downstream
+shortcut-susceptibility protocol:
 
     https://github.com/bifold-pathomics/PathoROB
     revision 6583cf0b0d902c8cc032308262fa3a3befdc0687 (2026-04-02)
 
-These functions are **frozen**. They are not croma's code and they are not croma's
-metric: the paper reports APD as the faithful PathoROB reference, and that claim rests
-on running PathoROB's own reduction rather than a re-derivation of it. Editing anything
-below -- reformatting it, adding validation, renaming a local, "fixing" the reduction
-order -- voids that claim silently, because the value still computes.
+So far that is the APD reduction alone. The probe protocol borrows two more functions
+from the same source -- the split-mapping helper and the logistic-probe trainer -- and
+they land in this file, under the same rules, when that slice ships.
+
+What is here is **frozen**. It is not croma's code and it is not croma's metric: the
+paper reports APD as the faithful PathoROB reference, and that claim rests on running
+PathoROB's own reduction rather than a re-derivation of it. Editing anything below --
+reformatting it, adding validation, renaming a local, "fixing" the reduction order --
+voids that claim silently, because the value still computes.
 
 Consequences that follow from freezing, and are intended (ADR-0011):
 
@@ -22,7 +26,7 @@ Consequences that follow from freezing, and are intended (ADR-0011):
 
 An intentional re-vendor is a deliberate act: replace the copies below from the
 upstream revision you are moving to, update the revision above, and re-capture the
-parity fixture as ``tests/fixtures/pathorob_apd_golden.json`` documents.
+parity fixture as ``tests/fixtures/pathorob_apd_parity.json`` documents.
 
 PathoROB is distributed under the BSD 3-Clause License, reproduced in full below and
 credited in croma's ``NOTICE``.

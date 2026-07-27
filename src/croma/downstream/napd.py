@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import numpy as np
 from numpy.typing import ArrayLike
+
+from croma.downstream._accuracies import as_accuracy_matrix
 
 
 def napd(accuracies: ArrayLike, chance: float) -> float:
@@ -55,20 +56,7 @@ def napd(accuracies: ArrayLike, chance: float) -> float:
             no skill to lose there is no denominator, and below chance every ratio
             silently inverts its sign.
     """
-    acc = np.asarray(accuracies, dtype=float)
-    if acc.ndim != 2:
-        raise ValueError(
-            f"accuracies must be a 2-D (n_splits, n_iterations) matrix, got {acc.ndim}-D"
-        )
-    if acc.shape[0] < 2:
-        raise ValueError(
-            "accuracies must hold the balanced baseline in row 0 and at least one "
-            f"confounded split after it, got {acc.shape[0]} row(s)"
-        )
-    if acc.shape[1] < 1:
-        raise ValueError("accuracies must hold at least one replicate per split, got 0")
-    if not np.isfinite(acc).all():
-        raise ValueError("accuracies must be finite")
+    acc = as_accuracy_matrix(accuracies)
     if not 0.0 <= chance < 1.0:
         raise ValueError(f"chance must lie in [0, 1), got {chance}")
 

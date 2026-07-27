@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 from numpy.typing import ArrayLike
 
+from croma.downstream._accuracies import as_accuracy_matrix
 from croma.downstream._pathorob import compute_apd as _pathorob_compute_apd
 
 
@@ -49,20 +50,7 @@ def apd(accuracies: ArrayLike) -> float:
             own baseline, so a zero there has no ratio and a negative one inverts every
             sign.
     """
-    acc = np.asarray(accuracies, dtype=float)
-    if acc.ndim != 2:
-        raise ValueError(
-            f"accuracies must be a 2-D (n_splits, n_iterations) matrix, got {acc.ndim}-D"
-        )
-    if acc.shape[0] < 2:
-        raise ValueError(
-            "accuracies must hold the balanced baseline in row 0 and at least one "
-            f"confounded split after it, got {acc.shape[0]} row(s)"
-        )
-    if acc.shape[1] < 1:
-        raise ValueError("accuracies must hold at least one replicate per split, got 0")
-    if not np.isfinite(acc).all():
-        raise ValueError("accuracies must be finite")
+    acc = as_accuracy_matrix(accuracies)
     if not (acc[0] > 0.0).all():
         raise ValueError(
             "every replicate's baseline accuracy must be positive for a ratio to exist, "

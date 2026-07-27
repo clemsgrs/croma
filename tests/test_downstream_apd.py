@@ -9,7 +9,7 @@ evidence that croma drifted from upstream rather than a snapshot going stale.
 The parity fixture is deliberately hermetic: it needs no PathoROB checkout, no
 ``PATHOROB_ROOT`` and takes no skip path, because CI is the branch that gates merges and a
 test that silently skips there protects nothing. See
-``tests/fixtures/pathorob_apd_golden.json`` for its provenance and recapture procedure.
+``tests/fixtures/pathorob_apd_parity.json`` for its provenance and recapture procedure.
 
 A third, smaller kind covers the obligations that come with redistributing someone else's
 code: the upstream licence stays in the vendored file and the attribution stays in
@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parents[1]
 VENDORED = ROOT / "src" / "croma" / "downstream" / "_pathorob.py"
 NOTICE = ROOT / "NOTICE"
 
-GOLDEN_PATH = Path(__file__).resolve().parent / "fixtures" / "pathorob_apd_golden.json"
-GOLDEN = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
-GOLDEN_CASES = [pytest.param(case, id=case["name"]) for case in GOLDEN["cases"]]
+PARITY_PATH = Path(__file__).resolve().parent / "fixtures" / "pathorob_apd_parity.json"
+PARITY = json.loads(PARITY_PATH.read_text(encoding="utf-8"))
+PARITY_CASES = [pytest.param(case, id=case["name"]) for case in PARITY["cases"]]
 
 
 def test_apd_is_zero_when_no_split_degrades() -> None:
@@ -145,7 +145,7 @@ def test_apd_rejects_a_baseline_replicate_that_is_not_positive() -> None:
             apd(accuracies)
 
 
-@pytest.mark.parametrize("case", GOLDEN_CASES)
+@pytest.mark.parametrize("case", PARITY_CASES)
 def test_apd_reproduces_pathorobs_published_value_exactly(case: dict) -> None:
     # Bit-identity, not approximation: the whole reason the reduction is vendored rather
     # than reimplemented is that a number reported as "APD" has to be the number PathoROB
@@ -155,7 +155,7 @@ def test_apd_reproduces_pathorobs_published_value_exactly(case: dict) -> None:
 
 def test_apd_parity_fixture_covers_more_than_one_split_count() -> None:
     # A single matrix shape would let a reduction that collapses the wrong axis pass.
-    split_counts = {len(case["accuracies"]) for case in GOLDEN["cases"]}
+    split_counts = {len(case["accuracies"]) for case in PARITY["cases"]}
 
     assert len(split_counts) > 1
 
@@ -163,13 +163,13 @@ def test_apd_parity_fixture_covers_more_than_one_split_count() -> None:
 def test_apd_parity_fixture_records_where_it_came_from_and_how_to_recapture_it() -> None:
     # An intentional re-vendor needs a documented path, so provenance is part of the
     # fixture's contract rather than a courtesy comment.
-    source = GOLDEN["source"]
+    source = PARITY["source"]
 
     assert source["url"] == "https://github.com/bifold-pathomics/PathoROB"
     assert len(source["revision"]) == 40
     assert source["reduction"] == "pathorob/apd/utils.py :: compute_apd"
     assert source["accuracies_from"] and source["apd_from"]
-    assert GOLDEN["procedure"]
+    assert PARITY["procedure"]
 
 
 def test_the_vendored_module_retains_the_upstream_licence_in_file() -> None:
@@ -190,7 +190,7 @@ def test_the_vendored_module_says_it_is_frozen_and_names_its_revision() -> None:
     source = VENDORED.read_text(encoding="utf-8")
 
     assert "DO NOT EDIT" in source
-    assert GOLDEN["source"]["revision"] in source
+    assert PARITY["source"]["revision"] in source
 
 
 def test_notice_credits_the_project_the_reduction_is_vendored_from() -> None:

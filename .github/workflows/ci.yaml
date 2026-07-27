@@ -98,11 +98,18 @@ jobs:
         run: |
           tar tzf dist/*.tar.gz | grep -qE '/NOTICE$' || {
             echo "::error::NOTICE missing from the sdist"; exit 1; }
+          # The wheel path is read back out of pyproject rather than repeated here, so
+          # moving the force-include target cannot silently un-guard this check.
           python -c "
-          import glob, zipfile, sys
-          names = zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist()
-          if 'croma/NOTICE' not in names:
-              sys.exit('::error::NOTICE missing from the wheel')
+          import glob, tomllib, zipfile, sys
+          with open('pyproject.toml', 'rb') as fh:
+              config = tomllib.load(fh)
+          targets = config['tool']['hatch']['build']['targets']
+          expected = set(targets['wheel']['force-include'].values())
+          names = set(zipfile.ZipFile(glob.glob('dist/*.whl')[0]).namelist())
+          missing = expected - names
+          if missing:
+              sys.exit(f'::error::force-included files missing from the wheel: {missing}')
           "
 
       # These are absent from a clean checkout, so this never fires here. It is a tripwire
