@@ -7,9 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0] - Unreleased
 
-First public release of `croma`, a metrics-only library of representation-level
-robustness metrics for pathology foundation models (RI, MaRI, and the flagship
-cross-confounder margin metric).
+First public release of `croma`, a lean library of robustness metrics for pathology
+foundation models: the representation-level metrics (RI, MaRI, and the flagship
+cross-confounder margin metric) plus `croma.downstream`, which measures shortcut
+susceptibility on a downstream task (APD and nAPD).
+
+`croma.downstream` is numpy/sklearn-only and adds no install weight; `torch` remains
+confined to the `[repro]` extra. See ADR-0011.
+
+> **Not yet implemented.** `croma.downstream` lands via issues #79–#84, and `0.1.0` is
+> deliberately held until it does, so that every metric the paper names ships in the first
+> release. Its API bullets join *Added* below as the code lands; this paragraph states the
+> release's scope, not the current tree.
 
 This is the first release under the name `croma`. Everything below describes the
 package as you first receive it. The bullets under *Changed* and *Removed* record

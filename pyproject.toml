@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "croma"
 version = "0.1.0"
-description = "Metrics-only library for pathology foundation model robustness: RI, MaRI, and CRoMa."
+description = "Robustness metrics for pathology foundation models: RI, MaRI, CRoMa, and APD/nAPD."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
@@ -105,6 +105,7 @@ include = [
   "/scripts",
   "/README.md",
   "/CHANGELOG.md",
+  "/CITATION.cff",
   "/LICENSE",
   "/pyproject.toml",
 ]
@@ -113,6 +114,17 @@ exclude = [
   "/scripts/experiments",
   "**/.ipynb_checkpoints",
   "**/__pycache__",
+  # Paper tooling (ADR-0012). These are git-ignored, but an `include` entry overrides
+  # VCS-ignore in hatchling, so "/scripts" and "/docs" would drag them in. Without this a
+  # build on a machine that has the tree -- the only kind of machine that has it -- ships
+  # to PyPI exactly what the repository declines to publish, and a CI build from a clean
+  # checkout would silently produce a different sdist.
+  "/scripts/repro",
+  "/tests/test_paper_artifacts.py",
+  "/tests/test_generate_model_tables.py",
+  "/tests/test_dataset_montage.py",
+  "/tests/test_scale_scatter.py",
+  "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
 # Formatting is enforced on the packaged code and its tests only -- the paths a PyPI user

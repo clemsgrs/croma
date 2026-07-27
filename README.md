@@ -110,12 +110,13 @@ python scripts/bench/benchmark.py --benchmark camelyon --protocol median-k
 python scripts/bench/render.py output/metrics/median-k/camelyon
 ```
 
-Every benchmark over a tileset shares its embeddings, so adding an encoder means embedding it once; it then joins every benchmark over that tileset automatically. Benchmarks are declared in `scripts/bench/benchmarks.py`. To sweep them all: `scripts/repro/run_benchmarks.sh median-k`. See [ADR-0007](docs/adr/0007-embeddings-are-a-tileset-benchmarks-are-views.md) and the [benchmarking guide](https://clemsgrs.github.io/croma/benchmarking.html).
+Every benchmark over a tileset shares its embeddings, so adding an encoder means embedding it once; it then joins every benchmark over that tileset automatically. Benchmarks are declared in `scripts/bench/benchmarks.py`. To sweep them all: `scripts/bench/run_benchmarks.sh median-k`. See [ADR-0007](docs/adr/0007-embeddings-are-a-tileset-benchmarks-are-views.md) and the [benchmarking guide](https://clemsgrs.github.io/croma/benchmarking.html).
 
 ## Citing
 
 The paper describing MaRI and CRoMa is in preparation. Until it is out, please cite this
-repository, along with the [PathoROB](https://arxiv.org/abs/2507.17845) study that
+repository — use the **Cite this repository** button, or [`CITATION.cff`](CITATION.cff)
+directly — along with the [PathoROB](https://arxiv.org/abs/2507.17845) study that
 introduced the Robustness Index.
 
 ## License

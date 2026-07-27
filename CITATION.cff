@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: croma
+abstract: >-
+  Robustness metrics for pathology foundation models. Implements the Robustness Index
+  (RI), the Margin-aware Robustness Index (MaRI), the Cross-confounder Robustness Margin
+  (CRoMa), and lower-tail statistics that expose brittle subgroups which pooled scores
+  hide.
+type: software
+authors:
+  - family-names: Grisi
+    given-names: Clément
+    email: clement.grisi@radboudumc.nl
+    affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
+  - family-names: van der Laak
+    given-names: Jeroen
+    affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
+  - family-names: Litjens
+    given-names: Geert
+    affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
+version: 0.1.0
+license: Apache-2.0
+repository-code: "https://github.com/clemsgrs/croma"
+url: "https://clemsgrs.github.io/croma/"
+keywords:
+  - pathology
+  - foundation-models
+  - robustness
+  - representation-learning
+  - metrics
+# The accompanying manuscript has no DOI yet. When it does, add a `preferred-citation:`
+# block of type `article` here -- GitHub and reference managers will then cite the paper
+# rather than the software, with this entry kept as the software record. A Zenodo DOI for
+# the release itself would go in `identifiers:`.

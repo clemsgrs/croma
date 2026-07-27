@@ -52,7 +52,7 @@ To sweep them all:
 
 .. code-block:: bash
 
-   scripts/repro/run_benchmarks.sh median-k
+   scripts/bench/run_benchmarks.sh median-k
 
 The rationale is recorded in
 `ADR-0007 <https://github.com/clemsgrs/croma/blob/main/docs/adr/0007-embeddings-are-a-tileset-benchmarks-are-views.md>`_.
