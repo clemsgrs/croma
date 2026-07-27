@@ -33,9 +33,21 @@ differently.
 
 ### Added
 
-- **Public API:** `RI`, `MaRI`, `CRoMa`, `napd`, `expand_features_to_manifest`, and
-  `__version__`. The metric classes are namespaces of classmethods; nothing is
+- **Public API:** `RI`, `MaRI`, `CRoMa`, `apd`, `napd`, `expand_features_to_manifest`,
+  and `__version__`. The metric classes are namespaces of classmethods; nothing is
   instantiated.
+- **`croma.downstream.apd`**, PathoROB's Average Performance Drop, reducing the same
+  `(n_splits, n_iterations)` accuracy matrix as `napd` but against raw accuracy and with
+  no `chance` argument. It is reported as the *faithful reference*, so its reduction is
+  vendored verbatim from PathoROB (BSD 3-Clause, © 2025 BIFOLD Pathomics) rather than
+  reimplemented — vendored rather than depended on, because PathoROB is not on PyPI and
+  PyPI rejects direct-URL dependencies. The vendored code is frozen: upstream changes
+  deliberately do not propagate. `tests/fixtures/pathorob_apd_golden.json` pairs accuracy
+  matrices PathoROB published with the APD values PathoROB published for them, and the
+  reduction must reproduce them exactly; the fixture is hermetic, so it runs in CI with no
+  PathoROB checkout and no skip path. Attribution ships in the distribution as `NOTICE`.
+  Note `apd` keeps PathoROB's mean-of-ratios order while `napd` uses ratio-of-means; the
+  two are deliberately not aligned. See ADR-0011 and ADR-0014.
 - **`croma.downstream.napd`**, the skill-normalized Average Performance Drop, reducing
   an `(n_splits, n_iterations)` matrix of balanced accuracies against an explicit
   `chance = 1 / n_biological_classes`. Skill is accuracy above chance, so the value is

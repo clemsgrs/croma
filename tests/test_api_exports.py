@@ -1,5 +1,6 @@
 import croma
-from croma import CRoMa, MaRI, RI, __version__, napd
+from croma import CRoMa, MaRI, RI, __version__, apd, napd
+from croma.downstream import apd as downstream_apd
 from croma.downstream import napd as downstream_napd
 from croma.metrics.croma import CrossConfounderRobustnessMargin
 from croma.metrics.mari import MarginAwareRobustnessIndex
@@ -10,6 +11,7 @@ def test_public_api_exports_aliases() -> None:
     assert RI is RobustnessIndex
     assert MaRI is MarginAwareRobustnessIndex
     assert CRoMa is CrossConfounderRobustnessMargin
+    assert apd is downstream_apd
     assert napd is downstream_napd
     assert isinstance(__version__, str)
     assert len(__version__) > 0
@@ -22,6 +24,7 @@ def test_public_api_surface_is_exact() -> None:
         "MaRI",
         "CRoMa",
         "expand_features_to_manifest",
+        "apd",
         "napd",
         "__version__",
     }

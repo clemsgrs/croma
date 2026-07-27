@@ -1,0 +1,30 @@
+croma
+Copyright (c) 2026 Clément Grisi, Jeroen van der Laak, Geert Litjens
+Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands
+
+croma is distributed under the Apache License 2.0; see LICENSE.
+
+This distribution bundles third-party code. The notices below are reproduced in
+satisfaction of the licences those components are offered under, and each is also
+retained in full in the file that carries the code.
+
+--------------------------------------------------------------------------------
+PathoROB
+--------------------------------------------------------------------------------
+
+Copyright (c) 2025, BIFOLD Pathomics
+Licensed under the BSD 3-Clause License.
+Source: https://github.com/bifold-pathomics/PathoROB
+
+croma vendors the Average Performance Drop (APD) reduction from PathoROB verbatim,
+in src/croma/downstream/_pathorob.py, where the full BSD 3-Clause text — copyright
+notice, conditions and disclaimer — is retained. croma reports APD as the faithful
+PathoROB reference, which requires running PathoROB's own reduction rather than a
+re-derivation of it; the code is vendored rather than depended on because PathoROB
+is not published on PyPI and PyPI rejects direct-URL dependencies.
+
+The vendored code is frozen: upstream changes deliberately do not propagate, because
+these functions are the frozen definition of the reference metric. See
+docs/adr/0011-downstream-shortcut-susceptibility-ships-in-the-library.md.
+
+BIFOLD Pathomics does not endorse croma, and this notice is attribution only.
