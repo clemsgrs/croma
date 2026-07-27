@@ -33,7 +33,7 @@ ROWS_PER_SLIDE = 3
 ROWS_PER_CELL = SLIDES_PER_CELL * ROWS_PER_SLIDE
 
 
-def _synthetic_cells(dim: int = 4, seed: int = 0):
+def _synthetic_cells(dim: int = 4, seed: int = 0, rows_per_cell: int = ROWS_PER_CELL):
     """A 2-confounder x 2-class tileset: rows grouped by cell, in cell order.
 
     Biology sits on dimension 0 and the confounder on dimension 1, both above the noise,
@@ -44,11 +44,11 @@ def _synthetic_cells(dim: int = 4, seed: int = 0):
     rows, confounders, labels = [], [], []
     for confounder in (0, 1):
         for label in (0, 1):
-            noise = rng.normal(scale=0.25, size=(ROWS_PER_CELL, dim))
+            noise = rng.normal(scale=0.25, size=(rows_per_cell, dim))
             block = noise + np.array([2.0 * label, 2.0 * confounder, 0.0, 0.0])
             rows.append(block)
-            confounders.extend([confounder] * ROWS_PER_CELL)
-            labels.extend([label] * ROWS_PER_CELL)
+            confounders.extend([confounder] * rows_per_cell)
+            labels.extend([label] * rows_per_cell)
     return np.concatenate(rows), np.array(confounders), np.array(labels)
 
 
@@ -302,6 +302,27 @@ def test_pathorob_schedule_knows_how_many_splits_each_dataset_has(case: dict) ->
     default = pathorob_schedule(case["dataset"], rows_per_slide=case["num_patches_per_slide"])
 
     assert len(default) == case["num_splits"]
+
+
+def test_pathorob_schedule_drives_the_sweep_without_the_caller_reshaping_it() -> None:
+    # The two halves have to meet: what `pathorob_schedule` returns is what `probe_sweep`
+    # takes, so running the reference protocol on a 2x2 cohort is two calls and no glue.
+    rows_per_slide, slides_per_cell = 5, 17
+    embeddings, confounders, labels = _synthetic_cells(
+        rows_per_cell=rows_per_slide * slides_per_cell
+    )
+
+    accuracies = probe_sweep(
+        embeddings,
+        confounders,
+        labels,
+        schedule=pathorob_schedule("camelyon", rows_per_slide=rows_per_slide, n_splits=3),
+        rows_per_slide=rows_per_slide,
+        iterations=1,
+    )
+
+    assert accuracies.shape == (3, 1)
+    assert np.all((accuracies >= 0.0) & (accuracies <= 1.0))
 
 
 def test_pathorob_schedule_rejects_a_dataset_it_has_no_schedule_for() -> None:
