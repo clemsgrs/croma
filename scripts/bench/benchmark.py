@@ -311,6 +311,22 @@ def _resolve_sweep_k_values(k_max: int, grid: str = "dense") -> list[int]:
     raise ValueError(f"unknown k grid {grid!r}; expected one of {list(K_GRIDS)}")
 
 
+def _shared_operating_k(per_model_best_k: dict[str, int]) -> int:
+    """The ``median-k`` operating point: the lower median of the per-model ``k*``.
+
+    The shared k must be a value the sweep actually scored. ``np.median`` averages the two
+    central ``k*`` when the model count is even, which can land between grid points --
+    ``{5, 5, 7, 7} -> 6``, a k the sparse grid never scores, leaving every model's metrics
+    unresolvable. The lower median is an order statistic, so it is always some model's own
+    ``k*`` and therefore on the grid, whatever the grid. For an odd model count it coincides
+    with ``np.median``, so the 21-model tile-panel runs are unaffected.
+    """
+    if not per_model_best_k:
+        raise ValueError("no per-model k*; cannot choose a shared operating k")
+    best_k_values = sorted(per_model_best_k.values())
+    return int(best_k_values[(len(best_k_values) - 1) // 2])
+
+
 def _prepare_eval_manifest(
     *,
     manifest_df: pd.DataFrame,
@@ -880,8 +896,7 @@ def main() -> int:
                 "[benchmark] median-k pre-pass produced no per-model k: refusing to fall "
                 "back to per-model k* under --protocol median-k"
             )
-        # int() floors the .5 that an even model count can produce. Deliberate and stable.
-        dataset_median_k = int(np.median(list(per_model_best_k.values())))
+        dataset_median_k = _shared_operating_k(per_model_best_k)
         progress_write(
             f"[benchmark] use-median-k: per-model optimal k = {per_model_best_k}",
             enabled=progress_enabled,
