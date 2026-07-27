@@ -4,13 +4,13 @@ API Reference
 Reference for the Python API. See :doc:`getting-started` for introductory examples and
 :doc:`metrics` for what each metric measures.
 
-``croma`` exposes three metric classes, two downstream reductions and one alignment
-helper. Each metric class is a namespace of classmethods -- you never instantiate them.
-The short names are the ones to import:
+``croma`` exposes three metric classes, the downstream probe protocol and its two
+reductions, and one alignment helper. Each metric class is a namespace of classmethods --
+you never instantiate them. The short names are the ones to import:
 
 .. code-block:: python
 
-   from croma import CRoMa, MaRI, RI, apd, napd
+   from croma import CRoMa, MaRI, RI, apd, napd, probe_sweep
 
 .. list-table::
    :header-rows: 1
@@ -34,6 +34,9 @@ The short names are the ones to import:
    * - ``napd``
      - :func:`~croma.napd` (a function, not a metric namespace)
      - ``float``
+   * - ``probe_sweep``
+     - :func:`~croma.probe_sweep` (a function, not a metric namespace)
+     - ``numpy.ndarray``
 
 RI
 --
@@ -52,6 +55,47 @@ CRoMa
 
 .. autoclass:: croma.CrossConfounderRobustnessMargin
    :members: compute
+
+Probe protocol
+--------------
+
+``probe_sweep`` produces the matrix the two reductions below consume. It trains a probe to
+predict the biological class from frozen embeddings while a schedule walks the training
+set from balanced to fully confounded, and scores each probe on test rows that do not
+move. It takes embeddings and a split assignment: no model is loaded, no manifest read and
+no output layout touched.
+
+.. code-block:: python
+
+   from croma import apd, napd, probe_sweep
+   from croma.downstream import pathorob_schedule
+
+   accuracies = probe_sweep(
+       embeddings,                  # (n_rows, n_features)
+       centre_index,                # (n_rows,) confounder index per row
+       class_index,                 # (n_rows,) biological class index per row
+       schedule=pathorob_schedule("camelyon", rows_per_slide=300),
+       rows_per_slide=300,
+   )
+   apd(accuracies), napd(accuracies, chance=1 / 2)
+
+.. autofunction:: croma.probe_sweep
+
+Scoring unseen confounders
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+PathoROB scores every probe both on held-out rows of the confounders it trained on and on
+an unseen confounder. Both come off one training pass, so they are one call:
+
+.. autofunction:: croma.downstream.probe_sweep_over_test_sets
+
+PathoROB's schedules
+^^^^^^^^^^^^^^^^^^^^
+
+.. autofunction:: croma.downstream.pathorob_schedule
+
+These two are reachable under ``croma.downstream`` but are not promoted to the top level,
+so they carry no stability promise -- minimal-first, per ADR-0002.
 
 Downstream reductions
 ---------------------

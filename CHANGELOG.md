@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 First public release of `croma`, a lean library of robustness metrics for pathology
 foundation models: the representation-level metrics (RI, MaRI, and the flagship
 cross-confounder margin metric) plus `croma.downstream`, which measures shortcut
-susceptibility on a downstream task (APD and nAPD).
+susceptibility on a downstream task (the confounder-biased probe protocol and its two
+reductions, APD and nAPD).
 
 `croma.downstream` is numpy/sklearn-only and adds no install weight; `torch` remains
 confined to the `[repro]` extra. See ADR-0011.
@@ -33,9 +34,23 @@ differently.
 
 ### Added
 
-- **Public API:** `RI`, `MaRI`, `CRoMa`, `apd`, `napd`, `expand_features_to_manifest`,
-  and `__version__`. The metric classes are namespaces of classmethods; nothing is
-  instantiated.
+- **Public API:** `RI`, `MaRI`, `CRoMa`, `probe_sweep`, `apd`, `napd`,
+  `expand_features_to_manifest`, and `__version__`. The metric classes are namespaces of
+  classmethods; nothing is instantiated.
+- **`croma.downstream.probe_sweep`**, the confounder-biased probe protocol: it trains a
+  biology probe on frozen embeddings while a schedule walks the training set from balanced
+  to fully confounded, scores each probe on test rows that do not move, and returns the
+  `(n_splits, n_iterations)` matrix `apd` and `napd` reduce — untouched, with no reshaping.
+  It consumes embeddings and a split assignment only: no model is loaded, no manifest read
+  and no output layout referenced, which is the boundary ADR-0011's narrowing of ADR-0002
+  rests on. Two further PathoROB functions are vendored verbatim for it under the same
+  terms as the APD reduction — the split-mapping helper and the logistic-probe trainer —
+  and `tests/fixtures/pathorob_schedule_parity.json` holds the schedules upstream's own
+  helper produces, which croma must reproduce exactly. `croma.downstream` also exposes
+  `probe_sweep_over_test_sets`, which scores an unseen confounder off the same training
+  pass, and `pathorob_schedule`, which builds PathoROB's own schedules; neither is promoted
+  to the top level, so neither carries a stability promise. The protocol is numpy/sklearn
+  only and adds no install weight.
 - **`croma.downstream.apd`**, PathoROB's Average Performance Drop, reducing the same
   `(n_splits, n_iterations)` accuracy matrix as `napd` but against raw accuracy and with
   no `chance` argument. It is reported as the *faithful reference*, so its reduction is
