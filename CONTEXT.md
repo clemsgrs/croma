@@ -54,6 +54,65 @@ Always reported alongside RI/MaRI because those metrics are undefined on
 SS-dominated anchors and their pooled values are otherwise computed on a silent,
 model-dependent subset.
 
+**Confounder probe**:
+The balanced accuracy with which a $k$-NN probe recovers the confounder from the frozen
+representation (`confounder_knn_bacc`). Not a robustness metric, but the null model every
+robustness metric must beat: across the 20 pathology encoders it rank-predicts every
+_pooled_ score — RI, MaRI, the CRoMa median, $F(0)$ — at $|\rho|$ of 0.74–0.95. It cannot
+replace them, because it saturates (Hibou-B and Hibou-L differ by 0.0003 in probe accuracy
+and by 0.35 in CRoMa), has no zero to be signed about, has a chance level that moves with
+the number of confounder classes, and — being a scalar — admits no tail.
+_Avoid_: "linear probe" (it is $k$-NN), "shortcut score".
+
+**Pooled score**:
+Any single scalar summarising a model's robustness over a whole benchmark: RI, MaRI, the
+CRoMa median, $F(0)$. Contrast with the per-sample CRoMa _distribution_, from which the
+tail statistics are read. The probe result is a claim about pooled scores as a class.
+
+**Natural-image control**:
+`DINOv2-B` (`plotstyle.CONTROL_MODEL`) — pretrained on LVD-142M, never on a whole-slide
+image. A _floor_, not a competitor: it is excluded from rankings, from per-column bolding,
+and from every cross-model correlation. Its positive CRoMa (+0.077 mean) is an artifact of
+weak structure of either kind — it has the lowest biological $k$-NN accuracy of the panel —
+which is exactly what makes it useful: it calibrates what a positive margin is worth on a
+representation that encodes little. Never read it as "beats 8 pathology FMs".
+_Avoid_: baseline (it is not a competitor), ImageNet control (the corpus is LVD-142M).
+
+**Ranked panel**:
+The 20 pathology encoders — the full tile panel minus the natural-image control. Every
+statistic that *compares* models is computed over the ranked panel: the cross-model
+correlations, the support range, and the rank-agreement $\rho$ (`\<Bench>RankedNModels`,
+`SupportRange`, `CromaVsRiRho`, …). Whole-panel *descriptive* statistics keep the control,
+because they describe the spread rather than rank within it (`NModels` = 21, `CromaSpan`,
+`BioBaccRange`, `ConfBaccRange`). The split is not cosmetic: the control ranks 9/21 on
+Camelyon but 20/21 on TCGA, so admitting it drags cross-dataset rank consistency from
+$\rho=0.92$ down to $0.89$, and it holds 68% RI/MaRI support against a ranked panel of
+10--46%. Both would blunt the claims they appear in.
+_Avoid_: "all models", "the panel" (say which one).
+
+### Tail vocabulary
+
+All tail statistics are read off one object: the empirical CDF of a model's
+per-sample CRoMa. Report exactly two of them.
+
+**Confounder-dominant fraction** — $F(0)$:
+The CDF evaluated at zero: the fraction of anchors whose neighbourhood is
+confounder-dominant. A _prevalence_ — how often the margin goes the wrong way.
+Lower is better, so it is a diagnostic and is never bolded as a "best".
+_Avoid_: $P_{<0}$ (the pre-CDF name; identical in value, since CRoMa is never
+exactly zero), $\hat{F}(0)$ (the manuscript does not hat it).
+
+**Lower-tail mean** — LTM$_{10}$:
+The mean of the worst $\alpha$ fraction of anchors, $\mathbb{E}[X \mid X \le Q_\alpha]$.
+A _severity_ — how bad the margin gets when it does go wrong. Reported at
+$\alpha = 10\%$; its insensitivity to that choice is what the alpha-stability
+table establishes. Subscript is the percent as a bare integer, `LTM_{10}`.
+_Avoid_: `LTM_{10\%}` (the table's stale form), CVaR, expected shortfall.
+
+**$Q_\alpha$** (the $\alpha$-quantile) is _not_ reported. Its sign carries no
+information beyond prevalence, since $Q_\alpha > 0 \iff \hat{F}(0) < \alpha$.
+Prevalence and severity are independent; a quantile is neither.
+
 ### Evaluation units
 
 The vocabulary of the output layout (see ADR-0007).
@@ -81,8 +140,29 @@ _Avoid_: "faithful manifest" — it described our intent, not what the rows are 
 **APD view** (`pathorob-<cohort>.csv`):
 Every tile of a cohort, carrying `apd_split`. APD evaluates ID and OOD rows, i.e. the
 whole cohort, so this doubles as the tileset source. APD is a *study*, not a benchmark:
-it lives in `scripts/studies/apd/`, is absent from the `croma` library, and writes to
-`output/studies/apd/`.
+its paper-reproduction driver lives in `scripts/studies/apd/` and writes to
+`output/studies/apd/`. The measurement itself — the probe protocol and both reductions —
+is library code (`croma.downstream`, ADR-0011); the study only supplies manifests,
+model lists and output paths.
+
+**Skill**:
+Balanced accuracy above chance. The quantity a confounder can actually destroy: a probe
+scoring at chance has no skill, so it has nothing to lose. Chance is `1/n_biological_classes`
+for the benchmark (binary cohorts 0.5, TCGA-4×4 0.25, Tolkach-ESCA 1/6), exact because the
+scorer is balanced accuracy. *Normalized skill* rescales it to the fraction of achievable
+headroom attained, `(acc − chance)/(1 − chance)`, which is class-count invariant.
+_Avoid_: "accuracy" for this — the distinction is the whole point of nAPD.
+
+**nAPD** (normalized Average Performance Drop):
+The downstream drop measured against **skill** rather than raw accuracy. APD divides by an
+accuracy that includes the chance floor, so drops on benchmarks with different class counts
+are not comparable and models near chance appear to lose little. nAPD divides by skill,
+making drops commensurable across cohorts. It is a rescaling, not a reranking: it agrees
+with APD's model ordering wherever skill is healthy. `APD` is retained as the
+PathoROB-faithful reference.
+_Avoid_: calling nAPD "margin-aware" or an analogue of the RI→MaRI step — it is a
+denominator correction, not a distance weighting, and the RI→MaRI step is the one the
+paper shows changes little.
 
 **`apd_split`**:
 PathoROB's ID/OOD partition — APD's notion and only APD's. Tolkach's RI view
@@ -94,13 +174,73 @@ _Avoid_: run (a run is a benchmark evaluated at one protocol).
 **Protocol**:
 The k operating point a metrics run was computed at — `k-star` (each model at its own
 kNN-optimal k) or `median-k` (the shared median of per-model k*). It scopes the
-metrics tree: `output/metrics/<protocol>/<benchmark>/`.
+metrics tree: `output/metrics/<protocol>/<benchmark>/`. The tile panel (21 models) reports
+`median-k`; the **slide panel reports `k-star`**, because with four models the shared median
+collapses to a tiny k and starves RI/MaRI of support (27% at k=3 versus 37% at per-model
+k*). The median is the *lower* median — an order statistic, so the shared k is always some
+model's own k* and therefore on the swept grid.
 _Avoid_: mode, setting.
+
+**Run**:
+A benchmark evaluated at one protocol — the directory `output/metrics/<protocol>/<benchmark>/`,
+holding `results/` (pooled `metrics.csv`, `per_sample_metrics.csv`) and `studies/`. The unit a
+paper artifact is derived from. Which run backs which artifact is declared once, in
+`scripts/repro/paper_manifest.py`; nothing else may spell a run directory out (there is a test).
+Note RI and MaRI are protocol-dependent but CRoMa and LTM are **k-free**: their per-sample values
+are bit-identical across the two protocols, so only the count-based metrics move with k.
+
+**Study**:
+An analysis that *reads* a run and writes beside it, rather than computing the benchmark's
+metrics — the bootstrap CIs, the typed-neighbour ranks, the pretraining-overlap contrast, APD.
+A study never chooses a protocol: it inherits the run's, because its numbers sit in the paper
+next to that run's RI and MaRI. Studies that named their own protocol all said `k-star`, and
+were left reading an archived directory when the tile panel moved to `median-k`.
+_Avoid_: experiment (that named the script, not the artifact).
 
 **Tile identity**:
 `(sample_id, image_path)` — what makes two manifest rows the same tile. Notably
 excludes `label`, which a view attaches to a tile rather than owning: one tile is
 `tumor` to `prostate` and `gleason-3` to `prostate-4class`.
+
+**Generated artifact**:
+A `.tex` file under `paper/sections/` that a generator owns — the results tables, their
+captions, `generated_values.tex`, the model tables. It is rebuilt from
+`scripts/repro/paper_manifest.py` by `scripts/repro/build_paper.py`, never hand-edited, and
+`tests/test_paper_artifacts.py` fails when it drifts (ADR-0010). Run `build_paper.py` after
+every benchmark re-run. Prose sections are *not* generated artifacts; where a generated float
+needs authorial prose around it, the prose lives in a `templates/*.tmpl` with a placeholder.
+_Avoid_: "the table file" (say whether it is generated), hand-editing a caption number.
+
+**Caption claim**:
+A caption sentence that asserts something about the data, paired with a predicate the
+generator evaluates before emitting it. A claim that stops holding raises `CaptionClaimError`
+instead of shipping. This is why the caption says "no *pathology* model reaches two-thirds
+coverage" — the control's 68% support falsifies the unqualified form.
+_Avoid_: putting an unchecked numeric claim in a caption; move it to prose with a macro.
+
+**Float basis**:
+The one module a generated float's *plot* and its *caption* both read — `_cross_benchmark.py`
+for `fig:cross-benchmark`, `_apd.py` for `fig:croma-vs-apd` and `tab:apd-correlation`. Which
+models were drawn, which carry an exposure dagger, how many fell below zero: computed once,
+rendered twice. A script-drawn PDF beside a hand-typed caption does not drift *apart* — it
+drifts *together*, each still faithful to a run that no longer exists, so neither can catch
+the other. That is how the cross-benchmark caption kept claiming "TCGA produces no
+confounder-dominant models" for a month after the TCGA-4×4 run was corrected to PathoROB's
+four in-domain centres and `Prost40M` crossed below zero.
+_Avoid_: recomputing a ρ, a roster, or a rank inside a plotting script.
+
+**Prose claim**:
+A sentence of body text whose truth depends on a run, paired with a predicate in the generator
+that emits the numbers it cites. The numbers reach the page as macros (`\ProvenanceBioBacc`);
+the *ordering* they were chosen to illustrate ("the highest biological accuracy in the panel",
+"its nearest neighbour once the two probe accuracies are differenced") is asserted, and the
+generator raises `CaptionClaimError` rather than emitting a macro that would make the
+surrounding sentence false. A caption claim guards a float; a prose claim guards a paragraph.
+The distinction that motivates it: a macro keeps a *number* current, but a paragraph is an
+*argument about an ordering*, and re-running a benchmark can invert the ordering while every
+macro in the paragraph updates itself and stays individually correct — which is exactly what
+happened to §3.4 when TCGA-4×4 went from eight medical centres to four.
+_Avoid_: hand-typing a number, a rank, or a superlative that a `metrics.csv` can answer.
 
 ### Model attributes
 
@@ -115,6 +255,21 @@ _Avoid_: modality, family (family is the palette-hue grouping, a different axis)
 
 **VLFM** — Vision--Language Foundation Model:
 A model pretrained with paired image--text supervision. One value of _regime_.
+
+**Pretraining tiles** — `n_tiles`:
+The number of tiles seen in the **vision self-supervised** stage. For a VLFM this
+deliberately excludes the image--text alignment stage: CONCH is `16M` tiles (iBOT)
+*and then* 1.17M image--caption pairs (CoCa), of which only the former is recorded.
+So `n_tiles` is not "pretraining scale" — it is the vision-SSL budget, and for a VLFM
+it omits the supervision the model is named for. A scale analysis across mixed regimes
+must say so, or record pairs in their own column.
+_Avoid_: "pretraining scale", "training data size" (both imply the total).
+
+**Disclosure markers** — `n/a` vs `n/d`:
+`n/a` = _not applicable_ (the natural-image control has no WSIs; the quantity does not
+exist). `n/d` = _undisclosed_ (the quantity exists; the authors did not publish it).
+Different claims, never interchangeable. Note `pd.read_csv` maps the literal string
+`n/a` to NaN unless passed `keep_default_na=False, na_values=[]`.
 _Avoid_: VLM, multimodal.
 
 **Pretraining scale**:
