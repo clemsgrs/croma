@@ -479,6 +479,39 @@ def test_sparse_grid_excludes_k_max_in_the_tail() -> None:
     assert 100 not in values
 
 
+# --- median-k: the shared operating point must be a k the sweep scored ----------------
+
+
+def test_shared_operating_k_matches_np_median_for_an_odd_model_count() -> None:
+    assert bm._shared_operating_k({"a": 5, "b": 11, "c": 61}) == 11
+
+
+def test_shared_operating_k_is_always_some_models_own_kstar() -> None:
+    """An even model count must not average two central k* into an unswept value.
+
+    ``np.median({5, 5, 7, 7})`` is ``6``, which PathoROB's sparse grid never scores; the
+    run then fails with "selected_k=6 is not available in scored-by-k results".
+    """
+    per_model = {"a": 5, "b": 5, "c": 7, "d": 7}
+    shared = bm._shared_operating_k(per_model)
+    assert shared == 5
+    assert shared in set(per_model.values())
+    assert shared in bm._resolve_sweep_k_values(100, "sparse")
+
+
+@pytest.mark.parametrize("grid", ["dense", "sparse"])
+def test_shared_operating_k_lands_on_the_grid_for_any_model_count(grid: str) -> None:
+    k_values = bm._resolve_sweep_k_values(100, grid)
+    for n_models in range(1, 12):
+        per_model = {f"m{i}": k_values[i % len(k_values)] for i in range(n_models)}
+        assert bm._shared_operating_k(per_model) in k_values
+
+
+def test_shared_operating_k_rejects_an_empty_prepass() -> None:
+    with pytest.raises(ValueError, match="no per-model"):
+        bm._shared_operating_k({})
+
+
 def test_sparse_grid_degrades_gracefully_for_small_ceilings() -> None:
     assert bm._resolve_sweep_k_values(5, "sparse") == [1, 3, 5]
     assert bm._resolve_sweep_k_values(1, "sparse") == [1]
