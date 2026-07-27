@@ -12,18 +12,19 @@ manifest and knows nothing about where a repository keeps its files -- those bel
 whatever driver assembled the embeddings, and keeping them out is what lets the protocol
 ship as library code at all (ADR-0011).
 
-One thing upstream does is deliberately not modelled: PathoROB's Tolkach-ESCA sweep draws
-a feasible train/test *case* split per replicate and reorders each cell so the chosen
-cases land in the test tail, because a case there contributes patches to several
-biological classes at once. That constraint is a property of one cohort's annotation, not
-of the protocol, and modelling it would mean a callback that reaches into the middle of
-the replicate loop. A cohort that needs it is not served here.
+Cohorts differ in one place, and upstream's own loop differs there too: how a replicate
+orders each cell's slides before the schedule is cut out of them. PathoROB shuffles, except
+on Tolkach-ESCA, where it draws a feasible train/test *case* split per replicate and pushes
+those cases to the test tail, because a case there contributes patches to several
+biological classes at once. That is a property of one cohort's annotation rather than of
+the protocol, so it is not built in -- it is reachable, through the ``arrange_slides`` hook
+of :func:`probe_sweep_over_test_sets`, whose default is the shuffle.
 """
 
 from __future__ import annotations
 
 import random
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -42,6 +43,18 @@ PATHOROB_SPLITS = {"camelyon": 8, "tcga": 7, "tolkach_esca": 4}
 #: and where the held-out tail starts, and it must not move across splits or the test set
 #: would change shape with the confounder bias it is supposed to be independent of.
 SplitPlan = tuple[Sequence[tuple[int, int, int]], int]
+
+#: One slide, as row indices into the caller's embeddings.
+Slide = Sequence[int]
+
+#: Every cell's slides: ``cells[confounder][class]`` holds that cell's slides, in the order
+#: the sweep will lay its rows out -- training taken off the front, held-out rows from the
+#: tail. Slides rather than rows, because a slide is the unit the protocol keeps whole.
+SlideCells = Sequence[Sequence[Sequence[Slide]]]
+
+#: How one replicate orders each cell's slides. Receives the cells in input order and that
+#: replicate's generator, and returns the cells reordered -- the same slides, rearranged.
+SlideArrangement = Callable[[SlideCells, random.Random], SlideCells]
 
 #: The key the held-out in-domain matrix is returned under. Named rather than positional
 #: because a caller's own test sets sit beside it in the same mapping.
@@ -197,6 +210,7 @@ def probe_sweep_over_test_sets(
     iterations: int = 20,
     seed: int = 1000,
     validation_fraction: float | None = None,
+    arrange_slides: SlideArrangement | None = None,
 ) -> dict[str, np.ndarray]:
     """Run one sweep and score every probe it trains on more than one test set.
 
@@ -219,6 +233,18 @@ def probe_sweep_over_test_sets(
         iterations: As :func:`probe_sweep`.
         seed: As :func:`probe_sweep`.
         validation_fraction: As :func:`probe_sweep`.
+        arrange_slides: How one replicate orders each cell's slides -- the step that
+            decides which slides a split trains on and which sit in the held-out tail.
+            ``None`` selects the sweep's own step, a shuffle of every cell with the
+            replicate's generator, which is the reference protocol. Pass a
+            :data:`SlideArrangement` for a cohort whose slides cannot be ordered freely:
+            PathoROB's Tolkach-ESCA sweep, for one, draws a train/test *case* split per
+            replicate and pushes those cases to the tail, because a case there carries
+            patches of several biological classes and may not be trained on and tested on
+            at once. An arrangement receives the cells in input order and returns them
+            reordered; it may draw from the generator it is given, and *must* draw before
+            it shuffles for its sweep to match a driver that does, since the two share one
+            stream. It may not add, drop or break up a slide.
 
     Returns:
         ``{"in_domain": matrix}`` plus one ``(n_splits, iterations)`` matrix per named
@@ -228,7 +254,9 @@ def probe_sweep_over_test_sets(
     Raises:
         ValueError: Everything :func:`probe_sweep` raises, plus a test set whose
             embeddings and labels disagree in length, whose feature count differs from
-            ``embeddings``, that is empty, or that is named ``"in_domain"``.
+            ``embeddings``, that is empty, or that is named ``"in_domain"``; and an
+            ``arrange_slides`` that returns anything but a rearrangement of the slides it
+            was handed.
     """
     features, confounder_of_row, label_of_row = _validated_rows(embeddings, confounders, labels)
     named_tests = _validated_test_sets(test_sets, n_features=features.shape[1])
@@ -245,12 +273,13 @@ def probe_sweep_over_test_sets(
     if iterations > _SEED_POOL:
         raise ValueError(f"iterations must be at most {_SEED_POOL}, got {iterations}")
 
+    arrangement = _shuffle_slides if arrange_slides is None else arrange_slides
     names = [IN_DOMAIN, *named_tests]
     accuracies = {name: np.empty((len(plans), iterations), dtype=float) for name in names}
     replicate_seeds = random.Random(seed).sample(range(0, _SEED_POOL), iterations)
 
     for column, replicate_seed in enumerate(replicate_seeds):
-        _shuffle_slides(cells, rows_per_slide, random.Random(replicate_seed))
+        _arrange(cells, rows_per_slide, arrangement, random.Random(replicate_seed))
         for row, plan in enumerate(plans):
             train, validation, held_out = plan.slice(cells)
             _, _, scores = train_logistic_regression(
@@ -447,18 +476,61 @@ def _cells(confounders: np.ndarray, labels: np.ndarray) -> list[list[list[int]]]
     return cells
 
 
-def _shuffle_slides(cells: list[list[list[int]]], rows_per_slide: int, rng: random.Random) -> None:
-    """Reorder every cell by whole slides, in place.
+def _shuffle_slides(cells: list[list[list[list[int]]]], rng: random.Random) -> SlideCells:
+    """The sweep's own arrangement, and the reference protocol's: every cell reshuffled.
+
+    The default because it is what makes a split's training rows a random sample of its
+    cells rather than whichever rows the caller happened to list first.
+    """
+    for cell_row in cells:
+        for slides in cell_row:
+            rng.shuffle(slides)
+    return cells
+
+
+def _arrange(
+    cells: list[list[list[int]]],
+    rows_per_slide: int,
+    arrangement: SlideArrangement,
+    rng: random.Random,
+) -> None:
+    """Reorder every cell for one replicate, in place, by whole slides.
 
     Whole slides, because a slide's rows are near-duplicates of each other: split one
     across the training and test sets and the probe is scored on tissue it was fitted on.
-    Cells stay shuffled between replicates, as upstream's do.
+    Which is why the arrangement is handed slides rather than rows -- it decides their
+    order and nothing else. Cells stay arranged between replicates, as upstream's do.
     """
-    for cell_row in cells:
-        for index, cell in enumerate(cell_row):
-            slides = [
-                cell[start : start + rows_per_slide]
-                for start in range(0, len(cell), rows_per_slide)
-            ]
-            rng.shuffle(slides)
-            cell_row[index] = [row for slide in slides for row in slide]
+    slides = [
+        [
+            [cell[start : start + rows_per_slide] for start in range(0, len(cell), rows_per_slide)]
+            for cell in cell_row
+        ]
+        for cell_row in cells
+    ]
+    arranged = arrangement(slides, rng)
+    _check_same_slides(arranged, slides)
+    for cell_row, arranged_row in zip(cells, arranged):
+        for index, cell in enumerate(arranged_row):
+            cell_row[index] = [row for slide in cell for row in slide]
+
+
+def _check_same_slides(arranged: SlideCells, slides: SlideCells) -> None:
+    """Refuse an arrangement that is not a rearrangement.
+
+    A schedule was written for a cohort of a known shape, so an arrangement that loses a
+    slide, invents one or breaks one apart quietly re-shapes the cohort underneath it: the
+    sweep would still return a matrix, computed on rows the caller never put there.
+    """
+    complaint = (
+        "arrange_slides must return the same slides it was handed, reordered -- "
+        "one list per confounder, one per class inside it, holding that cell's slides"
+    )
+    if len(arranged) != len(slides):
+        raise ValueError(f"{complaint}; got {len(arranged)} confounder(s), not {len(slides)}")
+    for arranged_row, row in zip(arranged, slides):
+        if len(arranged_row) != len(row):
+            raise ValueError(f"{complaint}; got {len(arranged_row)} class(es), not {len(row)}")
+        for arranged_cell, cell in zip(arranged_row, row):
+            if sorted(map(tuple, arranged_cell)) != sorted(map(tuple, cell)):
+                raise ValueError(complaint)
