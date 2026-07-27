@@ -219,6 +219,7 @@ TODO.md
 WRAP-UP.html
 feedback.html
 pathorob-ri.png
+/card.png
 # render helper operates on the git-ignored paper/ tree
 scripts/render_one.py
 
