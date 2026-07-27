@@ -2,9 +2,10 @@
 
 `napd` reduces an `(n_splits, n_iterations)` accuracy matrix by averaging the
 replicate axis **first** and taking the skill ratio of the averages
-(ratio-of-means). `apd` keeps PathoROB's order: ratio per replicate, then average
-(mean-of-ratios). This is the single deliberate difference between the two
-reductions, and it concerns only the iteration axis.
+(ratio-of-means). `apd` — PathoROB's reduction, which `croma.downstream` will ship
+vendored verbatim per ADR-0011 — keeps the opposite order: ratio per replicate,
+then average (mean-of-ratios). This is the single deliberate difference between the
+two reductions, and it concerns only the iteration axis.
 
 > The issue that requested this record asked for it as ADR-0012. That number was
 > already taken by *paper tooling stays local*, so it lands as 0014.
@@ -24,10 +25,20 @@ accuracy minus chance — which is free to approach zero. One unlucky replicate 
 enough to dominate the mean of twenty, and it does so with a ratio that carries no
 information about the confounder, only about how close that replicate landed to chance.
 
-Observed on real cells: on prostate/Prost40M and pcabiop/MOOZY the mean-of-ratios form
-reports a *positive* nAPD — the confounder helped — while every replicate but one shows
-a drop. With no gate present (see below) the reduction order is the only thing standing
-between the metric and that sign flip.
+Observed on real cells, both OOD, both binary (`chance = 0.5`):
+
+| Cell | Mean baseline | Weakest replicate's baseline | Mean-of-ratios | Ratio-of-means |
+|---|---|---|---|---|
+| prostate / Prost40M | 0.773 | 0.520 (skill 0.020) | **+0.225** | −0.140 |
+| pcabiop / MOOZY | 0.790 | 0.580 (skill 0.080) | +0.373 | +0.010 |
+
+Prost40M is the sign flip: mean-of-ratios reports that the confounder *helped*, off the
+back of one replicate out of twenty whose baseline landed 0.02 above chance. MOOZY is the
+same mechanism short of a sign change — both reductions come out positive there, but
+mean-of-ratios inflates the value by a factor of 38. Neither mean baseline is anywhere
+near chance, which is the point: a gate on the mean cannot see either case, so with no
+gate present (see below) the reduction order is the only thing standing between the
+metric and a single replicate's denominator.
 
 ## Why the deviation is not a thumb on the scale
 
@@ -55,15 +66,16 @@ reference.
 
 ## Consequences
 
-- `napd` and `apd` are not two parameterisations of one function and are not implemented
-  through a shared reduction. They agree away from chance (Spearman >= 0.94 on every
+- `napd` and `apd` are not two parameterisations of one function, and when `apd` lands
+  they will not share a reduction. They agree away from chance (Spearman >= 0.94 on every
   tile benchmark) and diverge near it, by design.
 - `napd` carries **no gate**: no skill floor, no sentinel, no `None`. Ratio-of-means
-  removes the failure mode a gate would have been guarding against, and the floor that
-  the earlier study-layer implementation carried (`NAPD_NORM_SKILL_FLOOR = 0.15`) sat
-  inside a wide insensitive basin — a cut point with nothing to recommend it. Deciding
-  a cell is too imprecise to interpret is a reporting decision, made by whoever renders
-  the table. See ADR-0011.
+  removes the failure mode a gate would have been guarding against, and the floor the
+  study-layer implementation still carries (`NAPD_NORM_SKILL_FLOOR = 0.15` in
+  `scripts/studies/apd/apd_experiment.py`, retired when that driver moves onto the
+  library) sits inside a wide insensitive basin — a cut point with nothing to recommend
+  it. Deciding a cell is too imprecise to interpret is a reporting decision, made by
+  whoever renders the table. See ADR-0011.
 - What `napd` does reject is its domain running out, not a judgement about precision: a
   baseline at or below chance has no positive denominator, so the skill ratio does not
   exist and every ratio below chance would silently invert its sign. That is a

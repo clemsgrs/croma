@@ -155,6 +155,6 @@ def test_napd_rejects_a_matrix_holding_a_non_finite_score() -> None:
 
 
 def test_napd_accepts_a_plain_nested_list() -> None:
-    # The signature says ndarray, but anything array-like is coerced -- a caller who
-    # assembled the sweep in Python lists should not have to convert it first.
+    # Anything array-like is coerced -- a caller who assembled the sweep in Python
+    # lists should not have to convert it first.
     assert napd([[0.90, 0.90], [0.70, 0.70]], chance=0.5) == pytest.approx(-0.5)
