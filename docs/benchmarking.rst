@@ -9,6 +9,15 @@ numbers. It is **not** part of the installed package -- it lives under ``scripts
 
    pip install "croma[repro]"
 
+To *embed* a tileset you also need the encoder sources, which are only distributed as git
+repositories and so cannot be pinned in the package metadata:
+
+.. code-block:: bash
+
+   pip install -r scripts/bench/requirements-encoders.txt
+
+Scoring embeddings that already exist needs none of them.
+
 Three commands, split along the seams of what is expensive
 ----------------------------------------------------------
 
