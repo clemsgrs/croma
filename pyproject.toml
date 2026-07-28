@@ -1,5 +1,8 @@
 [build-system]
-requires = ["hatchling>=1.25.0"]
+# >=1.27 for PEP 639 (`license` as an SPDX expression, `license-files`). Older hatchling
+# renders `license = {file = ...}` as a 12k-character `License:` metadata header, which
+# PyPI rejects with a bare 400.
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,7 +11,13 @@ version = "0.1.0"
 description = "Robustness metrics for pathology foundation models: RI, MaRI, CRoMa, and APD/nAPD."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+# An SPDX expression, not `{ file = ... }`. Under Metadata 2.4 the file form inlines the
+# whole licence text into a single `License:` header -- 12,765 characters for Apache-2.0 --
+# and PyPI answers with an undetailed 400. NOTICE travels alongside because the BSD
+# 3-Clause code vendored in croma.downstream requires its notice to accompany
+# redistributions (ADR-0011).
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [
   { name = "Clément Grisi", email = "clement.grisi@radboudumc.nl" },
   { name = "Jeroen van der Laak" },
@@ -24,7 +33,7 @@ keywords = [
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
+  # No `License ::` classifier: PyPI rejects one alongside a `License-Expression`.
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
