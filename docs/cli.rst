@@ -5,11 +5,15 @@ Installing ``croma`` puts a ``croma`` executable on your path. It scores an embe
 matrix that already exists on disk and prints a JSON payload to stdout -- it does not embed
 images.
 
+Every metric command takes the same shape:
+
 .. code-block:: bash
 
-   croma --help
-
-Every metric command takes the same four required inputs, plus its own knobs.
+   croma {ri|mari|croma} \
+     --manifest manifest.csv \
+     --embeddings embeddings.npy \
+     --confounder-column center \
+     --evaluation-design paired_2x2
 
 Shared arguments
 ----------------
@@ -41,18 +45,10 @@ Shared arguments
 ``croma ri``
 ------------
 
-.. code-block:: bash
-
-   croma ri \
-     --manifest manifest.csv \
-     --embeddings embeddings.npy \
-     --confounder-column center \
-     --evaluation-design paired_2x2
+No further arguments.
 
 ``croma mari``
 --------------
-
-Adds ``--tau``, the distance-decay temperature.
 
 .. list-table::
    :header-rows: 1
@@ -67,14 +63,6 @@ Adds ``--tau``, the distance-decay temperature.
        operating ``k`` -- the on-scale value. Pass a float only to reproduce a published
        number. See :ref:`choosing-tau`.
 
-.. code-block:: bash
-
-   croma mari \
-     --manifest manifest.csv \
-     --embeddings embeddings.npy \
-     --confounder-column center \
-     --evaluation-design paired_2x2
-
 The payload reports which temperature was used and where it came from:
 
 .. code-block:: json
@@ -88,13 +76,13 @@ The payload reports which temperature was used and where it came from:
    }
 
 ``tau_source`` is ``"auto"`` when ``--tau`` was omitted and ``"fixed"`` when you pinned it.
-A pinned value that sits off the dataset's typed-distance scale prints a warning to stderr.
+A pinned value off the dataset's typed-distance scale prints a warning to stderr.
 
 ``croma croma``
 ---------------
 
-Computes CRoMa. It searches outward for typed neighbours rather than using a fixed ``k``,
-so it takes no ``--k-candidates``.
+Searches outward for typed neighbours rather than using a fixed ``k``, so it takes no
+``--k-candidates``.
 
 .. list-table::
    :header-rows: 1
@@ -116,41 +104,27 @@ so it takes no ``--k-candidates``.
      - ``2.0``
      - Geometric growth factor when the initial radius holds too few typed neighbours.
 
-.. code-block:: bash
-
-   croma croma \
-     --manifest manifest.csv \
-     --embeddings embeddings.npy \
-     --confounder-column center \
-     --evaluation-design paired_2x2
-
 Preparing aligned embeddings
 ----------------------------
 
 Under ``paired_2x2`` the same image often appears in several subsets. Embed each unique
-image once, then expand back to manifest-row order. See :ref:`deduplicated-embeddings`.
+image once, then expand back to manifest-row order (see :ref:`deduplicated-embeddings`):
 
-``croma build-embedding-manifest``
-   Writes the deduplicated list of images to embed.
+.. code-block:: bash
 
-   .. code-block:: bash
+   croma build-embedding-manifest \
+     --manifest manifest.csv \
+     --confounder-column center \
+     --out embedding_manifest.csv
 
-      croma build-embedding-manifest \
-        --manifest manifest.csv \
-        --confounder-column center \
-        --out embedding_manifest.csv
+   # ... embed the rows of embedding_manifest.csv into deduped.npy ...
 
-``croma expand-embeddings``
-   Expands deduplicated embeddings back to one row per manifest row.
-
-   .. code-block:: bash
-
-      croma expand-embeddings \
-        --manifest manifest.csv \
-        --confounder-column center \
-        --embedding-manifest embedding_manifest.csv \
-        --embeddings deduped.npy \
-        --out embeddings.npy
+   croma expand-embeddings \
+     --manifest manifest.csv \
+     --confounder-column center \
+     --embedding-manifest embedding_manifest.csv \
+     --embeddings deduped.npy \
+     --out embeddings.npy
 
 Passing a deduplicated matrix straight to a metric command is an error: the metrics require
 ``N == len(manifest)`` and will tell you to run these two commands first.

@@ -60,6 +60,9 @@ repro = [
   "timm",
   "transformers",
   "Pillow>=10.0",
+  # PDF -> SVG for the committed documentation figures (scripts/tools/build_doc_figures.py).
+  # Not in the `docs` extra: the site renders committed SVG and converts nothing at build time.
+  "pymupdf>=1.24",
 ]
 dev = [
   "pytest>=8.0",
