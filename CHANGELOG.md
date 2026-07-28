@@ -151,4 +151,21 @@ differently.
     (RI/MaRI cumulative-mean k-sweeps and RI/MaRI sample-distribution plots).
     `plot_croma_sample_distributions` is retained.
 
+### Fixed
+
+- **The reproduction study's Tolkach-ESCA case arrangement is deterministic.** It selected
+  a replicate's held-out cases by iterating `set(test_cases) & set(cases)`, and slides land
+  in the held-out tail in the order they are iterated — so which cases sat outermost
+  followed CPython's per-process string hashing. The tail is narrower than the number of
+  cases a replicate draws, so this decided the test set's *membership*, not just its order,
+  and Tolkach's stored accuracy matrices were never reproducible across processes. The
+  intersection is now sorted.
+
+  This is a **study-layer** fix: nothing in the distributed package changes, since
+  `scripts/` is not shipped. It is recorded here because it bears on the reproducibility of
+  published numbers. The behaviour was inherited verbatim from PathoROB's own driver, so
+  sorting is a deliberate divergence from the reference protocol on one of the three
+  faithful benchmarks, and **every Tolkach number moves once the sweep is re-run**. The
+  committed Tolkach matrices predate the fix and are not regenerated here. See #105.
+
 [0.1.0]: https://github.com/clemsgrs/croma/releases/tag/v0.1.0
