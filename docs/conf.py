@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parent / "_ext"))
 
 from croma import __version__  # noqa: E402
 
@@ -22,6 +23,8 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
+    # Local: the themed-figure directive (docs/_ext/themedfigure.py).
+    "themedfigure",
 ]
 
 templates_path = ["_templates"]
@@ -34,6 +37,8 @@ exclude_patterns = [
     # the published site instead of being converted.
     "adr",
     "reviewer-notes",
+    # Figure sources (.tex) and their README: inputs to the committed figures, not pages.
+    "figures",
 ]
 
 autosummary_generate = True

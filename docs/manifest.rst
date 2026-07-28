@@ -19,36 +19,24 @@ Embedding contract
      - ``numpy.ndarray``. The CLI loads it with :func:`numpy.load`, so the file must be a
        ``.npy`` holding a plain array -- not an ``.npz`` archive and not a pickled object.
    * - Shape
-     - Exactly 2-D, ``(N, D)``. ``N`` is the number of samples, ``D`` the embedding
-       dimension. A 1-D or 3-D array is rejected.
+     - Exactly 2-D, ``(N, D)``. A 1-D or 3-D array is rejected.
    * - ``N``
-     - Must equal ``len(manifest)``. Row ``i`` of the array is the embedding of row ``i`` of
-       the manifest. Nothing else aligns them -- not ``sample_id``, not ``image_path``.
+     - Must equal ``len(manifest)``. Row ``i`` is the embedding of manifest row ``i``.
+       Nothing else aligns them -- not ``sample_id``, not ``image_path``.
    * - ``D``
      - Any positive width. Models with different ``D`` are never compared within one call.
    * - dtype
-     - Any floating dtype; ``float32`` and ``float64`` both work. ``float32`` is the
-       sensible default and is what the benchmark pipeline writes.
+     - Any floating dtype. ``float32`` is the sensible default and what the benchmark
+       pipeline writes.
    * - Normalization
      - **Do not normalize.** ``croma`` L2-normalizes internally and compares neighbours by
        cosine distance. Pre-normalizing is harmless but redundant.
    * - Missing values
-     - Not supported, and not silently tolerated: a ``NaN`` or ``inf`` anywhere in the
-       matrix raises ``ValueError`` from the neighbour search.
+     - Not supported, and not silently tolerated: a ``NaN`` or ``inf`` anywhere raises
+       ``ValueError`` from the neighbour search.
 
 Row order is the whole contract. If you produced embeddings by deduplicating repeated
 images, expand them back to manifest-row order first -- see :ref:`deduplicated-embeddings`.
-
-.. code-block:: python
-
-   import numpy as np
-   import pandas as pd
-
-   manifest = pd.read_csv("manifest.csv")
-   features = np.load("embeddings.npy")
-
-   assert features.ndim == 2
-   assert features.shape[0] == len(manifest)
 
 Manifest contract
 -----------------
@@ -79,7 +67,8 @@ Manifest contract
    * - *confounder*
      - yes
      - The non-biological factor to test against -- center, scanner, stain protocol. You
-       choose the column name and pass it as ``confounder_column=`` / ``--confounder-column``.
+       choose the column name and pass it as ``confounder_column=`` /
+       ``--confounder-column``.
    * - ``subset``
      - only for ``paired_2x2``
      - Which 2x2 evaluation subset the row belongs to. See below.
@@ -92,16 +81,12 @@ Manifest contract
 Evaluation designs
 ------------------
 
-**Which do I pick?**
-
-Use ``paired_2x2`` when you want to control what is being compared: you hand-build subsets
-where two labels and two confounder values are all present, so a confounder effect cannot
-be confused with a class-imbalance effect. This is the PathoROB-style design and the one
-the paper reports.
-
-Use ``dataset_wide`` when you want a single number over the whole cohort and you accept
-that label and confounder may be unevenly mixed. It needs no ``subset`` column, so it is
-the right first thing to run on a new dataset.
+Use ``paired_2x2`` to control what is being compared: you hand-build subsets where two
+labels and two confounder values are all present, so a confounder effect cannot be confused
+with a class-imbalance effect. This is the PathoROB-style design, and the one the paper
+reports. Use ``dataset_wide`` for a single number over the whole cohort, accepting that
+label and confounder may be unevenly mixed -- it needs no ``subset`` column, so it is the
+right first thing to run on a new dataset.
 
 .. list-table::
    :header-rows: 1
@@ -124,23 +109,22 @@ the right first thing to run on a new dataset.
      - ``"sample"``
 
 That last row is the one that surprises people. Under ``paired_2x2`` a sample may belong to
-several subsets, so it contributes one *occurrence* to each; the reported score is an
-average over occurrences, not over samples. Under ``dataset_wide`` each sample is scored
-exactly once. So ``result.n_pairs`` counts occurrences in the first case and samples in the
-second, and the two designs are not directly comparable.
+several subsets and contributes one *occurrence* to each, so the score averages over
+occurrences, not samples. ``result.n_pairs`` therefore counts occurrences in one design and
+samples in the other, and **the two designs are not directly comparable**.
 
 ``paired_2x2``
 ~~~~~~~~~~~~~~
 
-Each ``subset`` value names one group of rows. A subset is used only if it forms a
-**complete 2x2**: exactly two distinct ``label`` values, exactly two distinct confounder
-values, and at least one sample in each of the four ``(label, confounder)`` cells.
+Each ``subset`` value names one group of rows, and is used only if it forms a **complete
+2x2**: exactly two ``label`` values, exactly two confounder values, and at least one sample
+in each of the four ``(label, confounder)`` cells.
 
 .. warning::
 
    Subsets that are not complete 2x2 are **silently skipped**, not reported as errors. If
-   your scores come from fewer occurrences than you expected, check subset completeness
-   first. If *no* subset is complete, the call raises.
+   your scores come from fewer occurrences than expected, check subset completeness first.
+   If *no* subset is complete, the call raises.
 
 A minimal manifest -- one subset, four cells, one sample each:
 
@@ -152,10 +136,10 @@ A minimal manifest -- one subset, four cells, one sample each:
    s3,/data/3.png,normal,slide-3,center_a,tumor_vs_normal__a_b
    s4,/data/4.png,normal,slide-4,center_b,tumor_vs_normal__a_b
 
-It shows the required *shape*; see :ref:`sizing` before building one for real.
+That is the required *shape*, not a workable size -- see :ref:`sizing`.
 
 A row carries exactly one ``subset`` value. To evaluate the same sample inside several 2x2
-comparisons, repeat the row once per subset -- and repeat its embedding row to match.
+comparisons, repeat the row once per subset, and repeat its embedding row to match.
 ``scripts/prep/prepare_paired_manifest.py`` expands a flat manifest into all complete 2x2
 combinations for you.
 
@@ -177,30 +161,22 @@ No ``subset`` column. Every row is scored against the whole cohort:
 How big must it be?
 -------------------
 
-Both examples above show the required *shape*. Neither is large enough to score with the
-default settings. Two size rules govern this, and both are about the **neighbourhood
-scope** -- the subset under ``paired_2x2``, the whole retained dataset under
-``dataset_wide``.
+Both rules below are about the **neighbourhood scope** -- the subset under ``paired_2x2``,
+the whole retained dataset under ``dataset_wide``.
 
 **RI and MaRI.** Every candidate ``k`` must be strictly less than the number of rows in the
-scope. Candidates that are not are dropped, and if none survive, the call raises:
-
-.. code-block:: text
-
-   RuntimeError: dataset: dataset-wide k-selection failed because no valid k candidates remain
-
-With the default ``k_candidates=[5, 11, 21]``, the scope needs at least 6 rows before even
-the smallest candidate is usable -- and a ``k`` barely under the scope size is not a
-meaningful neighbourhood anyway.
+scope; candidates that are not are dropped, and if none survive the call raises
+``RuntimeError: ... k-selection failed because no valid k candidates remain``. With the
+default ``k_candidates=[5, 11, 21]`` the scope needs at least 6 rows -- and a ``k`` barely
+under the scope size is not a meaningful neighbourhood anyway.
 
 **CRoMa.** A sample resolves only if ``m`` ``SO`` *and* ``m`` ``OS`` neighbours can be found
 for it. With the default ``m=5``, each of the four ``(label, confounder)`` cells wants at
-least 5 samples, on distinct slides. Unresolved samples are not silently dropped -- they are
-counted in ``result.undefined_frac``, and a run that could not resolve any of them returns
-``nan``.
+least 5 samples, on distinct slides. Unresolved samples are counted in
+``result.undefined_frac`` rather than dropped, and a run that resolves none returns ``nan``.
 
-Neither rule can produce a *wrong* number: RI raises and CRoMa reports what it could not
-resolve. But an undersized manifest wastes a run.
+Neither rule can produce a *wrong* number -- RI raises, CRoMa reports what it could not
+resolve -- but an undersized manifest wastes a run.
 
 .. _deduplicated-embeddings:
 

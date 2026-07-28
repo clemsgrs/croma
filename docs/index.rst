@@ -52,4 +52,5 @@ introduces CRoMa, which overcomes limitations of both.
    :hidden:
    :caption: In Depth
 
+   datasets
    benchmarking
