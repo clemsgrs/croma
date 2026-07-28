@@ -210,6 +210,13 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     ``on_frontier`` marks the encoders no other encoder beats on both axes at once. That
     is the honest summary of a two-axis comparison -- a set, not an order.
 
+    The natural-image control takes part in the ranking here, where the manuscript's
+    version of this aggregate drops it first. That is a deliberate divergence: the site
+    sorts it inline, and a table sorted by a rank that does not count every row it shows
+    would be incoherent. The cost is that a rank on this page can sit half a position
+    below the manuscript's for encoders the control outranks; the frontier is unaffected,
+    having been checked both ways.
+
     Only models present in every cohort take part; a model scored on two of three has no
     comparable mean rank.
     """
