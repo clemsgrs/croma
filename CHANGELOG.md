@@ -127,6 +127,16 @@ differently.
 
 ### Removed
 
+- **`croma.plotstyle` and its bundled typefaces are not part of the package.** The shared
+  plot identity now lives with the benchmark plotting library as `plotting.style`
+  (`scripts/bench/plotting/`). It was only ever imported from `scripts/` — nothing in the
+  metrics library used it, and it was never exported from `croma/__init__.py` — while its
+  four Arimo faces accounted for 1.93 MB of a 2.1 MB wheel, paid by every installer for a
+  convenience that needs `matplotlib` from the `[repro]` extra to do anything. The wheel is
+  now 63 KB, and "depends only on `numpy`, `pandas`, `scikit-learn` and `tqdm`" describes
+  what is installed, not just what is imported. Rendering was always driven from `scripts/`,
+  so no figure changes. See ADR-0017.
+
 - **Dropped the `prune_ss_oo` and `summarize_by_mean` options** from `RI.compute`,
   `MaRI.compute`, and the benchmark driver (`--prune-ss-oo`, `--summarize-by-mean`),
   together with the code that existed only to serve them. Both were exploratory and

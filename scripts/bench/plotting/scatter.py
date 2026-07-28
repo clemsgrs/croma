@@ -15,8 +15,8 @@ matplotlib.use("Agg", force=True)
 import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 
-from croma import plotstyle
-from croma.plotstyle import COL_ONEHALF
+from . import style as plotstyle
+from .style import COL_ONEHALF
 
 
 #: The Pareto panels enlarge the default scatter marker so each family colour reads clearly, with

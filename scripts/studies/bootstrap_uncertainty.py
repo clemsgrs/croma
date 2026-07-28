@@ -43,7 +43,8 @@ from croma.metrics.bootstrap import (  # noqa: E402
     paired_rank_stability,
 )
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
-from croma.plotstyle import CONTROL_MODEL  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
+from plotting.style import CONTROL_MODEL  # noqa: E402
 from paper_manifest import TABLES  # noqa: E402
 
 #: macro prefix -> run directory, at each benchmark's reported protocol. See ADR-0010.
