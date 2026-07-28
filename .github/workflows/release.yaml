@@ -44,11 +44,37 @@ jobs:
       - name: Validate distribution metadata
         run: twine check --strict dist/*
 
+      # `twine check` validates the description renders; it says nothing about what PyPI
+      # will accept. A direct reference (`name @ git+https://...`) builds fine, passes
+      # `twine check --strict`, and is then refused at upload with a bare 400 -- after the
+      # tag exists. Fail here instead, where it costs nothing.
+      - name: Reject direct-reference dependencies
+        run: |
+          python - <<'PY'
+          import pathlib, sys, zipfile
+
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          name = next(n for n in zipfile.ZipFile(wheel).namelist() if n.endswith(".dist-info/METADATA"))
+          meta = zipfile.ZipFile(wheel).read(name).decode()
+          bad = [
+              line for line in meta.splitlines()
+              if line.startswith("Requires-Dist") and ("git+" in line or " @ " in line)
+          ]
+          if bad:
+              print("::error::PyPI rejects direct references in metadata:")
+              for line in bad:
+                  print(f"  {line}")
+              sys.exit(1)
+          print("no direct references in Requires-Dist")
+          PY
+
       # `on: release` already implies github.ref is refs/tags/<tag>, so the old
       # startsWith(github.ref, 'refs/tags/') guard could never be false.
       - name: Publish to PyPI
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
-        run: twine upload dist/*
+        # --verbose because PyPI's rejections arrive as a bare "400 Bad Request" otherwise,
+        # and this step only runs once the tag exists -- there is no cheap second attempt.
+        run: twine upload --verbose dist/*
 

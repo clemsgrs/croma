@@ -1,0 +1,15 @@
+# Encoder sources for scripts/bench/extract_embeddings.py.
+#
+# These live here rather than in a `croma[encoders]` extra because PyPI refuses any
+# distribution whose metadata carries a direct reference (`name @ git+https://...`). The
+# `allow-direct-references` hatchling setting lets such a project *build*; it does not make
+# it uploadable, and the resulting rejection is an undetailed 400.
+#
+# Only needed to embed a tileset. Scoring embeddings that already exist needs none of them.
+#
+#     pip install -r scripts/bench/requirements-encoders.txt
+
+musk @ git+https://github.com/lilab-stanford/MUSK.git
+conch @ git+https://github.com/Mahmoodlab/CONCH.git
+trident @ git+https://github.com/mahmoodlab/TRIDENT.git
+gigapath @ git+https://github.com/prov-gigapath/prov-gigapath.git
