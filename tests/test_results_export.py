@@ -252,9 +252,70 @@ def test_provenance_records_the_version_that_produced_the_numbers():
     assert _provenance()["croma_version"] == __version__
 
 
+def test_the_payload_has_the_shape_the_explorer_reads():
+    """docs/_static/explorer.js reads this file directly. Nothing else type-checks the
+    contract between them, so a rename here would break the widget silently -- the page
+    would render, the fetch would succeed, and the histogram would be empty."""
+    payload = json.loads((RESULTS / "distributions.json").read_text())
+    assert {"m", "n_bins", "cohorts"} <= set(payload)
+    for slug, cohort in payload["cohorts"].items():
+        assert {"label", "lo", "hi", "models"} <= set(cohort), slug
+        assert cohort["hi"] > cohort["lo"], slug
+        for model, counts in cohort["models"].items():
+            assert len(counts) == payload["n_bins"], f"{slug}/{model}"
+
+
+def test_the_payload_counts_every_sample_in_the_run():
+    """Binning clips out-of-range values into the edge bins rather than dropping them, so
+    each encoder's histogram totals the cohort's sample count exactly. The explorer reports
+    "N of M samples"; a histogram that lost mass would answer that wrongly."""
+    payload = json.loads((RESULTS / "distributions.json").read_text())
+    for slug, cohort in payload["cohorts"].items():
+        totals = {sum(counts) for counts in cohort["models"].values()}
+        assert len(totals) == 1, f"{slug}: encoders disagree on the sample count: {totals}"
+
+
 def test_published_payload_stays_within_its_size_budget():
     size = (RESULTS / "distributions.json").stat().st_size
     assert size < PAYLOAD_BUDGET_BYTES, f"payload grew to {size // 1024} KB"
+
+
+def test_the_readme_carries_the_generated_results_region():
+    readme = (ROOT / "README.md").read_text()
+    assert er.README_START in readme and er.README_END in readme
+    block = readme.split(er.README_START)[1].split(er.README_END)[0]
+    assert "| Model | CRoMa rank | tail rank |" in block
+
+
+def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
+    """Cutting the panel at eight is a judgement call. Stating it mechanically -- with the
+    total, and a link to the rest -- is what keeps it a rule rather than a shortlist."""
+    block = (ROOT / "README.md").read_text().split(er.README_START)[1]
+    total = len(_read_csv("cross_benchmark.csv"))
+    assert f"Top {er.README_TOP} of {total} by CRoMa rank" in block
+    assert "/results/" in block
+
+
+def _read_csv(name: str) -> list[str]:
+    return (RESULTS / name).read_text().strip().splitlines()[1:]
+
+
+def test_the_readme_region_is_replaced_without_touching_the_prose_around_it():
+    """The exporter owns the block, never the file. Everything outside the markers has to
+    survive an export byte for byte, or a rewrite would quietly eat hand-written text."""
+    readme = (ROOT / "README.md").read_text()
+    aggregate = er.build_aggregate_table(
+        {"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])}
+    )
+    rewritten = er.render_readme(aggregate, {"camelyon": {"label": "Camelyon"}})
+    assert rewritten.split(er.README_START)[0] == readme.split(er.README_START)[0]
+    assert rewritten.split(er.README_END)[1] == readme.split(er.README_END)[1]
+
+
+def test_provenance_does_not_checksum_the_readme():
+    """It is mostly prose; a hash over it would go stale on every wording change while
+    saying nothing about the numbers."""
+    assert all(path.startswith("results/") for path in _provenance()["files"])
 
 
 def test_every_published_cohort_has_a_committed_table():

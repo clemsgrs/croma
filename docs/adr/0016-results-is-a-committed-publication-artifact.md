@@ -45,8 +45,16 @@ the rule it set.
 - `results/<benchmark>.csv` — one per published cohort (`camelyon`, `tcga-4x4`,
   `tolkach-esca`), holding only the columns the site publishes.
 - `results/cross_benchmark.csv` — the aggregate the front page and README render.
+- `results/distributions.json` — 200-bin histograms of per-sample CRoMa, per encoder and
+  cohort. What the distribution explorer reads, and the reason the explorer needs no
+  server: `html_extra_path` copies the whole tree to the site root.
 - `results/PROVENANCE.json` — protocol, per-cohort `k`, `tau` policy, roster size,
-  `croma` version, source run path, export date, and a sha256 per committed CSV.
+  `croma` version, source run path, export date, and a sha256 per committed data file.
+- A marked region of `README.md`, rewritten in place. A hand-written table in the README
+  is the same hazard as a hand-written one on the site with less to catch it, so the
+  exporter owns that block too. Its checksum is deliberately *not* in `PROVENANCE.json`:
+  the file is mostly prose, and a hash over it would go stale on every wording change
+  while saying nothing about the numbers. The freshness test covers it instead.
 - `scripts/tools/export_results.py` — reads
   `output/metrics/<protocol>/<benchmark>/results/metrics.csv`, writes the above. In
   `tools/` rather than `repro/` because its output destination is the repository, not
@@ -78,10 +86,11 @@ the rule it set.
   site's from `scripts/tools/`. The freshness test pins the site's path to `output/`;
   it does not compare the two. If a divergence ever matters, the fix is a cross-check
   test, not a merged generator.
-- **`results/` ships in the sdist.** Hatchling includes everything not VCS-ignored, so
-  the published CSVs and SVGs travel with the wheel's source distribution. They are a
-  few tens of KB and describe the package's own evaluation, so this is acceptable
-  rather than merely tolerated.
+- **`results/` ships in the sdist.** The sdist is an explicit `include` list, so this is
+  a deliberate entry rather than a consequence of hatchling's defaults. It has to be
+  there: `tests/test_results_export.py` reads the committed tree, and an sdist without
+  it would ship a test suite that cannot run. A few tens of KB describing the package's
+  own evaluation is acceptable rather than merely tolerated.
 - **Republishing is an explicit step.** Re-running a benchmark does not update the site.
   Someone must run the exporter and commit the diff — which is the point: the diff is
   the review surface for changing a public claim.

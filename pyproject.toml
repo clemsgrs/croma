@@ -118,6 +118,10 @@ include = [
   "/tests",
   "/docs",
   "/scripts",
+  # The published benchmark results (ADR-0016). A few tens of KB describing the package's
+  # own evaluation, and tests/test_results_export.py reads them, so an sdist without them
+  # ships a test suite that cannot run.
+  "/results",
   "/README.md",
   "/CHANGELOG.md",
   "/CITATION.cff",

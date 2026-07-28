@@ -96,7 +96,7 @@ class Cohort:
 #: coarser confounder split, and two near-duplicate cohorts crowd the aggregate.
 COHORTS: tuple[Cohort, ...] = (
     Cohort("camelyon", "pathorob-camelyon", "Camelyon"),
-    Cohort("tcga-4x4", "pathorob-tcga-4x4", "TCGA-4x4"),
+    Cohort("tcga-4x4", "pathorob-tcga-4x4", "TCGA-4×4"),
     Cohort("tolkach-esca", "pathorob-tolkach-esca", "Tolkach-ESCA"),
 )
 
@@ -350,7 +350,73 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
     rendered["results/cross_benchmark.csv"] = _to_csv(aggregate)
     rendered["results/distributions.json"] = _to_compact_json(distributions)
     rendered["results/PROVENANCE.json"] = _to_json(_provenance(meta, rendered, aggregate))
+    rendered["README.md"] = render_readme(aggregate, meta)
     return rendered
+
+
+# --------------------------------------------------------------------------------------
+# The README's table
+# --------------------------------------------------------------------------------------
+
+#: The README shows the head of the panel rather than all 21. Truncating is a real
+#: judgement call -- an encoder at position 9 may well notice -- so the rule is mechanical,
+#: stated in the caption, and the full panel is one link away.
+README_TOP = 8
+
+README_START = "<!-- results:start -->"
+README_END = "<!-- results:end -->"
+
+DOCS = "https://clemsgrs.github.io/croma"
+
+
+def render_readme(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
+    """The README with its results region replaced by the current aggregate.
+
+    A hand-written table in the README is the same hazard as a hand-written one on the
+    site, with less to catch it -- so this region is generated too, and the freshness test
+    covers the README exactly as it covers the CSVs. Everything outside the markers is left
+    alone.
+    """
+    readme = (ROOT / "README.md").read_text()
+    start, end = readme.find(README_START), readme.find(README_END)
+    if start < 0 or end < 0:
+        raise ValueError(
+            f"README.md has no {README_START} / {README_END} region for the results table."
+        )
+    block = _readme_block(aggregate, meta)
+    return readme[: start + len(README_START)] + block + readme[end:]
+
+
+def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
+    labels = {_cohort_column(slug): info["label"] for slug, info in meta.items()}
+    cohort_columns = [c for c in aggregate.columns if c in labels]
+    headers = ["Model", "CRoMa rank", "tail rank"] + [labels[c] for c in cohort_columns]
+
+    lines = [
+        "",
+        "| " + " | ".join(headers) + " |",
+        "| --- |" + " ---: |" * (len(headers) - 1),
+    ]
+    for _, row in aggregate.head(README_TOP).iterrows():
+        name = f"**{row['model']}**" if row["on_frontier"] else str(row["model"])
+        if row["is_control"]:
+            name += " †"
+        cells = [name, f"{row['croma_rank']:.1f}", f"{row['ltm_rank']:.1f}"]
+        cells += [f"{row[c]:.2f}" for c in cohort_columns]
+        lines.append("| " + " | ".join(cells) + " |")
+
+    lines += [
+        "",
+        f"Top {README_TOP} of {len(aggregate)} by CRoMa rank, over {len(cohort_columns)} tile "
+        f"cohorts. Each rank is the mean of that encoder's within-cohort ranks — by median "
+        f"CRoMa, and by tail severity LTM₁₀. **Bold** marks the Pareto frontier: the encoders "
+        f"no other encoder beats on both at once. There is deliberately no combined rank, "
+        f"because a strong median can hide a brittle tail.",
+        "",
+        f"📊 **[Full panel, per-cohort detail and the distributions]({DOCS}/results/)**",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _cohort_provenance(cohort: Cohort, metrics: pd.DataFrame) -> dict:
@@ -385,12 +451,15 @@ def _provenance(meta: dict[str, dict], rendered: dict[str, str], aggregate: pd.D
         "tau_policy": "auto (per-model median typed-neighbour distance at k)",
         "roster": int(len(aggregate)),
         "cohorts": meta,
-        # Every artifact this export writes, and nothing else. A file in results/ that is
-        # absent here was not produced by this script.
+        # Every data file this export writes, and nothing else: a file in results/ that is
+        # absent here was not produced by this script. Scoped to results/ deliberately --
+        # the export also rewrites a region of README.md, but that file is mostly prose and
+        # a checksum over it would go stale on every wording change while saying nothing
+        # about the numbers. The freshness test covers the README instead.
         "files": {
             path: hashlib.sha256(content.encode()).hexdigest()
             for path, content in sorted(rendered.items())
-            if not path.endswith("PROVENANCE.json")
+            if path.startswith("results/") and not path.endswith("PROVENANCE.json")
         },
     }
 

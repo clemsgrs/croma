@@ -23,8 +23,10 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
-    # Local: the themed-figure directive (docs/_ext/themedfigure.py).
+    # Local: the themed-figure directive (docs/_ext/themedfigure.py) and the directives
+    # that render the committed results/ CSVs (docs/_ext/resultstable.py).
     "themedfigure",
+    "resultstable",
 ]
 
 templates_path = ["_templates"]
@@ -64,7 +66,14 @@ intersphinx_mapping = {
 
 html_theme = "furo"
 html_static_path = ["_static"]
+# The published data tree, copied verbatim to the site root. It is what the distribution
+# explorer fetches, and it makes every committed CSV directly downloadable from the site
+# rather than only from the repository.
+html_extra_path = ["../results"]
 html_css_files = ["custom.css"]
+# Loaded on every page but inert on all but one: the explorer returns immediately unless
+# the page provides its mount point, and only then does it fetch the 35 KB payload.
+html_js_files = ["explorer.js"]
 html_title = f"croma {release}"
 html_show_sourcelink = False
 html_theme_options = {
