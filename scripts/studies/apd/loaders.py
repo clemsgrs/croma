@@ -335,13 +335,19 @@ def case_arrangement(centers, feasible_splits, slide_ids):
     arrangement and PathoROB's driver both consume it in; swapping them would re-seed every
     Tolkach number.
 
-    Known wart, inherited from that driver and kept deliberately: the intersection below is
-    a ``set``, so which of several drawn cases ends up outermost depends on string hashing,
-    which Python randomises per process. Tolkach accuracies are therefore reproducible only
-    at a fixed ``PYTHONHASHSEED`` -- verified against the pre-rewire driver, which has the
-    same property, so the stored Tolkach matrices were never bit-reproducible either.
-    Sorting the intersection would fix it and would change every Tolkach number away from
-    PathoROB's, which is not a trade this study may make on its own.
+    The intersection below is ``sorted``, and that is a deliberate divergence from PathoROB's
+    driver, which leaves it a bare ``set``. Iteration order over a set of strings depends on
+    hashing, which Python randomises per process, and the slides land in the held-out tail in
+    the order they are iterated -- so under the bare set it is hash-dependent *which* cases sit
+    outermost. The tail is narrow (one slide past the widest training block, two slides per
+    cell here) and a replicate draws two to five cases, so more cases are pushed back than the
+    tail holds and the surplus stops just short of it. That makes the test set's membership,
+    not merely its order, a function of ``PYTHONHASHSEED``.
+
+    Sorting costs bit-parity with PathoROB on this cohort: every Tolkach number moves. The
+    trade was taken knowingly, on the repository owner's instruction, because the reference
+    behaviour it preserved was itself unreproducible -- the pre-rewire driver had the same
+    property, so the stored Tolkach matrices were never bit-reproducible either. See #105.
     """
 
     def arrange(cells, rng):
@@ -351,7 +357,7 @@ def case_arrangement(centers, feasible_splits, slide_ids):
             for slides in cells[i]:
                 rng.shuffle(slides)
                 cases = [slide_ids[slide[0]] for slide in slides]
-                for test_case in list(set(test_cases) & set(cases)):
+                for test_case in sorted(set(test_cases) & set(cases)):
                     at = [slide_ids[slide[0]] for slide in slides].index(test_case)
                     slides.append(slides.pop(at))
         return cells

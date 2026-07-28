@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import random
+import subprocess
 import sys
 from pathlib import Path
 
@@ -82,10 +84,16 @@ def test_the_study_defines_neither_reduction_and_imports_both() -> None:
 def _driver_loop(features, centers, n_classes, feasible_splits, num_patches_per_slide, seed):
     """The replicate ordering as ``apd_experiment.compute`` ran it before the rewire.
 
-    Transcribed from the loop this slice deleted, down to the set intersection whose
-    iteration order decides which held-out case ends up outermost. It is the reference the
-    study's Tolkach arrangement has to reproduce; nothing here may be simplified, because
-    the point is that it was not written against the new code.
+    Transcribed from the loop the rewire deleted. It is the reference the study's Tolkach
+    arrangement has to reproduce; nothing here may be simplified, because the point is that
+    it was not written against the new code.
+
+    One line does diverge from that transcription, deliberately and visibly: the intersection
+    is ``sorted``. The original left it a bare ``set``, whose iteration order over strings is
+    hash-randomised per process, so it decided *which* drawn case ended up outermost and
+    therefore which slides the narrow held-out tail actually held (#105). Sorting both sides
+    keeps this a real check of everything else the loop does -- the draw, the shuffle, the
+    indexing, the pop-and-append -- while pinning the one thing that was never reproducible.
     """
     random.seed(seed)
     random_train_test_split = (
@@ -101,7 +109,7 @@ def _driver_loop(features, centers, n_classes, feasible_splits, num_patches_per_
             ]
             random.shuffle(chunked)
             case_order = [chunked[k][0][3] for k in range(len(chunked))]
-            for test_case in list(set(test_cases) & set(case_order)):
+            for test_case in sorted(set(test_cases) & set(case_order)):
                 chunked.append(
                     chunked.pop([chunked[k][0][3] for k in range(len(chunked))].index(test_case))
                 )
@@ -168,6 +176,42 @@ def test_the_tolkach_arrangement_reproduces_the_driver_loop_it_replaced(seed: in
     assert [
         [[row for slide in cell for row in slide] for cell in cell_row] for cell_row in arranged
     ] == expected
+
+
+#: Run one arrangement and print it. Spawned rather than called, because the property under
+#: test is a function of ``PYTHONHASHSEED``, which CPython fixes once per process.
+_ARRANGEMENT = """
+import json, random, sys
+sys.path.insert(0, sys.argv[1])
+import loaders
+centers, feasible, slide_ids, cells = json.loads(sys.argv[2])
+arrange = loaders.case_arrangement(centers, feasible, slide_ids)
+print(json.dumps(arrange(cells, random.Random(0))))
+"""
+
+
+def test_the_tolkach_arrangement_does_not_depend_on_the_hash_seed() -> None:
+    # The arrangement pushes a replicate's drawn cases to the tail in iteration order, and
+    # the tail is narrower than the number of cases drawn -- so if that order is hash
+    # randomised, which slides the sweep tests on changes between processes. It did, and
+    # Tolkach's stored matrices were never reproducible because of it (#105). The intersection
+    # is sorted now; this pins that, and goes red if a bare set comes back.
+    cells, slide_of_row = _cohort()
+    slide_ids = [slide_of_row[row] for row in range(len(slide_of_row))]
+    payload = json.dumps([CENTERS, FEASIBLE, slide_ids, cells])
+
+    arrangements = {
+        seed: subprocess.run(
+            [sys.executable, "-c", _ARRANGEMENT, str(STUDY), payload],
+            capture_output=True,
+            text=True,
+            check=True,
+            env={**os.environ, "PYTHONHASHSEED": str(seed)},
+        ).stdout
+        for seed in range(6)
+    }
+
+    assert len(set(arrangements.values())) == 1, "the arrangement moved with PYTHONHASHSEED"
 
 
 #: One embedding per slide, which is what makes a cohort the slide arm.
