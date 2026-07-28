@@ -1,0 +1,45 @@
+{
+  "croma_version": "0.1.0",
+  "exported": "2026-07-28",
+  "protocol": "median-k",
+  "croma_m": 5,
+  "tail_alpha": 0.1,
+  "tau_policy": "auto (per-model median typed-neighbour distance at k)",
+  "roster": 21,
+  "cohorts": {
+    "camelyon": {
+      "benchmark": "pathorob-camelyon",
+      "label": "Camelyon",
+      "run": "output/metrics/median-k/pathorob-camelyon",
+      "k": 11,
+      "n_models": 21,
+      "confounder": "Medical Center",
+      "evaluation_design": "dataset_wide"
+    },
+    "tcga-4x4": {
+      "benchmark": "pathorob-tcga-4x4",
+      "label": "TCGA-4x4",
+      "run": "output/metrics/median-k/pathorob-tcga-4x4",
+      "k": 71,
+      "n_models": 21,
+      "confounder": "Medical Center",
+      "evaluation_design": "dataset_wide"
+    },
+    "tolkach-esca": {
+      "benchmark": "pathorob-tolkach-esca",
+      "label": "Tolkach-ESCA",
+      "run": "output/metrics/median-k/pathorob-tolkach-esca",
+      "k": 61,
+      "n_models": 21,
+      "confounder": "Medical Center",
+      "evaluation_design": "dataset_wide"
+    }
+  },
+  "files": {
+    "results/camelyon.csv": "ea585092ed5aca587ade1ddf7993d251e3cfd0c35bd6943c57495f37c78ea946",
+    "results/cross_benchmark.csv": "2dec0a23ce99652bb306017e791ebc5735eeaae511314c62bf9134e7f33d283f",
+    "results/distributions.json": "4efd6a09e241d0755189fc7110e53de2411902cd78fb37f13e2bb486f41e0d20",
+    "results/tcga-4x4.csv": "d27636e15964aca6d51d625f77426cbe9446f003ab7ac6c09d340ca82ed382e8",
+    "results/tolkach-esca.csv": "c3a4993df1c9b55e7f7f65affd9b90b23fa16ddabe0db901f6cb3ff422e6ad06"
+  }
+}

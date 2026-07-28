@@ -29,6 +29,32 @@ Deriving the dark variant rather than compiling it is deliberate: it keeps the t
 provably identical in geometry, and it means the figure set can be rebuilt on a machine with
 no LaTeX toolchain.
 
+One colour rule is worth knowing about, because it is not the obvious one. A colour is
+inverted when it is a *neutral ink* **or** when it is simply very pale, whatever its hue —
+nothing legible is drawn that pale on a white page, so a pale tint is always a background
+wash and has to invert like one. Without that second clause the ridgelines' warm
+fragile-region shade counted as a semantic colour, kept its lightness, and covered the left
+half of every dark-mode ridgeline in a pale block.
+
+## Results panels
+
+`rank_pareto` and the three `distribution-<cohort>` ridgelines have no `.tex` source: the
+same script draws them with the tracked benchmark plot library and then runs them through
+the identical conversion, so a plotted figure and a schematic are themed by one code path.
+
+```
+results/cross_benchmark.csv  --plotting-->  <name>.pdf  --build_doc_figures.py-->  ../_static/figures/<name>-{light,dark}.svg
+```
+
+The Pareto panel is drawn from the committed `results/` export, so the encoders it rings are
+the ones the table's `on_frontier` column marks. The ridgelines need every sample's CRoMa
+rather than the 200-bin summary the export carries, so they read the run under `output/`
+directly — which means, like the schematics, they can only be rebuilt where that tree exists.
+
+They carry no TCGA-exposure daggers, unlike the manuscript's versions. The exposure flags
+live in `scripts/repro/model_metadata.csv`, which is git-ignored, and a public figure must
+not depend on a private file; the results pages carry that caveat in prose instead.
+
 ## Figures whose generator is not here
 
 `dataset_cardinality` and `dataset_montage` come from the paper tooling under
