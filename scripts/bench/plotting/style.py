@@ -1,12 +1,15 @@
 """Single source of truth for figure style across croma.
 
 This module defines the shared visual identity used by every plot in the
-project (benchmarking plots in ``scripts/plotting.py`` and the standalone
-experiment scripts). The goal is a clean, consistent, journal-quality
-("Nature-style") look:
+project -- the benchmark plot archetypes alongside it, and the standalone
+figure and experiment scripts under ``scripts/``. It lives with the plotting
+library rather than in the installed ``croma`` package because nothing in the
+metrics library uses it, and its bundled typefaces would otherwise put ~2 MB of
+fonts into every ``pip install croma`` (ADR-0017). The goal is a clean,
+consistent, journal-quality ("Nature-style") look:
 
 - a bundled sans-serif typeface (Arimo, Arial-metric, Apache-2.0) registered
-  from ``croma/fonts/`` so figures render identically on any machine;
+  from ``plotting/fonts/`` so figures render identically on any machine;
 - canonical column widths (single / one-and-a-half / double) so text appears
   at the same physical size in every figure;
 - a cohesive, print-safe colour palette that keeps the model-family hue +

@@ -30,7 +30,7 @@ for _p in (REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" / "repro")
         sys.path.insert(0, str(_p))
 import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>/...)
 from croma.downstream import pathorob_schedule  # noqa: E402
-from croma.plotstyle import CONTROL_MODEL  # noqa: E402
+from plotting.style import CONTROL_MODEL  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # APD computation config (used by apd_experiment.py)

@@ -16,12 +16,12 @@ Archetype submodules:
 * :mod:`plotting.scatter` — one-point-per-model scatters.
 * :mod:`plotting.distributions` — per-sample ridge-line distributions.
 
-All figures continue to route through :mod:`croma.plotstyle`.
+All figures continue to route through :mod:`plotting.style`.
 """
 
-from croma import plotstyle
+from . import style as plotstyle
 from croma.confounders import infer_confounder_display_name
-from croma.plotstyle import (
+from .style import (
     CANONICAL_MODEL_ORDER,
     COL_DOUBLE,
     COL_ONEHALF,

@@ -31,7 +31,7 @@ from plotting import (  # noqa: E402
     _style_axes,
 )
 
-from croma import plotstyle  # noqa: E402
+from plotting import style as plotstyle  # noqa: E402
 
 # Use the shared Arimo visual identity — the same style-setup every other figure
 # uses — instead of a local serif rcParams override.

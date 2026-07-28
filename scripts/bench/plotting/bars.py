@@ -13,8 +13,8 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 
-from croma import plotstyle
-from croma.plotstyle import (
+from . import style as plotstyle
+from .style import (
     COL_DOUBLE,
     DEFAULT_DPI,
     GRID_COLOR,

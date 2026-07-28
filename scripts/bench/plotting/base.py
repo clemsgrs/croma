@@ -1,7 +1,7 @@
 """Shared setup and drawing primitives for the plotting archetypes.
 
 This module holds the common visual-identity wrappers (all routing through
-``croma.plotstyle``), the geometry/limit helpers shared across archetypes, and
+``plotting.style``), the geometry/limit helpers shared across archetypes, and
 the shared ``_draw_*`` primitives (notably the one-point-per-model scatter drawer
 reused by every scatter wrapper). Archetype-specific ``plot_*`` entry points and
 their dedicated ``_draw_*`` helpers live in the per-archetype submodules.
@@ -17,8 +17,8 @@ matplotlib.use("Agg", force=True)
 
 from croma.confounders import infer_confounder_display_name
 
-from croma import plotstyle
-from croma.plotstyle import (
+from . import style as plotstyle
+from .style import (
     REFERENCE_LINE_COLOR,
     model_sort_key,
 )

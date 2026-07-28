@@ -11,8 +11,8 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 
-from croma import plotstyle
-from croma.plotstyle import COL_DOUBLE, REFERENCE_LINE_COLOR, model_sort_key
+from . import style as plotstyle
+from .style import COL_DOUBLE, REFERENCE_LINE_COLOR, model_sort_key
 
 from .base import (
     _color_for_model,

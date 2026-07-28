@@ -2,7 +2,7 @@
 
 Shared legend collection/placement and the ``_finalize_*`` routines that write
 each figure to both ``png/`` and ``pdf/`` subdirectories. All rendering stays
-consistent with ``croma.plotstyle``.
+consistent with ``plotting.style``.
 """
 
 import math
@@ -13,8 +13,8 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 
-from croma import plotstyle
-from croma.plotstyle import DEFAULT_DPI
+from . import style as plotstyle
+from .style import DEFAULT_DPI
 
 LEGEND_Y = 0.02
 LEGEND_MAX_COLUMNS = 4

@@ -15,8 +15,8 @@ import matplotlib.pyplot as plt
 
 from scipy.stats import gaussian_kde
 
-from croma import plotstyle
-from croma.plotstyle import (
+from . import style as plotstyle
+from .style import (
     COL_DOUBLE,
     FRAGILE_SHADE_COLOR,
     MUTED_TEXT_COLOR,
