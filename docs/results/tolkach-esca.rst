@@ -10,9 +10,10 @@ This is the mildest of the three cohorts: no encoder's median falls below zero, 
 of the panel keeps confounder-dominant mass under 6%. Margins are correspondingly wide, and
 every median sits to the right of the neutral line.
 
-That does not make the ranking uninformative — it makes ``RI`` and ``MaRI`` the columns to
-distrust here. Support ranges from 67% to complete across the panel, so two encoders with
-similar indices can rest on very different amounts of evidence.
+It is also where the count-based indices run out of room. Eleven of the twenty-one encoders
+score above ``0.90`` on ``RI``, and the whole panel spans a third of the scale — so ``RI``
+and ``MaRI`` have largely stopped separating models here, while ``CRoMa`` still spreads them
+across a factor of five. That is the case these metrics were built for.
 
 .. results-table:: tolkach-esca
    :caption: Tolkach-ESCA — all 21 encoders, by median ``CRoMa``

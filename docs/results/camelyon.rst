@@ -17,6 +17,11 @@ Columns are explained under :ref:`result-columns`; † marks the natural-image c
 (:ref:`the-control`). Every model is evaluated at the shared operating point ``k = 11``,
 the cohort median of the per-model biological ``k*``, with ``tau`` resolved per model.
 
+Read the support column carefully here. Two biological classes across two centres is a
+sparse neighbourhood, and no encoder in this panel clears 68% — several sit near 10%. A high
+``RI`` over that little evidence is not the same claim as a high ``RI`` over a full cohort,
+which is why :doc:`TCGA-4×4 <tcga-4x4>` (support above 99% throughout) reads so differently.
+
 The shape behind the numbers
 ----------------------------
 

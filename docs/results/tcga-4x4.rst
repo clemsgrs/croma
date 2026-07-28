@@ -12,10 +12,11 @@ page cannot tell the two apart — the manuscript quantifies the overlap encoder
 ``Midnight-12k``, which tops the cohort by a wide margin, is pretrained on TCGA and on
 nothing else.
 
-Only one encoder falls below zero here, and support is near-complete for every model: at
-``k = 71`` almost every tile has an informative neighbour of both types. That makes this
-the least discriminating of the three cohorts on ``RI`` and ``MaRI``, and the one where the
-distributional columns do the most work.
+Only one encoder falls below zero here. Support is the other thing to notice: at ``k = 71``
+every model sits above 99%, so ``RI`` and ``MaRI`` rest on essentially every tile. That is
+worth contrasting with :doc:`Camelyon <camelyon>`, where support never exceeds 68% for any
+encoder in the same panel — the same two indices, resting on very different amounts of
+evidence.
 
 .. results-table:: tcga-4x4
    :caption: TCGA-4×4 — all 21 encoders, by median ``CRoMa``
