@@ -237,17 +237,14 @@ scripts/render_one.py
 /sections-save/
 /scripts/experiments/
 
-# Paper tooling, kept local for now. paper/ was already ignored; this is everything that
-# renders into it -- the .tex and figure generators, the manifest that maps runs to
-# artifacts, their tests, and the ADR governing them. They stay on disk and keep working
-# locally; they are simply not published while the manuscript is unpublished.
+# Paper tooling is tracked: scripts/repro/ (the .tex and figure generators, plus the manifest
+# mapping runs to paper artifacts), its tests, and ADR-0010, which twelve of those files cite.
+# They are how the paper's numbers are reproduced, so they belong in the repo beside the
+# pipeline they read rather than alongside it on one machine.
 #
-# What is NOT here, deliberately: scripts/bench/ (the benchmarking pipeline is a stated
-# deliverable), scripts/studies/ (the APD/nIPD source that croma.downstream is ported from,
-# see ADR-0011), scripts/prep/ and scripts/tools/.
-/scripts/repro/
+# paper/ itself stays ignored: it is a build output, not a source (ADR-0010).
+#
+# test_paper_artifacts.py is the one piece still kept local. It asserts that every
+# paper/sections/*.tex equals what its generator emits, so in a checkout with no paper/ tree
+# it does not merely fail, it errors. Track it once it skips cleanly when that tree is absent.
 /tests/test_paper_artifacts.py
-/tests/test_generate_model_tables.py
-/tests/test_dataset_montage.py
-/tests/test_scale_scatter.py
-/docs/adr/0010-paper-sections-are-build-outputs.md
