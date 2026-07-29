@@ -4,13 +4,13 @@ API Reference
 Reference for the Python API. See :doc:`getting-started` for introductory examples and
 :doc:`metrics` for what each metric measures.
 
-``croma`` exposes three metric classes, the downstream probe protocol and its two
+``croma`` exposes three metric classes, the downstream probe protocol and two
 reductions, and one alignment helper. Each metric class is a namespace of classmethods --
 you never instantiate them. The short names are the ones to import:
 
 .. code-block:: python
 
-   from croma import CRoMa, MaRI, RI, apd, napd, probe_sweep
+   from croma import CRoMa, MaRI, RI, apd, nipd, probe_sweep
 
 .. list-table::
    :header-rows: 1
@@ -31,8 +31,8 @@ you never instantiate them. The short names are the ones to import:
    * - ``apd``
      - :func:`~croma.apd` (a function, not a metric namespace)
      - ``float``
-   * - ``napd``
-     - :func:`~croma.napd` (a function, not a metric namespace)
+   * - ``nipd``
+     - :func:`~croma.nipd` (a function, not a metric namespace)
      - ``float``
    * - ``probe_sweep``
      - :func:`~croma.probe_sweep` (a function, not a metric namespace)
@@ -59,7 +59,7 @@ CRoMa
 Probe protocol
 --------------
 
-``probe_sweep`` produces the matrix the two reductions below consume. It trains a probe to
+``probe_sweep`` produces the matrix the reductions below consume. It trains a probe to
 predict the biological class from frozen embeddings while a schedule walks the training
 set from balanced to fully confounded, and scores each probe on test rows that do not
 move. It takes embeddings and a split assignment: no model is loaded, no manifest read and
@@ -67,7 +67,7 @@ no output layout touched.
 
 .. code-block:: python
 
-   from croma import apd, napd, probe_sweep
+   from croma import apd, probe_sweep
    from croma.downstream import pathorob_schedule
 
    accuracies = probe_sweep(
@@ -77,7 +77,7 @@ no output layout touched.
        schedule=pathorob_schedule("camelyon", rows_per_slide=300),
        rows_per_slide=300,
    )
-   apd(accuracies), napd(accuracies, chance=1 / 2)
+   apd(accuracies)
 
 .. autofunction:: croma.probe_sweep
 
@@ -105,10 +105,11 @@ top level, so they carry no stability promise: minimal-first, per ADR-0002.
 Downstream reductions
 ---------------------
 
-Unlike the three metrics above, ``apd`` and ``napd`` read no embeddings: they reduce the
+Unlike the three metrics above, ``apd`` and ``nipd`` read no embeddings: they reduce the
 balanced accuracies a confounder-biased probe sweep already produced. Both take the same
 ``(n_splits, n_iterations)`` matrix, with the balanced baseline in row ``0`` and each
-later row a progressively more confounded split.
+later row a progressively more confounded split. ``nipd`` additionally takes the
+Cramér's-``V`` coordinate of every row.
 
 APD
 ^^^
@@ -127,25 +128,48 @@ accuracy.
 
 .. autofunction:: croma.apd
 
-nAPD
+nIPD
 ^^^^
 
-``napd`` divides by *skill* -- balanced accuracy above chance -- instead of raw accuracy,
-which makes drops comparable across tasks with different class counts. So it additionally
-needs the task's chance level, ``1 / n_biological_classes``.
+``nipd`` is the normalized integrated performance degradation: the signed area under
+the chance-normalized degradation curve over Cramér's ``V``. It divides performance
+changes by baseline *skill* -- balanced accuracy above chance -- rather than by raw
+baseline accuracy. This corrects unequal baseline headroom across models and tasks.
+
+For mean balanced accuracy across repeated training runs, :math:`\bar a(V)`, baseline
+:math:`a_0 = \bar a(0)` and chance :math:`\pi`,
+
+.. math::
+
+   g(V) = \frac{\bar a(V) - a_0}{a_0 - \pi},
+   \qquad
+   \operatorname{nIPD} = \int_0^1 g(V)\,dV.
+
+The integral is estimated by the trapezoidal rule at the supplied Cramér's-``V``
+coordinates. Consequently, interval widths -- not the number of sampled conditions --
+weight the curve. The coordinates must be finite, strictly increasing, aligned with the
+accuracy rows and span ``0`` to ``1``. The mean baseline must exceed chance; there is no
+additional weak-skill threshold.
 
 .. code-block:: python
 
-   from croma import napd
+   from croma import nipd
 
-   napd(accuracies, chance=1 / 2)  # -> e.g. -0.25
+   nipd(
+       accuracies=[
+           [0.90, 0.90],
+           [0.70, 0.70],
+           [0.50, 0.50],
+       ],
+       cramers_v=[0.0, 0.5, 1.0],
+       chance=0.5,
+   )  # -> -0.5
 
-.. autofunction:: croma.napd
+.. autofunction:: croma.nipd
 
-The two also differ in reduction order: ``apd`` takes the ratio per replicate and averages
-afterwards, while ``napd`` averages the replicates first. That difference is deliberate and
-is not reconciled -- ``apd``'s order is PathoROB's, and changing it would cost the very
-faithfulness the function exists to provide.
+For reproducibility, :math:`\bar a(V)` is formed before normalization: nIPD therefore
+uses a ratio of repeat means. ``apd`` retains PathoROB's mean-of-repeat-specific-ratios
+order because changing it would break faithfulness to the reference implementation.
 
 Alignment
 ---------

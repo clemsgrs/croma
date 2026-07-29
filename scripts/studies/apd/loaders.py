@@ -369,21 +369,15 @@ def case_arrangement(centers, feasible_splits, slide_ids):
 # APD <-> metric correlation config + loaders (used by apd_croma_correlation.py
 # and apd_figure.py)
 # ---------------------------------------------------------------------------
-# The first three are the faithful PathoROB benchmarks that constitute the headline
-# validation table (tab:apd-correlation). `prostate` is the caveated second-organ
-# extension: its APD_ID corroborates the validation, but its APD_OOD rests on a single
-# small out-of-domain centre (NUS: 300/class, no Gleason-3) and is reported separately
-# with that caveat -- do NOT read the 4-benchmark `pooled` APD_OOD as the headline.
-DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach", "prostate"]
+# The three tile-level benchmarks reported in the downstream-correlation table.
+# PCaBiop remains descriptive because its slide-level panel contains only four encoders.
+# Prostate-shift remains available to the experiment driver but is not part of the
+# manuscript's active benchmark panel.
+DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach"]
 #: Everything this study reads and writes: the APD CSVs, the join, and the plots drawn from
 #: them. Figures land here beside their data rather than under ``paper/`` -- see the note on
 #: ``OUT`` in ``scripts/repro/figures/apd_figure.py``.
 STUDY_DIR = REPO / "output/studies/apd"
-# The headline validation table (tab:apd-correlation) pools over ONLY the three faithful
-# PathoROB benchmarks (48 model-benchmark pairs). Prostate is excluded from this pool: its
-# single-centre OOD arm cannot be pooled into a cross-benchmark APD_OOD statistic (see the
-# `prostate` caveat above). `headline` is that 3-benchmark pool; `pooled` is all four.
-HEADLINE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
 CORR_METRICS = ["croma", "ri", "mari"]
 
 def metric_csv(dataset):

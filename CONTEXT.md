@@ -65,7 +65,7 @@ the number of confounder classes, and — being a scalar — admits no tail.
 _Avoid_: "linear probe" (it is $k$-NN), "shortcut score".
 
 **Confounder-biased probe sweep**:
-The downstream protocol APD and nAPD reduce (`croma.probe_sweep`): a *logistic* probe is
+The downstream protocol APD and nIPD reduce (`croma.probe_sweep`): a *logistic* probe is
 trained to predict the **biological class** while a schedule walks the training set from
 balanced to fully confounded, and is scored on test rows that do not move. The result is
 an `(n_splits, n_iterations)` matrix of balanced accuracies, row `0` the balanced baseline.
@@ -167,18 +167,23 @@ scoring at chance has no skill, so it has nothing to lose. Chance is `1/n_biolog
 for the benchmark (binary cohorts 0.5, TCGA-4×4 0.25, Tolkach-ESCA 1/6), exact because the
 scorer is balanced accuracy. *Normalized skill* rescales it to the fraction of achievable
 headroom attained, `(acc − chance)/(1 − chance)`, which is class-count invariant.
-_Avoid_: "accuracy" for this — the distinction is the whole point of nAPD.
+_Avoid_: "accuracy" for this — the distinction is the whole point of nIPD.
 
-**nAPD** (normalized Average Performance Drop):
-The downstream drop measured against **skill** rather than raw accuracy. APD divides by an
-accuracy that includes the chance floor, so drops on benchmarks with different class counts
-are not comparable and models near chance appear to lose little. nAPD divides by skill,
-making drops commensurable across cohorts. It is a rescaling, not a reranking: it agrees
-with APD's model ordering wherever skill is healthy. `APD` is retained as the
-PathoROB-faithful reference.
-_Avoid_: calling nAPD "margin-aware" or an analogue of the RI→MaRI step — it is a
-denominator correction, not a distance weighting, and the RI→MaRI step is the one the
-paper shows changes little.
+**nIPD** (normalized integrated performance degradation):
+The signed area under the chance-normalized downstream degradation curve. If
+`\bar a(V)` is mean balanced accuracy across repeated training runs at Cramér's `V`,
+`a_0 = \bar a(0)`, and `π` is chance, the curve is
+`g(V) = [\bar a(V) − a_0] / (a_0 − π)` and
+`nIPD = ∫_0^1 g(V) dV`. The implementation estimates the integral by the trapezoidal
+rule at the observed `V` coordinates, so interval width rather than the number of sampled
+conditions weights the curve. Negative values denote degradation, zero denotes no net
+change and positive values denote improvement. The mean baseline must exceed chance; there
+is no additional weak-skill gate. `APD` is retained as the PathoROB-faithful reference.
+_Avoid_: calling nIPD an arithmetic average over splits — that makes the result depend on
+how densely a benchmark samples particular parts of the `V` axis. Also avoid calling it
+"margin-aware" or an analogue of the RI→MaRI step: the denominator corrects unequal
+baseline headroom and the integration summarizes that normalized curve; neither is a
+neighbour-distance weighting.
 
 **`apd_split`**:
 PathoROB's ID/OOD partition — APD's notion and only APD's. Tolkach's RI view

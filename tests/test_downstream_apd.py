@@ -68,7 +68,7 @@ def test_apd_takes_the_ratio_per_replicate_and_averages_afterwards() -> None:
     # and a confounded split of 0.30 (ratio 1.5); replicate 1 has 0.90 and 0.75 (ratio
     # 0.833). Mean-of-ratios -- PathoROB's order, which apd keeps -- averages +0.5 and
     # -0.167 to +1/6, so it reports that the confounder *helped*. Ratio-of-means, the
-    # order napd uses, would average the replicates first (0.55 against 0.55) and report
+    # order nIPD uses, would average the replicates first (0.55 against 0.55) and report
     # -1/22. The two disagree in sign here, so this pins which one apd runs.
     accuracies = np.array(
         [

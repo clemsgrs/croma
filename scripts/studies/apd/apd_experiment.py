@@ -11,7 +11,7 @@ centres. APD is the mean relative accuracy change w.r.t. the balanced split:
     APD = mean_{split>0} ( acc_split / acc_split0 ) - 1      (typically < 0)
 
 Closer to 0 = more robust. We report APD_ID and APD_OOD per (model, dataset),
-alongside nAPD, croma's skill-normalized refinement of the same drop.
+alongside nIPD, croma's chance-normalized integral of the degradation curve.
 
 None of that is implemented here. The sweep, both reductions and PathoROB's own
 schedules ship in ``croma.downstream`` (ADR-0011), where the vendored PathoROB code sits
@@ -39,11 +39,18 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from loaders import DATASETS, REPO, arrangement_for, load_data, split_schedule  # noqa: E402
+from loaders import (  # noqa: E402
+    DATASETS,
+    REPO,
+    arrangement_for,
+    load_data,
+    split_schedule,
+    training_correlations,
+)
 
 import layout  # noqa: E402  (loaders put scripts/bench on sys.path on import above)
 
-from croma import apd, napd  # noqa: E402
+from croma import apd, nipd  # noqa: E402
 from croma.downstream import IN_DOMAIN, probe_sweep_over_test_sets  # noqa: E402
 
 #: Slide-level (num_patches_per_slide == 1) validation fraction. PathoROB reserves
@@ -64,7 +71,7 @@ def compute(model, dataset, iterations=20):
     """Run the confounder-biased probe sweep for one (model, dataset) and reduce it.
 
     Returns a dict with apd_id, apd_ood and both raw accuracy matrices -- the matrices
-    because every other number reported about this cell (nAPD, the baseline, whatever a
+    because every other number reported about this cell (nIPD, the baseline, whatever a
     later reporting decision needs) derives from them without re-running the sweep, which
     is the expensive part.
     """
@@ -95,19 +102,19 @@ def compute(model, dataset, iterations=20):
     )
 
 
-def _reductions(res, chance):
+def _reductions(res, *, chance, cramers_v):
     """Every number the CSV carries per domain, derived from the stored accuracy matrices.
 
     Post-hoc, so a cached JSON gets whatever the current reductions report without a
-    re-run. nAPD is reported for every cell: whether one is too close to chance to lean on
+    re-run. nIPD is reported for every cell: whether one is too close to chance to lean on
     is a reporting decision for whoever renders the table, not a property of the metric
-    (ADR-0014), so nothing is suppressed here.
+    (ADR-0018), so nothing is suppressed here.
     """
     out = {}
     for domain, key in (("id", "id_test_accuracies"), ("ood", "ood_test_accuracies")):
         acc = np.asarray(res[key], dtype=float)
         out[f"{domain}_baseline"] = float(acc[0].mean())  # balanced-acc at split 0
-        out[f"napd_{domain}"] = napd(acc, chance)
+        out[f"nipd_{domain}"] = nipd(acc, cramers_v=cramers_v, chance=chance)
     return out
 
 
@@ -130,11 +137,15 @@ def _job(args):
         tag = "done"
     # Both reductions derive from the stored accuracy matrices, so a cached JSON gets them
     # without a re-run. chance = 1 / n biological classes.
-    red = _reductions(res, chance=1.0 / len(DATASETS[dataset]["biological_classes"]))
-    print(f"[{tag}] {dataset}/{model}: nAPD_ID={red['napd_id']*100:.2f}% nAPD_OOD={red['napd_ood']*100:.2f}% "
+    red = _reductions(
+        res,
+        chance=1.0 / len(DATASETS[dataset]["biological_classes"]),
+        cramers_v=training_correlations(dataset),
+    )
+    print(f"[{tag}] {dataset}/{model}: nIPD_ID={red['nipd_id']*100:.2f}% nIPD_OOD={red['nipd_ood']*100:.2f}% "
           f"(APD_ID={res['apd_id']*100:.2f}% APD_OOD={res['apd_ood']*100:.2f}%)", flush=True)
     return dict(dataset=dataset, model=model,
-                napd_id=red["napd_id"], napd_ood=red["napd_ood"],
+                nipd_id=red["nipd_id"], nipd_ood=red["nipd_ood"],
                 apd_id=res["apd_id"], apd_ood=res["apd_ood"],
                 id_baseline=red["id_baseline"], ood_baseline=red["ood_baseline"])
 

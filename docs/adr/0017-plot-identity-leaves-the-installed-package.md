@@ -20,7 +20,7 @@ of the reproduction layer that happened to be installed alongside the library.
 
 That makes this a correction to ADR-0002 rather than an exception to it. ADR-0002 scoped
 the library to the metrics; ADR-0011 later widened it to `croma.downstream`, on the reasoning
-that APD/nAPD are *named contributions of the paper* and a contribution that ships in no
+that APD/nIPD are *named contributions of the paper* and a contribution that ships in no
 package cannot be reused. The plot identity is not a contribution. It is how the figures
 look.
 

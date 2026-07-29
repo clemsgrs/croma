@@ -8,7 +8,7 @@ build-backend = "hatchling.build"
 [project]
 name = "croma"
 version = "0.1.0"
-description = "Robustness metrics for pathology foundation models: RI, MaRI, CRoMa, and APD/nAPD."
+description = "Robustness metrics for pathology foundation models: RI, MaRI, CRoMa, APD, and nIPD."
 readme = "README.md"
 requires-python = ">=3.10"
 # An SPDX expression, not `{ file = ... }`. Under Metadata 2.4 the file form inlines the
