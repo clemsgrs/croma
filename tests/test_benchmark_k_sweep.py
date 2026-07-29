@@ -12,6 +12,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import benchmark as bm
+import run_config
 
 
 def _toy_manifest() -> pd.DataFrame:
@@ -521,3 +522,31 @@ def test_k_grid_defaults_to_dense(bench_env) -> None:
 
     k_sweep_df = pd.read_csv(bench_env.results_dir("toy") / "k_sweep_metrics.csv")
     assert sorted(k_sweep_df["k"].unique().tolist()) == [1, 2, 3, 4, 5]
+
+
+def test_run_writes_a_replayable_run_config(bench_env) -> None:
+    """A run records the grid it swept, and the legacy backfill recovers the same answer.
+
+    Both halves matter. New runs are self-describing, and runs predating the sidecar are
+    reconstructed from their own ``metrics.csv``; if the two ever disagreed, backfilling the
+    committed runs would rewrite history rather than record it.
+    """
+    _setup(bench_env, models=["M1"])
+    bench_env.respec("toy", k_max=9)
+
+    assert bench_env.run("toy", "k-star", "--k-grid", "sparse", "--progress", "off") == 0
+
+    results = bench_env.results_dir("toy")
+    config = run_config.read_run_config(results)
+    assert config is not None
+    assert config["replay"]["k_grid"] == "sparse"
+    assert config["resolved"]["protocol"] == "k-star"
+    assert config["resolved"]["benchmark"] == "toy"
+
+    replayed = run_config.replay_args(config)
+    assert replayed[replayed.index("--k-grid") + 1] == "sparse"
+
+    inferred = run_config.infer_replay_from_metrics(results / "metrics.csv")
+    assert inferred["k_grid"] == config["replay"]["k_grid"]
+    assert inferred["k_max"] == config["replay"]["k_max"]
+    assert inferred["tau"] == config["replay"]["tau"]

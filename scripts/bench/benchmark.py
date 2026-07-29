@@ -39,6 +39,7 @@ from metrics_io import (
     safe_model_name,
 )
 from progress_utils import model_block, progress_write, resolve_progress_mode
+from run_config import K_GRIDS, resolve_sweep_k_values, write_run_config
 
 # NOTE: this is the compute-only driver. It imports no matplotlib/plotting code and
 # makes no plot calls -- it writes the metrics JSON/CSV and per-sample artifacts that
@@ -281,34 +282,11 @@ def _positive_int(value: str) -> int:
     return int(parsed)
 
 
-#: How the k sweep is discretised. The operating point is picked from these values, so
-#: the grid bounds which k a model can select -- it is part of the protocol, not a
-#: display setting. The chosen grid is recorded verbatim in the ``k_values`` column.
-K_GRIDS = ("dense", "sparse")
-
-
-def _resolve_sweep_k_values(k_max: int, grid: str = "dense") -> list[int]:
-    """The k values swept, for a ceiling and a grid.
-
-    ``dense`` sweeps every integer ``1..k_max``.
-
-    ``sparse`` reproduces PathoROB's grid, ``[1, 3, 5, 7, 9] + arange(11, k_max, 10)``
-    (``robustness_index_utils.get_k_values``). Note ``k_max`` is *exclusive* in the
-    arange tail, exactly as upstream: with ``k_max=100`` the largest swept k is 91.
-    Values above ``k_max`` are dropped, so small ceilings degrade gracefully.
-    """
-    if int(k_max) <= 0:
-        raise ValueError("k_max must be strictly positive")
-    k_max = int(k_max)
-    if grid == "dense":
-        return list(range(1, k_max + 1))
-    if grid == "sparse":
-        candidates = [1, 3, 5, 7, 9, *range(11, k_max, 10)]
-        values = sorted({k for k in candidates if 1 <= k <= k_max})
-        if not values:
-            raise ValueError(f"sparse grid is empty for k_max={k_max}")
-        return values
-    raise ValueError(f"unknown k grid {grid!r}; expected one of {list(K_GRIDS)}")
+#: The k-grid definition moved to ``run_config``, next to the sidecar that records which
+#: grid a run used: the grid bounds which k a model can select, so a re-run that is not told
+#: about it does not reproduce the run. Re-exported under the old private name because the
+#: sweep tests reach for ``benchmark._resolve_sweep_k_values``.
+_resolve_sweep_k_values = resolve_sweep_k_values
 
 
 def _shared_operating_k(per_model_best_k: dict[str, int]) -> int:
@@ -1938,6 +1916,7 @@ def main() -> int:
     ):
         progress_write(line, enabled=progress_enabled)
 
+    run_config_path: Path | None = None
     if rows:
         save_metrics(rows=rows, csv_path=metrics_csv, json_path=metrics_json)
         save_metrics(rows=k_sweep_rows, csv_path=k_sweep_csv, json_path=k_sweep_json)
@@ -1945,6 +1924,35 @@ def main() -> int:
             rows=croma_m_sweep_rows,
             csv_path=croma_m_sweep_csv,
             json_path=croma_m_sweep_json,
+        )
+        # Record what this run was asked for, beside the metrics it produced, so a re-run
+        # replays it rather than guessing. Written only alongside real metrics: a config
+        # describing a run that produced nothing would be a claim with no evidence behind it.
+        # The model roster is deliberately absent -- metrics.csv is the roster (ADR-0010).
+        run_config_path = write_run_config(
+            results_dir=results_dir,
+            replay={
+                "k_max": int(k_max),
+                "k_grid": str(args.k_grid),
+                "tau": float(args.tau) if args.tau is not None else "auto",
+                "croma_m_max": int(args.croma_m_max),
+                "croma_start_k": int(args.croma_start_k),
+                "croma_k_growth_factor": float(args.croma_k_growth_factor),
+                "croma_alpha": float(args.croma_alpha),
+            },
+            resolved={
+                "benchmark": str(bench.name),
+                "protocol": str(protocol),
+                "tileset": str(bench.tileset),
+                "evaluation_design": evaluation_design,
+                "confounder_column": confounder_column,
+                "k_values": k_values_sig,
+                "croma_search": croma_search_sig,
+                "croma_headline_m": int(croma_headline_m),
+                "operating_k": (
+                    int(dataset_median_k) if dataset_median_k is not None else None
+                ),
+            },
         )
 
     progress_write("\n[benchmark] === summary ===", enabled=progress_enabled)
@@ -1961,6 +1969,10 @@ def main() -> int:
     progress_write(
         f"[benchmark] croma_m_sweep_json={croma_m_sweep_json}", enabled=progress_enabled
     )
+    if run_config_path is not None:
+        progress_write(
+            f"[benchmark] run_config={run_config_path}", enabled=progress_enabled
+        )
     progress_write(
         f"[benchmark] render figures with: python scripts/bench/render.py {dataset_dir}",
         enabled=progress_enabled,
