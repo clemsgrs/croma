@@ -18,6 +18,12 @@
 
 RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in [_Beyond counts: A distributional robustness margin for pathology foundation models_](https://arxiv.org/abs/2607.25497).
 
+For downstream shortcut-susceptibility experiments, `croma` also provides the
+confounder-biased probe protocol, PathoROB's APD reduction, and normalized integrated
+performance degradation (nIPD). nIPD expresses degradation relative to the
+above-chance baseline performance available to lose and integrates it over Cramér's
+V. See the [downstream API](https://clemsgrs.github.io/croma/api.html#downstream-reductions).
+
 📖 **[Documentation](https://clemsgrs.github.io/croma/)**
 
 ## Install

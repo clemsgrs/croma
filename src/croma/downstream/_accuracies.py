@@ -1,4 +1,4 @@
-"""The input shape both downstream reductions share: a probe sweep's accuracy matrix."""
+"""The input shape downstream reductions share: a probe sweep's accuracy matrix."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ from numpy.typing import ArrayLike
 def as_accuracy_matrix(accuracies: ArrayLike) -> np.ndarray:
     """Coerce a confounder-biased probe sweep to a float matrix, or explain what is wrong.
 
-    ``apd`` and ``napd`` differ in their normalizer and in their reduction order, but they
+    ``apd`` and ``nipd`` differ in their normalizer and reduction, but they
     read the same object: an ``(n_splits, n_iterations)`` matrix of balanced accuracies
     whose row ``0`` is the balanced baseline. That shared shape is checked once, here, so
-    the two reductions cannot drift into disagreeing about what a well-formed sweep is.
+    the reductions cannot drift into disagreeing about what a well-formed sweep is.
 
     Only conditions that hold for *both* reductions live here. Each reduction's own domain
     -- what its denominator needs in order to exist -- stays with the reduction, because

@@ -1,7 +1,7 @@
 import croma
-from croma import CRoMa, MaRI, RI, __version__, apd, napd, probe_sweep
+from croma import CRoMa, MaRI, RI, __version__, apd, nipd, probe_sweep
 from croma.downstream import apd as downstream_apd
-from croma.downstream import napd as downstream_napd
+from croma.downstream import nipd as downstream_nipd
 from croma.downstream import probe_sweep as downstream_probe_sweep
 from croma.metrics.croma import CrossConfounderRobustnessMargin
 from croma.metrics.mari import MarginAwareRobustnessIndex
@@ -13,7 +13,7 @@ def test_public_api_exports_aliases() -> None:
     assert MaRI is MarginAwareRobustnessIndex
     assert CRoMa is CrossConfounderRobustnessMargin
     assert apd is downstream_apd
-    assert napd is downstream_napd
+    assert nipd is downstream_nipd
     assert probe_sweep is downstream_probe_sweep
     assert isinstance(__version__, str)
     assert len(__version__) > 0
@@ -27,10 +27,11 @@ def test_public_api_surface_is_exact() -> None:
         "CRoMa",
         "expand_features_to_manifest",
         "apd",
-        "napd",
+        "nipd",
         "probe_sweep",
         "__version__",
     }
+    assert not hasattr(croma, "napd")
     legacy_alias = "C" + "CMR"
     assert not hasattr(croma, legacy_alias)
     assert legacy_alias not in croma.__all__

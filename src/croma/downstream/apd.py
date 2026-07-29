@@ -29,11 +29,10 @@ def apd(accuracies: ArrayLike) -> float:
     validation and averages the replicate axis -- exactly what PathoROB's own driver
     does to turn the per-replicate scores into the scalar it publishes.
 
-    Note the ratio is taken **per replicate** and averaged afterwards (mean-of-ratios).
-    :func:`croma.napd` averages the replicates first (ratio-of-means), and additionally
-    divides by skill rather than raw accuracy. The two differences are deliberate and
-    are not aligned: see
-    ``docs/adr/0014-napd-averages-replicates-before-taking-the-ratio.md``.
+    Note that the ratio is taken per replicate and averaged afterwards, preserving
+    PathoROB's published reduction. :func:`croma.nipd` is a separate estimand: it
+    averages repeats first, normalizes by above-chance baseline skill, and integrates
+    over Cramér's V.
 
     Args:
         accuracies: ``(n_splits, n_iterations)`` balanced accuracies, row ``0`` the

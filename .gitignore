@@ -243,7 +243,7 @@ scripts/render_one.py
 # locally; they are simply not published while the manuscript is unpublished.
 #
 # What is NOT here, deliberately: scripts/bench/ (the benchmarking pipeline is a stated
-# deliverable), scripts/studies/ (the APD/nAPD source that croma.downstream is ported from,
+# deliverable), scripts/studies/ (the APD/nIPD source that croma.downstream is ported from,
 # see ADR-0011), scripts/prep/ and scripts/tools/.
 /scripts/repro/
 /tests/test_paper_artifacts.py

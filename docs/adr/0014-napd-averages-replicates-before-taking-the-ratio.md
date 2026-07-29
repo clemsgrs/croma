@@ -1,5 +1,10 @@
 # nAPD averages replicates before taking the ratio
 
+> **Superseded by ADR-0018.** This record preserves the rationale for averaging
+> repeats before normalization. The public `napd` reduction was replaced by `nipd`,
+> which retains that aggregation order and integrates the normalized curve over
+> supplied Cramér's-V coordinates.
+
 `napd` reduces an `(n_splits, n_iterations)` accuracy matrix by averaging the
 replicate axis **first** and taking the skill ratio of the averages
 (ratio-of-means). `apd` — PathoROB's reduction, which `croma.downstream` will ship

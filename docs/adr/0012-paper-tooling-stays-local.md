@@ -44,7 +44,7 @@ skips in CI is not a guarantee the repository can offer anyone else.
 - `scripts/bench/` — the benchmarking pipeline is a stated deliverable of this
   repository, and `run_benchmarks.sh` moved here from `scripts/repro/` because its
   output destination is `output/metrics/`, not `paper/` (ADR-0006)
-- `scripts/studies/` — the APD/nAPD source that `croma.downstream` is ported from
+- `scripts/studies/` — the APD/nIPD source that `croma.downstream` is ported from
   (ADR-0011, issues #79–#84)
 - `scripts/prep/`, `scripts/tools/`
 

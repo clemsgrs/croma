@@ -12,8 +12,8 @@ owns: Tolkach-ESCA's train/test case split, which reaches the sweep through its
 ``arrange_slides`` hook. Its expected ordering comes from the driver loop the rewire
 replaced, transcribed below -- so the test asks whether the two agree, not whether the new
 code does what the new code does. The last two cover the other thing a driver owns, its
-reporting: that the CSV it assembles gates nothing, and that the arm whose cell the gate
-used to blank still reaches no correlation scope.
+reporting: that the CSV it assembles gates nothing, and that the slide-level arm enters
+only its own descriptive benchmark scope.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def test_the_study_reaches_for_no_pathorob_checkout(module: Path) -> None:
 def test_the_study_defines_neither_reduction_and_imports_both() -> None:
     # Exactly one implementation of each reduction exists in the repository, and it is the
     # shipped one -- otherwise the paper reports numbers from code that is not the code it
-    # tells readers to install. The study's own gated nAPD is what this replaced.
+    # tells readers to install. The retired study-local normalized reduction must stay gone.
     experiment = (STUDY / "apd_experiment.py").read_text(encoding="utf-8")
     tree = ast.parse(experiment)
 
@@ -76,8 +76,8 @@ def test_the_study_defines_neither_reduction_and_imports_both() -> None:
         for alias in node.names
     }
 
-    assert not defined & {"apd", "napd", "compute_apd", "compute_napd"}
-    assert {"apd", "napd"} <= imported
+    assert not defined & {"apd", "nipd", "compute_apd", "compute_nipd"}
+    assert {"apd", "nipd"} <= imported
     assert "NAPD_NORM_SKILL_FLOOR" not in experiment
 
 
@@ -223,24 +223,21 @@ SUPPRESSED_CELL_HEADROOM = 0.048
 
 
 def test_the_assembled_csv_reports_a_value_for_every_cell(tmp_path: Path) -> None:
-    # The driver used to carry a skill floor and a paired *_gated column, and blanked nAPD
+    # The driver used to carry a skill floor and a paired *_gated column, and blanked values
     # for any cell whose baseline retained too little headroom. The shipped reduction has no
-    # gate (ADR-0014), so a near-chance cell is reported like any other and the reader
+    # extra gate (ADR-0018), so a near-chance cell is reported like any other and the reader
     # decides what to lean on. The stand-in below is a cell with the headroom of the one the
     # floor used to blank; it is read out of the resume cache, so no sweep runs for it.
     import apd_experiment
-    from loaders import DATASETS
+    from loaders import DATASETS, training_correlations
 
     chance = 1.0 / len(DATASETS["pcabiop"]["biological_classes"])
+    cramers_v = training_correlations("pcabiop")
     cached = dict(  # what a swept cell leaves behind; the reductions read the two matrices
         apd_id=-0.1,
         apd_ood=-0.2,
-        id_test_accuracies=[[0.9], [0.8], [0.7]],
-        ood_test_accuracies=[
-            [chance + SUPPRESSED_CELL_HEADROOM],
-            [chance + SUPPRESSED_CELL_HEADROOM / 2],
-            [chance],
-        ],
+        id_test_accuracies=[[0.9 - 0.2 * v] for v in cramers_v],
+        ood_test_accuracies=[[chance + SUPPRESSED_CELL_HEADROOM * (1.0 - v)] for v in cramers_v],
     )
     (tmp_path / "pcabiop").mkdir()
     (tmp_path / "pcabiop" / "Stand-In.json").write_text(json.dumps(cached), encoding="utf-8")
@@ -252,17 +249,13 @@ def test_the_assembled_csv_reports_a_value_for_every_cell(tmp_path: Path) -> Non
 
     assert [column for column in written.columns if column.endswith("_gated")] == []
     assert not written.isna().to_numpy().any()
-    assert reported["napd_ood"].notna().all()
-    assert reported["napd_ood"].iloc[0] < 0
+    assert reported["nipd_ood"].notna().all()
+    assert reported["nipd_ood"].iloc[0] == pytest.approx(-0.5)
 
 
 def test_the_slide_arm_reaches_no_correlation_scope() -> None:
-    # Reporting that cell is safe only because the slide arm is correlated against nothing:
-    # four models is not a rank correlation. Every scope the APD<->metric table carries --
-    # the per-benchmark ones, `headline` and `pooled` -- is cut out of DATASET_KEYS, which is
-    # also the list the join reads, so the exclusion *is* the absence of every slide-level
-    # cohort from it. Were one added, un-blanking a cell would move a number the paper
-    # reports, and would move it invisibly. Hence asserted rather than remembered.
+    # Four slide encoders are too few for a useful rank correlation. PCaBiop remains in
+    # the experiment outputs, but no slide-level cohort enters the correlation table.
     import loaders
 
     slide_level = {
@@ -273,4 +266,30 @@ def test_the_slide_arm_reaches_no_correlation_scope() -> None:
 
     assert slide_level, "no slide-level cohort is configured, so the exclusion asserts nothing"
     assert not slide_level & set(loaders.DATASET_KEYS)
-    assert set(loaders.HEADLINE_DATASETS) <= set(loaders.DATASET_KEYS)
+
+
+def test_downstream_correlations_have_per_benchmark_scopes_only() -> None:
+    import apd_croma_correlation
+    import loaders
+
+    rows = []
+    tile_benchmarks = {"camelyon", "tcga_4x4", "tolkach"}
+    for dataset in [*sorted(tile_benchmarks), "pcabiop"]:
+        for i in range(3):
+            rows.append(
+                {
+                    "dataset": dataset,
+                    "model": f"model-{i}",
+                    "croma": float(i),
+                    "ri": float(i),
+                    "mari": float(i),
+                    "nipd_id": float(i),
+                }
+            )
+
+    correlations = apd_croma_correlation.corr_block(
+        pd.DataFrame(rows),
+        target="nipd_id",
+    )
+
+    assert set(correlations["scope"]) == tile_benchmarks

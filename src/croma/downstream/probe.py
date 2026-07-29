@@ -1,6 +1,6 @@
-"""The confounder-biased probe sweep: the accuracy matrix both downstream reductions read.
+"""The confounder-biased probe sweep: the accuracy matrix downstream reductions read.
 
-``apd`` and ``napd`` reduce a matrix they cannot produce. This module produces it, and it
+``apd`` and ``nipd`` reduce a matrix they cannot produce. This module produces it, and it
 is the harder half: the matrix comes from training a biology probe on a training set whose
 confounder-biology correlation the caller walks from zero to total, and scoring it on
 balanced test sets that never move. The schedule, the probe and the regularisation search
@@ -140,7 +140,7 @@ def probe_sweep(
     Row ``0`` is whatever the caller put first in ``schedule`` -- by construction the
     balanced baseline, the split at which the confounder carries no information about the
     biological class. Every later row is a more confounded split. That is exactly the
-    matrix :func:`croma.apd` and :func:`croma.napd` reduce, so the return value goes
+    matrix :func:`croma.apd` and :func:`croma.nipd` reduce, so the return value goes
     into either of them untouched.
 
     Each replicate reshuffles every ``(confounder, class)`` cell by whole slides, then
@@ -249,7 +249,7 @@ def probe_sweep_over_test_sets(
     Returns:
         ``{"in_domain": matrix}`` plus one ``(n_splits, iterations)`` matrix per named
         test set. Each is a well-formed input for :func:`croma.apd` and
-        :func:`croma.napd`.
+        :func:`croma.nipd`.
 
     Raises:
         ValueError: Everything :func:`probe_sweep` raises, plus a test set whose

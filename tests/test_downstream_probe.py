@@ -2,7 +2,7 @@
 
 The sweep trains a biology probe on a training set the schedule biases more and more
 towards a confounder, and scores it on balanced test sets. What it returns is the input
-``apd`` and ``napd`` read, so the tests below assert the *shape of that contract* --
+``apd`` and ``nipd`` read, so the tests below assert the *shape of that contract* --
 dimensions, range, which row is the baseline, and that both reductions accept the matrix
 untouched -- and never a particular accuracy. Accuracies here come out of a synthetic
 cloud and a seeded shuffle; pinning one would pin the seed, not the protocol.
@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from croma import apd, napd
+from croma import apd, nipd
 from croma.downstream import pathorob_schedule, probe_sweep, probe_sweep_over_test_sets
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -142,7 +142,7 @@ def test_probe_sweep_feeds_both_reductions_untouched() -> None:
     )
 
     assert np.isfinite(apd(accuracies))
-    assert np.isfinite(napd(accuracies, chance=1 / 2))
+    assert np.isfinite(nipd(accuracies, cramers_v=[0.0, 1.0], chance=1 / 2))
 
 
 def test_probe_sweep_row_zero_is_the_split_the_caller_put_first() -> None:

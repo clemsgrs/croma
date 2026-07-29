@@ -7,11 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing in the installed package changes here. This entry covers the repository and the
-documentation site.
-
 ### Added
 
+- **`croma.nipd`**, normalized integrated performance degradation. It divides the
+  repeat-mean degradation curve by above-chance baseline skill and integrates it over
+  Cramér's \(V\) by the trapezoidal rule. This corrects unequal baseline headroom while
+  preventing the density of a benchmark's sampled splits from defining their weight.
+  The supplied Cramér's-\(V\) coordinates must span 0 to 1, and mean baseline balanced
+  accuracy must exceed chance; there is no additional weak-skill gate. See ADR-0018.
 - **`results/`, a tracked publication artifact.** A small set of CSVs, a binned
   distribution payload and a provenance sidecar, written from the benchmark runs by
   `scripts/tools/export_results.py`. The documentation site renders them, and the README's
@@ -23,6 +26,13 @@ documentation site.
 - **`tests/test_results_export.py`**, which regenerates `results/` from `output/` and fails
   on any difference, so a benchmark re-run that was never republished is caught rather than
   silently leaving stale numbers on a public site. It skips where `output/` is absent.
+
+### Removed
+
+- **`croma.napd`**, the equal-weight average of chance-normalized degradation over sampled
+  splits. It is replaced by `croma.nipd`, whose trapezoidal integral targets a uniform
+  average over Cramér's \(V\) instead of the empirical density of a benchmark's grid.
+  No compatibility alias is retained because the two names denote different estimands.
 
 ### Fixed
 
