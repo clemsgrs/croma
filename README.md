@@ -1,6 +1,7 @@
 # croma
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2607.25497"><img src="https://img.shields.io/badge/arXiv-2607.25497-b31b1b.svg" alt="arXiv"></a>
   <a href="https://pypi.org/project/croma/"><img src="https://img.shields.io/pypi/v/croma.svg" alt="PyPI version"></a>
   <a href="https://clemsgrs.github.io/croma/"><img src="https://img.shields.io/badge/docs-github.io-blue.svg" alt="Documentation"></a>
   <a href="https://github.com/psf/black"><img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: Black"></a>
@@ -15,7 +16,7 @@
 | `MaRI` | Margin-aware Robustness Index | Weights that same evidence by feature distance |
 | `CRoMa` | Cross-confounder Robustness Margin | A signed margin, with tail-aware reporting |
 
-RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both.
+RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in [_Beyond counts: A distributional robustness margin for pathology foundation models_](https://arxiv.org/abs/2607.25497).
 
 📖 **[Documentation](https://clemsgrs.github.io/croma/)**
 
@@ -89,10 +90,23 @@ Three habits will keep you out of trouble:
 
 ## Citing
 
-The paper describing MaRI and CRoMa is in preparation. Until it is out, please cite this
-repository — use the **Cite this repository** button, or [`CITATION.cff`](CITATION.cff)
-directly — along with the [PathoROB](https://arxiv.org/abs/2507.17845) study that
-introduced the Robustness Index.
+If you use MaRI or CRoMa, please cite the paper — and the
+[PathoROB](https://arxiv.org/abs/2507.17845) study that introduced the Robustness Index
+these build on.
+
+```bibtex
+@article{grisi2026beyond,
+  title   = {Beyond counts: A distributional robustness margin for pathology foundation models},
+  author  = {Grisi, Cl{\'e}ment and van der Laak, Jeroen and Litjens, Geert},
+  journal = {arXiv preprint arXiv:2607.25497},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2607.25497},
+  url     = {https://arxiv.org/abs/2607.25497}
+}
+```
+
+To cite the software itself rather than the method, use [`CITATION.cff`](CITATION.cff)
+directly; GitHub's **Cite this repository** button resolves to the paper above.
 
 ## License
 

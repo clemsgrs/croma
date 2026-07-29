@@ -6,7 +6,9 @@ Results
 Twenty-one encoders — twenty pathology foundation models and one natural-image control —
 scored on three tile cohorts from the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study.
 Every number on these pages is read from :doc:`committed CSVs <provenance>` written by a
-tracked exporter, never transcribed.
+tracked exporter, never transcribed. The method behind them is described in
+`Beyond counts: A distributional robustness margin for pathology foundation models
+<https://arxiv.org/abs/2607.25497>`_.
 
 .. _aggregate-table:
 
@@ -83,8 +85,9 @@ What these numbers do and do not say
 
 - **TCGA-4×4 is drawn from TCGA**, and many of these encoders pretrain on it. An
   in-distribution advantage is not the same as robustness, so that cohort's ranks read
-  differently from the other two — which are scored on centres outside TCGA. The manuscript
-  quantifies the overlap encoder by encoder; these pages do not.
+  differently from the other two — which are scored on centres outside TCGA. The
+  `paper <https://arxiv.org/abs/2607.25497>`_ quantifies the overlap encoder by encoder;
+  these pages do not.
 - **The roster is fixed at 21 across all three cohorts.** Cohorts computed on a different
   roster — prostate (16 encoders) and a slide-level panel (4) — are deliberately not
   published here, because a table whose roster silently differs from the one beside it

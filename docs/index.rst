@@ -14,7 +14,9 @@ It implements three complementary neighbourhood metrics:
 
 RI was introduced in the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study. ``croma``
 provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and
-introduces CRoMa, which overcomes limitations of both.
+introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in
+`Beyond counts: A distributional robustness margin for pathology foundation models
+<https://arxiv.org/abs/2607.25497>`_.
 
 .. code-block:: bash
 
@@ -57,6 +59,23 @@ column is for. :doc:`Full panel and per-cohort detail → <results/index>`
        <p>Every cohort, every column, and the distributions behind them.</p>
      </a>
    </div>
+
+Citing
+------
+
+.. code-block:: bibtex
+
+   @article{grisi2026beyond,
+     title   = {Beyond counts: A distributional robustness margin for pathology foundation models},
+     author  = {Grisi, Cl{\'e}ment and van der Laak, Jeroen and Litjens, Geert},
+     journal = {arXiv preprint arXiv:2607.25497},
+     year    = {2026},
+     doi     = {10.48550/arXiv.2607.25497},
+     url     = {https://arxiv.org/abs/2607.25497}
+   }
+
+Please cite the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study alongside it: RI is
+theirs, and the three cohorts scored under :doc:`Results <results/index>` are theirs too.
 
 .. toctree::
    :maxdepth: 1

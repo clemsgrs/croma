@@ -28,7 +28,31 @@ keywords:
   - robustness
   - representation-learning
   - metrics
-# The accompanying manuscript has no DOI yet. When it does, add a `preferred-citation:`
-# block of type `article` here -- GitHub and reference managers will then cite the paper
-# rather than the software, with this entry kept as the software record. A Zenodo DOI for
-# the release itself would go in `identifiers:`.
+# `preferred-citation:` makes GitHub's "Cite this repository" button and reference managers
+# emit the paper rather than the software, while the entry above is kept as the software
+# record. CFF 1.2.0 has no `preprint` reference type, so a preprint is conventionally
+# `article` with `journal: arXiv`. A Zenodo DOI for the release itself would go in a
+# top-level `identifiers:` block.
+preferred-citation:
+  type: article
+  title: "Beyond counts: A distributional robustness margin for pathology foundation models"
+  authors:
+    - family-names: Grisi
+      given-names: Clément
+      email: clement.grisi@radboudumc.nl
+      affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
+    - family-names: van der Laak
+      given-names: Jeroen
+      affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
+    - family-names: Litjens
+      given-names: Geert
+      affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
+  year: 2026
+  month: 7
+  journal: arXiv
+  doi: 10.48550/arXiv.2607.25497
+  url: "https://arxiv.org/abs/2607.25497"
+  identifiers:
+    - type: other
+      value: "arXiv:2607.25497"
+      description: "arXiv identifier"

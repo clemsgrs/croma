@@ -8,7 +8,8 @@ and lung adeno- and squamous cell carcinoma — contributed by four TCGA tissue 
 **Read this cohort with its pretraining overlap in mind.** TCGA is the most widely used
 pretraining corpus in computational pathology, and many of the encoders here have seen it.
 A strong score can reflect an in-distribution advantage rather than robustness, and this
-page cannot tell the two apart — the manuscript quantifies the overlap encoder by encoder.
+page cannot tell the two apart — the `paper <https://arxiv.org/abs/2607.25497>`_ quantifies
+the overlap encoder by encoder.
 ``Midnight-12k``, which tops the cohort by a wide margin, is pretrained on TCGA and on
 nothing else.
 
