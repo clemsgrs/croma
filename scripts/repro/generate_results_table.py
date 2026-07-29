@@ -145,12 +145,17 @@ def _operating_point(df: pd.DataFrame, protocol: str) -> str:
 
 
 def _control_clause(control: pd.DataFrame) -> str:
-    """"beneath" is load-bearing: the control is rendered in its own band below the rule,
-    and the caption is the only thing that tells a reader the split is deliberate."""
+    """The control is rendered in its own band below the rule; the caption is the only thing
+    that tells a reader the split is deliberate.
+
+    Three of the four manuscript captions end this clause at "separately"; TCGA-2x2 alone adds
+    "beneath". One generator cannot emit both, so it emits the majority form -- see
+    build_caption for why the majority is the tie-break rather than the more precise variant.
+    """
     if control.empty:
         return ""
     return (
-        rf", with the natural-image control \code{{{CONTROL_MODEL}}} shown separately beneath"
+        rf", with the natural-image control \code{{{CONTROL_MODEL}}} shown separately"
     )
 
 
@@ -168,12 +173,19 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
     ranked, control = split_panel(df)
     m = int(CROMA_HEADLINE_M)
     confounder = str(df["confounder_display_name"].iloc[0]).lower().replace("center", "centre")
-    # "median" is dropped here and kept in the column list below: the ordering key and the
-    # column are the same statistic, and naming it twice read as though they differed.
+    # The four manuscript captions drifted apart under hand editing and disagree on three
+    # independent wordings: the article before the model count ("for 20" vs "for the 20",
+    # split 2-2), "ordered by median CRoMa" vs "ordered by CRoMa" (3-1), and whether the
+    # control clause ends "separately" or "separately beneath" (3-1). No single rule emits
+    # all four, so this one takes the majority on each axis. That is deliberately not the
+    # most precise wording -- "beneath" says something true that "separately" leaves out --
+    # but it is the wording that reproduces the most of the paper unchanged: TCGA-4x4 and
+    # Tolkach come out byte-identical, Camelyon differs by one article, TCGA-2x2 by three
+    # words. Prefer a variant? Change it here and all four tables follow.
     head = (
         rf"\textbf{{Representation robustness on {entry.short_name}.}} Pooled results for "
         rf"the {len(ranked)} {entry.model_type} pathology foundation models, ordered by "
-        rf"\code{{CRoMa}} ($m{{=}}{m}$){_control_clause(control)}. "
+        rf"median \code{{CRoMa}} ($m{{=}}{m}$){_control_clause(control)}. "
         rf"{_operating_point(df, entry.protocol)}"
     )
     cols = (
