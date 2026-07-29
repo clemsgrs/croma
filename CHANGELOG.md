@@ -5,7 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] - Unreleased
+## [Unreleased]
+
+Nothing in the installed package changes here. This entry covers the repository and the
+documentation site.
+
+### Added
+
+- **`results/`, a tracked publication artifact.** A small set of CSVs, a binned
+  distribution payload and a provenance sidecar, written from the benchmark runs by
+  `scripts/tools/export_results.py`. The documentation site renders them, and the README's
+  results table is a generated region of the file rather than a hand-typed one.
+  `output/` is unchanged: still git-ignored, still safe to wipe. See ADR-0016.
+- **A results section on the documentation site** — a cross-cohort aggregate with two
+  independent rank columns and no combined score, per-cohort pages carrying the full column
+  set, and a distribution explorer that counts the samples in any range you drag over.
+- **`tests/test_results_export.py`**, which regenerates `results/` from `output/` and fails
+  on any difference, so a benchmark re-run that was never republished is caught rather than
+  silently leaving stale numbers on a public site. It skips where `output/` is absent.
+
+### Fixed
+
+- **Dark-mode figures.** The page background is now stripped before the dark pass rather
+  than after — the strip matched on white, and the dark pass had already recoloured it, so
+  every plotted figure sat in a visible grey box. And a colour now inverts when it is
+  merely very pale, whatever its hue: nothing legible is drawn that pale, so a pale tint is
+  always a background wash.
+
+## [0.1.0] - 2026-07-28
 
 First public release of `croma`, a lean library of robustness metrics for pathology
 foundation models: the representation-level metrics (RI, MaRI, and the flagship

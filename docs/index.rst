@@ -14,7 +14,30 @@ It implements three complementary neighbourhood metrics:
 
 RI was introduced in the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study. ``croma``
 provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and
-introduces CRoMa, which overcomes limitations of both.
+introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in
+`Beyond counts: A distributional robustness margin for pathology foundation models
+<https://arxiv.org/abs/2607.25497>`_.
+
+.. code-block:: bash
+
+   pip install croma
+
+Twenty-one encoders, three cohorts
+----------------------------------
+
+.. aggregate-table::
+   :top: 8
+
+**Bold** marks the Pareto frontier — the encoders no other encoder beats on both rankings at
+once. † is a natural-image control. The two ranks are kept apart on purpose: a strong median
+margin can hide a brittle tail, and one combined number would conceal exactly what the tail
+column is for. :doc:`Full panel and per-cohort detail → <results/index>`
+
+.. themed-figure:: _static/figures/rank_pareto
+   :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
+
+   Median margin against tail severity, aggregated by rank across the three cohorts. Better
+   is up and to the right; ringed points are undominated.
 
 .. raw:: html
 
@@ -31,11 +54,28 @@ introduces CRoMa, which overcomes limitations of both.
        <h3>Inputs</h3>
        <p>The manifest and embedding contracts, and the two evaluation designs.</p>
      </a>
-     <a class="croma-card" href="cli.html">
-       <h3>CLI</h3>
-       <p>Score a saved embedding matrix straight from the shell.</p>
+     <a class="croma-card" href="results/index.html">
+       <h3>Results</h3>
+       <p>Every cohort, every column, and the distributions behind them.</p>
      </a>
    </div>
+
+Citing
+------
+
+.. code-block:: bibtex
+
+   @article{grisi2026beyond,
+     title   = {Beyond counts: A distributional robustness margin for pathology foundation models},
+     author  = {Grisi, Cl{\'e}ment and van der Laak, Jeroen and Litjens, Geert},
+     journal = {arXiv preprint arXiv:2607.25497},
+     year    = {2026},
+     doi     = {10.48550/arXiv.2607.25497},
+     url     = {https://arxiv.org/abs/2607.25497}
+   }
+
+Please cite the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study alongside it: RI is
+theirs, and the three cohorts scored under :doc:`Results <results/index>` are theirs too.
 
 .. toctree::
    :maxdepth: 1
@@ -52,5 +92,6 @@ introduces CRoMa, which overcomes limitations of both.
    :hidden:
    :caption: In Depth
 
+   results/index
    datasets
    benchmarking

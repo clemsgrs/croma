@@ -20,7 +20,7 @@ inside an accuracy number.
      - breast lymph node: tumour / normal (2)
      - medical centre (2)
      - 20,400 tiles
-   * - TCGA (4x4)
+   * - TCGA-4×4
      - tile
      - cancer type (4)
      - medical centre (4)
@@ -36,7 +36,7 @@ inside an accuracy number.
      - medical centre (2)
      - 1,000 slides
 
-Camelyon, TCGA-4x4 and Tolkach-ESCA come from the
+Camelyon, TCGA-4×4 and Tolkach-ESCA come from the
 `PathoROB <https://arxiv.org/abs/2507.17845>`_ study. PCaBiop is a collection of prostate
 biopsies sourced from `PANDA <https://www.kaggle.com/c/prostate-cancer-grade-assessment>`_.
 
@@ -60,7 +60,7 @@ cannot be driven by an uneven cell.
 .. themed-figure:: _static/figures/dataset_cardinality
    :alt: Evaluated samples per biological class and confounder combination, per benchmark.
 
-   Evaluated samples per class x centre cell: 5,100 tiles for Camelyon, 360 for TCGA-4x4,
+   Evaluated samples per class x centre cell: 5,100 tiles for Camelyon, 360 for TCGA-4×4,
    500 for Tolkach-ESCA, and 250 slides for PCaBiop.
 
 Building your own

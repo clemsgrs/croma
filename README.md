@@ -1,6 +1,7 @@
 # croma
 
 <p align="center">
+  <a href="https://arxiv.org/abs/2607.25497"><img src="https://img.shields.io/badge/arXiv-2607.25497-b31b1b.svg" alt="arXiv"></a>
   <a href="https://pypi.org/project/croma/"><img src="https://img.shields.io/pypi/v/croma.svg" alt="PyPI version"></a>
   <a href="https://clemsgrs.github.io/croma/"><img src="https://img.shields.io/badge/docs-github.io-blue.svg" alt="Documentation"></a>
   <a href="https://github.com/psf/black"><img src="https://img.shields.io/badge/code%20style-black-000000.svg" alt="Code style: Black"></a>
@@ -15,7 +16,7 @@
 | `MaRI` | Margin-aware Robustness Index | Weights that same evidence by feature distance |
 | `CRoMa` | Cross-confounder Robustness Margin | A signed margin, with tail-aware reporting |
 
-RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both.
+RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in [_Beyond counts: A distributional robustness margin for pathology foundation models_](https://arxiv.org/abs/2607.25497).
 
 📖 **[Documentation](https://clemsgrs.github.io/croma/)**
 
@@ -50,6 +51,27 @@ print(f"MaRI  {mari.value:.3f}  (tau={mari.tau:.4f})")
 print(f"CRoMa {croma.value:+.3f}  (lower-tail mean {croma.ltm_alpha:+.3f})")
 ```
 
+## Results
+
+Twenty-one encoders — twenty pathology foundation models and one natural-image control (†) — scored on three tile cohorts from [PathoROB](https://arxiv.org/abs/2507.17845).
+
+<!-- results:start -->
+| Model | CRoMa rank | tail rank | Camelyon | TCGA-4×4 | Tolkach-ESCA |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **CONCH** | 2.7 | 8.3 | 0.20 | 0.15 | 0.44 |
+| **GenBio-PathFM** | 3.0 | 6.3 | 0.19 | 0.16 | 0.39 |
+| Midnight-12k | 3.0 | 15.7 | 0.11 | 0.40 | 0.58 |
+| **CONCHv1.5** | 3.3 | 4.3 | 0.19 | 0.15 | 0.39 |
+| Virchow2 | 4.3 | 5.7 | 0.20 | 0.13 | 0.35 |
+| H0-mini | 5.3 | 10.7 | 0.17 | 0.12 | 0.38 |
+| Virchow | 6.3 | 9.3 | 0.16 | 0.09 | 0.37 |
+| **H-optimus-1** | 8.3 | 3.0 | 0.08 | 0.09 | 0.26 |
+
+Top 8 of 21 by CRoMa rank, over 3 tile cohorts. Each rank is the mean of that encoder's within-cohort ranks — by median CRoMa, and by tail severity LTM₁₀. **Bold** marks the Pareto frontier: the encoders no other encoder beats on both at once. There is deliberately no combined rank, because a strong median can hide a brittle tail.
+
+📊 **[Full panel, per-cohort detail and the distributions](https://clemsgrs.github.io/croma/results/)**
+<!-- results:end -->
+
 ## Reading the numbers
 
 **RI** and **MaRI** live in `[0, 1]`; above `0.5`, biological evidence outweighs confounder evidence. **CRoMa** lives in `(-1, 1)` and is neutral at `0`, positive when biology dominates.
@@ -68,10 +90,23 @@ Three habits will keep you out of trouble:
 
 ## Citing
 
-The paper describing MaRI and CRoMa is in preparation. Until it is out, please cite this
-repository — use the **Cite this repository** button, or [`CITATION.cff`](CITATION.cff)
-directly — along with the [PathoROB](https://arxiv.org/abs/2507.17845) study that
-introduced the Robustness Index.
+If you use MaRI or CRoMa, please cite the paper — and the
+[PathoROB](https://arxiv.org/abs/2507.17845) study that introduced the Robustness Index
+these build on.
+
+```bibtex
+@article{grisi2026beyond,
+  title   = {Beyond counts: A distributional robustness margin for pathology foundation models},
+  author  = {Grisi, Cl{\'e}ment and van der Laak, Jeroen and Litjens, Geert},
+  journal = {arXiv preprint arXiv:2607.25497},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2607.25497},
+  url     = {https://arxiv.org/abs/2607.25497}
+}
+```
+
+To cite the software itself rather than the method, use [`CITATION.cff`](CITATION.cff)
+directly; GitHub's **Cite this repository** button resolves to the paper above.
 
 ## License
 
