@@ -24,7 +24,7 @@ from scipy.stats import spearmanr
 
 from loaders import (
     CORR_METRICS as METRICS,
-    DATASET_KEYS as DATASETS,
+    JOIN_KEYS as DATASETS,
     REPO,
     load_joined,
     ranked,
