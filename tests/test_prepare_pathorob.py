@@ -117,6 +117,11 @@ def test_align_dataset_camelyon_reduced_emits_one_complete_2x2_subset(
     assert out_df["subset"].nunique() == 1
     assert set(out_df["subset"]) == {"RUMC_UMCU"}
     assert _is_complete_2x2_subset(out_df)
+    # The canonical manifest exposes PathoROB's slide as the independence unit: the
+    # metadata and the intermediate source manifest join on ``slide_id``, the manifest
+    # CRoMa scores carries ``group_id``.
+    assert "slide_id" not in out_df.columns
+    assert out_df["group_id"].tolist() == ["slide_n_r", "slide_n_u", "slide_t_r", "slide_t_u"]
 
 
 def test_align_dataset_tolkach_reduced_expands_cell_buckets_into_quartets(

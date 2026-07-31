@@ -67,6 +67,6 @@ Building your own
 -----------------
 
 Any cohort works, provided it satisfies the :doc:`manifest contract <manifest>`: one row
-per sample with a ``label``, a ``slide_id``, and a confounder column of your choosing. See
+per sample with a ``label``, a ``group_id``, and a confounder column of your choosing. See
 :ref:`sizing` for how large the neighbourhood scope needs to be before the defaults are
 usable.

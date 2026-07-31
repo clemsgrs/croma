@@ -28,7 +28,7 @@ def _toy_manifest() -> pd.DataFrame:
             "image_path": [f"/tmp/{i}.png" for i in range(4)],
             "label": ["A", "A", "B", "B"],
             "scanner_vendor": ["V1", "V2", "V1", "V2"],
-            "slide_id": ["sl0", "sl1", "sl2", "sl3"],
+            "group_id": ["sl0", "sl1", "sl2", "sl3"],
         }
     )
 

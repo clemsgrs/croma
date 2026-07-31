@@ -4,13 +4,14 @@ import numpy as np
 import pandas as pd
 
 from croma.confounders import CANONICAL_CONFOUNDER_COLUMN
+from croma.metrics.pairs import GROUP_COLUMN
 
 EMBEDDING_SOURCE_COLUMNS = (
     "sample_id",
     "image_path",
     "label",
     CANONICAL_CONFOUNDER_COLUMN,
-    "slide_id",
+    GROUP_COLUMN,
 )
 
 

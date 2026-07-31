@@ -42,7 +42,7 @@ SEED = 0
 
 OUT_4CLASS = REPO / "data/prostate-shift-4class-kirumc.csv"
 OUT_GRADEBAL = REPO / "data/prostate-shift-gradebal-binary-kirumc.csv"
-COLUMNS = ["sample_id", "label", "medical_center", "slide_id", "biology", "image_path"]
+COLUMNS = ["sample_id", "label", "medical_center", "group_id", "biology", "image_path"]
 
 
 def _draw(df: pd.DataFrame, center: str, biology: str, n: int, rng: np.random.Generator) -> pd.DataFrame:
@@ -57,7 +57,7 @@ def _draw(df: pd.DataFrame, center: str, biology: str, n: int, rng: np.random.Ge
 
 def main() -> int:
     df = pd.read_csv(FULL_CSV)
-    if list(df.columns) != ["sample_id", "label", "medical_center", "slide_id", "biology", "image_path"]:
+    if list(df.columns) != ["sample_id", "label", "medical_center", "group_id", "biology", "image_path"]:
         raise ValueError(f"unexpected source columns: {df.columns.tolist()}")
     rng = np.random.default_rng(SEED)
 

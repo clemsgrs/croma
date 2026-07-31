@@ -146,7 +146,7 @@ def orthogonal_matrix(dim: int, *, seed: int = 20260727) -> np.ndarray:
 def toy_manifest(labels: list[str], confounders: list[str]) -> pd.DataFrame:
     """Manifest for ``len(labels)`` samples, one tile per slide.
 
-    Distinct ``slide_id`` per row on purpose: the same-slide exclusion then removes nothing,
+    Distinct ``group_id`` per row on purpose: the same-slide exclusion then removes nothing,
     so the neighbour sets are exactly the ones the geometry implies.
     """
     n = len(labels)
@@ -158,7 +158,7 @@ def toy_manifest(labels: list[str], confounders: list[str]) -> pd.DataFrame:
             "image_path": [f"/tmp/{i}.png" for i in range(n)],
             "label": list(labels),
             CONFOUNDER_COLUMN: list(confounders),
-            "slide_id": [f"slide-{i}" for i in range(n)],
+            "group_id": [f"slide-{i}" for i in range(n)],
             "dataset": ["toy"] * n,
         }
     )

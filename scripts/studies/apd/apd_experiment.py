@@ -91,7 +91,7 @@ def compute(model, dataset, iterations=20):
         # study states a fraction instead -- one of its two documented slide-level
         # deviations, the other being loaders._pcabiop_split_map's schedule.
         validation_fraction=None if rows_per_slide > 1 else VAL_FRACTION,
-        arrange_slides=arrangement_for(dataset, cohort.slide_ids),
+        arrange_slides=arrangement_for(dataset, cohort.group_ids),
     )
     id_accuracies, ood_accuracies = accuracies[IN_DOMAIN], accuracies[OUT_OF_DOMAIN]
     return dict(

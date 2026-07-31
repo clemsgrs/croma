@@ -39,9 +39,10 @@ into one of four types:
      - other label, other confounder
      - Uninformative: biology and confounder both differ.
 
-Only ``SO`` and ``OS`` neighbours -- the *typed* neighbours -- carry evidence. Neighbours
-from the same slide are always excluded, so a model cannot score well by retrieving other
-tiles of the slide it is already looking at.
+Only ``SO`` and ``OS`` neighbours -- the *typed* neighbours -- carry evidence. Candidates
+sharing the query's ``group_id`` -- its independence group -- are always excluded, so a
+model cannot score well by retrieving near-duplicates of the sample it is already looking
+at.
 
 .. _undefined-neighbourhoods:
 

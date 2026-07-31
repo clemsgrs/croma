@@ -48,6 +48,15 @@ measure — e.g. medical center, scanner, data provider. Neighbours are typed by
 whether they share the anchor's confounder value.
 _Avoid_: batch, site (use only when quoting a specific dataset's column), domain.
 
+**Independence group** (`group_id`):
+The non-independent source a sample came from — a slide, a patient, a specimen, an
+acquisition; whichever unit a study declares. Required on every canonical manifest, as a
+non-empty string. Candidates sharing the query's `group_id` are dropped before neighbours
+are selected, so a model cannot score well by retrieving near-duplicates of the sample it
+is already looking at. Which unit to group by is the study's call, not the library's.
+_Avoid_: `slide_id` (the pre-rename name; slide is one possible unit, not the contract),
+cluster (that word belongs to the bootstrap, which resamples these same groups).
+
 **Support fraction**:
 The fraction of anchors on which RI/MaRI are defined (`1 - ri_undefined_frac`).
 Always reported alongside RI/MaRI because those metrics are undefined on

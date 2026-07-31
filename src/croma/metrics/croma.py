@@ -12,10 +12,11 @@ from croma.metrics.base import (
     _normalize_evaluation_design,
 )
 from croma.metrics.neighbors import (
-    _filter_query_neighbors_excluding_same_slide,
+    _filter_query_neighbors_excluding_same_group,
     _initial_n_neighbors,
 )
 from croma.metrics.pairs import (
+    GROUP_COLUMN,
     EvaluationSubset,
     ensure_canonical_manifest_columns,
     normalize_manifest,
@@ -149,7 +150,7 @@ def _iterative_typed_neighbor_search(
     features: np.ndarray,
     labels: np.ndarray,
     centers: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     m: int,
     start_k: int,
     k_growth_factor: float,
@@ -193,17 +194,17 @@ def _iterative_typed_neighbor_search(
             )
 
         fetch_neighbors = _initial_n_neighbors(
-            kmax=int(k_current), slide_ids=slide_ids, n_samples=n_samples
+            kmax=int(k_current), group_ids=group_ids, n_samples=n_samples
         )
         distances, raw_neighbors = model.kneighbors(
             features[query_indices], n_neighbors=fetch_neighbors
         )
 
-        neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_slide(
+        neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_group(
             raw_neighbors=raw_neighbors,
             raw_distances=distances,
             query_indices=query_indices,
-            slide_ids=slide_ids,
+            group_ids=group_ids,
             kmax=int(k_current),
         )
 
@@ -339,13 +340,13 @@ class CrossConfounderRobustnessMargin:
 
             labels = pd.factorize(sub["label"])[0].astype(int)
             centers = pd.factorize(sub["confounder"])[0].astype(int)
-            slide_ids = sub["slide_id"].astype(str).to_numpy()
+            group_ids = sub[GROUP_COLUMN].astype(str).to_numpy()
 
             so_dists, os_dists, search_meta = _iterative_typed_neighbor_search(
                 features=subset_features,
                 labels=labels,
                 centers=centers,
-                slide_ids=slide_ids,
+                group_ids=group_ids,
                 m=int(m_max),
                 start_k=int(start_k),
                 k_growth_factor=float(k_growth_factor),

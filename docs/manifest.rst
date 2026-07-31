@@ -58,12 +58,15 @@ Manifest contract
    * - ``label``
      - yes
      - The biological class. This is the signal a robust model should organize by.
-   * - ``slide_id``
+   * - ``group_id``
      - yes
-     - Slide of origin. Neighbours from the *same slide* are excluded from every
-       neighbourhood, so a model cannot score well by retrieving other tiles of the slide
-       it is already looking at. Give each sample a distinct ``slide_id`` only if the
-       samples genuinely come from distinct slides.
+     - The sample's **independence group**: the non-independent source it came from -- a
+       slide, a patient, a specimen, an acquisition, whatever unit your study declares.
+       Candidates sharing a query's ``group_id`` are excluded from its neighbourhood
+       before neighbours are selected, so a model cannot score well by retrieving
+       near-duplicates of the sample it is already looking at. Must be a non-empty
+       string; give two samples distinct ``group_id`` values only if they genuinely come
+       from independent sources.
    * - *confounder*
      - yes
      - The non-biological factor to test against -- center, scanner, stain protocol. You
@@ -130,7 +133,7 @@ A minimal manifest -- one subset, four cells, one sample each:
 
 .. code-block:: text
 
-   sample_id,image_path,label,slide_id,center,subset
+   sample_id,image_path,label,group_id,center,subset
    s1,/data/1.png,tumor,slide-1,center_a,tumor_vs_normal__a_b
    s2,/data/2.png,tumor,slide-2,center_b,tumor_vs_normal__a_b
    s3,/data/3.png,normal,slide-3,center_a,tumor_vs_normal__a_b
@@ -150,7 +153,7 @@ No ``subset`` column. Every row is scored against the whole cohort:
 
 .. code-block:: text
 
-   sample_id,image_path,label,slide_id,center
+   sample_id,image_path,label,group_id,center
    s1,/data/1.png,tumor,slide-1,center_a
    s2,/data/2.png,tumor,slide-2,center_b
    s3,/data/3.png,normal,slide-3,center_a
@@ -172,7 +175,7 @@ under the scope size is not a meaningful neighbourhood anyway.
 
 **CRoMa.** A sample resolves only if ``m`` ``SO`` *and* ``m`` ``OS`` neighbours can be found
 for it. With the default ``m=5``, each of the four ``(label, confounder)`` cells wants at
-least 5 samples, on distinct slides. Unresolved samples are counted in
+least 5 samples, in distinct ``group_id`` groups. Unresolved samples are counted in
 ``result.undefined_frac`` rather than dropped, and a run that resolves none returns ``nan``.
 
 Neither rule can produce a *wrong* number -- RI raises, CRoMa reports what it could not

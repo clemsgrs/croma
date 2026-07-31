@@ -13,6 +13,7 @@ from croma.metrics.neighbors import (
     _select_k_from_balanced_accuracy,
 )
 from croma.metrics.pairs import (
+    GROUP_COLUMN,
     EvaluationSubset,
     ensure_canonical_manifest_columns,
     normalize_manifest,
@@ -51,7 +52,7 @@ class _PreparedSubsetInputs:
     features: np.ndarray
     labels: np.ndarray
     centers: np.ndarray
-    slide_ids: np.ndarray
+    group_ids: np.ndarray
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,7 @@ class _PreparedNeighborSubset:
     source_indices: np.ndarray
     labels: np.ndarray
     centers: np.ndarray
-    slide_ids: np.ndarray
+    group_ids: np.ndarray
     neigh_idx: np.ndarray
     neigh_dist: np.ndarray
     valid_counts: np.ndarray
@@ -298,7 +299,7 @@ class BaseRobustnessIndex(ABC):
             features=subset_features,
             labels=pd.factorize(subset_rows["label"])[0].astype(int),
             centers=pd.factorize(subset_rows["confounder"])[0].astype(int),
-            slide_ids=subset_rows["slide_id"].astype(str).to_numpy(),
+            group_ids=subset_rows[GROUP_COLUMN].astype(str).to_numpy(),
         )
 
     @classmethod
@@ -321,7 +322,7 @@ class BaseRobustnessIndex(ABC):
             scores = _knn_balanced_accuracy_by_k(
                 features=prepared.features,
                 labels=prepared.labels,
-                slide_ids=prepared.slide_ids,
+                group_ids=prepared.group_ids,
                 k_values=sub_candidates,
                 warn_context=f"{dataset_name} subset k-selection",
             )
@@ -359,7 +360,7 @@ class BaseRobustnessIndex(ABC):
                 continue
             neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
                 prepared.features,
-                prepared.slide_ids,
+                prepared.group_ids,
                 kmax,
             )
             prepared_subsets.append(
@@ -368,7 +369,7 @@ class BaseRobustnessIndex(ABC):
                     source_indices=prepared.source_indices,
                     labels=prepared.labels,
                     centers=prepared.centers,
-                    slide_ids=prepared.slide_ids,
+                    group_ids=prepared.group_ids,
                     neigh_idx=neigh_idx,
                     neigh_dist=neigh_dist,
                     valid_counts=valid_counts,
@@ -723,7 +724,7 @@ class BaseRobustnessIndex(ABC):
             features=normalized_features,
             labels=pd.factorize(df["label"])[0].astype(int),
             centers=pd.factorize(df["confounder"])[0].astype(int),
-            slide_ids=df["slide_id"].astype(str).to_numpy(),
+            group_ids=df[GROUP_COLUMN].astype(str).to_numpy(),
         )
 
     @staticmethod
@@ -765,7 +766,7 @@ class BaseRobustnessIndex(ABC):
         if int(k) <= 0 or len(prepared.labels) <= 1:
             return np.empty(0, dtype=float)
         neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
-            prepared.features, prepared.slide_ids, int(k)
+            prepared.features, prepared.group_ids, int(k)
         )
         return cls._typed_neighbor_distances_from_neighbors(
             labels=prepared.labels,
@@ -855,7 +856,7 @@ class BaseRobustnessIndex(ABC):
         scores = _knn_balanced_accuracy_by_k(
             features=prepared.features,
             labels=prepared.labels,
-            slide_ids=prepared.slide_ids,
+            group_ids=prepared.group_ids,
             k_values=valid_candidates,
             warn_context=f"{dataset_name} dataset-wide k-selection",
         )
@@ -883,7 +884,7 @@ class BaseRobustnessIndex(ABC):
         kmax = int(max(candidates))
         neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
             prepared.features,
-            prepared.slide_ids,
+            prepared.group_ids,
             kmax,
         )
         return _PreparedNeighborSubset(
@@ -891,7 +892,7 @@ class BaseRobustnessIndex(ABC):
             source_indices=prepared.source_indices,
             labels=prepared.labels,
             centers=prepared.centers,
-            slide_ids=prepared.slide_ids,
+            group_ids=prepared.group_ids,
             neigh_idx=neigh_idx,
             neigh_dist=neigh_dist,
             valid_counts=valid_counts,
@@ -949,7 +950,7 @@ class BaseRobustnessIndex(ABC):
         kmax = int(max(candidates))
         neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
             prepared.features,
-            prepared.slide_ids,
+            prepared.group_ids,
             kmax,
         )
         prepared_neighbors = _PreparedNeighborSubset(
@@ -957,7 +958,7 @@ class BaseRobustnessIndex(ABC):
             source_indices=prepared.source_indices,
             labels=prepared.labels,
             centers=prepared.centers,
-            slide_ids=prepared.slide_ids,
+            group_ids=prepared.group_ids,
             neigh_idx=neigh_idx,
             neigh_dist=neigh_dist,
             valid_counts=valid_counts,
@@ -1436,7 +1437,7 @@ class BaseRobustnessIndex(ABC):
 
             neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
                 prepared.features,
-                prepared.slide_ids,
+                prepared.group_ids,
                 kmax,
             )
             all_k_results = cls._score_all_k_from_neighbors(

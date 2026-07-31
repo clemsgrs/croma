@@ -25,7 +25,7 @@ def _write_manifest(path: Path) -> None:
     path.write_text(
         "\n".join(
             [
-                "sample_id,image_path,label,scanner_vendor,slide_id,dataset",
+                "sample_id,image_path,label,scanner_vendor,group_id,dataset",
                 "s0,/tmp/0.png,A,VendorA,sl0,wrong_name",
                 "s1,/tmp/1.png,B,VendorB,sl1,wrong_name",
             ]
@@ -43,10 +43,10 @@ def _write_repeated_subset_manifest(path: Path) -> None:
         ("s3", "/tmp/3.png", "B", "VendorB", "sl3"),
     ]
     payload = [
-        "sample_id,image_path,label,scanner_vendor,slide_id,subset,dataset",
+        "sample_id,image_path,label,scanner_vendor,group_id,subset,dataset",
     ]
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, confounder, slide_id in rows:
+        for sample_id, image_path, label, confounder, group_id in rows:
             payload.append(
                 ",".join(
                     [
@@ -54,7 +54,7 @@ def _write_repeated_subset_manifest(path: Path) -> None:
                         image_path,
                         label,
                         confounder,
-                        slide_id,
+                        group_id,
                         subset,
                         "wrong_name",
                     ]
@@ -79,7 +79,7 @@ def _write_embedding_manifest(
     path.write_text(
         "\n".join(
             [
-                "sample_id,image_path,label,confounder,slide_id",
+                "sample_id,image_path,label,confounder,group_id",
                 *[",".join(row) for row in rows],
             ]
         )
@@ -158,7 +158,7 @@ def test_cli_builds_deduplicated_embedding_manifest(
         "image_path",
         "label",
         "confounder",
-        "slide_id",
+        "group_id",
     ]
     assert built["sample_id"].tolist() == ["s0", "s1", "s2", "s3"]
 

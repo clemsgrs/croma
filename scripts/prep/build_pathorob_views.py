@@ -51,7 +51,7 @@ MANIFEST_DIR = ROOT / "data" / "pathorob" / "manifests"
 
 #: Columns of every emitted manifest, in order. ``apd_split`` is appended for the
 #: all-tiles manifests only; ``subset`` for the paired tcga-2x2 view only.
-BASE_COLUMNS = ("sample_id", "image_path", "label", "medical_center", "slide_id")
+BASE_COLUMNS = ("sample_id", "image_path", "label", "medical_center", "group_id")
 
 
 @dataclass(frozen=True)
@@ -139,7 +139,8 @@ def _to_manifest(joined: pd.DataFrame) -> pd.DataFrame:
             "image_path": joined["image_path"],
             "label": joined["biological_class"],
             "medical_center": joined["medical_center"],
-            "slide_id": joined["slide_id"],
+            # PathoROB's slide is the independence unit these views declare.
+            "group_id": joined["slide_id"],
         }
     )
 

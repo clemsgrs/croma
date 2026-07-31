@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING: the manifest's required `slide_id` column is now `group_id`.** The field
+  never meant "slide": it names the *independence group* a sample belongs to — a slide, a
+  patient, a specimen, an acquisition — and candidates sharing a query's value are excluded
+  before neighbours are selected. `slide_id` made a statistical contract read as a
+  pathology-specific one. There is no alias, no deprecation period and no configurable
+  group column: a manifest carrying only `slide_id` fails naming the missing `group_id`,
+  and a blank or missing `group_id` fails rather than passing as a group of its own. If
+  both columns are present only `group_id` has metric semantics. Rename the column in every
+  manifest (`csv` header and preparation script), and re-run scoring: `group_id` is part of
+  the manifest fingerprint and the embedding-alignment key, so changing a row's value
+  invalidates score-dependent cached artifacts. The embedding matrices themselves stay
+  reusable — a benchmark maps its rows onto a tileset by tile identity, `(sample_id,
+  image_path)`, which this change does not touch — but a `build-embedding-manifest`
+  sidecar written before the rename no longer matches its manifest and must be re-emitted.
+  Per-sample benchmark artifacts now carry a `group_id` column, and
+  `scripts/studies/bootstrap_uncertainty.py` reports `n_groups` where it reported
+  `n_slides`.
+
 ### Added
 
 - **`croma.nipd`**, normalized integrated performance degradation. It divides the

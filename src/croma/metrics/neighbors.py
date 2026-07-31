@@ -25,17 +25,17 @@ class _NeighborPreparationMeta:
     hit_neighbor_cap: bool
 
 
-def _max_tiles_per_slide(slide_ids: np.ndarray) -> int:
-    if int(slide_ids.size) <= 0:
+def _max_rows_per_group(group_ids: np.ndarray) -> int:
+    if int(group_ids.size) <= 0:
         return 0
-    _slides, counts = np.unique(slide_ids, return_counts=True)
+    _groups, counts = np.unique(group_ids, return_counts=True)
     if int(counts.size) <= 0:
         return 0
     return int(counts.max())
 
 
-def _initial_n_neighbors(kmax: int, slide_ids: np.ndarray, n_samples: int) -> int:
-    inferred_buffer = max(_MIN_NEIGHBOR_BUFFER, _max_tiles_per_slide(slide_ids))
+def _initial_n_neighbors(kmax: int, group_ids: np.ndarray, n_samples: int) -> int:
+    inferred_buffer = max(_MIN_NEIGHBOR_BUFFER, _max_rows_per_group(group_ids))
     return int(min(int(kmax) + int(inferred_buffer), int(n_samples) - 1))
 
 
@@ -60,9 +60,9 @@ def _next_n_neighbors(current: int, n_samples: int, kmax: int) -> int:
     return int(next_neighbors)
 
 
-def _filter_neighbors_excluding_same_slide(
+def _filter_neighbors_excluding_same_group(
     raw_neighbors: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     kmax: int,
     raw_distances: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -70,7 +70,7 @@ def _filter_neighbors_excluding_same_slide(
     if target_k <= 0:
         raise ValueError("kmax must be > 0")
 
-    n_samples = int(len(slide_ids))
+    n_samples = int(len(group_ids))
     if int(raw_neighbors.shape[0]) != n_samples:
         raise ValueError("raw_neighbors row count must match number of samples")
     if raw_distances is not None and raw_distances.shape != raw_neighbors.shape:
@@ -87,7 +87,7 @@ def _filter_neighbors_excluding_same_slide(
             idx = int(j)
             if idx == i:
                 continue
-            if slide_ids[idx] == slide_ids[i]:
+            if group_ids[idx] == group_ids[i]:
                 continue
             vals.append(idx)
             if raw_distances is not None:
@@ -105,10 +105,10 @@ def _filter_neighbors_excluding_same_slide(
     return out_idx, out_dist, valid_counts
 
 
-def _filter_query_neighbors_excluding_same_slide(
+def _filter_query_neighbors_excluding_same_group(
     raw_neighbors: np.ndarray,
     query_indices: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     kmax: int,
     raw_distances: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -121,8 +121,8 @@ def _filter_query_neighbors_excluding_same_slide(
         raise ValueError("query_indices length must match raw_neighbors rows")
     if raw_distances is not None and raw_distances.shape != raw_neighbors.shape:
         raise ValueError("raw_distances must have the same shape as raw_neighbors")
-    if int(len(slide_ids)) <= 0:
-        raise ValueError("slide_ids must be non-empty")
+    if int(len(group_ids)) <= 0:
+        raise ValueError("group_ids must be non-empty")
 
     out_idx = np.full((n_query, target_k), -1, dtype=int)
     out_dist = np.full((n_query, target_k), np.inf, dtype=float)
@@ -136,7 +136,7 @@ def _filter_query_neighbors_excluding_same_slide(
             idx = int(j)
             if idx == query_idx:
                 continue
-            if slide_ids[idx] == slide_ids[query_idx]:
+            if group_ids[idx] == group_ids[query_idx]:
                 continue
             vals.append(idx)
             if raw_distances is not None:
@@ -169,7 +169,7 @@ def _warn_if_effective_k_reduced(
     if frac > float(threshold):
         logger.warning(
             f"[RI/MaRI] {context}: effective k < {k} for {reduced}/{n} samples "
-            f"({frac * 100.0:.1f}%) after excluding same-slide neighbors."
+            f"({frac * 100.0:.1f}%) after excluding same-group neighbors."
         )
 
 
@@ -217,24 +217,24 @@ def _balanced_accuracy_by_k_from_prepared_neighbors(
             continue
         out[int(k)] = float(balanced_accuracy_score(labels[used_mask], pred[used_mask]))
     if not out:
-        raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
+        raise RuntimeError("k-selection failed: no sample has any cross-group neighbor")
     return out
 
 
 def _prepare_neighbors(
     features: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     kmax: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     neigh_idx, neigh_dist, valid_counts, _meta = _prepare_neighbors_with_meta(
-        features, slide_ids, kmax
+        features, group_ids, kmax
     )
     return neigh_idx, neigh_dist, valid_counts
 
 
 def _prepare_neighbors_with_meta(
     features: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     kmax: int,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, _NeighborPreparationMeta]:
     if int(kmax) <= 0:
@@ -242,12 +242,12 @@ def _prepare_neighbors_with_meta(
     n_samples = int(len(features))
     if n_samples <= 1:
         raise RuntimeError("Need at least two samples to compute neighbors")
-    if int(len(slide_ids)) != n_samples:
-        raise ValueError("slide_ids length must match features row count")
+    if int(len(group_ids)) != n_samples:
+        raise ValueError("group_ids length must match features row count")
 
     target_k = int(kmax)
     target_coverage = float(_TARGET_EFFECTIVE_K_COVERAGE)
-    n_neighbors = _initial_n_neighbors(target_k, slide_ids, n_samples)
+    n_neighbors = _initial_n_neighbors(target_k, group_ids, n_samples)
     iterations = 0
 
     while True:
@@ -255,10 +255,10 @@ def _prepare_neighbors_with_meta(
         nn = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine")
         nn.fit(features)
         distances, neigh = nn.kneighbors(features)
-        neigh_idx, neigh_dist, valid_counts = _filter_neighbors_excluding_same_slide(
+        neigh_idx, neigh_dist, valid_counts = _filter_neighbors_excluding_same_group(
             raw_neighbors=neigh,
             raw_distances=distances,
-            slide_ids=slide_ids,
+            group_ids=group_ids,
             kmax=target_k,
         )
         coverage = _effective_k_coverage(valid_counts, target_k)
@@ -279,14 +279,14 @@ def _prepare_neighbors_with_meta(
 def _optimal_k_by_knn_balanced_accuracy(
     features: np.ndarray,
     labels: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     k_values: Sequence[int],
     warn_context: str,
 ) -> int:
     scores = _knn_balanced_accuracy_by_k(
         features=features,
         labels=labels,
-        slide_ids=slide_ids,
+        group_ids=group_ids,
         k_values=k_values,
         warn_context=warn_context,
     )
@@ -312,14 +312,14 @@ def _normalize_k_values(k_values: Sequence[int]) -> list[int]:
 def _knn_balanced_accuracy_by_k(
     features: np.ndarray,
     labels: np.ndarray,
-    slide_ids: np.ndarray,
+    group_ids: np.ndarray,
     k_values: Sequence[int],
     warn_context: str,
 ) -> dict[int, float]:
     candidates = _normalize_k_values(k_values)
     kmax = int(max(candidates))
 
-    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(features, slide_ids, kmax)
+    neigh, _dist, valid_counts, prep_meta = _prepare_neighbors_with_meta(features, group_ids, kmax)
     capped = (
         ", capped"
         if prep_meta.hit_neighbor_cap and prep_meta.coverage < prep_meta.target_coverage
@@ -360,5 +360,5 @@ def _select_k_from_balanced_accuracy(
             best_k = int(k)
 
     if best_score == float("-inf"):
-        raise RuntimeError("k-selection failed: no sample has any cross-slide neighbor")
+        raise RuntimeError("k-selection failed: no sample has any cross-group neighbor")
     return int(best_k)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from croma.confounders import (
@@ -11,7 +12,14 @@ from croma.confounders import (
     normalize_confounder_column_name,
 )
 
-BASE_REQUIRED_COLUMNS = ("sample_id", "image_path", "label", "slide_id")
+#: The manifest's independence key: which non-independent source a sample came from --
+#: a slide, a patient, a specimen, an acquisition, whatever unit the study declares.
+#: Candidates sharing a query's ``group_id`` are never eligible neighbours, so the field
+#: is what stops a model scoring well by retrieving near-duplicates of the sample it is
+#: already looking at. Required, and required to be a non-empty string.
+GROUP_COLUMN = "group_id"
+
+BASE_REQUIRED_COLUMNS = ("sample_id", "image_path", "label", GROUP_COLUMN)
 CANONICAL_REQUIRED_COLUMNS = (*BASE_REQUIRED_COLUMNS, CANONICAL_CONFOUNDER_COLUMN)
 
 
@@ -25,8 +33,47 @@ def _normalize_str(v: object) -> str:
     return str(v).strip()
 
 
+def _normalize_group_ids(values: pd.Series, source: str) -> pd.Series:
+    """Normalize the independence key, rejecting samples that do not carry one.
+
+    A blank or missing ``group_id`` is not a group of its own: it says nothing about
+    which source the sample came from, so the same-group exclusion cannot be applied to
+    it. Rejecting it here keeps that gap from silently reading as "independent".
+    """
+    normalized = values.map(lambda v: "" if pd.isna(v) else _normalize_str(v))
+    # Row *positions*, not index labels: a caller may hand over a filtered frame whose
+    # index is neither contiguous nor integer, and the row named must be the row meant.
+    blank_rows = [int(i) for i in np.flatnonzero(normalized.to_numpy() == "")]
+    if blank_rows:
+        shown = blank_rows[:5]
+        more = (
+            "" if len(blank_rows) <= len(shown) else f" (and {len(blank_rows) - len(shown)} more)"
+        )
+        raise ValueError(
+            f"{source} has empty {GROUP_COLUMN} values at rows {shown}{more}: every sample "
+            f"needs a non-empty {GROUP_COLUMN} naming its independence group"
+        )
+    return normalized
+
+
 def _base_source_columns(confounder_column: str) -> tuple[str, ...]:
     return (*BASE_REQUIRED_COLUMNS, str(confounder_column))
+
+
+def _missing_columns_error(df: pd.DataFrame, source: str, missing: list[str]) -> ValueError:
+    """The missing-column error, naming the rename when the manifest predates it.
+
+    ``slide_id`` is not an alias and is never read; a manifest that still carries it is
+    simply missing ``group_id``. Saying which rename to make is cheaper than leaving the
+    caller to find the changelog.
+    """
+    message = f"{source} is missing required columns: {missing}"
+    if GROUP_COLUMN in missing and "slide_id" in df.columns:
+        message += (
+            f"; the manifest carries 'slide_id', which was renamed to '{GROUP_COLUMN}' "
+            "and is no longer read -- rename the column"
+        )
+    return ValueError(message)
 
 
 def ensure_source_manifest_columns(
@@ -35,13 +82,13 @@ def ensure_source_manifest_columns(
     required = _base_source_columns(confounder_column)
     missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(f"{source} is missing required columns: {missing}")
+        raise _missing_columns_error(df, source, missing)
 
 
 def ensure_canonical_manifest_columns(df: pd.DataFrame, source: str) -> None:
     missing = [c for c in CANONICAL_REQUIRED_COLUMNS if c not in df.columns]
     if missing:
-        raise ValueError(f"{source} is missing required columns: {missing}")
+        raise _missing_columns_error(df, source, missing)
 
 
 def normalize_manifest(
@@ -56,7 +103,7 @@ def normalize_manifest(
     out = df.copy()
     out["sample_id"] = out["sample_id"].map(_normalize_str)
     out["label"] = out["label"].map(_normalize_str)
-    out["slide_id"] = out["slide_id"].map(_normalize_str)
+    out[GROUP_COLUMN] = _normalize_group_ids(out[GROUP_COLUMN], source)
     out["image_path"] = out["image_path"].map(_normalize_str)
     out[CANONICAL_CONFOUNDER_COLUMN] = out[confounder_column].map(_normalize_str)
     if "subset" in out.columns:

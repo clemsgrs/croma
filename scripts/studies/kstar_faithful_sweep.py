@@ -45,7 +45,7 @@ CFG = {
 
 
 def load_meta_and_view(cfg):
-    """Return (meta DataFrame with cols label/confounder/slide_id[/subset], view).
+    """Return (meta DataFrame with cols label/confounder/group_id[/subset], view).
 
     ``view.eval_manifest`` is exactly the benchmark's evaluated rows (canonical
     ``confounder`` column); ``view.features(model)`` yields that same row set of the
@@ -82,9 +82,9 @@ def sweep_model(emb_full, feat_idx, meta, design, kmax, ri_grid, acc_grid):
         X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-12)
         labels = pd.factorize(meta.iloc[g]["label"])[0].astype(int)
         centers = pd.factorize(meta.iloc[g]["confounder"])[0].astype(int)
-        slide = meta.iloc[g]["slide_id"].astype(str).to_numpy()
+        group = meta.iloc[g]["group_id"].astype(str).to_numpy()
         km = min(kmax, len(g) - 1)
-        nidx, ndist, vc = _prepare_neighbors(X, slide, km)
+        nidx, ndist, vc = _prepare_neighbors(X, group, km)
         nl = labels[np.clip(nidx, 0, None)]
         nc = centers[np.clip(nidx, 0, None)]
         valid = nidx >= 0
@@ -98,7 +98,7 @@ def sweep_model(emb_full, feat_idx, meta, design, kmax, ri_grid, acc_grid):
             inf[k] += int(sri[k][2].sum()); ntot[k] += len(g)
         ag = [k for k in acc_grid if k < len(g)]
         acc_subs.append(_knn_balanced_accuracy_by_k(features=X, labels=labels,
-                        slide_ids=slide, k_values=ag, warn_context="sweep"))
+                        group_ids=group, k_values=ag, warn_context="sweep"))
         stored.append((labels, centers, nidx, ndist, vc, gri, len(g)))
     # per-model tau = median typed-neighbour distance over the whole evaluation
     alltd = np.concatenate(typed_d) if typed_d else np.array([np.nan])

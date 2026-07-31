@@ -27,7 +27,7 @@ def _balanced_manifest() -> pd.DataFrame:
                     "image_path": f"/tmp/{sample_id}.png",
                     "label": label,
                     "scanner_vendor": confounder,
-                    "slide_id": f"slide_{sample_id}",
+                    "group_id": f"slide_{sample_id}",
                 }
             )
     return pd.DataFrame(rows)

@@ -254,7 +254,7 @@ class Cohort(NamedTuple):
     ``embeddings`` holds the ID rows in metadata order, and ``confounders``/``labels`` give
     each of them its (centre, biological class) cell as *indices into the schedule* -- the
     schedule addresses cells by position, so the names are mapped here, once. The OOD rows
-    ride along as a test set the sweep scores but never trains on. ``slide_ids`` is what
+    ride along as a test set the sweep scores but never trains on. ``group_ids`` is what
     Tolkach's case arrangement reads; it is the ID rows' own column, in the same order.
     """
 
@@ -263,7 +263,7 @@ class Cohort(NamedTuple):
     labels: np.ndarray
     ood_embeddings: np.ndarray
     ood_labels: np.ndarray
-    slide_ids: list
+    group_ids: list
 
 
 def load_data(model, dataset):
@@ -296,11 +296,11 @@ def load_data(model, dataset):
         labels=np.array([bio.index(b) for b in md_id["biological_class"]]),
         ood_embeddings=emb[md_ood.index.to_numpy()],
         ood_labels=np.array([bio.index(b) for b in md_ood["biological_class"]]),
-        slide_ids=list(md_id["slide_id"]),
+        group_ids=list(md_id["group_id"]),
     )
 
 
-def arrangement_for(dataset, slide_ids):
+def arrangement_for(dataset, group_ids):
     """How ``dataset`` orders each cell's slides per replicate, or None for the default.
 
     Only tolkach_esca needs one, and it needs it because of how its cases are annotated
@@ -317,10 +317,10 @@ def arrangement_for(dataset, slide_ids):
             "pathorob/resources/tolkach_splits.json -- copy it there, as the metadata CSVs "
             "beside it were copied."
         )
-    return case_arrangement(cfg["centers_id"], json.loads(path.read_text()), slide_ids)
+    return case_arrangement(cfg["centers_id"], json.loads(path.read_text()), group_ids)
 
 
-def case_arrangement(centers, feasible_splits, slide_ids):
+def case_arrangement(centers, feasible_splits, group_ids):
     """Order a replicate's slides so a drawn set of cases falls in the held-out tail.
 
     Tolkach-ESCA's cases span biological classes, so a case trained on in one class and
@@ -356,9 +356,9 @@ def case_arrangement(centers, feasible_splits, slide_ids):
             test_cases = feasible_splits["test"][center][drawn[i]]
             for slides in cells[i]:
                 rng.shuffle(slides)
-                cases = [slide_ids[slide[0]] for slide in slides]
+                cases = [group_ids[slide[0]] for slide in slides]
                 for test_case in sorted(set(test_cases) & set(cases)):
-                    at = [slide_ids[slide[0]] for slide in slides].index(test_case)
+                    at = [group_ids[slide[0]] for slide in slides].index(test_case)
                     slides.append(slides.pop(at))
         return cells
 
