@@ -27,7 +27,7 @@ def _metrics_rows(
     models: list[str],
     *,
     dataset: str = "camelyon",
-    evaluation_design: str = "dataset_wide",
+    evaluation_design: str = "all",
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     for idx, model in enumerate(models):
@@ -36,9 +36,7 @@ def _metrics_rows(
                 "dataset": dataset,
                 "model": model,
                 "evaluation_design": evaluation_design,
-                "evaluation_unit": (
-                    "sample" if evaluation_design == "dataset_wide" else "occurrence"
-                ),
+                "evaluation_unit": ("sample" if evaluation_design == "all" else "occurrence"),
                 "ri": 0.86 + 0.002 * idx,
                 "mari": 0.85 + 0.002 * idx,
                 "croma": 1.18 + 0.01 * idx,
@@ -56,7 +54,7 @@ def _per_sample_row(
     label: str,
     confounder: str,
     croma_m1: float,
-    evaluation_design: str = "dataset_wide",
+    evaluation_design: str = "all",
     subset: str = "dataset",
     dataset: str = "camelyon",
 ) -> dict[str, object]:
@@ -64,7 +62,7 @@ def _per_sample_row(
         "dataset": dataset,
         "model": model,
         "evaluation_design": evaluation_design,
-        "evaluation_unit": ("sample" if evaluation_design == "dataset_wide" else "occurrence"),
+        "evaluation_unit": ("sample" if evaluation_design == "all" else "occurrence"),
         "subset": subset,
         "sample_id": sample_id,
         "group_id": f"slide-{sample_id}",
@@ -428,7 +426,7 @@ def test_aggregate_by_model_separates_evaluation_designs() -> None:
     df = pd.DataFrame(
         {
             "model": ["M1", "M1"],
-            "evaluation_design": ["dataset_wide", "paired_2x2"],
+            "evaluation_design": ["all", "paired_2x2"],
             "evaluation_unit": ["sample", "occurrence"],
             "ri": [0.8, 0.4],
             "mari": [0.7, 0.3],
@@ -438,7 +436,7 @@ def test_aggregate_by_model_separates_evaluation_designs() -> None:
     grouped = ar._aggregate_by_model(df)
 
     assert set(grouped["model"]) == {
-        "M1 [dataset_wide;sample]",
+        "M1 [all;sample]",
         "M1 [paired_2x2;occurrence]",
     }
     assert grouped.sort_values("ri")["ri"].tolist() == [0.4, 0.8]
@@ -834,7 +832,7 @@ def test_tail_tier_distinguishes_enriched_and_severe_cases_independently() -> No
     )
 
 
-def test_multiclass_dataset_wide_context_is_skipped() -> None:
+def test_multiclass_all_rows_context_is_skipped() -> None:
     per_sample_df = pd.DataFrame(
         [
             _per_sample_row(

@@ -39,7 +39,7 @@ Score a model
 
    common = dict(
        confounder_column="center",
-       evaluation_design="dataset_wide",
+       evaluation_design="all",
    )
 
    ri = RI.compute(features, manifest, k_candidates=[5, 11, 21], **common)

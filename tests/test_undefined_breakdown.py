@@ -35,7 +35,7 @@ def _paired_features() -> np.ndarray:
     )
 
 
-def _dataset_wide_undefined_manifest() -> pd.DataFrame:
+def _all_rows_undefined_manifest() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "sample_id": ["a1", "a2", "b1", "b2"],
@@ -48,7 +48,7 @@ def _dataset_wide_undefined_manifest() -> pd.DataFrame:
     )
 
 
-def _dataset_wide_undefined_features() -> np.ndarray:
+def _all_rows_undefined_features() -> np.ndarray:
     return np.array(
         [
             [1.00, 0.00],
@@ -122,16 +122,16 @@ def test_no_valid_neighbors_are_classified_as_mixed() -> None:
     assert undefined_type.tolist() == [3, 3]
 
 
-def test_dataset_wide_undefined_fraction_uses_sample_denominator() -> None:
+def test_all_rows_undefined_fraction_uses_sample_denominator() -> None:
     result = RI.compute(
-        features=_dataset_wide_undefined_features(),
-        manifest=_dataset_wide_undefined_manifest(),
+        features=_all_rows_undefined_features(),
+        manifest=_all_rows_undefined_manifest(),
         confounder_column="scanner_vendor",
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
         k_candidates=[1],
     )
 
-    assert result.evaluation_design == "dataset_wide"
+    assert result.evaluation_design == "all"
     assert result.evaluation_unit == "sample"
     assert result.undefined_frac == pytest.approx(1.0)
     assert result.undefined_frac == pytest.approx(

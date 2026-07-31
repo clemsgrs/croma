@@ -14,7 +14,7 @@
       "k": 11,
       "n_models": 21,
       "confounder": "Medical Center",
-      "evaluation_design": "dataset_wide"
+      "evaluation_design": "all"
     },
     "tcga-4x4": {
       "benchmark": "pathorob-tcga-4x4",
@@ -23,7 +23,7 @@
       "k": 71,
       "n_models": 21,
       "confounder": "Medical Center",
-      "evaluation_design": "dataset_wide"
+      "evaluation_design": "all"
     },
     "tolkach-esca": {
       "benchmark": "pathorob-tolkach-esca",
@@ -32,7 +32,7 @@
       "k": 61,
       "n_models": 21,
       "confounder": "Medical Center",
-      "evaluation_design": "dataset_wide"
+      "evaluation_design": "all"
     }
   },
   "files": {

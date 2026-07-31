@@ -58,8 +58,8 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--evaluation-design",
-        default="dataset_wide",
-        choices=["paired_2x2", "dataset_wide"],
+        default="all",
+        choices=["all", "paired_2x2"],
         help="Must match the evaluation design you will pass to benchmark.",
     )
     return parser.parse_args()
@@ -210,7 +210,7 @@ def prepare_benchmark_embeddings(
     mapping_csv: Path,
     tileset: str,
     models: list[str] | None = None,
-    evaluation_design: str = "dataset_wide",
+    evaluation_design: str = "all",
 ) -> dict:
     manifest = load_manifest(str(manifest_path), confounder_column=confounder_column)
     eval_manifest = _prepare_eval_manifest(

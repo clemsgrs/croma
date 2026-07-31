@@ -62,7 +62,7 @@ def test_benchmark_evaluates_models_present_only_as_npy(bench_env) -> None:
         "toy",
         tileset="unknown-tiles",
         manifest=manifest,
-        design="dataset_wide",
+        design="all",
         k_max=3,
         confounder_column="scanner_vendor",
     )
@@ -81,7 +81,7 @@ def test_benchmark_errors_when_requested_model_has_no_embedding(bench_env) -> No
         "toy",
         tileset="unknown-tiles",
         manifest=manifest,
-        design="dataset_wide",
+        design="all",
         k_max=3,
         confounder_column="scanner_vendor",
     )
@@ -101,7 +101,7 @@ def test_benchmark_errors_when_tileset_has_no_embeddings(bench_env) -> None:
         "toy",
         tileset="empty-tiles",
         manifest=manifest,
-        design="dataset_wide",
+        design="all",
         k_max=3,
         confounder_column="scanner_vendor",
     )

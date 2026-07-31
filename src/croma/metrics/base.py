@@ -23,11 +23,16 @@ from croma.metrics.pairs import (
 from croma.metrics.tail import compute_tail_metrics
 from croma.types import RobustnessResult
 
+#: The ordinary design: every supplied normalized manifest row is scored together, as one
+#: evaluation scope, at sample level. This is what every public entry point uses when the
+#: caller says nothing.
+EVALUATION_DESIGN_ALL = "all"
+#: The special design: only the manifest's explicitly declared 2x2 subsets are scored, at
+#: occurrence level. It has to be asked for.
 EVALUATION_DESIGN_PAIRED_2X2 = "paired_2x2"
-EVALUATION_DESIGN_DATASET_WIDE = "dataset_wide"
 VALID_EVALUATION_DESIGNS = (
+    EVALUATION_DESIGN_ALL,
     EVALUATION_DESIGN_PAIRED_2X2,
-    EVALUATION_DESIGN_DATASET_WIDE,
 )
 
 
@@ -508,7 +513,7 @@ class BaseRobustnessIndex(ABC):
         *,
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
-        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
         **kwargs: float,
     ) -> RobustnessResult:
         artifacts = cls._compute_artifacts(
@@ -533,7 +538,7 @@ class BaseRobustnessIndex(ABC):
         *,
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
-        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
         **kwargs: float,
     ) -> dict[int, float]:
         artifacts = cls._compute_artifacts(
@@ -614,7 +619,7 @@ class BaseRobustnessIndex(ABC):
         *,
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
-        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
         selected_k: int | None = None,
         include_selected_result: bool = True,
         warn_selected_result: bool = False,
@@ -629,9 +634,9 @@ class BaseRobustnessIndex(ABC):
             validate_subset_manifest(df, f"manifest for dataset '{dataset_name}'")
         candidates = _normalize_k_values(k_values)
 
-        if evaluation_design == EVALUATION_DESIGN_DATASET_WIDE:
-            prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
-            by_k = cls._score_dataset_wide_by_k(
+        if evaluation_design == EVALUATION_DESIGN_ALL:
+            prepared = cls._prepare_all_rows_inputs(features=features, df=df)
+            by_k = cls._score_all_rows_by_k(
                 prepared=prepared,
                 k_values=candidates,
                 dataset_name=dataset_name,
@@ -639,7 +644,7 @@ class BaseRobustnessIndex(ABC):
             )
             evaluation_unit = "sample"
             if include_selected_result and selected_k is None:
-                selected_k = cls._select_dataset_wide_k(
+                selected_k = cls._select_all_rows_k(
                     prepared=prepared,
                     k_candidates=candidates,
                     dataset_name=dataset_name,
@@ -705,7 +710,7 @@ class BaseRobustnessIndex(ABC):
         return _RobustnessArtifacts(curve=curve, result=result)
 
     @classmethod
-    def _prepare_dataset_wide_inputs(
+    def _prepare_all_rows_inputs(
         cls,
         *,
         features: np.ndarray,
@@ -790,8 +795,8 @@ class BaseRobustnessIndex(ABC):
         """Pool the typed (SO/OS) neighbour distances at ``k`` for the given design."""
         df = cls._normalize_manifest_inputs(manifest, confounder_column=confounder_column)
         design = _normalize_evaluation_design(evaluation_design)
-        if design == EVALUATION_DESIGN_DATASET_WIDE:
-            prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
+        if design == EVALUATION_DESIGN_ALL:
+            prepared = cls._prepare_all_rows_inputs(features=features, df=df)
             return cls._typed_neighbor_distances_for_prepared(prepared, int(k))
 
         subsets = cls._build_subsets(df=df, dataset_name=cls._infer_dataset_name(df))
@@ -825,9 +830,9 @@ class BaseRobustnessIndex(ABC):
         design = _normalize_evaluation_design(evaluation_design)
         candidates = _normalize_k_values(k_candidates)
         dataset_name = cls._infer_dataset_name(df)
-        if design == EVALUATION_DESIGN_DATASET_WIDE:
-            prepared = cls._prepare_dataset_wide_inputs(features=features, df=df)
-            return cls._select_dataset_wide_k(
+        if design == EVALUATION_DESIGN_ALL:
+            prepared = cls._prepare_all_rows_inputs(features=features, df=df)
+            return cls._select_all_rows_k(
                 prepared=prepared,
                 k_candidates=candidates,
                 dataset_name=dataset_name,
@@ -841,7 +846,7 @@ class BaseRobustnessIndex(ABC):
         )
 
     @classmethod
-    def _select_dataset_wide_k(
+    def _select_all_rows_k(
         cls,
         *,
         prepared: _PreparedSubsetInputs,
@@ -851,19 +856,19 @@ class BaseRobustnessIndex(ABC):
         valid_candidates = [int(k) for k in k_candidates if int(k) < len(prepared.source_indices)]
         if not valid_candidates:
             raise RuntimeError(
-                f"{dataset_name}: dataset-wide k-selection failed because no valid k candidates remain"
+                f"{dataset_name}: all-rows k-selection failed because no valid k candidates remain"
             )
         scores = _knn_balanced_accuracy_by_k(
             features=prepared.features,
             labels=prepared.labels,
             group_ids=prepared.group_ids,
             k_values=valid_candidates,
-            warn_context=f"{dataset_name} dataset-wide k-selection",
+            warn_context=f"{dataset_name} all-rows k-selection",
         )
         return _select_k_from_balanced_accuracy(k_values=valid_candidates, scores=scores)
 
     @classmethod
-    def _prepare_dataset_wide_neighbor_cache(
+    def _prepare_all_rows_neighbor_cache(
         cls,
         *,
         features: np.ndarray,
@@ -877,7 +882,7 @@ class BaseRobustnessIndex(ABC):
         ``labels``/``centers`` so kNN curves, RI/MaRI scoring, k-selection, and the tau-scale
         check can all share one neighbour preparation instead of repeating it.
         """
-        prepared = cls._prepare_dataset_wide_inputs(
+        prepared = cls._prepare_all_rows_inputs(
             features=features, df=df, assume_normalized=assume_normalized
         )
         candidates = _normalize_k_values(k_values)
@@ -899,7 +904,7 @@ class BaseRobustnessIndex(ABC):
         )
 
     @classmethod
-    def _select_dataset_wide_k_from_prepared(
+    def _select_all_rows_k_from_prepared(
         cls,
         *,
         prepared_neighbors: _PreparedNeighborSubset,
@@ -911,7 +916,7 @@ class BaseRobustnessIndex(ABC):
         ]
         if not valid_candidates:
             raise RuntimeError(
-                f"{dataset_name}: dataset-wide k-selection failed because no valid k candidates remain"
+                f"{dataset_name}: all-rows k-selection failed because no valid k candidates remain"
             )
         scores = _balanced_accuracy_by_k_from_prepared_neighbors(
             labels=prepared_neighbors.labels,
@@ -922,7 +927,7 @@ class BaseRobustnessIndex(ABC):
         return _select_k_from_balanced_accuracy(k_values=valid_candidates, scores=scores)
 
     @classmethod
-    def _score_dataset_wide_by_k(
+    def _score_all_rows_by_k(
         cls,
         *,
         prepared: _PreparedSubsetInputs,
@@ -963,7 +968,7 @@ class BaseRobustnessIndex(ABC):
             neigh_dist=neigh_dist,
             valid_counts=valid_counts,
         )
-        return cls._score_dataset_wide_by_k_from_prepared(
+        return cls._score_all_rows_by_k_from_prepared(
             prepared_neighbors=prepared_neighbors,
             k_values=candidates,
             dataset_name=dataset_name,
@@ -971,7 +976,7 @@ class BaseRobustnessIndex(ABC):
         )
 
     @classmethod
-    def _score_dataset_wide_by_k_from_prepared(
+    def _score_all_rows_by_k_from_prepared(
         cls,
         *,
         prepared_neighbors: _PreparedNeighborSubset,
@@ -1055,9 +1060,7 @@ class BaseRobustnessIndex(ABC):
                 undefined_breakdown.mixed_frac,
             )
         if not out:
-            raise RuntimeError(
-                f"{dataset_name}: RI/MaRI failed on the dataset-wide evaluation design"
-            )
+            raise RuntimeError(f"{dataset_name}: RI/MaRI failed on the 'all' evaluation design")
         return out
 
     @classmethod
@@ -1206,27 +1209,27 @@ class BaseRobustnessIndex(ABC):
         return out
 
     @classmethod
-    def _compute_artifacts_from_prepared_dataset_wide_inputs(
+    def _compute_artifacts_from_prepared_all_rows_inputs(
         cls,
         *,
         prepared: _PreparedSubsetInputs,
         dataset_name: str,
         k_values: list[int] | tuple[int, ...],
-        evaluation_design: str = EVALUATION_DESIGN_DATASET_WIDE,
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
         selected_k: int | None = None,
         include_selected_result: bool = True,
         warn_selected_result: bool = False,
         **kwargs: float,
     ) -> _RobustnessArtifacts:
         candidates = _normalize_k_values(k_values)
-        by_k = cls._score_dataset_wide_by_k(
+        by_k = cls._score_all_rows_by_k(
             prepared=prepared,
             k_values=candidates,
             dataset_name=dataset_name,
             **kwargs,
         )
         if include_selected_result and selected_k is None:
-            selected_k = cls._select_dataset_wide_k(
+            selected_k = cls._select_all_rows_k(
                 prepared=prepared,
                 k_candidates=candidates,
                 dataset_name=dataset_name,
@@ -1324,7 +1327,7 @@ class BaseRobustnessIndex(ABC):
         return _RobustnessArtifacts(curve=curve, result=result)
 
     @classmethod
-    def _compute_artifacts_from_prepared_dataset_wide(
+    def _compute_artifacts_from_prepared_all_rows(
         cls,
         *,
         prepared_neighbors: _PreparedNeighborSubset,
@@ -1335,16 +1338,16 @@ class BaseRobustnessIndex(ABC):
         warn_selected_result: bool = False,
         **kwargs: float,
     ) -> _RobustnessArtifacts:
-        """Dataset-wide artifacts from a shared neighbour cache (mirror of the paired path)."""
+        """All-rows artifacts from a shared neighbour cache (mirror of the paired path)."""
         candidates = _normalize_k_values(k_values)
-        by_k = cls._score_dataset_wide_by_k_from_prepared(
+        by_k = cls._score_all_rows_by_k_from_prepared(
             prepared_neighbors=prepared_neighbors,
             k_values=candidates,
             dataset_name=dataset_name,
             **kwargs,
         )
         if include_selected_result and selected_k is None:
-            selected_k = cls._select_dataset_wide_k_from_prepared(
+            selected_k = cls._select_all_rows_k_from_prepared(
                 prepared_neighbors=prepared_neighbors,
                 k_candidates=candidates,
                 dataset_name=dataset_name,
@@ -1360,7 +1363,7 @@ class BaseRobustnessIndex(ABC):
                 )
             result = cls._build_result_from_by_k_entry(
                 dataset_name=dataset_name,
-                evaluation_design=EVALUATION_DESIGN_DATASET_WIDE,
+                evaluation_design=EVALUATION_DESIGN_ALL,
                 evaluation_unit="sample",
                 k=int(selected_k),
                 scored_entry=by_k[int(selected_k)],

@@ -176,7 +176,7 @@ def test_benchmark_paired_prepares_neighbors_once_per_subset(bench_env) -> None:
     assert set(metrics_df["evaluation_design"]) == {"paired_2x2"}
 
 
-def _dataset_wide_manifest() -> pd.DataFrame:
+def _all_rows_manifest() -> pd.DataFrame:
     rows = []
     for i in range(8):
         rows.append(
@@ -192,7 +192,7 @@ def _dataset_wide_manifest() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _dataset_wide_features(tileset: pd.DataFrame) -> np.ndarray:
+def _all_rows_features(tileset: pd.DataFrame) -> np.ndarray:
     base = {"A": [1.0, 0.0], "B": [0.0, 1.0]}
     conf_offset = {"V1": 0.0, "V2": 0.25}
     return np.asarray(
@@ -204,23 +204,23 @@ def _dataset_wide_features(tileset: pd.DataFrame) -> np.ndarray:
     )
 
 
-def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
+def test_benchmark_all_rows_shares_one_neighbor_cache_across_ri_mari_tau(
     bench_env,
 ) -> None:
-    """RI, MaRI and the tau-scale check must reuse a single dataset-wide neighbour cache.
+    """RI, MaRI and the tau-scale check must reuse a single all-rows neighbour cache.
 
     Per model on a cold cache the only neighbour preparations are the two (unpruned) kNN
     curves plus one shared RI/MaRI/tau cache -> 3 calls. Before the shared cache RI, MaRI
     and the tau check each prepared their own (5 calls); this pins the reuse.
     """
-    manifest = _dataset_wide_manifest()
+    manifest = _all_rows_manifest()
     tileset = _tileset_from(manifest)
-    bench_env.write_tileset("wide-tiles", tileset, {"M1": _dataset_wide_features(tileset)})
+    bench_env.write_tileset("wide-tiles", tileset, {"M1": _all_rows_features(tileset)})
     bench_env.register(
         "toy",
         tileset="wide-tiles",
         manifest=manifest,
-        design="dataset_wide",
+        design="all",
         k_max=3,
         confounder_column="scanner_vendor",
     )
@@ -239,4 +239,4 @@ def test_benchmark_dataset_wide_shares_one_neighbor_cache_across_ri_mari_tau(
     assert neighbor_prepare_calls["count"] == 3
 
     metrics_df = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
-    assert set(metrics_df["evaluation_design"]) == {"dataset_wide"}
+    assert set(metrics_df["evaluation_design"]) == {"all"}

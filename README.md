@@ -46,7 +46,7 @@ from croma import CRoMa, MaRI, RI
 manifest = pd.read_csv("manifest.csv")
 features = np.load("embeddings.npy")
 
-common = dict(confounder_column="center", evaluation_design="paired_2x2")
+common = dict(confounder_column="center")  # evaluation_design defaults to "all"
 
 ri = RI.compute(features, manifest, k_candidates=[5, 11, 21], **common)
 mari = MaRI.compute(features, manifest, k_candidates=[5, 11, 21], **common)
@@ -90,7 +90,7 @@ Three habits will keep you out of trouble:
 
 ## Also in the docs
 
-- **[Evaluation designs](https://clemsgrs.github.io/croma/manifest.html)** -- `paired_2x2` controls what is compared and reports occurrence-level outputs; `dataset_wide` gives one number over the whole cohort at sample level. Includes the manifest contract and minimal valid examples for each.
+- **[Evaluation designs](https://clemsgrs.github.io/croma/manifest.html)** -- `all`, the default, scores every manifest row together and gives one number over the whole cohort at sample level; `paired_2x2` controls what is compared and reports occurrence-level outputs. Includes the manifest contract and minimal valid examples for each.
 - **[CLI](https://clemsgrs.github.io/croma/cli.html)** -- the same three metrics from the shell, over a `.npy` that already exists.
 - **[Benchmarking](https://clemsgrs.github.io/croma/benchmarking.html)** -- the multi-model pipeline that produced the paper's numbers, split into embed / compute / render steps under `scripts/`.
 

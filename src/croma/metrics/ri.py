@@ -18,8 +18,15 @@ class RobustnessIndex(BaseRobustnessIndex):
         *,
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
-        evaluation_design: str = "paired_2x2",
+        evaluation_design: str = "all",
     ) -> RobustnessResult:
+        """Compute RI at the operating ``k`` selected by kNN balanced accuracy.
+
+        Args:
+            evaluation_design: ``"all"`` (the default) scores every supplied manifest row
+                together, as one evaluation scope, at sample level. ``"paired_2x2"`` scores
+                only the manifest's explicitly declared 2x2 subsets, at occurrence level.
+        """
         return cls._compute(
             features=features,
             manifest=manifest,
@@ -36,8 +43,9 @@ class RobustnessIndex(BaseRobustnessIndex):
         *,
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
-        evaluation_design: str = "paired_2x2",
+        evaluation_design: str = "all",
     ) -> dict[int, float]:
+        """RI at every ``k`` in ``k_values``, under ``evaluation_design`` (default ``"all"``)."""
         return cls._compute_curve(
             features=features,
             manifest=manifest,

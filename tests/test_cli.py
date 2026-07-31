@@ -17,7 +17,7 @@ class _FakeResult:
         self.std = 0.0
         self.n_pairs = 1
         self.undefined_frac = 0.0
-        self.evaluation_design = "dataset_wide"
+        self.evaluation_design = "all"
         self.evaluation_unit = "sample"
 
 
@@ -114,7 +114,7 @@ def test_cli_uses_manifest_stem_for_dataset(
             "--confounder-column",
             "scanner_vendor",
             "--evaluation-design",
-            "dataset_wide",
+            "all",
             "--k-candidates",
             "1",
         ],
@@ -290,7 +290,7 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "--confounder-column",
             "confounder",
             "--evaluation-design",
-            "dataset_wide",
+            "all",
             "--dataset-name",
             "toy",
         ],
@@ -304,7 +304,7 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "--confounder-column",
             "confounder",
             "--evaluation-design",
-            "dataset_wide",
+            "all",
             "--exclude-confounder",
             "C1",
         ],
@@ -320,7 +320,7 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "--confounder-column",
             "confounder",
             "--evaluation-design",
-            "dataset_wide",
+            "all",
         ],
         [
             "cli.py",
@@ -332,7 +332,7 @@ def test_cli_metric_commands_fail_fast_on_unaligned_embeddings(
             "--confounder-column",
             "confounder",
             "--evaluation-design",
-            "dataset_wide",
+            "all",
             "--acceptance-threshold",
             "0.5",
         ],
@@ -359,7 +359,7 @@ def test_cli_requires_confounder_column(monkeypatch: pytest.MonkeyPatch) -> None
             "--embeddings",
             "e.npy",
             "--evaluation-design",
-            "dataset_wide",
+            "all",
             "--k-candidates",
             "1",
         ],

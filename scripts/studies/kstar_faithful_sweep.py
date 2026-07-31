@@ -35,12 +35,12 @@ TAU = 0.2
 PROTOCOL = "k-star"
 # ds -> (registered benchmark name, sweep design, sweep ceiling, PathoROB's reported k).
 # ``design`` is the sweep-local pooling mode ("paired" groups by the manifest's subset
-# column, "dataset_wide" pools all rows); it mirrors the benchmark's registered design.
+# column, "all" pools all rows); it mirrors the benchmark's registered design.
 CFG = {
-    "camelyon":  dict(benchmark="pathorob-camelyon",     design="dataset_wide", kmax=80,  pathorob_k=11),
-    "tolkach":   dict(benchmark="pathorob-tolkach-esca", design="dataset_wide", kmax=100, pathorob_k=46),
-    "tcga_4x4":  dict(benchmark="pathorob-tcga-4x4",     design="dataset_wide", kmax=100, pathorob_k=None),
-    "tcga_2x2":  dict(benchmark="pathorob-tcga-2x2",     design="paired",       kmax=100, pathorob_k=61),
+    "camelyon":  dict(benchmark="pathorob-camelyon",     design="all",    kmax=80,  pathorob_k=11),
+    "tolkach":   dict(benchmark="pathorob-tolkach-esca", design="all",    kmax=100, pathorob_k=46),
+    "tcga_4x4":  dict(benchmark="pathorob-tcga-4x4",     design="all",    kmax=100, pathorob_k=None),
+    "tcga_2x2":  dict(benchmark="pathorob-tcga-2x2",     design="paired", kmax=100, pathorob_k=61),
 }
 
 
@@ -62,7 +62,7 @@ def load_meta_and_view(cfg):
 
 def sweep_model(emb_full, feat_idx, meta, design, kmax, ri_grid, acc_grid):
     """Return acc{k}, ri{k}, mari{k}, support{k} pooled across subset(s)."""
-    if design == "dataset_wide":
+    if design == "all":
         groups = [np.arange(len(meta))]
     else:
         groups = [np.asarray(idx, dtype=int)

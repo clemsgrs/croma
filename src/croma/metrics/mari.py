@@ -35,7 +35,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         *,
         confounder_column: str,
         k: int,
-        evaluation_design: str = "paired_2x2",
+        evaluation_design: str = "all",
     ) -> float:
         """Recommended ``tau`` for this dataset: the median typed (SO/OS) neighbour distance.
 
@@ -127,12 +127,15 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
         tau: float | None = None,
-        evaluation_design: str = "paired_2x2",
+        evaluation_design: str = "all",
         warn_tau: bool = True,
     ) -> RobustnessResult:
         """Compute MaRI at the operating ``k`` selected by kNN balanced accuracy.
 
         Args:
+            evaluation_design: ``"all"`` (the default) scores every supplied manifest row
+                together, as one evaluation scope, at sample level. ``"paired_2x2"`` scores
+                only the manifest's explicitly declared 2x2 subsets, at occurrence level.
             tau: Distance-decay temperature. Leave as ``None`` (recommended) to resolve it
                 automatically as this dataset's median typed-neighbour distance at the
                 operating ``k`` -- the on-scale value. A pinned ``tau`` is only comparable
@@ -200,7 +203,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
         tau: float | None = None,
-        evaluation_design: str = "paired_2x2",
+        evaluation_design: str = "all",
     ) -> dict[int, float]:
         """MaRI at every ``k`` in ``k_values``, all scored at a single ``tau``.
 

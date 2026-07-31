@@ -355,7 +355,7 @@ def _build_aligned_manifest(
     eval_manifest: pd.DataFrame,
     evaluation_design: str,
 ) -> pd.DataFrame:
-    if evaluation_design == "dataset_wide":
+    if evaluation_design == "all":
         aligned_manifest = eval_manifest.copy().reset_index(drop=True)
         aligned_manifest["source_sample_index"] = np.arange(
             len(aligned_manifest), dtype=int
@@ -458,7 +458,7 @@ def _knn_balanced_accuracy_by_k_for_design(
     warn_context: str,
     prepared_subsets: list | None = None,
 ) -> dict[int, float]:
-    if evaluation_design == "dataset_wide":
+    if evaluation_design == "all":
         labels = pd.factorize(manifest[target_column])[0].astype(int)
         group_ids = manifest["group_id"].astype(str).to_numpy()
         return _knn_balanced_accuracy_by_k(
@@ -539,7 +539,10 @@ def _curve_from_payload(
 def _summary_from_payload(payload: dict) -> dict | None:
     if not isinstance(payload, dict):
         return None
-    required = ("k", "value", "std", "undefined_frac")
+    # The design is required, not defaulted. A cached summary that does not name its own
+    # evaluation design cannot be shown to have been computed under the one being run, and
+    # guessing a default would silently adopt a stale artifact as a current one.
+    required = ("k", "value", "std", "undefined_frac", "evaluation_design")
     for key in required:
         if key not in payload:
             return None
@@ -556,8 +559,8 @@ def _summary_from_payload(payload: dict) -> dict | None:
                 payload.get("oo_dominated_undefined_frac", 0.0)
             ),
             "mixed_undefined_frac": float(payload.get("mixed_undefined_frac", 0.0)),
-            "evaluation_design": str(payload.get("evaluation_design", "paired_2x2")),
-            "evaluation_unit": str(payload.get("evaluation_unit", "occurrence")),
+            "evaluation_design": str(payload["evaluation_design"]),
+            "evaluation_unit": str(payload.get("evaluation_unit", "")),
         }
         return result
     except Exception:  # noqa: BLE001
@@ -1251,7 +1254,7 @@ def main() -> int:
                 eval_features: np.ndarray | None = None
                 eval_features_norm: np.ndarray | None = None
                 paired_subset_cache = None
-                dataset_wide_cache = None
+                all_rows_cache = None
 
                 def _ensure_eval_features() -> np.ndarray:
                     nonlocal features_full, eval_features
@@ -1284,23 +1287,23 @@ def main() -> int:
                         )
                     return paired_subset_cache
 
-                def _ensure_dataset_wide_cache():
-                    nonlocal dataset_wide_cache
-                    if evaluation_design != "dataset_wide":
+                def _ensure_all_rows_cache():
+                    nonlocal all_rows_cache
+                    if evaluation_design != "all":
                         raise RuntimeError(
-                            "dataset-wide cache is only available for dataset_wide evaluation"
+                            "the all-rows cache is only available for the 'all' evaluation design"
                         )
-                    if dataset_wide_cache is None:
+                    if all_rows_cache is None:
                         df_norm = RI._normalize_manifest_inputs(
                             eval_manifest, confounder_column=confounder_column
                         )
-                        dataset_wide_cache = RI._prepare_dataset_wide_neighbor_cache(
+                        all_rows_cache = RI._prepare_all_rows_neighbor_cache(
                             features=_ensure_eval_features_norm(),
                             df=df_norm,
                             k_values=k_values,
                             assume_normalized=True,
                         )
-                    return dataset_wide_cache
+                    return all_rows_cache
 
                 knn_was_cached = (
                     knn_bacc_by_k is not None and knn_confounder_bacc_by_k is not None
@@ -1384,8 +1387,8 @@ def main() -> int:
                             warn_selected_result=True,
                         )
                     else:
-                        ri_artifacts = RI._compute_artifacts_from_prepared_dataset_wide(
-                            prepared_neighbors=_ensure_dataset_wide_cache(),
+                        ri_artifacts = RI._compute_artifacts_from_prepared_all_rows(
+                            prepared_neighbors=_ensure_all_rows_cache(),
                             dataset_name=dataset_name,
                             k_values=k_values,
                             selected_k=int(selected_k),
@@ -1479,7 +1482,7 @@ def main() -> int:
                             else np.empty(0, dtype=float)
                         )
                     else:
-                        _ps = _ensure_dataset_wide_cache()
+                        _ps = _ensure_all_rows_cache()
                         _typed_for_tau = MaRI._typed_neighbor_distances_from_neighbors(
                             labels=_ps.labels,
                             centers=_ps.centers,
@@ -1511,8 +1514,8 @@ def main() -> int:
                             tau=model_tau,
                         )
                     else:
-                        mari_artifacts = MaRI._compute_artifacts_from_prepared_dataset_wide(
-                            prepared_neighbors=_ensure_dataset_wide_cache(),
+                        mari_artifacts = MaRI._compute_artifacts_from_prepared_all_rows(
+                            prepared_neighbors=_ensure_all_rows_cache(),
                             dataset_name=dataset_name,
                             k_values=k_values,
                             selected_k=int(selected_k),
@@ -1893,7 +1896,7 @@ def main() -> int:
                                 else np.empty(0, dtype=float)
                             )
                         else:
-                            ps = _ensure_dataset_wide_cache()
+                            ps = _ensure_all_rows_cache()
                             typed_dist = MaRI._typed_neighbor_distances_from_neighbors(
                                 labels=ps.labels,
                                 centers=ps.centers,

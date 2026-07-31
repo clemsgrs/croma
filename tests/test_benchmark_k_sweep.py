@@ -70,7 +70,7 @@ def _setup(
     *,
     models: list[str],
     name: str = "toy",
-    design: str = "dataset_wide",
+    design: str = "all",
     k_max: int = 3,
 ) -> None:
     """Embed a toy tileset and register a benchmark that views all of it."""
@@ -93,7 +93,7 @@ _REMOVED_FLAGS = [
     ["--manifest", "toy.csv"],
     ["--output-dir", "out"],
     ["--confounder-column", "scanner_vendor"],
-    ["--evaluation-design", "dataset_wide"],
+    ["--evaluation-design", "all"],
     ["--use-median-k"],
     ["--force-embed"],
     ["--device", "cpu"],
@@ -174,7 +174,7 @@ def test_benchmark_uses_benchmark_name_for_dataset(bench_env) -> None:
     assert set(metrics_df["dataset"]) == {"release-ready"}
 
 
-def test_benchmark_dataset_wide_outputs_sample_level_rows(bench_env) -> None:
+def test_benchmark_all_rows_outputs_sample_level_rows(bench_env) -> None:
     models = ["M1", "M2"]
     _setup(bench_env, models=models)
 
@@ -188,13 +188,13 @@ def test_benchmark_dataset_wide_outputs_sample_level_rows(bench_env) -> None:
     per_model_dir = results_dir / "per_sample_metrics_by_model"
 
     assert set(metrics_df["model"]) == set(models)
-    assert set(metrics_df["evaluation_design"]) == {"dataset_wide"}
+    assert set(metrics_df["evaluation_design"]) == {"all"}
     assert set(metrics_df["evaluation_unit"]) == {"sample"}
     assert set(metrics_df["k_max"]) == {3}
-    assert set(k_sweep_df["evaluation_design"]) == {"dataset_wide"}
+    assert set(k_sweep_df["evaluation_design"]) == {"all"}
     assert set(k_sweep_df["evaluation_unit"]) == {"sample"}
     assert set(k_sweep_df["k_max"]) == {3}
-    assert set(per_sample_df["evaluation_design"]) == {"dataset_wide"}
+    assert set(per_sample_df["evaluation_design"]) == {"all"}
     assert set(per_sample_df["evaluation_unit"]) == {"sample"}
     assert set(per_sample_df["subset"]) == {"dataset"}
 
@@ -263,7 +263,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
             self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
             self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
-            self.evaluation_design = "dataset_wide"
+            self.evaluation_design = "all"
             self.evaluation_unit = "sample"
 
     class _FakeCRoMaResult:
@@ -279,7 +279,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.sample_values = aligned[informative]
             self.sample_values_aligned = aligned
             self.undefined_frac = float((~informative).mean())
-            self.evaluation_design = "dataset_wide"
+            self.evaluation_design = "all"
             self.evaluation_unit = "sample"
             self.k_start = 200
             self.k_final = 200
@@ -336,7 +336,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
         start_k: int,
         k_growth_factor: float,
     ) -> dict[int, _FakeCRoMaResult]:
-        assert evaluation_design == "dataset_wide"
+        assert evaluation_design == "all"
         return {
             1: _FakeCRoMaResult(1, [1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0]),
             2: _FakeCRoMaResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
@@ -347,12 +347,12 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
 
     bench_env._monkeypatch.setattr(
         bm_mod.RI,
-        "_compute_artifacts_from_prepared_dataset_wide",
+        "_compute_artifacts_from_prepared_all_rows",
         fake_ri_compute_artifacts,
     )
     bench_env._monkeypatch.setattr(
         bm_mod.MaRI,
-        "_compute_artifacts_from_prepared_dataset_wide",
+        "_compute_artifacts_from_prepared_all_rows",
         fake_mari_compute_artifacts,
     )
     bench_env._monkeypatch.setattr(bm_mod.CRoMa, "compute", fake_croma_compute)

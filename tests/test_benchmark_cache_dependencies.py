@@ -60,14 +60,14 @@ def _tileset_manifest() -> pd.DataFrame:
 
 
 def _setup(bench_env, *, name: str = "toy", k_max: int = 3) -> None:
-    """Embed a single-model toy tileset and register a dataset-wide benchmark."""
+    """Embed a single-model toy tileset and register an all-rows benchmark."""
     tileset = _tileset_manifest()
     bench_env.write_tileset(TOY_TILESET, tileset, {"M1": _toy_features()[: len(tileset)]})
     bench_env.register(
         name,
         tileset=TOY_TILESET,
         manifest=_toy_manifest(),
-        design="dataset_wide",
+        design="all",
         k_max=k_max,
         confounder_column="scanner_vendor",
     )
@@ -87,10 +87,10 @@ def test_tau_change_recomputes_only_mari(bench_env) -> None:
         "knn": 0,
         "knn_prepared": 0,
     }
-    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
     original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
     original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
-    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
+    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_all_rows
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
@@ -124,10 +124,10 @@ def test_tau_change_recomputes_only_mari(bench_env) -> None:
         return original_knn(*args, **kwargs)
 
     mp = bench_env._monkeypatch
-    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
+    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
     mp.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
-    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
+    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_all_rows", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
@@ -154,10 +154,10 @@ def test_croma_search_change_recomputes_only_croma(bench_env) -> None:
         "knn": 0,
         "knn_prepared": 0,
     }
-    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
     original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
     original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
-    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
+    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_all_rows
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
@@ -191,10 +191,10 @@ def test_croma_search_change_recomputes_only_croma(bench_env) -> None:
         return original_knn(*args, **kwargs)
 
     mp = bench_env._monkeypatch
-    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
+    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
     mp.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
-    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
+    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_all_rows", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
@@ -220,9 +220,9 @@ def test_k_values_change_recomputes_knn_ri_mari_not_croma(bench_env) -> None:
         "croma": 0,
         "knn": 0,
     }
-    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
     original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
-    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
+    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_all_rows
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
@@ -252,9 +252,9 @@ def test_k_values_change_recomputes_knn_ri_mari_not_croma(bench_env) -> None:
         return original_knn(*args, **kwargs)
 
     mp = bench_env._monkeypatch
-    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
+    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
-    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
+    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_all_rows", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
@@ -272,7 +272,7 @@ def test_k_values_change_recomputes_knn_ri_mari_not_croma(bench_env) -> None:
 def test_evaluation_design_change_recomputes_all_artifacts(bench_env) -> None:
     # Two benchmarks over the same tileset differing only in evaluation design get
     # independent run directories, so the second (paired) run cannot reuse the first's
-    # (dataset-wide) metric cache: every metric recomputes.
+    # (all-rows) metric cache: every metric recomputes.
     _setup(bench_env, name="toy-wide")
     bench_env.register(
         "toy-paired",
@@ -294,10 +294,10 @@ def test_evaluation_design_change_recomputes_all_artifacts(bench_env) -> None:
         "knn": 0,
         "knn_prepared": 0,
     }
-    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
     original_ri_prepared = bm.RI._compute_artifacts_from_prepared_subsets
     original_knn_prepared = bm.RI._knn_balanced_accuracy_by_k_from_prepared_subsets
-    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
+    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_all_rows
     original_mari_prepared = bm.MaRI._compute_artifacts_from_prepared_subsets
     original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
@@ -331,10 +331,10 @@ def test_evaluation_design_change_recomputes_all_artifacts(bench_env) -> None:
         return original_knn(*args, **kwargs)
 
     mp = bench_env._monkeypatch
-    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
+    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts)
     mp.setattr(bm.RI, "_compute_artifacts_from_prepared_subsets", wrapped_ri_prepared)
     mp.setattr(bm.RI, "_knn_balanced_accuracy_by_k_from_prepared_subsets", wrapped_knn_prepared)
-    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
+    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_all_rows", wrapped_mari_artifacts)
     mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_subsets", wrapped_mari_prepared)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
@@ -353,8 +353,8 @@ def test_recompute_metrics_flag_forces_all(bench_env) -> None:
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
 
     calls = {"ri": 0, "mari": 0, "croma": 0, "knn": 0}
-    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
-    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
+    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_all_rows
     original_croma_compute = bm.CRoMa.compute
     original_knn = bm._knn_balanced_accuracy_by_k
 
@@ -375,8 +375,8 @@ def test_recompute_metrics_flag_forces_all(bench_env) -> None:
         return original_knn(*args, **kwargs)
 
     mp = bench_env._monkeypatch
-    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
-    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
+    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts)
+    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_all_rows", wrapped_mari_artifacts)
     mp.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
     mp.setattr(bm, "_knn_balanced_accuracy_by_k", wrapped_knn)
 
@@ -392,8 +392,8 @@ def test_cold_cache_uses_one_shared_scoring_pass_per_metric(bench_env) -> None:
     _setup(bench_env)
 
     calls = {"ri": 0, "mari": 0}
-    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_dataset_wide
-    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_dataset_wide
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
+    original_mari_artifacts = bm.MaRI._compute_artifacts_from_prepared_all_rows
 
     def wrapped_ri_artifacts(*args, **kwargs):
         calls["ri"] += 1
@@ -409,8 +409,8 @@ def test_cold_cache_uses_one_shared_scoring_pass_per_metric(bench_env) -> None:
         )
 
     mp = bench_env._monkeypatch
-    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_ri_artifacts)
-    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_dataset_wide", wrapped_mari_artifacts)
+    mp.setattr(bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts)
+    mp.setattr(bm.MaRI, "_compute_artifacts_from_prepared_all_rows", wrapped_mari_artifacts)
     mp.setattr(bm.RI, "compute", fail_public_metric_api)
     mp.setattr(bm.RI, "compute_curve", fail_public_metric_api)
     mp.setattr(bm.MaRI, "compute", fail_public_metric_api)

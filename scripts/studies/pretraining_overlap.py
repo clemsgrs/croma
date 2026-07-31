@@ -11,7 +11,7 @@ from the ``pathorob-tolkach-esca`` benchmark, which is why this lives in ``scrip
 and reads the tileset matrix directly, exactly as ``scripts/studies/apd/loaders.py`` does:
 the full ``<Model>.npy`` matrix aligned row-for-row to the all-tiles manifest.
 
-CRoMa is computed ``dataset_wide`` at ``m = CROMA_HEADLINE_M`` with the confounder column
+CRoMa is computed under the ``all`` evaluation design at ``m = CROMA_HEADLINE_M`` with the confounder column
 ``medical_center`` (the cohort) and auto neighbour search (no fixed tau). The emitted
 ``croma_m{M}`` column is the bounded CRoMa margin in (-1, 1) -- NOT the legacy typed-distance
 ratio.
@@ -36,7 +36,7 @@ for _p in (REPO / "src", REPO / "scripts" / "bench"):
 import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>/...)
 
 from croma import CRoMa  # noqa: E402
-from croma.metrics.base import EVALUATION_DESIGN_DATASET_WIDE  # noqa: E402
+from croma.metrics.base import EVALUATION_DESIGN_ALL  # noqa: E402
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 from croma.metrics.pairs import load_manifest  # noqa: E402
 
@@ -67,11 +67,11 @@ def _per_sample(model: str, manifest: pd.DataFrame) -> pd.DataFrame:
         features=np.asarray(emb, dtype=float),
         manifest=manifest,
         confounder_column=CONFOUNDER_COLUMN,
-        evaluation_design=EVALUATION_DESIGN_DATASET_WIDE,
+        evaluation_design=EVALUATION_DESIGN_ALL,
         m=int(CROMA_HEADLINE_M),
     )
 
-    # dataset_wide -> occurrences are the samples, in manifest row order. Align each
+    # ``all`` -> occurrences are the samples, in manifest row order. Align each
     # per-occurrence CRoMa value back to its source row via occurrence_source_indices.
     src = np.asarray(result.occurrence_source_indices, dtype=int)
     vals = np.asarray(result.sample_values_aligned, dtype=float)  # NaN where undefined

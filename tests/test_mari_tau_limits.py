@@ -135,7 +135,7 @@ def test_sharp_tau_collapses_onto_the_nearest_typed_neighbour(case: str) -> None
             manifest,
             confounder_column="scanner_vendor",
             k_candidates=[PINNED_K],
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             tau=SHARP_TAU,
             warn_tau=False,
         )
@@ -160,7 +160,7 @@ def test_sharp_tau_below_the_underflow_floor_leaves_mari_undefined(case: str) ->
             manifest,
             confounder_column="scanner_vendor",
             k_candidates=[PINNED_K],
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             tau=UNDERFLOW_TAU,
             warn_tau=False,
         )

@@ -674,10 +674,10 @@ def _build_croma_subgroup_analysis(
             context_rows.append(context_row)
             continue
 
-        if evaluation_design == "dataset_wide" and n_labels != 2:
+        if evaluation_design == "all" and n_labels != 2:
             context_row["skipped"] = True
             context_row["skip_reason"] = (
-                "Skipped: pooled dataset-wide subgroup interpretation is not reported because "
+                "Skipped: pooled all-rows subgroup interpretation is not reported because "
                 "heterogeneous biological boundaries make the result clinically weak; use paired runs instead."
             )
             context_rows.append(context_row)

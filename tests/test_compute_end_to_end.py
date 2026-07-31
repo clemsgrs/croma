@@ -5,7 +5,7 @@ import pytest
 from croma import MaRI, RI
 
 
-def _dataset_wide_manifest() -> pd.DataFrame:
+def _all_rows_manifest() -> pd.DataFrame:
     return pd.DataFrame(
         {
             "sample_id": ["a_c1", "a_c2", "b_c1", "b_c2"],
@@ -18,7 +18,7 @@ def _dataset_wide_manifest() -> pd.DataFrame:
     )
 
 
-def _dataset_wide_features() -> np.ndarray:
+def _all_rows_features() -> np.ndarray:
     return np.array(
         [
             [1.00, 0.00],
@@ -124,11 +124,11 @@ def test_paired_keeps_repeated_subset_memberships_as_distinct_occurrences(
 
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
-def test_dataset_wide_compute_returns_expected_exact_value(metric_cls) -> None:
+def test_all_rows_compute_returns_expected_exact_value(metric_cls) -> None:
     result = metric_cls.compute(
-        features=_dataset_wide_features(),
-        manifest=_dataset_wide_manifest(),
-        evaluation_design="dataset_wide",
+        features=_all_rows_features(),
+        manifest=_all_rows_manifest(),
+        evaluation_design="all",
         k_candidates=[1],
         **_metric_kwargs(metric_cls),
     )
@@ -137,7 +137,7 @@ def test_dataset_wide_compute_returns_expected_exact_value(metric_cls) -> None:
     assert result.value == pytest.approx(1.0)
     assert result.std == pytest.approx(0.0)
     assert result.n_pairs == 1
-    assert result.evaluation_design == "dataset_wide"
+    assert result.evaluation_design == "all"
     assert result.evaluation_unit == "sample"
     assert result.sample_values_aligned.shape == (4,)
     assert result.occurrence_defined_mask.tolist() == [True, True, True, True]
@@ -147,14 +147,14 @@ def test_dataset_wide_compute_returns_expected_exact_value(metric_cls) -> None:
 
 
 @pytest.mark.parametrize("metric_cls", [RI, MaRI])
-@pytest.mark.parametrize("evaluation_design", ["paired_2x2", "dataset_wide"])
+@pytest.mark.parametrize("evaluation_design", ["paired_2x2", "all"])
 def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: str) -> None:
     if evaluation_design == "paired_2x2":
         manifest = _paired_manifest_single_subset()
         features = _paired_features_single_subset()
     else:
-        manifest = _dataset_wide_manifest()
-        features = _dataset_wide_features()
+        manifest = _all_rows_manifest()
+        features = _all_rows_features()
 
     curve_kwargs = {"tau": 0.2} if metric_cls is MaRI else {}
     curve = metric_cls.compute_curve(
@@ -180,8 +180,8 @@ def test_compute_curve_matches_single_k_compute(metric_cls, evaluation_design: s
 def test_compute_rejects_unknown_evaluation_design() -> None:
     with pytest.raises(ValueError, match="evaluation_design"):
         RI.compute(
-            features=_dataset_wide_features(),
-            manifest=_dataset_wide_manifest(),
+            features=_all_rows_features(),
+            manifest=_all_rows_manifest(),
             confounder_column="scanner_vendor",
             evaluation_design="auto",
             k_candidates=[1],
@@ -192,8 +192,8 @@ def test_compute_rejects_unknown_evaluation_design() -> None:
 def test_paired_requires_subset_metadata(metric_cls) -> None:
     with pytest.raises(ValueError, match="subset"):
         metric_cls.compute(
-            features=_dataset_wide_features(),
-            manifest=_dataset_wide_manifest(),
+            features=_all_rows_features(),
+            manifest=_all_rows_manifest(),
             evaluation_design="paired_2x2",
             k_candidates=[1],
             **_metric_kwargs(metric_cls),
@@ -204,9 +204,9 @@ def test_paired_requires_subset_metadata(metric_cls) -> None:
 def test_exclude_centers_is_not_supported(metric_cls) -> None:
     with pytest.raises(TypeError, match="exclude_confounders"):
         metric_cls.compute(
-            features=_dataset_wide_features(),
-            manifest=_dataset_wide_manifest(),
-            evaluation_design="dataset_wide",
+            features=_all_rows_features(),
+            manifest=_all_rows_manifest(),
+            evaluation_design="all",
             k_candidates=[1],
             exclude_confounders=["V1"],
             **_metric_kwargs(metric_cls),
@@ -217,9 +217,9 @@ def test_exclude_centers_is_not_supported(metric_cls) -> None:
 def test_compute_requires_explicit_confounder_column(metric_cls) -> None:
     with pytest.raises(TypeError, match="confounder_column"):
         metric_cls.compute(
-            features=_dataset_wide_features(),
-            manifest=_dataset_wide_manifest(),
-            evaluation_design="dataset_wide",
+            features=_all_rows_features(),
+            manifest=_all_rows_manifest(),
+            evaluation_design="all",
             k_candidates=[1],
             **({"tau": 0.2} if metric_cls is MaRI else {}),
         )

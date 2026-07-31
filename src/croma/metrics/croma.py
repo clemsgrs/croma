@@ -7,7 +7,7 @@ import pandas as pd
 from sklearn.neighbors import NearestNeighbors
 
 from croma.metrics.base import (
-    EVALUATION_DESIGN_DATASET_WIDE,
+    EVALUATION_DESIGN_ALL,
     EVALUATION_DESIGN_PAIRED_2X2,
     _normalize_evaluation_design,
 )
@@ -255,12 +255,19 @@ class CrossConfounderRobustnessMargin:
         manifest: pd.DataFrame,
         *,
         confounder_column: str,
-        evaluation_design: str = EVALUATION_DESIGN_PAIRED_2X2,
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
         m: int | list[int] | tuple[int, ...] = CROMA_HEADLINE_M,
         alpha: float = 0.10,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
     ) -> CRoMaResult | dict[int, CRoMaResult]:
+        """Compute the cross-confounder robustness margin.
+
+        Args:
+            evaluation_design: ``"all"`` (the default) scores every supplied manifest row
+                together, as one evaluation scope, at sample level. ``"paired_2x2"`` scores
+                only the manifest's explicitly declared 2x2 subsets, at occurrence level.
+        """
         evaluation_design = _normalize_evaluation_design(evaluation_design)
 
         if isinstance(m, (list, tuple)):
