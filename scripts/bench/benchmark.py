@@ -629,7 +629,29 @@ def _croma_result_to_payload(result: CRoMaResult, m: int) -> dict:
         "croma_alpha": float(result.alpha),
         "croma_q_alpha": float(result.q_alpha),
         "croma_ltm_alpha": float(result.ltm_alpha),
+        "croma_f0": float(result.f0),
     }
+
+
+#: Every key a cached ``by_m`` entry must carry. A payload written before a statistic was
+#: added is not a hit: it would either raise on the missing key or, worse, be defaulted to
+#: something the run never computed. Missing keys invalidate the entry and the model is
+#: rescored.
+_CROMA_PAYLOAD_KEYS = frozenset(
+    {
+        "m",
+        "croma",
+        "croma_std",
+        "croma_undefined_frac",
+        "croma_k_start",
+        "croma_k_final",
+        "croma_retries",
+        "croma_alpha",
+        "croma_q_alpha",
+        "croma_ltm_alpha",
+        "croma_f0",
+    }
+)
 
 
 def _croma_payload_from_results(results: dict[int, CRoMaResult]) -> dict:
@@ -654,6 +676,8 @@ def _croma_payload_to_by_m(
     except Exception:  # noqa: BLE001
         return None
     if set(by_m) != {int(m) for m in expected_m_values}:
+        return None
+    if any(not _CROMA_PAYLOAD_KEYS.issubset(entry) for entry in by_m.values()):
         return None
     return by_m
 
@@ -1670,6 +1694,7 @@ def main() -> int:
                             "croma_alpha": float(payload["croma_alpha"]),
                             "croma_q_alpha": float(payload["croma_q_alpha"]),
                             "croma_ltm_alpha": float(payload["croma_ltm_alpha"]),
+                            "croma_f0": float(payload["croma_f0"]),
                             "embedding_path": str(output_path),
                         }
                     )
@@ -1790,6 +1815,7 @@ def main() -> int:
                     "croma_alpha": float(croma_result["croma_alpha"]),
                     "croma_q_alpha": float(croma_result["croma_q_alpha"]),
                     "croma_ltm_alpha": float(croma_result["croma_ltm_alpha"]),
+                    "croma_f0": float(croma_result["croma_f0"]),
                     "croma_auc": croma_auc,
                     "croma_min": croma_min_val,
                     "croma_delta": croma_delta,

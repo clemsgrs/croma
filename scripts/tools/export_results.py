@@ -159,17 +159,22 @@ def croma_as_margin(croma: pd.Series) -> pd.Series:
 # --------------------------------------------------------------------------------------
 
 
-def build_cohort_table(metrics: pd.DataFrame, frac_neg: dict[str, float]) -> pd.DataFrame:
+def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
     """One cohort's published table, best CRoMa first.
 
-    ``frac_neg`` maps model to F(0), the fraction of samples whose CRoMa is negative --
-    the one published column that cannot be read off ``metrics.csv``, because it is a
-    property of the per-sample distribution rather than of its summary.
+    ``croma_f0`` is F(0), the fraction of defined evaluation units whose CRoMa is ``<= 0``.
+    It is read straight off the run: CRoMa computes it and the run stores it, so the site
+    and the library cannot disagree about where the boundary sits or what the denominator
+    is. A run old enough not to carry the column is a failure, not a NaN column.
 
     The natural-image control is sorted inline rather than banded off beneath a rule: on
     these three cohorts it lands mid-panel, and hiding that would misrepresent what the
     floor actually is. The ``is_control`` flag is what the site's footnote hangs on.
     """
+    if "croma_f0" not in metrics.columns:
+        raise KeyError(
+            "run has no croma_f0 column; re-run the benchmark so CRoMa's own F(0) is stored"
+        )
     out = pd.DataFrame(
         {
             "model": metrics["model"].astype(str),
@@ -179,6 +184,7 @@ def build_cohort_table(metrics: pd.DataFrame, frac_neg: dict[str, float]) -> pd.
             "ri": metrics["ri"].astype(float),
             "mari": metrics["mari"].astype(float),
             "croma": croma_as_margin(metrics["croma"]),
+            "croma_f0": metrics["croma_f0"].astype(float),
             "croma_ltm10": metrics["croma_ltm_alpha"].astype(float),
             # Support is the fraction of samples that actually contribute to the counts.
             # RI and MaRI share a neighbourhood, so they share an undefined set.
@@ -186,10 +192,6 @@ def build_cohort_table(metrics: pd.DataFrame, frac_neg: dict[str, float]) -> pd.
         }
     )
     out["delta"] = out["mari"] - out["ri"]
-    missing = sorted(set(out["model"]) - set(frac_neg))
-    if missing:
-        raise KeyError(f"no F(0) for {missing}; the per-sample distribution is incomplete")
-    out["croma_f0"] = out["model"].map(frac_neg).astype(float)
     return (
         out[COHORT_COLUMNS]
         .sort_values("croma", ascending=False, kind="stable")
@@ -317,18 +319,13 @@ def _round_outward(lo: float, hi: float, places: int = 2) -> tuple[float, float]
 # --------------------------------------------------------------------------------------
 
 
-def load_frac_neg(per_sample: pd.DataFrame) -> dict[str, float]:
-    """Per-model F(0) from a cohort's per-sample frame."""
-    column = f"croma_m{int(CROMA_HEADLINE_M)}"
-    return per_sample.groupby("model")[column].apply(lambda s: float((s < 0).mean())).to_dict()
-
-
 def read_per_sample(cohort: Cohort) -> pd.DataFrame:
     """The two per-sample columns the export needs.
 
     Read narrowly on purpose: the full per-sample frame runs to hundreds of megabytes per
-    cohort, and both the F(0) column and the distribution payload need only the model name
-    and its CRoMa at the headline radius.
+    cohort, and the distribution payload needs only the model name and its CRoMa at the
+    headline radius. F(0) is *not* derived here: it is CRoMa's own statistic and comes off
+    ``metrics.csv``.
     """
     return pd.read_csv(cohort.per_sample_csv, usecols=["model", f"croma_m{int(CROMA_HEADLINE_M)}"])
 
@@ -347,7 +344,7 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
         metrics = pd.read_csv(cohort.metrics_csv)
         samples = read_per_sample(cohort)
         per_sample[cohort.slug] = samples
-        tables[cohort.slug] = build_cohort_table(metrics, load_frac_neg(samples))
+        tables[cohort.slug] = build_cohort_table(metrics)
         meta[cohort.slug] = _cohort_provenance(cohort, metrics)
 
     aggregate = build_aggregate_table(tables)

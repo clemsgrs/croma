@@ -173,7 +173,7 @@ total typed distance.
        confounder_column="center",
        evaluation_design="paired_2x2",
    )
-   print(croma.value, croma.q_alpha, croma.ltm_alpha)
+   print(croma.value, croma.q_alpha, croma.ltm_alpha, croma.f0)
 
 Choosing ``m``
 ~~~~~~~~~~~~~~
@@ -205,3 +205,35 @@ carries two tail statistics at level ``alpha`` (default ``0.10``):
 
 Report these next to ``value``. Two models with the same pooled CRoMa can have very
 different lower tails, and the lower tail is where deployment risk lives.
+
+.. _confounder-dominant-fraction:
+
+The confounder-dominant fraction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Every CRoMa result also carries ``f0``, the confounder-dominant fraction
+:math:`F(0)` -- the empirical CDF of the per-sample distribution at zero:
+
+.. math::
+
+   F(0) = \frac{\#\{i : \mathrm{CRoMa}_i \le 0\}}{\#\{i : \mathrm{CRoMa}_i \text{ defined}\}}
+
+The inequality is **closed**: an exactly contested unit (:math:`\mathrm{CRoMa}_i = 0`, the
+impostor and the biological match equidistant) counts as confounder-dominant, because
+nothing about it says biology won.
+
+The denominator is the **defined** evaluation units only, exactly as for ``q_alpha`` and
+``ltm_alpha`` -- under ``all`` each defined manifest sample counts once, under
+``paired_2x2`` each defined subset occurrence counts once, so a sample scored in two
+subsets contributes twice. Undefined units carry no margin to place on either side of
+zero; ``undefined_frac`` reports them separately, over *all* units. If nothing is defined,
+``f0`` is ``nan`` rather than 0.
+
+.. code-block:: python
+
+   print(croma.f0, croma.undefined_frac)   # 0.18, 0.03
+
+Read ``f0`` as "how much of this model's evidence is on the fragile side", where ``value``
+says where the middle of the distribution sits and ``ltm_alpha`` how bad the worst decile
+gets. Consumers should read the value CRoMa stores rather than recomputing it from a
+per-sample artifact, which is how a boundary or a denominator quietly drifts.

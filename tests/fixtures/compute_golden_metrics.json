@@ -42,6 +42,7 @@
     "croma_alpha": 0.1,
     "croma_q_alpha": 0.06725566831653537,
     "croma_ltm_alpha": -0.0033496949201987074,
+    "croma_f0": 0.03125,
     "croma_auc": NaN,
     "croma_min": 0.22574782457592726,
     "croma_delta": NaN
@@ -89,6 +90,7 @@
     "croma_alpha": 0.1,
     "croma_q_alpha": 0.26462017725404074,
     "croma_ltm_alpha": 0.22383639062779448,
+    "croma_f0": 0.0,
     "croma_auc": NaN,
     "croma_min": 0.39277810285008613,
     "croma_delta": NaN
@@ -136,6 +138,7 @@
     "croma_alpha": 0.1,
     "croma_q_alpha": 0.2590260180189692,
     "croma_ltm_alpha": 0.1843114538265701,
+    "croma_f0": 0.0,
     "croma_auc": NaN,
     "croma_min": 0.317743699542361,
     "croma_delta": NaN

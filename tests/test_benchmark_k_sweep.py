@@ -287,6 +287,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.alpha = 0.10
             self.q_alpha = 0.5
             self.ltm_alpha = 0.4
+            self.f0 = float((self.sample_values <= 0.0).mean())
 
     def fake_ri_compute_artifacts(
         *,
@@ -521,3 +522,65 @@ def test_k_grid_defaults_to_dense(bench_env) -> None:
 
     k_sweep_df = pd.read_csv(bench_env.results_dir("toy") / "k_sweep_metrics.csv")
     assert sorted(k_sweep_df["k"].unique().tolist()) == [1, 2, 3, 4, 5]
+
+
+def test_benchmark_serializes_the_canonical_croma_f0(bench_env) -> None:
+    """``croma_f0`` reaches every serialized layer, and matches the per-sample column.
+
+    The published tables read F(0) off ``metrics.csv``; nothing downstream may have to
+    rebuild it from the per-sample artifact, so the stored value has to be the same number
+    the distribution gives -- ``<= 0`` over the defined occurrences.
+    """
+    models = ["M1", "M2"]
+    _setup(bench_env, models=models)
+
+    # This toy set is too small to fill the default headline radius; m<=2 keeps every
+    # occurrence defined, so the assertions below compare real fractions.
+    assert bench_env.run("toy", "k-star", "--croma-m-max", "2", "--progress", "off") == 0
+
+    results_dir = bench_env.results_dir("toy")
+    metrics_df = pd.read_csv(results_dir / "metrics.csv")
+    m_sweep_df = pd.read_csv(results_dir / "croma_m_sweep_metrics.csv")
+    per_sample_df = pd.read_csv(results_dir / "per_sample_metrics.csv")
+
+    assert "croma_f0" in metrics_df.columns
+    assert "croma_f0" in m_sweep_df.columns
+
+    for _, row in metrics_df.iterrows():
+        samples = per_sample_df.loc[
+            per_sample_df["model"] == row["model"], f"croma_m{int(row['croma_m'])}"
+        ]
+        defined = samples[np.isfinite(samples)]
+        assert row["croma_f0"] == pytest.approx(float((defined <= 0.0).mean()))
+
+    for _, row in m_sweep_df.iterrows():
+        samples = per_sample_df.loc[
+            per_sample_df["model"] == row["model"], f"croma_m{int(row['m'])}"
+        ]
+        defined = samples[np.isfinite(samples)]
+        assert row["croma_f0"] == pytest.approx(float((defined <= 0.0).mean()))
+
+
+def test_cached_payload_keys_are_exactly_what_a_run_writes() -> None:
+    """The cache's required-key set and the writer must not drift apart.
+
+    They are two spellings of one payload: if the writer gains a statistic the required
+    set does not know about, a stale entry is read back missing it and the run raises on
+    the key. This is what keeps the duplication honest.
+    """
+    from croma.types import CRoMaResult
+
+    result = CRoMaResult(
+        dataset="toy",
+        m=5,
+        value=0.1,
+        std=0.0,
+        n_pairs=1,
+        pair_values=np.asarray([0.1]),
+        sample_values=np.asarray([0.1]),
+        sample_values_aligned=np.asarray([0.1]),
+        occurrence_defined_mask=np.asarray([True]),
+        undefined_frac=0.0,
+    )
+
+    assert set(bm._croma_result_to_payload(result, m=5)) == bm._CROMA_PAYLOAD_KEYS

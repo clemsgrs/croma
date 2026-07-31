@@ -115,11 +115,19 @@ All tail statistics are read off one object: the empirical CDF of a model's
 per-sample CRoMa. Report exactly two of them.
 
 **Confounder-dominant fraction** — $F(0)$:
-The CDF evaluated at zero: the fraction of anchors whose neighbourhood is
-confounder-dominant. A _prevalence_ — how often the margin goes the wrong way.
-Lower is better, so it is a diagnostic and is never bolded as a "best".
-_Avoid_: $P_{<0}$ (the pre-CDF name; identical in value, since CRoMa is never
-exactly zero), $\hat{F}(0)$ (the manuscript does not hat it).
+The CDF evaluated at zero: the fraction of _defined_ evaluation units whose
+neighbourhood is confounder-dominant, $\mathrm{CRoMa}_i \le 0$. A _prevalence_ — how
+often the margin goes the wrong way. Lower is better, so it is a diagnostic and is
+never bolded as a "best". The inequality is closed, so an exactly contested unit
+counts as confounder-dominant; the denominator is the defined units only (a manifest
+sample each under `all`, a subset occurrence each under `paired_2x2`), which is what
+`q_alpha` and `ltm_alpha` are read off too, and `undefined_frac` measures the rest.
+CRoMa computes it: read `CRoMaResult.f0` / the stored `croma_f0`, never a fresh
+`(samples < 0).mean()` over a per-sample artifact — that is how a boundary or a
+denominator drifts.
+_Avoid_: $P_{<0}$ (the pre-CDF name, and an _open_ boundary: it differs whenever a
+unit sits exactly at zero, which a collapsed or exactly contested neighbourhood
+produces), $\hat{F}(0)$ (the manuscript does not hat it).
 
 **Lower-tail mean** — LTM$_{10}$:
 The mean of the worst $\alpha$ fraction of anchors, $\mathbb{E}[X \mid X \le Q_\alpha]$.

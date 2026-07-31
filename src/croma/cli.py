@@ -222,6 +222,7 @@ def main() -> None:
             "alpha": result.alpha,
             "q_alpha": result.q_alpha,
             "ltm_alpha": result.ltm_alpha,
+            "f0": result.f0,
             "evaluation_design": result.evaluation_design,
             "evaluation_unit": result.evaluation_unit,
         }
