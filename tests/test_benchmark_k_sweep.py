@@ -559,3 +559,28 @@ def test_benchmark_serializes_the_canonical_croma_f0(bench_env) -> None:
         ]
         defined = samples[np.isfinite(samples)]
         assert row["croma_f0"] == pytest.approx(float((defined <= 0.0).mean()))
+
+
+def test_cached_payload_keys_are_exactly_what_a_run_writes() -> None:
+    """The cache's required-key set and the writer must not drift apart.
+
+    They are two spellings of one payload: if the writer gains a statistic the required
+    set does not know about, a stale entry is read back missing it and the run raises on
+    the key. This is what keeps the duplication honest.
+    """
+    from croma.types import CRoMaResult
+
+    result = CRoMaResult(
+        dataset="toy",
+        m=5,
+        value=0.1,
+        std=0.0,
+        n_pairs=1,
+        pair_values=np.asarray([0.1]),
+        sample_values=np.asarray([0.1]),
+        sample_values_aligned=np.asarray([0.1]),
+        occurrence_defined_mask=np.asarray([True]),
+        undefined_frac=0.0,
+    )
+
+    assert set(bm._croma_result_to_payload(result, m=5)) == bm._CROMA_PAYLOAD_KEYS

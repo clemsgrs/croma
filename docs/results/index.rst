@@ -119,8 +119,9 @@ The columns on the cohort pages
    * - ``CRoMa``
      - The median signed margin at the headline radius, in ``(-1, 1)``, neutral at ``0``.
    * - *F*\ (0)
-     - The fraction of samples with ``CRoMa < 0``: confounder-dominant neighbourhoods.
-       Lower is better, so its bold is the minimum.
+     - The fraction of samples with ``CRoMa <= 0``: confounder-dominant neighbourhoods,
+       over the samples on which ``CRoMa`` is defined. Lower is better, so its bold is the
+       minimum. See :ref:`confounder-dominant-fraction`.
    * - LTM₁₀
      - The mean of the lowest decile of the per-sample ``CRoMa`` distribution. How bad the
        worst tenth actually is.

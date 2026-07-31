@@ -419,3 +419,49 @@ def test_cli_croma_payload_reports_the_canonical_f0(
     payload = json.loads(capsys.readouterr().out)
     assert payload["f0"] == pytest.approx(2.0 / 3.0)
     assert payload["undefined_frac"] == pytest.approx(0.25)
+
+
+def test_cli_croma_f0_matches_a_direct_computation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """End to end, on a real computation: the JSON's ``f0`` is the library's own."""
+    manifest_path = tmp_path / "toy.csv"
+    embeddings_path = tmp_path / "embeddings.npy"
+    _write_repeated_subset_manifest(manifest_path)
+    features = np.asarray([[1.0, 0.0], [0.0, 1.0], [0.98, 0.02], [0.02, 0.98]] * 2, dtype=float)
+    np.save(embeddings_path, features)
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli.py",
+            "croma",
+            "--manifest",
+            str(manifest_path),
+            "--embeddings",
+            str(embeddings_path),
+            "--confounder-column",
+            "scanner_vendor",
+            "--evaluation-design",
+            "paired_2x2",
+            "--m",
+            "1",
+        ],
+    )
+
+    cli.main()
+    payload = json.loads(capsys.readouterr().out)
+
+    manifest = pd.read_csv(manifest_path)
+    expected = cli.CRoMa.compute(
+        features=features,
+        manifest=manifest,
+        confounder_column="scanner_vendor",
+        evaluation_design="paired_2x2",
+        m=1,
+    )
+    assert payload["f0"] == pytest.approx(expected.f0)
+    assert payload["f0"] == pytest.approx(
+        float(np.mean(expected.sample_values_aligned[expected.occurrence_defined_mask] <= 0.0))
+    )
