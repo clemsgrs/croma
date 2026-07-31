@@ -67,7 +67,7 @@ def _per_sample_row(
         "evaluation_unit": ("sample" if evaluation_design == "dataset_wide" else "occurrence"),
         "subset": subset,
         "sample_id": sample_id,
-        "slide_id": f"slide-{sample_id}",
+        "group_id": f"slide-{sample_id}",
         "label": label,
         "confounder": confounder,
         "croma_alpha": 0.25,

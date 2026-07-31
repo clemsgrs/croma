@@ -83,7 +83,7 @@ def _toy_dataset(jitter_scale: float = 0.15) -> tuple[np.ndarray, "object"]:
                 "image_path": f"/tmp/{i}.png",
                 "label": label,
                 "scanner_vendor": conf,
-                "slide_id": f"slide-{i}",
+                "group_id": f"slide-{i}",
                 "dataset": "toy",
             }
         )
@@ -219,7 +219,7 @@ def test_auto_tau_falls_back_when_no_typed_neighbour_exists() -> None:
             "image_path": [f"/tmp/{i}.png" for i in range(4)],
             "label": ["A", "A", "B", "B"],
             "scanner_vendor": ["V1", "V1", "V2", "V2"],
-            "slide_id": [f"slide-{i}" for i in range(4)],
+            "group_id": [f"slide-{i}" for i in range(4)],
             "dataset": ["toy"] * 4,
         }
     )

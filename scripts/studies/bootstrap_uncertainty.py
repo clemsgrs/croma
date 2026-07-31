@@ -61,7 +61,7 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
     order and the same slide sequence (asserted), so a single slide vector clusters
     all models for the paired bootstrap.
     """
-    cols = ["model", "occurrence_index", "sample_index", "slide_id", f"croma_m{m}"]
+    cols = ["model", "occurrence_index", "sample_index", "group_id", f"croma_m{m}"]
     ps = pd.read_csv(ps_path, usecols=cols)
     # Both outputs of this study rank models against each other, so both are computed on the
     # ranked panel: the natural-image control is a floor, not a competitor (see CONTEXT.md).
@@ -72,7 +72,7 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
     model_values: dict[str, np.ndarray] = {}
     for model in models:
         sub = ps[ps["model"] == model].sort_values(["occurrence_index", "sample_index"])
-        slides = sub["slide_id"].to_numpy()
+        slides = sub["group_id"].to_numpy()
         if ref_slides is None:
             ref_slides = slides
         elif not np.array_equal(ref_slides, slides):

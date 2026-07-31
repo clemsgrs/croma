@@ -78,7 +78,7 @@ def _manifest() -> pd.DataFrame:
             "image_path": [f"/tmp/{i}.png" for i in range(len(_LABELS))],
             "label": list(_LABELS),
             "scanner_vendor": list(_VENDORS),
-            "slide_id": [f"sl{i}" for i in range(len(_LABELS))],
+            "group_id": [f"sl{i}" for i in range(len(_LABELS))],
         }
     )
 

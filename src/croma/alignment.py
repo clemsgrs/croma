@@ -10,7 +10,7 @@ EMBEDDING_SOURCE_COLUMNS = (
     "image_path",
     "label",
     CANONICAL_CONFOUNDER_COLUMN,
-    "slide_id",
+    "group_id",
 )
 
 

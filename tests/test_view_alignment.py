@@ -14,7 +14,7 @@ def _tileset() -> pd.DataFrame:
             "image_path": ["/img/a.png", "/img/b.png", "/img/c.png", "/img/d.png"],
             "label": ["tumor", "tumor", "benign", "benign"],
             "confounder": ["c1", "c2", "c1", "c2"],
-            "slide_id": ["s1", "s2", "s3", "s4"],
+            "group_id": ["s1", "s2", "s3", "s4"],
         }
     )
 
@@ -27,7 +27,7 @@ def _view(sample_ids: list[str], labels: list[str] | None = None) -> pd.DataFram
             "image_path": paths,
             "label": labels if labels is not None else ["x"] * len(sample_ids),
             "confounder": ["c1"] * len(sample_ids),
-            "slide_id": ["s"] * len(sample_ids),
+            "group_id": ["s"] * len(sample_ids),
         }
     )
 
@@ -79,7 +79,7 @@ def test_one_sample_id_may_name_two_distinct_tiles() -> None:
             "image_path": ["/img/b.png", "/img/a.png"],
             "label": ["x", "x"],
             "confounder": ["c1", "c1"],
-            "slide_id": ["s", "s"],
+            "group_id": ["s", "s"],
         }
     )
 

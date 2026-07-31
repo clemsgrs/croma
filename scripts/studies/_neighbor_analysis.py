@@ -36,11 +36,11 @@ def load_meta(df: pd.DataFrame, *, compact: bool = False):
     if compact:
         labels = pd.factorize(df["label"])[0].astype(np.int16)
         conf = pd.factorize(df["confounder"])[0].astype(np.int16)
-        slide = pd.factorize(df["slide_id"])[0].astype(np.int32)
+        slide = pd.factorize(df["group_id"])[0].astype(np.int32)
     else:
         labels = pd.factorize(df["label"])[0].astype(int)
         conf = pd.factorize(df["confounder"])[0].astype(int)
-        slide = df["slide_id"].astype(str).to_numpy()
+        slide = df["group_id"].astype(str).to_numpy()
     return labels, conf, slide
 
 

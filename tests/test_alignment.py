@@ -19,10 +19,10 @@ def _write_repeated_subset_manifest(path: Path) -> pd.DataFrame:
         ("s2", "/tmp/2.png", "B", "VendorA", "sl2"),
         ("s3", "/tmp/3.png", "B", "VendorB", "sl3"),
     ]
-    payload = ["sample_id,image_path,label,scanner_vendor,slide_id,subset"]
+    payload = ["sample_id,image_path,label,scanner_vendor,group_id,subset"]
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, confounder, slide_id in rows:
-            payload.append(",".join([sample_id, image_path, label, confounder, slide_id, subset]))
+        for sample_id, image_path, label, confounder, group_id in rows:
+            payload.append(",".join([sample_id, image_path, label, confounder, group_id, subset]))
     path.write_text("\n".join(payload) + "\n", encoding="utf-8")
     return pd.read_csv(path, dtype=str)
 
@@ -97,7 +97,7 @@ def test_build_embedding_source_manifest_tracks_selected_confounder(
         "image_path",
         "label",
         "confounder",
-        "slide_id",
+        "group_id",
     ]
     assert embedding_manifest["confounder"].tolist() == [
         "VendorA",

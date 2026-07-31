@@ -27,18 +27,18 @@ def _make_manifest(
     n: int,
     labels: list[str],
     centers: list[str],
-    slide_ids: list[str] | None = None,
+    group_ids: list[str] | None = None,
     subset: str | None = None,
 ) -> pd.DataFrame:
-    if slide_ids is None:
-        slide_ids = [f"slide-{i}" for i in range(n)]
+    if group_ids is None:
+        group_ids = [f"slide-{i}" for i in range(n)]
     manifest = pd.DataFrame(
         {
             "sample_id": [f"s{i}" for i in range(n)],
             "image_path": [f"/tmp/{i}.png" for i in range(n)],
             "label": labels,
             "scanner_vendor": centers,
-            "slide_id": slide_ids,
+            "group_id": group_ids,
             "dataset": ["toy"] * n,
         }
     )
@@ -257,7 +257,7 @@ class TestCRoMaCompute:
         labels = ["A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2"]
         slides = ["s1", "s1", "s2", "s2"]
-        manifest = _make_manifest(n=4, labels=labels, centers=centers, slide_ids=slides)
+        manifest = _make_manifest(n=4, labels=labels, centers=centers, group_ids=slides)
         features = np.array(
             [
                 [1.0, 0.0],

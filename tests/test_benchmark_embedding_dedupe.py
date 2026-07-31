@@ -31,14 +31,14 @@ def _repeated_subset_manifest() -> pd.DataFrame:
     ]
     rows: list[dict[str, str]] = []
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, confounder, slide_id in base_rows:
+        for sample_id, image_path, label, confounder, group_id in base_rows:
             rows.append(
                 {
                     "sample_id": sample_id,
                     "image_path": image_path,
                     "label": label,
                     "scanner_vendor": confounder,
-                    "slide_id": slide_id,
+                    "group_id": group_id,
                     "subset": subset,
                     "dataset": "toy",
                 }

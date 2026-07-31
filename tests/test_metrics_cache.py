@@ -72,7 +72,7 @@ def test_manifest_fingerprint_changes_with_content(tmp_path: Path) -> None:
             "image_path": ["/tmp/0.png", "/tmp/1.png"],
             "label": ["A", "B"],
             "confounder": ["VendorA", "VendorB"],
-            "slide_id": ["sl0", "sl1"],
+            "group_id": ["sl0", "sl1"],
         }
     )
     df.attrs["confounder_column"] = "scanner_vendor"
@@ -93,7 +93,7 @@ def test_manifest_fingerprint_changes_with_selected_confounder_column(
             "image_path": ["/tmp/0.png", "/tmp/1.png"],
             "label": ["A", "B"],
             "confounder": ["VendorA", "VendorB"],
-            "slide_id": ["sl0", "sl1"],
+            "group_id": ["sl0", "sl1"],
         }
     )
     df.attrs["confounder_column"] = "scanner_vendor"

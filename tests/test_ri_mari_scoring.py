@@ -127,7 +127,7 @@ def _make_manifest_four_confounders() -> pd.DataFrame:
                 "V3",
                 "V3",
             ],
-            "slide_id": [f"slide-{i}" for i in range(12)],
+            "group_id": [f"slide-{i}" for i in range(12)],
             "dataset": ["toy"] * 12,
         }
     )
@@ -205,7 +205,7 @@ def test_per_sample_median_nan_when_no_defined_samples() -> None:
             "image_path": [f"/tmp/{i}.png" for i in range(4)],
             "label": ["A", "A", "A", "A"],
             "scanner_vendor": ["V1", "V1", "V1", "V1"],
-            "slide_id": [f"slide-{i}" for i in range(4)],
+            "group_id": [f"slide-{i}" for i in range(4)],
             "dataset": ["toy"] * 4,
         }
     )

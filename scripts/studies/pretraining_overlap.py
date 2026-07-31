@@ -80,7 +80,7 @@ def _per_sample(model: str, manifest: pd.DataFrame) -> pd.DataFrame:
         {
             "model": model,
             "confounder": rows["confounder"].to_numpy(),
-            "slide_id": rows["slide_id"].to_numpy(),
+            "group_id": rows["group_id"].to_numpy(),
             "label": rows["label"].to_numpy(),
             "sample_id": rows["sample_id"].to_numpy(),
             HEADLINE_COL: vals,

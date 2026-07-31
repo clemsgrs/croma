@@ -31,7 +31,7 @@ def _dataset() -> tuple[np.ndarray, pd.DataFrame]:
                 "image_path": f"/tmp/{i}.png",
                 "label": label,
                 "scanner_vendor": conf,
-                "slide_id": f"slide-{i}",
+                "group_id": f"slide-{i}",
                 "dataset": "toy",
             }
         )
@@ -103,7 +103,7 @@ def test_knn_curves_from_cache_match_direct() -> None:
         direct = _knn_balanced_accuracy_by_k(
             features=prepared_inputs.features,
             labels=encoded,
-            slide_ids=prepared_inputs.slide_ids,
+            group_ids=prepared_inputs.group_ids,
             k_values=K_VALUES,
             warn_context="parity",
         )

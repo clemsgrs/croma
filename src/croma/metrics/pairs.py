@@ -11,7 +11,14 @@ from croma.confounders import (
     normalize_confounder_column_name,
 )
 
-BASE_REQUIRED_COLUMNS = ("sample_id", "image_path", "label", "slide_id")
+#: The manifest's independence key: which non-independent source a sample came from --
+#: a slide, a patient, a specimen, an acquisition, whatever unit the study declares.
+#: Candidates sharing a query's ``group_id`` are never eligible neighbours, so the field
+#: is what stops a model scoring well by retrieving near-duplicates of the sample it is
+#: already looking at. Required, and required to be a non-empty string.
+GROUP_COLUMN = "group_id"
+
+BASE_REQUIRED_COLUMNS = ("sample_id", "image_path", "label", GROUP_COLUMN)
 CANONICAL_REQUIRED_COLUMNS = (*BASE_REQUIRED_COLUMNS, CANONICAL_CONFOUNDER_COLUMN)
 
 
@@ -23,6 +30,27 @@ class EvaluationSubset:
 
 def _normalize_str(v: object) -> str:
     return str(v).strip()
+
+
+def _normalize_group_ids(values: pd.Series, source: str) -> pd.Series:
+    """Normalize the independence key, rejecting samples that do not carry one.
+
+    A blank or missing ``group_id`` is not a group of its own: it says nothing about
+    which source the sample came from, so the same-group exclusion cannot be applied to
+    it. Rejecting it here keeps that gap from silently reading as "independent".
+    """
+    normalized = values.map(lambda v: "" if pd.isna(v) else _normalize_str(v))
+    blank_rows = [int(i) for i in normalized.index[normalized == ""].tolist()]
+    if blank_rows:
+        shown = blank_rows[:5]
+        more = (
+            "" if len(blank_rows) <= len(shown) else f" (and {len(blank_rows) - len(shown)} more)"
+        )
+        raise ValueError(
+            f"{source} has empty {GROUP_COLUMN} values at rows {shown}{more}: every sample "
+            f"needs a non-empty {GROUP_COLUMN} naming its independence group"
+        )
+    return normalized
 
 
 def _base_source_columns(confounder_column: str) -> tuple[str, ...]:
@@ -56,7 +84,7 @@ def normalize_manifest(
     out = df.copy()
     out["sample_id"] = out["sample_id"].map(_normalize_str)
     out["label"] = out["label"].map(_normalize_str)
-    out["slide_id"] = out["slide_id"].map(_normalize_str)
+    out[GROUP_COLUMN] = _normalize_group_ids(out[GROUP_COLUMN], source)
     out["image_path"] = out["image_path"].map(_normalize_str)
     out[CANONICAL_CONFOUNDER_COLUMN] = out[confounder_column].map(_normalize_str)
     if "subset" in out.columns:

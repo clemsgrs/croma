@@ -11,7 +11,7 @@ _MANIFEST_COLUMNS = (
     "sample_id",
     "label",
     CANONICAL_CONFOUNDER_COLUMN,
-    "slide_id",
+    "group_id",
     "image_path",
 )
 _OPTIONAL_MANIFEST_COLUMNS = ("subset",)

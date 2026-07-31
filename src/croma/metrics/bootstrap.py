@@ -1,13 +1,14 @@
 """Cluster bootstrap utilities for uncertainty quantification on the headline
 robustness statistics (CRoMa, and equally RI/MaRI).
 
-The per-sample CRoMa values are not independent: tiles drawn from the same slide
-share tissue, staining and scanner, so an i.i.d. sample-level resample would
-understate uncertainty. We therefore resample at the *slide* (cluster) level --
-draw slides with replacement and pool all of their tiles -- which is the honest
-(and conservative) bootstrap for these benchmarks. It degrades gracefully to the
-i.i.d. case for slide-level datasets (e.g. PANDA), where each slide contributes a
-single sample and a cluster is a singleton.
+The per-sample CRoMa values are not independent: samples from one independence
+group (the manifest's ``group_id`` -- a slide, a patient, a specimen) share tissue,
+staining and scanner, so an i.i.d. sample-level resample would understate
+uncertainty. We therefore resample at the *group* (cluster) level -- draw groups
+with replacement and pool all of their samples -- which is the honest (and
+conservative) bootstrap for these benchmarks. It degrades gracefully to the i.i.d.
+case for slide-level datasets (e.g. PANDA), where each group contributes a single
+sample and a cluster is a singleton.
 
 For across-model comparisons (rank stability) all models are evaluated on exactly
 the same samples (a paired design), so a single shared cluster resample is applied

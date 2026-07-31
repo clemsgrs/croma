@@ -167,10 +167,10 @@ def test_the_tolkach_arrangement_reproduces_the_driver_loop_it_replaced(seed: in
         ]
         for i, cell_row in enumerate(cells)
     ]
-    slide_ids = [slide_of_row[row] for row in range(len(slide_of_row))]
+    group_ids = [slide_of_row[row] for row in range(len(slide_of_row))]
 
     expected = _driver_loop(features, CENTERS, CLASSES, FEASIBLE, ROWS_PER_SLIDE, seed)
-    arrange = loaders.case_arrangement(CENTERS, FEASIBLE, slide_ids)
+    arrange = loaders.case_arrangement(CENTERS, FEASIBLE, group_ids)
     arranged = arrange(cells, random.Random(seed))
 
     assert [
@@ -184,8 +184,8 @@ _ARRANGEMENT = """
 import json, random, sys
 sys.path.insert(0, sys.argv[1])
 import loaders
-centers, feasible, slide_ids, cells = json.loads(sys.argv[2])
-arrange = loaders.case_arrangement(centers, feasible, slide_ids)
+centers, feasible, group_ids, cells = json.loads(sys.argv[2])
+arrange = loaders.case_arrangement(centers, feasible, group_ids)
 print(json.dumps(arrange(cells, random.Random(0))))
 """
 
@@ -197,8 +197,8 @@ def test_the_tolkach_arrangement_does_not_depend_on_the_hash_seed() -> None:
     # Tolkach's stored matrices were never reproducible because of it (#105). The intersection
     # is sorted now; this pins that, and goes red if a bare set comes back.
     cells, slide_of_row = _cohort()
-    slide_ids = [slide_of_row[row] for row in range(len(slide_of_row))]
-    payload = json.dumps([CENTERS, FEASIBLE, slide_ids, cells])
+    group_ids = [slide_of_row[row] for row in range(len(slide_of_row))]
+    payload = json.dumps([CENTERS, FEASIBLE, group_ids, cells])
 
     arrangements = {
         seed: subprocess.run(

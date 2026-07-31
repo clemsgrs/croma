@@ -808,7 +808,9 @@ def align_dataset(
     meta_df = pd.read_csv(metadata_path, dtype=str)
     source_df = pd.read_csv(source_manifest, dtype=str)
 
-    # Ensure join keys are strings
+    # Ensure join keys are strings. ``slide_id`` here is PathoROB's own column, shared by
+    # the upstream metadata and the intermediate source manifest; the canonical manifest
+    # written below re-exposes it as ``group_id``, the independence unit CRoMa scores on.
     for col in ("slide_id", "patch_id"):
         meta_df[col] = meta_df[col].astype(str).str.strip()
         source_df[col] = source_df[col].astype(str).str.strip()
@@ -856,7 +858,7 @@ def align_dataset(
             "image_path": joined["image_path"],
             "label": joined[label_col],
             "confounder": joined[confounder_col],
-            "slide_id": joined["slide_id"],
+            "group_id": joined["slide_id"],
         }
     )
 

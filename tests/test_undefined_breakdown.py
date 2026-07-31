@@ -12,7 +12,7 @@ def _paired_manifest() -> pd.DataFrame:
             "image_path": [f"/tmp/{i}.png" for i in range(8)],
             "label": ["A", "A", "A", "A", "B", "B", "B", "B"],
             "scanner_vendor": ["V1", "V1", "V2", "V2", "V1", "V1", "V2", "V2"],
-            "slide_id": [f"slide-{i}" for i in range(8)],
+            "group_id": [f"slide-{i}" for i in range(8)],
             "dataset": ["toy"] * 8,
             "subset": ["pair0"] * 8,
         }
@@ -42,7 +42,7 @@ def _dataset_wide_undefined_manifest() -> pd.DataFrame:
             "image_path": [f"/tmp/{i}.png" for i in range(4)],
             "label": ["A", "A", "B", "B"],
             "scanner_vendor": ["V1", "V1", "V2", "V2"],
-            "slide_id": [f"slide-{i}" for i in range(4)],
+            "group_id": [f"slide-{i}" for i in range(4)],
             "dataset": ["toy"] * 4,
         }
     )

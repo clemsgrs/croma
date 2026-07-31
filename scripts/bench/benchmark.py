@@ -426,7 +426,7 @@ def _build_per_sample_rows(
             "source_sample_index": int(source_sample_index),
             "subset": str(sample_row.get("subset", "dataset")),
             "sample_id": str(sample_row["sample_id"]),
-            "slide_id": str(sample_row["slide_id"]),
+            "group_id": str(sample_row["group_id"]),
             "label": str(sample_row["label"]),
             "confounder": str(sample_row["confounder"]),
             "k": int(selected_k),
@@ -460,11 +460,11 @@ def _knn_balanced_accuracy_by_k_for_design(
 ) -> dict[int, float]:
     if evaluation_design == "dataset_wide":
         labels = pd.factorize(manifest[target_column])[0].astype(int)
-        slide_ids = manifest["slide_id"].astype(str).to_numpy()
+        group_ids = manifest["group_id"].astype(str).to_numpy()
         return _knn_balanced_accuracy_by_k(
             features=features,
             labels=labels,
-            slide_ids=slide_ids,
+            group_ids=group_ids,
             k_values=k_values,
             warn_context=warn_context,
         )
@@ -484,14 +484,14 @@ def _knn_balanced_accuracy_by_k_for_design(
             continue
         idx = subset_df.index.to_numpy(dtype=int)
         labels = pd.factorize(subset_df[target_column])[0].astype(int)
-        slide_ids = subset_df["slide_id"].astype(str).to_numpy()
+        group_ids = subset_df["group_id"].astype(str).to_numpy()
         valid_k = [int(k) for k in k_values if int(k) < len(subset_df)]
         if not valid_k:
             continue
         scores = _knn_balanced_accuracy_by_k(
             features=features[idx],
             labels=labels,
-            slide_ids=slide_ids,
+            group_ids=group_ids,
             k_values=valid_k,
             warn_context=warn_context,
         )

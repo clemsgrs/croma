@@ -21,7 +21,7 @@ def _toy_manifest() -> pd.DataFrame:
             "image_path": [f"/tmp/{i}.png" for i in range(8)],
             "label": ["A", "A", "B", "B", "A", "A", "B", "B"],
             "scanner_vendor": ["V1", "V2", "V1", "V2", "V1", "V2", "V1", "V2"],
-            "slide_id": ["sl0", "sl1", "sl2", "sl3", "sl0", "sl4", "sl5", "sl6"],
+            "group_id": ["sl0", "sl1", "sl2", "sl3", "sl0", "sl4", "sl5", "sl6"],
             "subset": [
                 "pair1",
                 "pair1",
@@ -407,7 +407,7 @@ def test_benchmark_can_select_different_confounder_k(bench_env) -> None:
         *,
         features: np.ndarray,
         labels: np.ndarray,
-        slide_ids: np.ndarray,
+        group_ids: np.ndarray,
         k_values: list[int],
         warn_context: str,
     ) -> dict[int, float]:

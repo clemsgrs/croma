@@ -24,14 +24,14 @@ def _paired_manifest() -> pd.DataFrame:
     ]
     rows: list[dict[str, str]] = []
     for subset in ("pair1", "pair2"):
-        for sample_id, image_path, label, confounder, slide_id in base_rows:
+        for sample_id, image_path, label, confounder, group_id in base_rows:
             rows.append(
                 {
                     "sample_id": sample_id,
                     "image_path": image_path,
                     "label": label,
                     "scanner_vendor": confounder,
-                    "slide_id": slide_id,
+                    "group_id": group_id,
                     "subset": subset,
                     "dataset": "toy",
                 }
@@ -185,7 +185,7 @@ def _dataset_wide_manifest() -> pd.DataFrame:
                 "image_path": f"/tmp/s{i}.png",
                 "label": "A" if i % 2 == 0 else "B",
                 "scanner_vendor": "V1" if i < 4 else "V2",
-                "slide_id": f"sl{i}",
+                "group_id": f"sl{i}",
                 "dataset": "toy",
             }
         )

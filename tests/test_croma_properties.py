@@ -122,7 +122,7 @@ def _slide_trap(*, near_slide: str) -> tuple[np.ndarray, pd.DataFrame]:
             "image_path": [f"/tmp/{i}.png" for i in range(len(cells))],
             "label": [cell[0] for cell in cells],
             CONFOUNDER_COLUMN: [cell[1] for cell in cells],
-            "slide_id": slides,
+            "group_id": slides,
             "dataset": ["toy"] * len(cells),
         }
     )

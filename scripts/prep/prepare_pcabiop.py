@@ -12,7 +12,7 @@ This writes two row-aligned artifacts, exactly the pair every APD dataset needs
    slide FM (ID rows stacked on top of OOD rows) plus a ``manifest.csv`` row-order
    contract, and
 2. the APD metadata ``data/pcabiop/metadata/pcabiop.csv`` (columns ``subset``,
-   ``slide_id``, ``biological_class``, ``medical_center``) that ``loaders.load_data``
+   ``group_id``, ``biological_class``, ``medical_center``) that ``loaders.load_data``
    reads, row-aligned index-for-index with every ``<model>.npy``.
 
 ID cohort = the 1,000 slides of ``data/benchmarks/panda.csv`` (the published PANDA
@@ -97,7 +97,7 @@ def build_id_rows():
 
     rows = pd.DataFrame({
         "subset": "ID",
-        "slide_id": panda["sample_id"],
+        "group_id": panda["sample_id"],
         "biological_class": np.where(panda["label"].to_numpy() == 0, "benign", "cancer"),
         "medical_center": panda["data_provider"],
         "sample_id": panda["sample_id"],
@@ -118,7 +118,7 @@ def build_ood_rows():
 
     rows = pd.DataFrame({
         "subset": "OOD",
-        "slide_id": kept["sample_id"],
+        "group_id": kept["sample_id"],
         "biological_class": kept["biological_class"],
         "medical_center": "PAR",
         "sample_id": kept["sample_id"],
@@ -161,12 +161,12 @@ def main():
         "sample_id": meta["sample_id"],
         "label": meta["biological_class"],
         "confounder": meta["medical_center"],
-        "slide_id": meta["slide_id"],
+        "group_id": meta["group_id"],
         "subset": meta["subset"],
     }).to_csv(layout.tileset_manifest(TILESET), index=False)
 
     META_PATH.parent.mkdir(parents=True, exist_ok=True)
-    meta[["subset", "slide_id", "biological_class", "medical_center"]].to_csv(META_PATH, index=False)
+    meta[["subset", "group_id", "biological_class", "medical_center"]].to_csv(META_PATH, index=False)
 
     print(f"\nwrote {out_dir}/ and {META_PATH}")
     print("ID cells (medical_center x biological_class):")

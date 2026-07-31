@@ -6,7 +6,7 @@ import pytest
 from croma.metrics import neighbors as nb
 
 
-def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
+def test_filter_neighbors_excluding_same_group_does_not_backfill() -> None:
     raw_neighbors = np.array(
         [
             [0, 1, 2, 3, 4],
@@ -17,11 +17,11 @@ def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
         ],
         dtype=int,
     )
-    slide_ids = np.array(["slide-a", "slide-a", "slide-b", "slide-c", "slide-d"], dtype=object)
+    group_ids = np.array(["slide-a", "slide-a", "slide-b", "slide-c", "slide-d"], dtype=object)
 
-    neigh, valid_counts = nb._filter_neighbors_excluding_same_slide(
+    neigh, valid_counts = nb._filter_neighbors_excluding_same_group(
         raw_neighbors=raw_neighbors,
-        slide_ids=slide_ids,
+        group_ids=group_ids,
         kmax=4,
     )
 
@@ -32,10 +32,10 @@ def test_filter_neighbors_excluding_same_slide_does_not_backfill() -> None:
 
     for sample_idx, row in enumerate(neigh):
         for pos in range(int(valid_counts[sample_idx])):
-            assert slide_ids[int(row[pos])] != slide_ids[sample_idx]
+            assert group_ids[int(row[pos])] != group_ids[sample_idx]
 
 
-def test_filter_query_neighbors_excluding_same_slide_does_not_backfill() -> None:
+def test_filter_query_neighbors_excluding_same_group_does_not_backfill() -> None:
     raw_neighbors = np.array(
         [
             [0, 1, 2, 3],
@@ -51,13 +51,13 @@ def test_filter_query_neighbors_excluding_same_slide_does_not_backfill() -> None
         dtype=float,
     )
     query_indices = np.array([0, 1], dtype=int)
-    slide_ids = np.array(["slide-a", "slide-a", "slide-b", "slide-c"], dtype=object)
+    group_ids = np.array(["slide-a", "slide-a", "slide-b", "slide-c"], dtype=object)
 
-    neigh, dist, valid_counts = nb._filter_query_neighbors_excluding_same_slide(
+    neigh, dist, valid_counts = nb._filter_query_neighbors_excluding_same_group(
         raw_neighbors=raw_neighbors,
         raw_distances=raw_distances,
         query_indices=query_indices,
-        slide_ids=slide_ids,
+        group_ids=group_ids,
         kmax=3,
     )
 
@@ -118,13 +118,13 @@ def test_warn_when_reduced_effective_k_exceeds_ten_percent(
 
 
 def test_initial_neighbor_budget_uses_slide_aware_buffer() -> None:
-    slide_ids_small = np.array([f"s{i // 10}" for i in range(100)], dtype=object)
-    assert nb._max_tiles_per_slide(slide_ids_small) == 10
-    assert nb._initial_n_neighbors(kmax=21, slide_ids=slide_ids_small, n_samples=100) == 85
+    group_ids_small = np.array([f"s{i // 10}" for i in range(100)], dtype=object)
+    assert nb._max_rows_per_group(group_ids_small) == 10
+    assert nb._initial_n_neighbors(kmax=21, group_ids=group_ids_small, n_samples=100) == 85
 
-    slide_ids_large = np.array(["a"] * 70 + [f"s{i}" for i in range(30)], dtype=object)
-    assert nb._max_tiles_per_slide(slide_ids_large) == 70
-    assert nb._initial_n_neighbors(kmax=21, slide_ids=slide_ids_large, n_samples=100) == 91
+    group_ids_large = np.array(["a"] * 70 + [f"s{i}" for i in range(30)], dtype=object)
+    assert nb._max_rows_per_group(group_ids_large) == 70
+    assert nb._initial_n_neighbors(kmax=21, group_ids=group_ids_large, n_samples=100) == 91
 
 
 def test_prepare_neighbors_grows_when_coverage_below_target(
@@ -149,7 +149,7 @@ def test_prepare_neighbors_grows_when_coverage_below_target(
 
     def fake_filter(
         raw_neighbors: np.ndarray,
-        slide_ids: np.ndarray,
+        group_ids: np.ndarray,
         kmax: int,
         raw_distances: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -163,12 +163,12 @@ def test_prepare_neighbors_grows_when_coverage_below_target(
         return neigh, dist, valid_counts
 
     monkeypatch.setattr(nb, "NearestNeighbors", FakeNN)
-    monkeypatch.setattr(nb, "_filter_neighbors_excluding_same_slide", fake_filter)
+    monkeypatch.setattr(nb, "_filter_neighbors_excluding_same_group", fake_filter)
 
     features = np.zeros((100, 2), dtype=float)
-    slide_ids = np.array([f"slide-{i}" for i in range(100)], dtype=object)
+    group_ids = np.array([f"slide-{i}" for i in range(100)], dtype=object)
     _neigh, _dist, valid_counts, meta = nb._prepare_neighbors_with_meta(
-        features, slide_ids, kmax=21
+        features, group_ids, kmax=21
     )
 
     assert calls == [85, 99]
@@ -199,7 +199,7 @@ def test_prepare_neighbors_stops_at_n_minus_one_when_unreachable(
 
     def fake_filter(
         raw_neighbors: np.ndarray,
-        slide_ids: np.ndarray,
+        group_ids: np.ndarray,
         kmax: int,
         raw_distances: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -210,12 +210,12 @@ def test_prepare_neighbors_stops_at_n_minus_one_when_unreachable(
         return neigh, dist, valid_counts
 
     monkeypatch.setattr(nb, "NearestNeighbors", FakeNN)
-    monkeypatch.setattr(nb, "_filter_neighbors_excluding_same_slide", fake_filter)
+    monkeypatch.setattr(nb, "_filter_neighbors_excluding_same_group", fake_filter)
 
     features = np.zeros((50, 2), dtype=float)
-    slide_ids = np.array([f"slide-{i}" for i in range(50)], dtype=object)
+    group_ids = np.array([f"slide-{i}" for i in range(50)], dtype=object)
     _neigh, _dist, valid_counts, meta = nb._prepare_neighbors_with_meta(
-        features, slide_ids, kmax=21
+        features, group_ids, kmax=21
     )
 
     assert calls == [49]
@@ -261,7 +261,7 @@ def test_no_growth_when_initial_budget_is_enough(
 
     def fake_filter(
         raw_neighbors: np.ndarray,
-        slide_ids: np.ndarray,
+        group_ids: np.ndarray,
         kmax: int,
         raw_distances: np.ndarray | None = None,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -273,12 +273,12 @@ def test_no_growth_when_initial_budget_is_enough(
         return neigh, dist, valid_counts
 
     monkeypatch.setattr(nb, "NearestNeighbors", FakeNN)
-    monkeypatch.setattr(nb, "_filter_neighbors_excluding_same_slide", fake_filter)
+    monkeypatch.setattr(nb, "_filter_neighbors_excluding_same_group", fake_filter)
 
     features = np.zeros((100, 2), dtype=float)
-    slide_ids = np.array([f"slide-{i}" for i in range(100)], dtype=object)
+    group_ids = np.array([f"slide-{i}" for i in range(100)], dtype=object)
     _neigh, _dist, valid_counts, meta = nb._prepare_neighbors_with_meta(
-        features, slide_ids, kmax=21
+        features, group_ids, kmax=21
     )
 
     assert calls == [85]
@@ -300,13 +300,13 @@ def test_knn_balanced_accuracy_by_k_matches_optimal_selection() -> None:
         dtype=float,
     )
     labels = np.array([0, 0, 0, 1, 1, 1], dtype=int)
-    slide_ids = np.array([f"slide-{i}" for i in range(6)], dtype=object)
+    group_ids = np.array([f"slide-{i}" for i in range(6)], dtype=object)
     k_values = [1, 2, 3]
 
     scores = nb._knn_balanced_accuracy_by_k(
         features=features,
         labels=labels,
-        slide_ids=slide_ids,
+        group_ids=group_ids,
         k_values=k_values,
         warn_context="toy",
     )
@@ -318,7 +318,7 @@ def test_knn_balanced_accuracy_by_k_matches_optimal_selection() -> None:
     best_from_existing = nb._optimal_k_by_knn_balanced_accuracy(
         features=features,
         labels=labels,
-        slide_ids=slide_ids,
+        group_ids=group_ids,
         k_values=k_values,
         warn_context="toy",
     )
