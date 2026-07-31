@@ -156,6 +156,13 @@ evaluation design. Several benchmarks share one tileset (`prostate`,
 never owns embeddings. Camelyon's tileset is 22,402 tiles; the `pathorob-camelyon`
 benchmark is the 20,400-tile RI view of it.
 
+**Evaluation design** (`all` | `paired_2x2`):
+What a benchmark's neighbourhood scope is. `all` — the default everywhere, in the
+library and on the CLI — scores every supplied manifest row together, as one scope, at
+sample level. `paired_2x2` scores only the manifest's explicitly declared 2x2 subsets,
+at occurrence level, and has to be asked for. There are no other values.
+_Avoid_: `dataset_wide` (the retired name for `all`; it is rejected, not aliased).
+
 **RI view** (`pathorob-<cohort>-ri.csv`):
 Exactly the rows PathoROB's Robustness Index evaluates. The selection differs per
 cohort and is _not_ a predicate: Tolkach's is a stored balanced sample. This is what

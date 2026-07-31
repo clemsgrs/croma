@@ -22,7 +22,7 @@ def test_cache_key_is_stable_for_semantically_equivalent_inputs() -> None:
             "embedding_fingerprint": "e",
         },
         params={
-            "evaluation_design": "dataset_wide",
+            "evaluation_design": "all",
             "k_values": [3, 1, 3],
             "tau": 0.2,
         },
@@ -37,7 +37,7 @@ def test_cache_key_is_stable_for_semantically_equivalent_inputs() -> None:
         params={
             "tau": 0.2,
             "k_values": [1, 3],
-            "evaluation_design": "dataset_wide",
+            "evaluation_design": "all",
         },
     )
     assert key_a["key_hash"] == key_b["key_hash"]
@@ -51,7 +51,7 @@ def test_cache_key_changes_when_dependent_parameter_changes() -> None:
             "manifest_fingerprint": "m",
             "embedding_fingerprint": "e",
         },
-        params={"evaluation_design": "dataset_wide", "k_values": [1, 3], "tau": 0.2},
+        params={"evaluation_design": "all", "k_values": [1, 3], "tau": 0.2},
     )
     key_b = mcache.build_cache_key(
         artifact_name="mari_curve",
@@ -60,7 +60,7 @@ def test_cache_key_changes_when_dependent_parameter_changes() -> None:
             "manifest_fingerprint": "m",
             "embedding_fingerprint": "e",
         },
-        params={"evaluation_design": "dataset_wide", "k_values": [1, 3], "tau": 0.25},
+        params={"evaluation_design": "all", "k_values": [1, 3], "tau": 0.25},
     )
     assert key_a["key_hash"] != key_b["key_hash"]
 

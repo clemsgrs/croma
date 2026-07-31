@@ -1,7 +1,7 @@
 """Bridge the standalone full-8,000 prostate embeddings into a benchmark-ready cache
 for any KI+RUMC manifest -- WITHOUT re-embedding.
 
-Generalises ``bridge_kirumc_cache.py`` (which only handled the dataset_wide binary) to
+Generalises ``bridge_kirumc_cache.py`` (which only handled the all-rows binary) to
 arbitrary manifests and either evaluation design. benchmark.py gets an embedding cache
 HIT iff ``output/<manifest-stem>/embeddings/{model}.npy`` has ``len(embedding_manifest)``
 rows in ``build_embedding_source_manifest`` order, plus a sidecar whose
@@ -45,8 +45,8 @@ FULL_EMB_DIR = layout.embeddings_dir("prostate-shift")
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--manifest", required=True, type=Path)
-    p.add_argument("--evaluation-design", default="paired_2x2",
-                   choices=["paired_2x2", "dataset_wide"])
+    p.add_argument("--evaluation-design", default="all",
+                   choices=["all", "paired_2x2"])
     p.add_argument("--output-dir", required=True, type=Path,
                    help="Benchmark output root; cache lands in <output-dir>/<manifest-stem>/.")
     return p.parse_args()

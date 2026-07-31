@@ -84,32 +84,35 @@ Manifest contract
 Evaluation designs
 ------------------
 
-Use ``paired_2x2`` to control what is being compared: you hand-build subsets where two
-labels and two confounder values are all present, so a confounder effect cannot be confused
-with a class-imbalance effect. This is the PathoROB-style design, and the one the paper
-reports. Use ``dataset_wide`` for a single number over the whole cohort, accepting that
-label and confounder may be unevenly mixed -- it needs no ``subset`` column, so it is the
-right first thing to run on a new dataset.
+``all`` is the default, in the library and on the CLI: every supplied manifest row is
+scored together, as one evaluation scope, for a single number over the whole cohort. It
+accepts that label and confounder may be unevenly mixed, needs no ``subset`` column, and is
+the right first thing to run on a new dataset.
+
+Ask for ``paired_2x2`` when you want to control what is being compared: you hand-build
+subsets where two labels and two confounder values are all present, so a confounder effect
+cannot be confused with a class-imbalance effect. This is the PathoROB-style design, and
+the one the paper reports.
 
 .. list-table::
    :header-rows: 1
    :widths: 26 37 37
 
    * -
+     - ``all`` (default)
      - ``paired_2x2``
-     - ``dataset_wide``
    * - ``subset`` column
-     - required
      - ignored
+     - required
    * - Neighbourhood scope
-     - within each subset
      - the whole retained dataset
+     - within each subset
    * - Evaluated once per
-     - ``(sample, subset)`` occurrence
      - sample
+     - ``(sample, subset)`` occurrence
    * - ``result.evaluation_unit``
-     - ``"occurrence"``
      - ``"sample"``
+     - ``"occurrence"``
 
 That last row is the one that surprises people. Under ``paired_2x2`` a sample may belong to
 several subsets and contributes one *occurrence* to each, so the score averages over
@@ -146,8 +149,8 @@ comparisons, repeat the row once per subset, and repeat its embedding row to mat
 ``scripts/prep/prepare_paired_manifest.py`` expands a flat manifest into all complete 2x2
 combinations for you.
 
-``dataset_wide``
-~~~~~~~~~~~~~~~~
+``all``
+~~~~~~~
 
 No ``subset`` column. Every row is scored against the whole cohort:
 
@@ -165,7 +168,7 @@ How big must it be?
 -------------------
 
 Both rules below are about the **neighbourhood scope** -- the subset under ``paired_2x2``,
-the whole retained dataset under ``dataset_wide``.
+the whole retained dataset under ``all``.
 
 **RI and MaRI.** Every candidate ``k`` must be strictly less than the number of rows in the
 scope; candidates that are not are dropped, and if none survive the call raises

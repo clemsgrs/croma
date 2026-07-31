@@ -65,7 +65,7 @@ class _BenchEnv:
         *,
         tileset: str,
         manifest: pd.DataFrame,
-        design: str = "dataset_wide",
+        design: str = "all",
         k_max: int = 5,
         confounder_column: str = "medical_center",
     ) -> BenchmarkSpec:

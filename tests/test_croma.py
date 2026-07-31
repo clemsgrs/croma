@@ -133,16 +133,16 @@ class TestCRoMaCompute:
         by_m = _compute_croma(
             features=features,
             manifest=manifest,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=[1, 2],
         )
         assert isinstance(by_m, dict)
 
         single_m1 = _compute_croma(
-            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
+            features=features, manifest=manifest, evaluation_design="all", m=1
         )
         single_m2 = _compute_croma(
-            features=features, manifest=manifest, evaluation_design="dataset_wide", m=2
+            features=features, manifest=manifest, evaluation_design="all", m=2
         )
 
         assert by_m[1].value == pytest.approx(single_m1.value)
@@ -172,7 +172,7 @@ class TestCRoMaCompute:
         by_m = _compute_croma(
             features=features,
             manifest=manifest,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=[1, 2],
         )
         assert isinstance(by_m, dict)
@@ -180,7 +180,7 @@ class TestCRoMaCompute:
         assert set(by_m) == {1, 2}
         assert calls["n"] == 1
 
-    @pytest.mark.parametrize("evaluation_design", ["paired_2x2", "dataset_wide"])
+    @pytest.mark.parametrize("evaluation_design", ["paired_2x2", "all"])
     def test_compute_returns_valid_result(self, evaluation_design: str) -> None:
         features, manifest = _toy_features_so_closer()
         if evaluation_design == "paired_2x2":
@@ -203,11 +203,9 @@ class TestCRoMaCompute:
         assert result.undefined_frac == pytest.approx(0.0)
         assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
 
-    def test_so_closer_yields_croma_above_zero_dataset_wide(self) -> None:
+    def test_so_closer_yields_croma_above_zero_all_rows(self) -> None:
         features, manifest = _toy_features_so_closer()
-        result = _compute_croma(
-            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
-        )
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
         assert result.value > 0.0
 
     def test_os_closer_yields_croma_below_zero(self) -> None:
@@ -229,9 +227,7 @@ class TestCRoMaCompute:
             ],
             dtype=float,
         )
-        result = _compute_croma(
-            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
-        )
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
         assert result.value < 0.0
 
     def test_all_same_label_and_center_are_undefined(self) -> None:
@@ -242,9 +238,7 @@ class TestCRoMaCompute:
         )
         features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
 
-        result = _compute_croma(
-            features=features, manifest=manifest, evaluation_design="dataset_wide", m=1
-        )
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
 
         assert result.undefined_frac == pytest.approx(1.0)
         assert result.sample_values.shape[0] == 0
@@ -271,7 +265,7 @@ class TestCRoMaCompute:
         result = _compute_croma(
             features=features,
             manifest=manifest,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
             start_k=1,
             k_growth_factor=1.5,
@@ -280,7 +274,7 @@ class TestCRoMaCompute:
         assert result.k_final == 3
         assert result.undefined_frac > 0.0
         message = _croma_warning(caplog)
-        assert "dataset 'toy' (dataset_wide)" in message
+        assert "dataset 'toy' (all)" in message
         # The cause here really is the search: it ran out of radius before finding both
         # types. The message must say so, and must not offer the other cause as well.
         assert "the neighbour search could not find 1 SO and 1 OS neighbor(s)" in message
@@ -303,7 +297,7 @@ class TestCRoMaCompute:
             features,
             manifest,
             confounder_column="scanner_vendor",
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
         )
 
@@ -327,7 +321,7 @@ class TestCRoMaCompute:
             features,
             manifest,
             confounder_column="scanner_vendor",
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
         )
 
@@ -340,7 +334,7 @@ class TestCRoMaCompute:
         result = _compute_croma(
             features=features,
             manifest=manifest,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
             start_k=200,
         )
@@ -380,7 +374,7 @@ class TestCRoMaCompute:
         result = _compute_croma(
             features=features,
             manifest=manifest,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
             start_k=2,
             k_growth_factor=1.5,
@@ -440,7 +434,7 @@ class TestCRoMaCompute:
         result = _compute_croma(
             features=features,
             manifest=manifest,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
             start_k=1,
             k_growth_factor=1.5,
@@ -470,7 +464,7 @@ class TestCRoMaCompute:
             _compute_croma(
                 features=features,
                 manifest=manifest,
-                evaluation_design="dataset_wide",
+                evaluation_design="all",
                 m=0,
             )
 
@@ -480,7 +474,7 @@ class TestCRoMaCompute:
             _compute_croma(
                 features=features,
                 manifest=manifest,
-                evaluation_design="dataset_wide",
+                evaluation_design="all",
                 m=1,
                 k_growth_factor=1.0,
             )
@@ -491,7 +485,7 @@ class TestCRoMaCompute:
             _compute_croma(
                 features=features,
                 manifest=manifest,
-                evaluation_design="dataset_wide",
+                evaluation_design="all",
                 m=1,
                 start_k=0,
             )
@@ -502,4 +496,4 @@ class TestCRoMaCompute:
     def test_manual_kmax_not_supported(self) -> None:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(TypeError):
-            _compute_croma(features=features, manifest=manifest, evaluation_design="dataset_wide", m=1, kmax=3)  # type: ignore[call-arg]
+            _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1, kmax=3)  # type: ignore[call-arg]

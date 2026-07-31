@@ -1,6 +1,6 @@
-"""Parity: the shared dataset-wide neighbour cache must reproduce the direct path exactly.
+"""Parity: the shared all-rows neighbour cache must reproduce the direct path exactly.
 
-The refactor lets dataset-wide kNN curves, RI/MaRI scoring and k-selection share a single
+The refactor lets all-rows kNN curves, RI/MaRI scoring and k-selection share a single
 prepared neighbour cache instead of each re-preparing neighbours. These tests pin that the
 prepared-cache path is numerically identical to the pre-refactor direct path.
 """
@@ -49,7 +49,7 @@ def _direct_artifacts(metric, **kwargs):
         manifest=MANIFEST,
         confounder_column=CONF,
         k_values=K_VALUES,
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
         selected_k=SELECTED_K,
         include_selected_result=True,
         **kwargs,
@@ -58,8 +58,8 @@ def _direct_artifacts(metric, **kwargs):
 
 def _cached_artifacts(metric, **kwargs):
     df = metric._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
-    cache = metric._prepare_dataset_wide_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
-    return metric._compute_artifacts_from_prepared_dataset_wide(
+    cache = metric._prepare_all_rows_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
+    return metric._compute_artifacts_from_prepared_all_rows(
         prepared_neighbors=cache,
         dataset_name=metric._infer_dataset_name(df),
         k_values=K_VALUES,
@@ -84,18 +84,18 @@ def _assert_artifacts_equal(direct, cached) -> None:
     )
 
 
-def test_ri_dataset_wide_cache_matches_direct() -> None:
+def test_ri_all_rows_cache_matches_direct() -> None:
     _assert_artifacts_equal(_direct_artifacts(RI), _cached_artifacts(RI))
 
 
-def test_mari_dataset_wide_cache_matches_direct() -> None:
+def test_mari_all_rows_cache_matches_direct() -> None:
     _assert_artifacts_equal(_direct_artifacts(MaRI, tau=0.2), _cached_artifacts(MaRI, tau=0.2))
 
 
 def test_knn_curves_from_cache_match_direct() -> None:
     df = RI._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
-    prepared_inputs = RI._prepare_dataset_wide_inputs(features=FEATURES, df=df)
-    cache = RI._prepare_dataset_wide_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
+    prepared_inputs = RI._prepare_all_rows_inputs(features=FEATURES, df=df)
+    cache = RI._prepare_all_rows_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
     for target, encoded in (
         ("label", prepared_inputs.labels),
         ("confounder", prepared_inputs.centers),
@@ -120,12 +120,12 @@ def test_knn_curves_from_cache_match_direct() -> None:
 
 def test_k_selection_from_cache_matches_direct() -> None:
     df = RI._normalize_manifest_inputs(MANIFEST, confounder_column=CONF)
-    prepared_inputs = RI._prepare_dataset_wide_inputs(features=FEATURES, df=df)
-    cache = RI._prepare_dataset_wide_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
-    direct_k = RI._select_dataset_wide_k(
+    prepared_inputs = RI._prepare_all_rows_inputs(features=FEATURES, df=df)
+    cache = RI._prepare_all_rows_neighbor_cache(features=FEATURES, df=df, k_values=K_VALUES)
+    direct_k = RI._select_all_rows_k(
         prepared=prepared_inputs, k_candidates=K_VALUES, dataset_name="toy"
     )
-    cached_k = RI._select_dataset_wide_k_from_prepared(
+    cached_k = RI._select_all_rows_k_from_prepared(
         prepared_neighbors=cache, k_candidates=K_VALUES, dataset_name="toy"
     )
     assert cached_k == direct_k

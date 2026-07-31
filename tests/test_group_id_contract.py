@@ -80,13 +80,13 @@ def _query_croma(manifest: pd.DataFrame, *, evaluation_design: str) -> float:
 def test_manifest_with_group_id_is_accepted_and_scored() -> None:
     manifest = _neighbourhood_manifest(impostor_group="g1")
 
-    croma_q = _query_croma(manifest, evaluation_design="dataset_wide")
+    croma_q = _query_croma(manifest, evaluation_design="all")
 
     # Nearest OS impostor is ~0.004 away, nearest SO ally 0.5: confounder-dominant.
     assert croma_q < 0.0
 
 
-@pytest.mark.parametrize("evaluation_design", ["dataset_wide", "paired_2x2"])
+@pytest.mark.parametrize("evaluation_design", ["all", "paired_2x2"])
 def test_same_group_candidate_is_excluded_even_when_nearest(evaluation_design: str) -> None:
     with_distinct_groups = _query_croma(
         _neighbourhood_manifest(impostor_group="g1"),
@@ -127,7 +127,7 @@ def test_slide_id_alongside_group_id_is_ordinary_metadata() -> None:
     manifest["slide_id"] = ["sl0", "sl1", "sl2", "sl3", "sl4"]
 
     # ``slide_id`` disagrees with ``group_id`` on row 1; only ``group_id`` may be read.
-    assert _query_croma(manifest, evaluation_design="dataset_wide") > 0.0
+    assert _query_croma(manifest, evaluation_design="all") > 0.0
 
 
 @pytest.mark.parametrize("blank", ["", "   ", None, float("nan")])
@@ -167,7 +167,7 @@ def test_insufficient_eligible_neighbours_is_reported_group_neutrally() -> None:
             _neighbourhood_features(),
             manifest,
             confounder_column=CONFOUNDER_COLUMN,
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             k_candidates=[1],
         )
 

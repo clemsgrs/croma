@@ -4,7 +4,7 @@
   "k": 3,
   "m": 5,
   "confounder_column": "scanner_vendor",
-  "evaluation_design": "dataset_wide",
+  "evaluation_design": "all",
   "entries": [
     {
       "embedding": "confounder_dominant",

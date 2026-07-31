@@ -19,15 +19,15 @@ All numbers below come from `output/moment_exploration/{moment_summaries.csv,mom
 
 | benchmark | median vs `croma` | LTM10 vs cache | Q10 vs cache |
 |---|---|---|---|
-| camelyon (dataset-wide) | 1e-16 | 8e-17 | 8e-17 |
-| tcga4x4 (dataset-wide) | 6e-17 | 7e-17 | 7e-17 |
-| tolkach (dataset-wide) | 6e-17 | 1e-16 | 9e-17 |
-| prostate (dataset-wide) | 1e-16 | 1e-16 | 8e-17 |
+| camelyon (all) | 1e-16 | 8e-17 | 8e-17 |
+| tcga4x4 (all) | 6e-17 | 7e-17 | 7e-17 |
+| tolkach (all) | 6e-17 | 1e-16 | 9e-17 |
+| prostate (all) | 1e-16 | 1e-16 | 8e-17 |
 | tcga2x2 (paired 2x2) | 0.038 | 6e-17 | 8e-17 |
 | panda (paired 2x2) | 0.011 | 0.0 | 8e-17 |
 
 LTM10/Q10 match the cache to machine precision **everywhere** (they are pooled per-sample
-statistics). The pooled median matches `croma` to machine precision for the four dataset-wide
+statistics). The pooled median matches `croma` to machine precision for the four all-rows
 benchmarks; for the two paired designs it differs by 0.01-0.04 **by construction** — the cached
 `croma` there is the median of per-occurrence medians, not the pooled sample median. Recomputation
 is faithful.

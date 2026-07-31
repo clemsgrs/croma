@@ -4,7 +4,7 @@ Reads three KI+RUMC runs on a shared patch pool and answers: does measuring robu
 at finer biological granularity (4-class Gleason) change what we conclude versus the
 coarse benign-vs-tumour binary?
 
-  natural-binary   output/metrics/k-star/prostate            (dataset_wide, 1,850/cell)
+  natural-binary   output/metrics/k-star/prostate            (all, 1,850/cell)
   gradebal-binary  output/metrics/k-star/prostate-gradebal   (1 pair, 1,440/cell)
   4-class          output/metrics/k-star/prostate-4class      (6 grade-pairs, 480/cell)
 

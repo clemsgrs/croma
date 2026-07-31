@@ -43,7 +43,7 @@ class BenchmarkSpec:
     tileset: str
     #: Repo-relative CSV selecting the evaluated rows (plus ``subset`` when paired).
     manifest: str
-    #: ``dataset_wide`` or ``paired_2x2``.
+    #: ``all`` or ``paired_2x2``.
     design: str
     #: Ceiling of the dense k sweep (1..k_max).
     k_max: int = DEFAULT_K_MAX
@@ -58,13 +58,13 @@ _SPECS: tuple[BenchmarkSpec, ...] = (
         name="pathorob-camelyon",
         tileset="pathorob-camelyon",
         manifest="data/pathorob/manifests/pathorob-camelyon-ri.csv",
-        design="dataset_wide",
+        design="all",
     ),
     BenchmarkSpec(
         name="pathorob-tolkach-esca",
         tileset="pathorob-tolkach-esca",
         manifest="data/pathorob/manifests/pathorob-tolkach-esca-ri.csv",
-        design="dataset_wide",
+        design="all",
     ),
     BenchmarkSpec(
         name="pathorob-tcga-2x2",
@@ -76,14 +76,14 @@ _SPECS: tuple[BenchmarkSpec, ...] = (
         name="pathorob-tcga-4x4",
         tileset="pathorob-tcga-4x4",
         manifest="data/pathorob/manifests/pathorob-tcga-4x4-ri.csv",
-        design="dataset_wide",
+        design="all",
     ),
     # --- Prostate-shift views (three views, one tileset) --------------------------
     BenchmarkSpec(
         name="prostate",
         tileset="prostate-shift",
         manifest="data/prostate-shift-binary-kirumc.csv",
-        design="dataset_wide",
+        design="all",
     ),
     BenchmarkSpec(
         name="prostate-4class",
@@ -103,7 +103,7 @@ _SPECS: tuple[BenchmarkSpec, ...] = (
         name="panda",
         tileset="panda-wsi",
         manifest="data/benchmarks/panda.csv",
-        design="dataset_wide",
+        design="all",
         confounder_column="data_provider",
     ),
     BenchmarkSpec(

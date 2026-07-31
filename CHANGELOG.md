@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **BREAKING: the evaluation design `dataset_wide` is now `all`, and it is the default.**
+  The name was verbose and assumed the supplied evaluation set is naturally called a
+  dataset; the design simply scores every supplied manifest row together, as one
+  evaluation scope. `all` and `paired_2x2` are now the only accepted public values, and
+  `all` is what every public Python entry point and every CLI metric command selects when
+  the caller says nothing — `--evaluation-design` is optional, and `paired_2x2` is the one
+  that has to be asked for. This flips the previous library default, which was
+  `paired_2x2`: a call that omitted `evaluation_design` and relied on it must now pass
+  `evaluation_design="paired_2x2"` explicitly. There is no alias, no warning and no
+  migration shim: passing `dataset_wide` raises, naming only `all` and `paired_2x2`.
+  `paired_2x2` keeps its occurrence semantics and its subset construction unchanged, and
+  the numbers `all` produces are exactly the ones `dataset_wide` produced. Results and
+  persisted artifacts record the resolved value as `evaluation_design: "all"`, and because
+  the design is part of the benchmark cache key, artifacts cached under `dataset_wide` are
+  not reused — they are recomputed. A cached RI/MaRI summary must now name its own
+  `evaluation_design` and `evaluation_unit` to be read back at all: a summary that cannot
+  say which design produced it cannot be shown to match the one being run, so it is
+  recomputed rather than adopted under a guessed default. For the same reason
+  `scripts/tools/analyze_results.py` now fails on per-sample rows carrying an unrecognized
+  design instead of silently reporting a reading it would have suppressed.
+
 - **BREAKING: the manifest's required `slide_id` column is now `group_id`.** The field
   never meant "slide": it names the *independence group* a sample belongs to — a slide, a
   patient, a specimen, an acquisition — and candidates sharing a query's value are excluded

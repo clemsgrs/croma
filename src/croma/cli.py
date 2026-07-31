@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from croma import CRoMa, MaRI, RI
+from croma.metrics.base import EVALUATION_DESIGN_ALL, VALID_EVALUATION_DESIGNS
 from croma.metrics.croma import CROMA_HEADLINE_M
 from croma.alignment import (
     build_embedding_source_manifest,
@@ -65,9 +66,13 @@ def main() -> None:
     )
     shared.add_argument(
         "--evaluation-design",
-        required=True,
-        choices=["paired_2x2", "dataset_wide"],
-        help="Evaluation design: paired_2x2=explicit manifest-defined 2x2 subsets, dataset_wide=one full-dataset evaluation.",
+        default=EVALUATION_DESIGN_ALL,
+        choices=list(VALID_EVALUATION_DESIGNS),
+        help=(
+            "Evaluation design (default: all). all=score every manifest row together as "
+            "one evaluation scope; paired_2x2=score only the manifest's explicitly "
+            "declared 2x2 subsets."
+        ),
     )
     shared.add_argument("--k-candidates", type=_parse_k_candidates, default=[5, 11, 21])
 

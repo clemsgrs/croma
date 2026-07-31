@@ -35,8 +35,9 @@ Shared arguments
      - *required*
      - Manifest column to treat as the non-biological confounder.
    * - ``--evaluation-design``
-     - *required*
-     - ``paired_2x2`` or ``dataset_wide``. See :ref:`evaluation-designs`.
+     - ``all``
+     - ``all`` or ``paired_2x2``. Omit it to score every manifest row together;
+       ``paired_2x2`` has to be asked for. See :ref:`evaluation-designs`.
    * - ``--k-candidates``
      - ``5,11,21``
      - Comma-separated. The operating ``k`` is chosen from these by biological kNN

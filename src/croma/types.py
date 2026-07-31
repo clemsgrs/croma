@@ -21,8 +21,8 @@ class RobustnessResult:
     ss_dominated_undefined_frac: float = 0.0
     oo_dominated_undefined_frac: float = 0.0
     mixed_undefined_frac: float = 0.0
-    evaluation_design: str = "paired_2x2"
-    evaluation_unit: str = "occurrence"
+    evaluation_design: str = "all"
+    evaluation_unit: str = "sample"
     alpha: float = 0.10
     median_value: float = float("nan")
     q_alpha: float = float("nan")
@@ -44,8 +44,8 @@ class CRoMaResult:
     sample_values_aligned: np.ndarray
     occurrence_defined_mask: np.ndarray
     undefined_frac: float
-    evaluation_design: str = "paired_2x2"
-    evaluation_unit: str = "occurrence"
+    evaluation_design: str = "all"
+    evaluation_unit: str = "sample"
     occurrence_subsets: np.ndarray | None = None
     occurrence_source_indices: np.ndarray | None = None
     k_start: int = 0

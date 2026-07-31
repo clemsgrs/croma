@@ -169,7 +169,7 @@ def test_per_sample_median_value_equals_numpy_median() -> None:
         manifest,
         confounder_column="scanner_vendor",
         k_candidates=[2, 3, 4],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
 
     expected = float(np.median(result.sample_values))
@@ -188,7 +188,7 @@ def test_per_sample_q_alpha_from_tail_metrics() -> None:
         manifest,
         confounder_column="scanner_vendor",
         k_candidates=[2, 3, 4],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
 
     expected_q = compute_tail_metrics(result.sample_values, alpha=0.10).q_alpha
@@ -216,7 +216,7 @@ def test_per_sample_median_nan_when_no_defined_samples() -> None:
         manifest,
         confounder_column="scanner_vendor",
         k_candidates=[1, 2],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
 
     assert len(result.sample_values) == 0

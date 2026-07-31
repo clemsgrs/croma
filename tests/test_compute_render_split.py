@@ -108,7 +108,7 @@ def _setup(bench_env) -> None:
         "toy",
         tileset="toy-tiles",
         manifest=_manifest(),
-        design="dataset_wide",
+        design="all",
         k_max=5,
         confounder_column="scanner_vendor",
     )

@@ -165,7 +165,7 @@ class TestCRoMaTailIntegration:
             features=toy_features,
             manifest=toy_manifest,
             confounder_column="scanner_vendor",
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             m=1,
             alpha=alpha,
         )
@@ -192,7 +192,7 @@ class TestCRoMaTailIntegration:
                 features=toy_features,
                 manifest=toy_manifest,
                 confounder_column="scanner_vendor",
-                evaluation_design="dataset_wide",
+                evaluation_design="all",
                 m=1,
                 alpha=alpha,
             )

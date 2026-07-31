@@ -96,7 +96,7 @@ def _mari_kwargs(features, manifest):
         manifest=manifest,
         confounder_column="scanner_vendor",
         k_candidates=[3],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
 
 
@@ -120,7 +120,7 @@ def test_mari_compute_no_tau_warning_for_principled_tau() -> None:
         manifest,
         confounder_column="scanner_vendor",
         k=3,
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
     assert rec > 0.0
     with warnings.catch_warnings():
@@ -143,7 +143,7 @@ def test_omitting_tau_resolves_it_to_the_recommendation_at_the_operating_k() -> 
         manifest,
         confounder_column="scanner_vendor",
         k=result.k,
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
     assert result.tau == pytest.approx(expected)
 
@@ -173,7 +173,7 @@ def test_ri_carries_no_tau() -> None:
         manifest=manifest,
         confounder_column="scanner_vendor",
         k_candidates=[3],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
     assert np.isnan(result.tau)
 
@@ -231,7 +231,7 @@ def test_auto_tau_falls_back_when_no_typed_neighbour_exists() -> None:
             manifest=manifest,
             confounder_column="scanner_vendor",
             k_candidates=[1],
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
         )
     assert result.tau == pytest.approx(TAU_FALLBACK)
     assert result.undefined_frac == pytest.approx(1.0)
@@ -256,7 +256,7 @@ def test_auto_tau_fallback_on_a_collapsed_embedding_names_the_collapse() -> None
             manifest=manifest,
             confounder_column=CONFOUNDER_COLUMN,
             k_candidates=[PINNED_K],
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
         )
 
     tau_warnings = [str(w.message) for w in caught if "tau" in str(w.message)]
@@ -286,7 +286,7 @@ def test_non_positive_tau_is_rejected(bad_tau: float) -> None:
             manifest=manifest,
             confounder_column="scanner_vendor",
             k_values=[3],
-            evaluation_design="dataset_wide",
+            evaluation_design="all",
             tau=bad_tau,
         )
 
@@ -300,7 +300,7 @@ def test_compute_curve_auto_tau_matches_the_curve_at_the_resolved_tau() -> None:
         manifest=manifest,
         confounder_column="scanner_vendor",
         k_values=[3, 5],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
     auto_curve = MaRI.compute_curve(**kwargs)
     pinned_curve = MaRI.compute_curve(**kwargs, tau=resolved)
@@ -323,6 +323,6 @@ def test_operating_k_is_the_same_for_ri_and_mari() -> None:
         manifest=manifest,
         confounder_column="scanner_vendor",
         k_candidates=[3, 5],
-        evaluation_design="dataset_wide",
+        evaluation_design="all",
     )
     assert RI.compute(**shared).k == MaRI.compute(**shared).k

@@ -41,7 +41,7 @@ def test_every_benchmark_names_a_registered_tileset() -> None:
     for name, spec in benchmarks.BENCHMARKS.items():
         assert spec.name == name
         assert spec.tileset in benchmarks.TILESETS
-        assert spec.design in {"dataset_wide", "paired_2x2"}
+        assert spec.design in {"all", "paired_2x2"}
         assert spec.k_max >= 1
 
 

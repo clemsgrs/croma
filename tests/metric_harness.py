@@ -38,9 +38,9 @@ from croma.metrics.croma import CROMA_HEADLINE_M
 #: ``compute`` has to normalize it, which is part of the chain under test.
 CONFOUNDER_COLUMN = "scanner_vendor"
 
-#: Named embeddings are scored dataset-wide, so the neighbourhood scope is the whole
+#: Named embeddings are scored under the 'all' design, so the neighbourhood scope is the whole
 #: manifest and the k-versus-scope-size constraint reads off ``len(manifest)`` directly.
-EVALUATION_DESIGN = "dataset_wide"
+EVALUATION_DESIGN = "all"
 
 LABELS = ("A", "B")
 CONFOUNDERS = ("V1", "V2")

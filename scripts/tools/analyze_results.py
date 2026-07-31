@@ -33,6 +33,7 @@ import numpy as np
 import pandas as pd
 
 from croma.confounders import infer_confounder_display_name
+from croma.metrics.base import VALID_EVALUATION_DESIGNS
 from croma.metrics.croma import CROMA_HEADLINE_M
 
 try:
@@ -645,6 +646,16 @@ def _build_croma_subgroup_analysis(
         dataset, model, evaluation_design, evaluation_unit, context_id = [
             str(v) for v in keys
         ]
+        # Which design produced a row decides whether its subgroup reading is reported at
+        # all, so an unrecognized value must stop the analysis rather than quietly fall
+        # through to the reporting branch. Per-sample rows written before the
+        # dataset_wide -> all rename have to be recomputed, not reinterpreted.
+        if evaluation_design not in VALID_EVALUATION_DESIGNS:
+            raise ValueError(
+                f"per-sample rows for dataset {dataset!r}, model {model!r} carry "
+                f"evaluation_design={evaluation_design!r}; expected one of "
+                f"{list(VALID_EVALUATION_DESIGNS)}. Re-run the benchmark to recompute them."
+            )
         defined = group[np.isfinite(group[_SUBGROUP_SCORE_COLUMN])].copy()
         alpha = _safe_float(
             (
@@ -674,10 +685,10 @@ def _build_croma_subgroup_analysis(
             context_rows.append(context_row)
             continue
 
-        if evaluation_design == "dataset_wide" and n_labels != 2:
+        if evaluation_design == "all" and n_labels != 2:
             context_row["skipped"] = True
             context_row["skip_reason"] = (
-                "Skipped: pooled dataset-wide subgroup interpretation is not reported because "
+                "Skipped: pooled all-rows subgroup interpretation is not reported because "
                 "heterogeneous biological boundaries make the result clinically weak; use paired runs instead."
             )
             context_rows.append(context_row)
