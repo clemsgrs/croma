@@ -112,8 +112,14 @@ def test_manifest_with_only_slide_id_names_the_missing_group_id(tmp_path: Path) 
         encoding="utf-8",
     )
 
-    with pytest.raises(ValueError, match="group_id"):
+    with pytest.raises(ValueError) as excinfo:
         load_manifest(str(manifest_path), confounder_column=CONFOUNDER_COLUMN)
+
+    message = str(excinfo.value)
+    assert "group_id" in message
+    # The manifest carries the pre-rename name, so say so: there is no alias to fall
+    # back on, and the fix is a rename the caller has to make.
+    assert "slide_id" in message
 
 
 def test_slide_id_alongside_group_id_is_ordinary_metadata() -> None:
@@ -130,6 +136,21 @@ def test_blank_or_missing_group_id_fails_clearly(blank: object) -> None:
     manifest.loc[2, "group_id"] = blank
 
     with pytest.raises(ValueError, match="group_id"):
+        normalize_manifest(
+            manifest,
+            confounder_column=CONFOUNDER_COLUMN,
+            source="manifest",
+        )
+
+
+def test_blank_group_id_is_reported_by_row_position_on_any_index() -> None:
+    # A caller who filtered a manifest hands over a frame whose index is neither
+    # contiguous nor integer; the row it names must still be the row it means.
+    manifest = _neighbourhood_manifest(impostor_group="g1")
+    manifest.index = [f"r{i}" for i in range(len(manifest))]
+    manifest.loc["r2", "group_id"] = ""
+
+    with pytest.raises(ValueError, match=r"group_id values at rows \[2\]"):
         normalize_manifest(
             manifest,
             confounder_column=CONFOUNDER_COLUMN,

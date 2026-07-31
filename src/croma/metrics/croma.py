@@ -16,6 +16,7 @@ from croma.metrics.neighbors import (
     _initial_n_neighbors,
 )
 from croma.metrics.pairs import (
+    GROUP_COLUMN,
     EvaluationSubset,
     ensure_canonical_manifest_columns,
     normalize_manifest,
@@ -339,7 +340,7 @@ class CrossConfounderRobustnessMargin:
 
             labels = pd.factorize(sub["label"])[0].astype(int)
             centers = pd.factorize(sub["confounder"])[0].astype(int)
-            group_ids = sub["group_id"].astype(str).to_numpy()
+            group_ids = sub[GROUP_COLUMN].astype(str).to_numpy()
 
             so_dists, os_dists, search_meta = _iterative_typed_neighbor_search(
                 features=subset_features,

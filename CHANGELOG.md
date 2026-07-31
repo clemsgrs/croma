@@ -19,9 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both columns are present only `group_id` has metric semantics. Rename the column in every
   manifest (`csv` header and preparation script), and re-run scoring: `group_id` is part of
   the manifest fingerprint and the embedding-alignment key, so changing a row's value
-  invalidates score-dependent cached artifacts. Feature embeddings stay reusable, since
-  their identity is the tiles they were extracted from.
-  Per-sample benchmark artifacts now carry a `group_id` column.
+  invalidates score-dependent cached artifacts. The embedding matrices themselves stay
+  reusable — a benchmark maps its rows onto a tileset by tile identity, `(sample_id,
+  image_path)`, which this change does not touch — but a `build-embedding-manifest`
+  sidecar written before the rename no longer matches its manifest and must be re-emitted.
+  Per-sample benchmark artifacts now carry a `group_id` column, and
+  `scripts/studies/bootstrap_uncertainty.py` reports `n_groups` where it reported
+  `n_slides`.
 
 ### Added
 

@@ -3,10 +3,11 @@ the CRoMa-vs-RI/MaRI redundancy question (point 6).
 
 For each benchmark we read the cached per-sample CRoMa (no neighbour recompute) and:
 
-  1. a slide-level *cluster* bootstrap CI on the pooled-median headline CRoMa per
-     model -- tiles within a slide are correlated (pure slides, one scanner), so an
-     i.i.d. resample would understate uncertainty;
-  2. a *paired* rank-stability bootstrap (one shared slide resample applied to all
+  1. a *cluster* bootstrap CI on the pooled-median headline CRoMa per model, clustered
+     on the manifest's ``group_id`` -- samples in one independence group are correlated
+     (for these cohorts, one slide: pure tissue, one scanner), so an i.i.d. resample
+     would understate uncertainty;
+  2. a *paired* rank-stability bootstrap (one shared group resample applied to all
      models) giving each model's rank interval and the pairwise win probability
      P(CRoMa_A > CRoMa_B) -- this is the honest answer to "is model A's lead real?";
   3. Spearman(CRoMa, RI) and Spearman(CRoMa, MaRI) across models with a bootstrap CI
@@ -55,11 +56,11 @@ MIN_MODELS_FOR_CORR = 8  # Spearman over models is meaningless for tiny suites
 
 
 def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndarray]:
-    """Per-model CRoMa(m) arrays aligned to one shared slide vector.
+    """Per-model CRoMa(m) arrays aligned to one shared independence-group vector.
 
     Rows are sorted by (occurrence_index, sample_index); every model shares this
-    order and the same slide sequence (asserted), so a single slide vector clusters
-    all models for the paired bootstrap.
+    order and the same ``group_id`` sequence (asserted), so a single group vector
+    clusters all models for the paired bootstrap.
     """
     cols = ["model", "occurrence_index", "sample_index", "group_id", f"croma_m{m}"]
     ps = pd.read_csv(ps_path, usecols=cols)
@@ -68,18 +69,18 @@ def _load_aligned(ps_path: Path, m: int) -> tuple[dict[str, np.ndarray], np.ndar
     # Leaving it in would give it a rank interval among the pathology encoders and would pull
     # every Spearman, since it sits off-trend on support and biological accuracy alike.
     models = sorted(m_ for m_ in ps["model"].unique() if m_ != CONTROL_MODEL)
-    ref_slides: np.ndarray | None = None
+    ref_groups: np.ndarray | None = None
     model_values: dict[str, np.ndarray] = {}
     for model in models:
         sub = ps[ps["model"] == model].sort_values(["occurrence_index", "sample_index"])
-        slides = sub["group_id"].to_numpy()
-        if ref_slides is None:
-            ref_slides = slides
-        elif not np.array_equal(ref_slides, slides):
-            raise RuntimeError(f"slide sequence misaligned for model '{model}'")
+        groups = sub["group_id"].to_numpy()
+        if ref_groups is None:
+            ref_groups = groups
+        elif not np.array_equal(ref_groups, groups):
+            raise RuntimeError(f"group_id sequence misaligned for model '{model}'")
         model_values[model] = sub[f"croma_m{m}"].to_numpy(dtype=float)
-    assert ref_slides is not None
-    return model_values, ref_slides
+    assert ref_groups is not None
+    return model_values, ref_groups
 
 
 def _correlations(metrics_csv: Path, n_boot: int) -> dict:
@@ -121,8 +122,8 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
         return
 
     m = int(CROMA_HEADLINE_M)
-    model_values, slides = _load_aligned(ps_path, m)
-    rs = paired_rank_stability(model_values, slides, n_boot=n_boot, seed=SEED)
+    model_values, groups = _load_aligned(ps_path, m)
+    rs = paired_rank_stability(model_values, groups, n_boot=n_boot, seed=SEED)
 
     order = sorted(rs.models, key=lambda mm: rs.point_value[mm], reverse=True)
     rows = []
@@ -162,8 +163,8 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
         "headline_m": m,
         "n_boot": n_boot,
         "n_models": len(rs.models),
-        "n_slides": int(len(np.unique(slides))),
-        "n_samples_per_model": int(len(slides)),
+        "n_groups": int(len(np.unique(groups))),
+        "n_samples_per_model": int(len(groups)),
         "level": rs.value_ci[order[0]].level,
         "correlations": corr,
         "adjacent_pair_win": adjacent,
@@ -171,7 +172,7 @@ def run_benchmark(name: str, rel_dir: str, n_boot: int) -> None:
     (results / "bootstrap_uncertainty.json").write_text(json.dumps(summary, indent=2) + "\n")
 
     # console report
-    print(f"\n=== {name}  (m={m}, n_boot={n_boot}, slides={summary['n_slides']}) ===")
+    print(f"\n=== {name}  (m={m}, n_boot={n_boot}, groups={summary['n_groups']}) ===")
     for r in rows:
         print(
             f"  {r['model']:14s} CRoMa={r['croma']:+.3f} "

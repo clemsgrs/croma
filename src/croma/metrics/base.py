@@ -13,6 +13,7 @@ from croma.metrics.neighbors import (
     _select_k_from_balanced_accuracy,
 )
 from croma.metrics.pairs import (
+    GROUP_COLUMN,
     EvaluationSubset,
     ensure_canonical_manifest_columns,
     normalize_manifest,
@@ -298,7 +299,7 @@ class BaseRobustnessIndex(ABC):
             features=subset_features,
             labels=pd.factorize(subset_rows["label"])[0].astype(int),
             centers=pd.factorize(subset_rows["confounder"])[0].astype(int),
-            group_ids=subset_rows["group_id"].astype(str).to_numpy(),
+            group_ids=subset_rows[GROUP_COLUMN].astype(str).to_numpy(),
         )
 
     @classmethod
@@ -723,7 +724,7 @@ class BaseRobustnessIndex(ABC):
             features=normalized_features,
             labels=pd.factorize(df["label"])[0].astype(int),
             centers=pd.factorize(df["confounder"])[0].astype(int),
-            group_ids=df["group_id"].astype(str).to_numpy(),
+            group_ids=df[GROUP_COLUMN].astype(str).to_numpy(),
         )
 
     @staticmethod

@@ -3,7 +3,7 @@
 ``contested_fraction_experiment.py``, ``oo_fraction_experiment.py``,
 ``support_vs_k_experiment.py``, ``tau_sensitivity_experiment.py`` and
 ``typed_neighbor_rank_experiment.py`` each repeated the same three preliminaries: the
-repo ``sys.path`` bootstrap, factorising the manifest's label/confounder/slide columns,
+repo ``sys.path`` bootstrap, factorising the manifest's label/confounder/group columns,
 and loading + L2-normalising a model's embedding matrix. Those live here now.
 
 Each experiment keeps its own per-model *sweep* -- they genuinely differ (some call
@@ -26,22 +26,22 @@ if str(REPO) not in sys.path:
 
 
 def load_meta(df: pd.DataFrame, *, compact: bool = False):
-    """Factorise the manifest into (labels, confounder, slide) code arrays.
+    """Factorise the manifest into (labels, confounder, group) code arrays.
 
     ``compact=False`` (the ``_prepare_neighbors`` experiments): int64 label/confounder
-    codes and the raw slide-id strings, matching ``_prepare_neighbors``'s expected input.
-    ``compact=True`` (the full distance-matrix experiments): int16 label/confounder codes
-    and int32 slide codes for the argsort scan.
+    codes and the raw ``group_id`` strings, matching ``_prepare_neighbors``'s expected
+    input. ``compact=True`` (the full distance-matrix experiments): int16 label/confounder
+    codes and int32 group codes for the argsort scan.
     """
     if compact:
         labels = pd.factorize(df["label"])[0].astype(np.int16)
         conf = pd.factorize(df["confounder"])[0].astype(np.int16)
-        slide = pd.factorize(df["group_id"])[0].astype(np.int32)
+        group = pd.factorize(df["group_id"])[0].astype(np.int32)
     else:
         labels = pd.factorize(df["label"])[0].astype(int)
         conf = pd.factorize(df["confounder"])[0].astype(int)
-        slide = df["group_id"].astype(str).to_numpy()
-    return labels, conf, slide
+        group = df["group_id"].astype(str).to_numpy()
+    return labels, conf, group
 
 
 def prepare_embedding(X, dtype=np.float64, *, normalize: bool = True) -> np.ndarray:

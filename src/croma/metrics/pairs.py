@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from croma.confounders import (
@@ -40,7 +41,9 @@ def _normalize_group_ids(values: pd.Series, source: str) -> pd.Series:
     it. Rejecting it here keeps that gap from silently reading as "independent".
     """
     normalized = values.map(lambda v: "" if pd.isna(v) else _normalize_str(v))
-    blank_rows = [int(i) for i in normalized.index[normalized == ""].tolist()]
+    # Row *positions*, not index labels: a caller may hand over a filtered frame whose
+    # index is neither contiguous nor integer, and the row named must be the row meant.
+    blank_rows = [int(i) for i in np.flatnonzero(normalized.to_numpy() == "")]
     if blank_rows:
         shown = blank_rows[:5]
         more = (
@@ -57,19 +60,35 @@ def _base_source_columns(confounder_column: str) -> tuple[str, ...]:
     return (*BASE_REQUIRED_COLUMNS, str(confounder_column))
 
 
+def _missing_columns_error(df: pd.DataFrame, source: str, missing: list[str]) -> ValueError:
+    """The missing-column error, naming the rename when the manifest predates it.
+
+    ``slide_id`` is not an alias and is never read; a manifest that still carries it is
+    simply missing ``group_id``. Saying which rename to make is cheaper than leaving the
+    caller to find the changelog.
+    """
+    message = f"{source} is missing required columns: {missing}"
+    if GROUP_COLUMN in missing and "slide_id" in df.columns:
+        message += (
+            f"; the manifest carries 'slide_id', which was renamed to '{GROUP_COLUMN}' "
+            "and is no longer read -- rename the column"
+        )
+    return ValueError(message)
+
+
 def ensure_source_manifest_columns(
     df: pd.DataFrame, source: str, *, confounder_column: str
 ) -> None:
     required = _base_source_columns(confounder_column)
     missing = [c for c in required if c not in df.columns]
     if missing:
-        raise ValueError(f"{source} is missing required columns: {missing}")
+        raise _missing_columns_error(df, source, missing)
 
 
 def ensure_canonical_manifest_columns(df: pd.DataFrame, source: str) -> None:
     missing = [c for c in CANONICAL_REQUIRED_COLUMNS if c not in df.columns]
     if missing:
-        raise ValueError(f"{source} is missing required columns: {missing}")
+        raise _missing_columns_error(df, source, missing)
 
 
 def normalize_manifest(
