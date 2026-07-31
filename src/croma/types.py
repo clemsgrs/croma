@@ -34,6 +34,15 @@ class RobustnessResult:
 
 @dataclass(frozen=True)
 class CRoMaResult:
+    """One CRoMa evaluation: the pooled margin, its distribution, and its tail.
+
+    ``f0`` is the confounder-dominant fraction :math:`F(0)` -- the empirical CDF of the
+    per-sample margin at zero, i.e. the fraction of *defined* evaluation units whose
+    margin is ``<= 0``. Exact zero counts as confounder-dominant; undefined units are
+    excluded from the denominator, as they are for ``q_alpha`` and ``ltm_alpha``, and are
+    reported separately by ``undefined_frac``. It is ``nan`` when nothing is defined.
+    """
+
     dataset: str
     m: int
     value: float
@@ -54,3 +63,4 @@ class CRoMaResult:
     alpha: float = 0.10
     q_alpha: float = float("nan")
     ltm_alpha: float = float("nan")
+    f0: float = float("nan")

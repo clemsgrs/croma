@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 import croma.cli as cli
+from croma.types import CRoMaResult
 
 
 class _FakeResult:
@@ -369,3 +370,52 @@ def test_cli_requires_confounder_column(monkeypatch: pytest.MonkeyPatch) -> None
         cli.main()
 
     assert excinfo.value.code == 2
+
+
+def test_cli_croma_payload_reports_the_canonical_f0(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The JSON carries CRoMa's own ``f0``; a consumer never recomputes it."""
+    manifest_path = tmp_path / "toy.csv"
+    embeddings_path = tmp_path / "embeddings.npy"
+    _write_manifest(manifest_path)
+    np.save(embeddings_path, np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=float))
+
+    def fake_compute(*, manifest, **kwargs):
+        return CRoMaResult(
+            dataset="toy",
+            m=5,
+            value=0.25,
+            std=0.0,
+            n_pairs=1,
+            pair_values=np.asarray([0.25]),
+            sample_values=np.asarray([-0.5, 0.0, 0.25]),
+            sample_values_aligned=np.asarray([-0.5, 0.0, 0.25, np.nan]),
+            occurrence_defined_mask=np.asarray([True, True, True, False]),
+            undefined_frac=0.25,
+            f0=2.0 / 3.0,
+        )
+
+    monkeypatch.setattr(cli.CRoMa, "compute", fake_compute)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "cli.py",
+            "croma",
+            "--manifest",
+            str(manifest_path),
+            "--embeddings",
+            str(embeddings_path),
+            "--confounder-column",
+            "scanner_vendor",
+            "--evaluation-design",
+            "all",
+        ],
+    )
+
+    cli.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["f0"] == pytest.approx(2.0 / 3.0)
+    assert payload["undefined_frac"] == pytest.approx(0.25)

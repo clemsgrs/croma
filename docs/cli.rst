@@ -105,6 +105,24 @@ Searches outward for typed neighbours rather than using a fixed ``k``, so it tak
      - ``2.0``
      - Geometric growth factor when the initial radius holds too few typed neighbours.
 
+The payload adds the distributional statistics to the pooled value:
+
+.. code-block:: json
+
+   {
+     "m": 5,
+     "value": 0.1842,
+     "q_alpha": -0.2013,
+     "ltm_alpha": -0.3106,
+     "f0": 0.1823,
+     "undefined_frac": 0.004
+   }
+
+``f0`` is the confounder-dominant fraction :math:`F(0)`: the share of *defined* evaluation
+units whose margin is ``<= 0`` (exact zero included), and ``NaN`` when nothing is defined.
+Undefined units are excluded from its denominator and counted by ``undefined_frac``
+instead. See :ref:`confounder-dominant-fraction`.
+
 Preparing aligned embeddings
 ----------------------------
 

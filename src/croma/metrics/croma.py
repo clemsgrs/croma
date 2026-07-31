@@ -97,6 +97,26 @@ def _sample_croma_with_causes(
     return _SampleCRoMa(values=croma, unresolved=unresolved, zero_distance=zero_distance)
 
 
+def _confounder_dominant_fraction(sample_values: np.ndarray) -> float:
+    """``F(0)``: the empirical CDF of the per-sample CRoMa distribution at zero.
+
+    The fraction of *defined* evaluation units whose margin is ``<= 0`` -- the share of the
+    distribution on the confounder-dominant side. The boundary is closed: an exactly
+    contested unit (``CRoMa_i == 0``, the impostor and the biological match equidistant)
+    counts as confounder-dominant, because nothing about it says biology won.
+
+    The denominator is the defined units only, exactly as for ``q_alpha`` and
+    ``ltm_alpha``: undefined units carry no margin to place on either side of zero, and
+    ``undefined_frac`` reports them separately over all units. With no defined unit at all
+    there is no distribution to evaluate, and the result is ``nan`` rather than 0.
+    """
+    arr = np.asarray(sample_values, dtype=float)
+    finite = arr[np.isfinite(arr)]
+    if len(finite) == 0:
+        return float("nan")
+    return float(np.mean(finite <= 0.0))
+
+
 def _compute_sample_croma(
     so_dists: np.ndarray,
     os_dists: np.ndarray,
@@ -463,6 +483,7 @@ class CrossConfounderRobustnessMargin:
                 alpha=tail.alpha,
                 q_alpha=tail.q_alpha,
                 ltm_alpha=tail.ltm_alpha,
+                f0=_confounder_dominant_fraction(sample_values),
             )
 
         ordered = {int(v): by_m[int(v)] for v in ordered_m_values}

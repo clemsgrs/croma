@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`CRoMaResult.f0` — the confounder-dominant fraction `F(0)`, computed by CRoMa itself.**
+  It is the empirical CDF of the per-sample margin at zero: the fraction of *defined*
+  evaluation units whose CRoMa is `<= 0`. The inequality is closed, so an exactly contested
+  unit counts as confounder-dominant, and the denominator is the defined units only — the
+  same distribution `q_alpha` and `ltm_alpha` are read off. Under `all` each defined
+  manifest sample contributes once; under `paired_2x2` each defined subset occurrence does,
+  so a sample scored in two subsets contributes twice. With nothing defined it is `nan`, and
+  `undefined_frac` remains the separate measure of missing support over all units. The value
+  is surfaced as `f0` in the `croma croma` CLI payload and as `croma_f0` in the benchmark's
+  metrics rows, m-sweep rows and cache payloads; a cached m-sweep entry written before this
+  column existed is no longer treated as a hit. `scripts/tools/export_results.py` now
+  publishes the stored value instead of recomputing it from the per-sample artifact (where
+  it used the open `< 0` boundary), and fails on a run that predates the column rather than
+  publishing a NaN column. No existing statistic changed.
+
 ### Changed
 
 - **BREAKING: the evaluation design `dataset_wide` is now `all`, and it is the default.**

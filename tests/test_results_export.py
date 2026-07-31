@@ -48,6 +48,7 @@ def _metrics(**columns) -> pd.DataFrame:
         "mari": [0.5] * n,
         "croma": [0.1] * n,
         "croma_ltm_alpha": [-0.2] * n,
+        "croma_f0": [0.3] * n,
         "ri_undefined_frac": [0.25] * n,
     }
     frame.update(columns)
@@ -88,19 +89,19 @@ def test_croma_as_margin_treats_an_all_unit_interval_column_as_a_margin():
 
 def test_cohort_table_has_the_published_columns_in_order():
     metrics = _metrics(model=["A", "B"])
-    table = er.build_cohort_table(metrics, {"A": 0.1, "B": 0.2})
+    table = er.build_cohort_table(metrics)
     assert list(table.columns) == er.COHORT_COLUMNS
 
 
 def test_cohort_table_sorts_by_croma_descending():
     metrics = _metrics(model=["low", "high", "mid"], croma=[0.1, 0.9, 0.5])
-    table = er.build_cohort_table(metrics, {"low": 0.0, "high": 0.0, "mid": 0.0})
+    table = er.build_cohort_table(metrics)
     assert table["model"].tolist() == ["high", "mid", "low"]
 
 
 def test_cohort_table_derives_delta_and_support():
     metrics = _metrics(model=["A"], ri=[0.40], mari=[0.55], ri_undefined_frac=[0.30])
-    row = er.build_cohort_table(metrics, {"A": 0.0}).iloc[0]
+    row = er.build_cohort_table(metrics).iloc[0]
     assert row["delta"] == pytest.approx(0.15)
     assert row["support"] == pytest.approx(0.70)
 
@@ -113,16 +114,23 @@ def test_cohort_table_flags_the_control_but_ranks_it_inline():
     on this flag instead.
     """
     metrics = _metrics(model=["A", er.CONTROL_MODEL, "B"], croma=[0.9, 0.5, 0.1])
-    table = er.build_cohort_table(metrics, dict.fromkeys(["A", er.CONTROL_MODEL, "B"], 0.0))
+    table = er.build_cohort_table(metrics)
     assert table["model"].tolist() == ["A", er.CONTROL_MODEL, "B"]
     assert table["is_control"].tolist() == [False, True, False]
 
 
-def test_cohort_table_refuses_a_model_without_a_per_sample_distribution():
-    """F(0) cannot be read off metrics.csv, so a missing one is a silent NaN column."""
-    metrics = _metrics(model=["A", "B"])
-    with pytest.raises(KeyError, match="B"):
-        er.build_cohort_table(metrics, {"A": 0.1})
+def test_cohort_table_publishes_the_run_s_own_f0():
+    """F(0) is CRoMa's, read straight off the run -- the exporter never recomputes it."""
+    metrics = _metrics(model=["A", "B"], croma_f0=[0.11, 0.22], croma=[0.9, 0.1])
+    table = er.build_cohort_table(metrics)
+    assert table["croma_f0"].tolist() == [0.11, 0.22]
+
+
+def test_cohort_table_refuses_a_run_without_a_stored_f0():
+    """A run predating canonical ``croma_f0`` must fail loudly, not publish a NaN column."""
+    metrics = _metrics(model=["A", "B"]).drop(columns=["croma_f0"])
+    with pytest.raises(KeyError, match="croma_f0"):
+        er.build_cohort_table(metrics)
 
 
 # --------------------------------------------------------------------------------------

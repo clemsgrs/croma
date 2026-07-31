@@ -11,6 +11,7 @@ from croma.metrics.croma import (
     CROMA_HEADLINE_M,
     CrossConfounderRobustnessMargin,
     _compute_sample_croma,
+    _confounder_dominant_fraction,
     _sample_croma_with_causes,
 )
 from metric_harness import constant_embedding
@@ -71,6 +72,50 @@ def _toy_features_so_closer() -> tuple[np.ndarray, pd.DataFrame]:
 
 def _compute_croma(**kwargs):
     return CRoMa.compute(confounder_column="scanner_vendor", **kwargs)
+
+
+def _paired_subsets_sharing_one_sample() -> tuple[np.ndarray, pd.DataFrame]:
+    """Two complete 2x2 subsets in which one source sample occurs in both.
+
+    ``p0`` clusters by confounder (every row's impostor is nearer than its biological
+    match) and ``p1`` clusters by label (the reverse), so the two subsets contribute eight
+    negative and eight positive occurrences. Sample ``s0`` carries the same feature vector
+    in both, which is how a paired manifest represents one sample scored twice.
+    """
+    labels = ["A", "B", "A", "B"] * 2
+    centers = ["C1", "C1", "C2", "C2"] * 2
+    manifest = _make_manifest(n=16, labels=labels * 2, centers=centers * 2)
+    manifest["sample_id"] = (
+        ["s0"] + [f"s{i}" for i in range(1, 8)] + ["s0"] + [f"s{i}" for i in range(8, 15)]
+    )
+    manifest["group_id"] = list(manifest["sample_id"])
+    manifest["subset"] = ["p0"] * 8 + ["p1"] * 8
+
+    shared = [1.00, 0.00, 0.05]
+    # p0: geometry follows the confounder -- C1 rows near axis 0, C2 rows near axis 1.
+    confounder_clustered = [
+        shared,
+        [0.98, 0.02, 0.00],
+        [0.02, 0.98, 0.00],
+        [0.00, 1.00, 0.00],
+        [0.97, 0.03, 0.00],
+        [0.96, 0.04, 0.00],
+        [0.03, 0.97, 0.00],
+        [0.01, 0.99, 0.00],
+    ]
+    # p1: the same rows, clustered by label instead -- A rows near axis 0, B near axis 1.
+    label_clustered = [
+        shared,
+        [0.02, 0.98, 0.00],
+        [0.98, 0.02, 0.05],
+        [0.00, 1.00, 0.00],
+        [0.97, 0.03, 0.04],
+        [0.03, 0.97, 0.00],
+        [0.96, 0.04, 0.03],
+        [0.01, 0.99, 0.00],
+    ]
+    features = np.array(confounder_clustered + label_clustered, dtype=float)
+    return features, manifest
 
 
 class TestComputeSampleCRoMa:
@@ -497,3 +542,98 @@ class TestCRoMaCompute:
         features, manifest = _toy_features_so_closer()
         with pytest.raises(TypeError):
             _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1, kmax=3)  # type: ignore[call-arg]
+
+
+class TestConfounderDominantFraction:
+    """``F(0)``: the empirical CDF of the per-sample margin at zero.
+
+    The boundary is ``<= 0`` -- an exactly contested sample is counted as
+    confounder-dominant -- and the denominator is the *defined* values only, the same
+    distribution ``q_alpha`` and ``ltm_alpha`` are read off.
+    """
+
+    def test_zero_counts_as_confounder_dominant_and_nan_leaves_the_denominator(self) -> None:
+        values = np.array([-0.5, 0.0, 0.25, np.nan], dtype=float)
+        assert _confounder_dominant_fraction(values) == pytest.approx(2.0 / 3.0)
+
+    def test_no_defined_values_is_nan(self) -> None:
+        assert np.isnan(_confounder_dominant_fraction(np.array([np.nan, np.nan])))
+        assert np.isnan(_confounder_dominant_fraction(np.array([], dtype=float)))
+
+
+class TestCRoMaF0:
+
+    def test_all_counts_every_defined_manifest_sample_once(self) -> None:
+        features, manifest = _toy_features_so_closer()
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
+
+        defined = result.sample_values_aligned[result.occurrence_defined_mask]
+        assert len(defined) == len(manifest)
+        assert result.f0 == pytest.approx(float(np.mean(defined <= 0.0)))
+
+    def test_undefined_rows_are_excluded_from_the_denominator(self) -> None:
+        # Two of the four rows are OS-dominant; the other two have no typed neighbour of
+        # both kinds at all, so they are undefined and must not dilute F(0).
+        manifest = _make_manifest(
+            n=6,
+            labels=["A", "A", "B", "B", "C", "C"],
+            centers=["C1", "C2", "C1", "C2", "C3", "C3"],
+        )
+        features = np.array(
+            [
+                [1.00, 0.00],
+                [0.00, 1.00],
+                [0.95, 0.05],
+                [0.05, 0.95],
+                [-1.00, 0.00],
+                [0.00, -1.00],
+            ],
+            dtype=float,
+        )
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
+
+        defined = result.sample_values_aligned[result.occurrence_defined_mask]
+        assert 0 < len(defined) < len(manifest)
+        assert result.f0 == pytest.approx(float(np.mean(defined <= 0.0)))
+
+    def test_an_all_undefined_result_has_a_nan_f0(self) -> None:
+        manifest = _make_manifest(
+            n=4,
+            labels=["A", "A", "A", "A"],
+            centers=["C1", "C1", "C1", "C1"],
+        )
+        features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
+
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
+
+        assert np.isnan(result.f0)
+
+    def test_paired_counts_a_repeated_source_sample_once_per_occurrence(self) -> None:
+        """One sample scored in two subsets contributes an occurrence to each.
+
+        ``s0`` appears in both subsets, with the same feature vector and different
+        neighbourhoods: confounder-dominant in ``p0`` and biology-dominant in ``p1``. The
+        denominator is the 16 defined occurrences, not the 15 distinct samples, so
+        ``F(0)`` is exactly ``8/16`` and not ``8/15``.
+        """
+        features, manifest = _paired_subsets_sharing_one_sample()
+
+        result = _compute_croma(
+            features=features, manifest=manifest, evaluation_design="paired_2x2", m=1
+        )
+
+        assert result.evaluation_unit == "occurrence"
+        defined = result.sample_values_aligned[result.occurrence_defined_mask]
+        assert len(defined) == 16
+        assert manifest["sample_id"].nunique() == 15
+        assert result.f0 == pytest.approx(0.5)
+        assert result.f0 == pytest.approx(float(np.mean(defined <= 0.0)))
+
+    def test_f0_does_not_disturb_the_existing_statistics(self) -> None:
+        features, manifest = _toy_features_so_closer()
+        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
+
+        finite = result.sample_values
+        assert result.value == pytest.approx(float(np.median(finite)))
+        assert result.q_alpha == pytest.approx(float(np.percentile(finite, 10)))
+        assert result.undefined_frac == pytest.approx(0.0)
