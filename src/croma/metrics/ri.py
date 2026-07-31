@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from croma.metrics.base import BaseRobustnessIndex
+from croma.metrics.base import EVALUATION_DESIGN_ALL, BaseRobustnessIndex
 from croma.types import RobustnessResult
 
 
@@ -18,14 +18,13 @@ class RobustnessIndex(BaseRobustnessIndex):
         *,
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
-        evaluation_design: str = "all",
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
     ) -> RobustnessResult:
         """Compute RI at the operating ``k`` selected by kNN balanced accuracy.
 
         Args:
-            evaluation_design: ``"all"`` (the default) scores every supplied manifest row
-                together, as one evaluation scope, at sample level. ``"paired_2x2"`` scores
-                only the manifest's explicitly declared 2x2 subsets, at occurrence level.
+            evaluation_design: ``"all"`` (the default) or ``"paired_2x2"``; see the
+                constants in :mod:`croma.metrics.base` for what each scope scores.
         """
         return cls._compute(
             features=features,
@@ -43,7 +42,7 @@ class RobustnessIndex(BaseRobustnessIndex):
         *,
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
-        evaluation_design: str = "all",
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
     ) -> dict[int, float]:
         """RI at every ``k`` in ``k_values``, under ``evaluation_design`` (default ``"all"``)."""
         return cls._compute_curve(

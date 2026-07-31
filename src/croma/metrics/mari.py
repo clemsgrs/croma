@@ -4,7 +4,7 @@ from dataclasses import replace
 import numpy as np
 import pandas as pd
 
-from croma.metrics.base import BaseRobustnessIndex
+from croma.metrics.base import EVALUATION_DESIGN_ALL, BaseRobustnessIndex
 from croma.metrics.tau import assess_tau, format_tau_warning
 from croma.types import RobustnessResult
 
@@ -35,7 +35,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         *,
         confounder_column: str,
         k: int,
-        evaluation_design: str = "all",
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
     ) -> float:
         """Recommended ``tau`` for this dataset: the median typed (SO/OS) neighbour distance.
 
@@ -127,15 +127,14 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         confounder_column: str,
         k_candidates: list[int] | tuple[int, ...],
         tau: float | None = None,
-        evaluation_design: str = "all",
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
         warn_tau: bool = True,
     ) -> RobustnessResult:
         """Compute MaRI at the operating ``k`` selected by kNN balanced accuracy.
 
         Args:
-            evaluation_design: ``"all"`` (the default) scores every supplied manifest row
-                together, as one evaluation scope, at sample level. ``"paired_2x2"`` scores
-                only the manifest's explicitly declared 2x2 subsets, at occurrence level.
+            evaluation_design: ``"all"`` (the default) or ``"paired_2x2"``; see the
+                constants in :mod:`croma.metrics.base` for what each scope scores.
             tau: Distance-decay temperature. Leave as ``None`` (recommended) to resolve it
                 automatically as this dataset's median typed-neighbour distance at the
                 operating ``k`` -- the on-scale value. A pinned ``tau`` is only comparable
@@ -203,7 +202,7 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
         confounder_column: str,
         k_values: list[int] | tuple[int, ...],
         tau: float | None = None,
-        evaluation_design: str = "all",
+        evaluation_design: str = EVALUATION_DESIGN_ALL,
     ) -> dict[int, float]:
         """MaRI at every ``k`` in ``k_values``, all scored at a single ``tau``.
 

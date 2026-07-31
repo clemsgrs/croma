@@ -539,10 +539,17 @@ def _curve_from_payload(
 def _summary_from_payload(payload: dict) -> dict | None:
     if not isinstance(payload, dict):
         return None
-    # The design is required, not defaulted. A cached summary that does not name its own
-    # evaluation design cannot be shown to have been computed under the one being run, and
+    # The design and its unit are required, not defaulted. A cached summary that does not
+    # name the design it was computed under cannot be shown to match the one being run, and
     # guessing a default would silently adopt a stale artifact as a current one.
-    required = ("k", "value", "std", "undefined_frac", "evaluation_design")
+    required = (
+        "k",
+        "value",
+        "std",
+        "undefined_frac",
+        "evaluation_design",
+        "evaluation_unit",
+    )
     for key in required:
         if key not in payload:
             return None
@@ -560,7 +567,7 @@ def _summary_from_payload(payload: dict) -> dict | None:
             ),
             "mixed_undefined_frac": float(payload.get("mixed_undefined_frac", 0.0)),
             "evaluation_design": str(payload["evaluation_design"]),
-            "evaluation_unit": str(payload.get("evaluation_unit", "")),
+            "evaluation_unit": str(payload["evaluation_unit"]),
         }
         return result
     except Exception:  # noqa: BLE001
@@ -828,7 +835,7 @@ def main() -> int:
     embedding_keep_indices = view_to_tileset[view_keep_indices]
     n_tileset_rows = int(len(tileset_manifest))
 
-    # --- Pre-pass: collect per-model best k to determine dataset-wide median k ---
+    # --- Pre-pass: collect per-model best k to determine the shared median k ---
     #
     # Every model must contribute. A model that silently dropped out would shift the
     # median without trace, and a pre-pass that produced nothing at all would leave

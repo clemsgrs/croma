@@ -23,7 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the numbers `all` produces are exactly the ones `dataset_wide` produced. Results and
   persisted artifacts record the resolved value as `evaluation_design: "all"`, and because
   the design is part of the benchmark cache key, artifacts cached under `dataset_wide` are
-  not reused — they are recomputed.
+  not reused — they are recomputed. A cached RI/MaRI summary must now name its own
+  `evaluation_design` and `evaluation_unit` to be read back at all: a summary that cannot
+  say which design produced it cannot be shown to match the one being run, so it is
+  recomputed rather than adopted under a guessed default. For the same reason
+  `scripts/tools/analyze_results.py` now fails on per-sample rows carrying an unrecognized
+  design instead of silently reporting a reading it would have suppressed.
 
 - **BREAKING: the manifest's required `slide_id` column is now `group_id`.** The field
   never meant "slide": it names the *independence group* a sample belongs to — a slide, a

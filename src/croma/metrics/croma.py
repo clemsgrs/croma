@@ -264,9 +264,8 @@ class CrossConfounderRobustnessMargin:
         """Compute the cross-confounder robustness margin.
 
         Args:
-            evaluation_design: ``"all"`` (the default) scores every supplied manifest row
-                together, as one evaluation scope, at sample level. ``"paired_2x2"`` scores
-                only the manifest's explicitly declared 2x2 subsets, at occurrence level.
+            evaluation_design: ``"all"`` (the default) or ``"paired_2x2"``; see the
+                constants in :mod:`croma.metrics.base` for what each scope scores.
         """
         evaluation_design = _normalize_evaluation_design(evaluation_design)
 

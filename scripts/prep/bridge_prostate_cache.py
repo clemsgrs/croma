@@ -45,7 +45,7 @@ FULL_EMB_DIR = layout.embeddings_dir("prostate-shift")
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--manifest", required=True, type=Path)
-    p.add_argument("--evaluation-design", default="paired_2x2",
+    p.add_argument("--evaluation-design", default="all",
                    choices=["all", "paired_2x2"])
     p.add_argument("--output-dir", required=True, type=Path,
                    help="Benchmark output root; cache lands in <output-dir>/<manifest-stem>/.")

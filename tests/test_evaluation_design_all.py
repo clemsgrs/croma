@@ -229,9 +229,17 @@ def test_cache_key_identity_distinguishes_all_from_paired_and_from_stale_dataset
 def test_a_cached_summary_that_does_not_name_its_design_is_not_reused() -> None:
     import benchmark as bm
 
-    payload = {"k": 5, "value": 0.6, "std": 0.1, "undefined_frac": 0.0}
+    payload = {
+        "k": 5,
+        "value": 0.6,
+        "std": 0.1,
+        "undefined_frac": 0.0,
+        "evaluation_unit": "sample",
+    }
     assert bm._summary_from_payload(payload) is None
-    assert bm._summary_from_payload({**payload, "evaluation_design": "all"}) is not None
+    named = bm._summary_from_payload({**payload, "evaluation_design": "all"})
+    assert named is not None
+    assert named["evaluation_design"] == "all"
 
 
 def _write_cli_inputs(tmp_path):
