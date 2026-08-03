@@ -253,10 +253,21 @@ def test_the_assembled_csv_reports_a_value_for_every_cell(tmp_path: Path) -> Non
     assert reported["nipd_ood"].iloc[0] == pytest.approx(-0.5)
 
 
-def test_the_slide_arm_reaches_no_correlation_scope() -> None:
-    # Four slide encoders are too few for a useful rank correlation. PCaBiop remains in
-    # the experiment outputs, but no slide-level cohort enters the correlation table.
+def test_the_slide_arm_reaches_no_correlation_table_column() -> None:
+    """Four slide encoders are too few for a rank correlation to carry a conclusion, so no
+    slide-level cohort gets a column in the downstream-correlation table.
+
+    The exclusion is scoped to the *table*, which is the claim the panel size undermines.
+    PCaBiop is still computed and still joined: supp/panda.tex quotes both its Spearman
+    values in prose under an explicit "these associations are descriptive" caveat, and
+    figure_apd_pcabiop.tex plots its scatter. Asserting the exclusion against the join or
+    the correlation output instead makes those two macros ungeneratable and leaves the
+    manuscript with undefined control sequences -- see the companion test below.
+    """
     import loaders
+
+    sys.path.insert(0, str(ROOT / "scripts" / "repro"))
+    import _apd
 
     slide_level = {
         dataset
@@ -265,16 +276,22 @@ def test_the_slide_arm_reaches_no_correlation_scope() -> None:
     }
 
     assert slide_level, "no slide-level cohort is configured, so the exclusion asserts nothing"
-    assert not slide_level & set(loaders.DATASET_KEYS)
+    # The table renders exactly these benchmarks as columns.
+    assert not slide_level & set(_apd.FIGURE_DATASETS)
 
 
-def test_downstream_correlations_have_per_benchmark_scopes_only() -> None:
+def test_the_correlation_still_computes_the_scopes_the_supplement_quotes() -> None:
+    """PCaBiop must survive as far as ``apd_correlation.csv``.
+
+    ``generate_paper_values._apd_macros`` skips any scope missing from that CSV *silently*,
+    so dropping PCaBiop here does not fail loudly -- it just omits \\NipdIdCromaPcabiop and
+    \\NipdOodCromaPcabiop, which supp/panda.tex cites, and the manuscript stops compiling.
+    """
     import apd_croma_correlation
-    import loaders
 
     rows = []
-    tile_benchmarks = {"camelyon", "tcga_4x4", "tolkach"}
-    for dataset in [*sorted(tile_benchmarks), "pcabiop"]:
+    scopes = {"camelyon", "tcga_4x4", "tolkach", "pcabiop"}
+    for dataset in sorted(scopes):
         for i in range(3):
             rows.append(
                 {
@@ -292,4 +309,4 @@ def test_downstream_correlations_have_per_benchmark_scopes_only() -> None:
         target="nipd_id",
     )
 
-    assert set(correlations["scope"]) == tile_benchmarks
+    assert set(correlations["scope"]) == scopes

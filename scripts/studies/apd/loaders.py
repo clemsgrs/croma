@@ -32,6 +32,12 @@ import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>
 from croma.downstream import pathorob_schedule  # noqa: E402
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
+#: Column naming the independence unit in the APD metadata CSVs. croma's canonical
+#: manifests call this ``group_id``, but the APD metadata is PathoROB's own published
+#: file -- joined against the source manifests on ``(slide_id, patch_id)`` -- and
+#: renaming a source-dataset column is out of scope for the manifest contract.
+APD_METADATA_GROUP_COLUMN = "slide_id"
+
 # ---------------------------------------------------------------------------
 # APD computation config (used by apd_experiment.py)
 # ---------------------------------------------------------------------------
@@ -256,6 +262,11 @@ class Cohort(NamedTuple):
     schedule addresses cells by position, so the names are mapped here, once. The OOD rows
     ride along as a test set the sweep scores but never trains on. ``group_ids`` is what
     Tolkach's case arrangement reads; it is the ID rows' own column, in the same order.
+
+    The independence unit is spelled ``group_id`` in croma's canonical manifests but read
+    here out of the APD metadata's ``slide_id``: those CSVs are PathoROB's published files,
+    joined against the source manifests on ``(slide_id, patch_id)``, and renaming a
+    source-dataset column is out of scope for the manifest contract.
     """
 
     embeddings: np.ndarray
@@ -296,7 +307,7 @@ def load_data(model, dataset):
         labels=np.array([bio.index(b) for b in md_id["biological_class"]]),
         ood_embeddings=emb[md_ood.index.to_numpy()],
         ood_labels=np.array([bio.index(b) for b in md_ood["biological_class"]]),
-        group_ids=list(md_id["group_id"]),
+        group_ids=list(md_id[APD_METADATA_GROUP_COLUMN]),
     )
 
 
@@ -369,11 +380,22 @@ def case_arrangement(centers, feasible_splits, group_ids):
 # APD <-> metric correlation config + loaders (used by apd_croma_correlation.py
 # and apd_figure.py)
 # ---------------------------------------------------------------------------
-# The three tile-level benchmarks reported in the downstream-correlation table.
-# PCaBiop remains descriptive because its slide-level panel contains only four encoders.
+# The three tile-level benchmarks reported in the downstream-correlation *table*. PCaBiop is
+# kept out of that table because four encoders is too few for a rank correlation to carry a
+# conclusion -- but "not tabulated" is not "not computed": supp/panda.tex quotes its two
+# Spearman values in prose, under an explicit "these associations are descriptive" caveat.
+# So the exclusion lives in the table generator (_apd.FIGURE_DATASETS), not here.
 # Prostate-shift remains available to the experiment driver but is not part of the
 # manuscript's active benchmark panel.
 DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach"]
+#: Datasets the *join* covers, which is deliberately wider than the ones the correlation
+#: table reports. PCaBiop is excluded from the table (four encoders is too few for a rank
+#: correlation) but its figure is still rendered and cited, and that figure's scatter needs
+#: CRoMa joined onto its APD rows. Driving the join off ``DATASET_KEYS`` silently dropped
+#: those four rows, leaving ``apd_figure.py --pcabiop`` to fail with an empty scatter roster
+#: -- excluded from a *conclusion* is not the same as excluded from the *data*.
+#: Prostate-shift stays out: the experiment driver computes it, but nothing joins or plots it.
+JOIN_KEYS = [*DATASET_KEYS, "pcabiop"]
 #: Everything this study reads and writes: the APD CSVs, the join, and the plots drawn from
 #: them. Figures land here beside their data rather than under ``paper/`` -- see the note on
 #: ``OUT`` in ``scripts/repro/figures/apd_figure.py``.
@@ -414,7 +436,7 @@ def load_joined(apd_csv):
     """
     apd = pd.read_csv(apd_csv)
     frames = []
-    for ds in DATASET_KEYS:
+    for ds in JOIN_KEYS:
         m = pd.read_csv(REPO / metric_csv(ds))
         m["dataset"] = ds  # align with APD's dataset key (CSV stores the dir name)
         # Defensive: the canonical dirs are already signed-margin CRoMa; only convert
