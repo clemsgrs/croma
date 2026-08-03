@@ -369,11 +369,22 @@ def case_arrangement(centers, feasible_splits, group_ids):
 # APD <-> metric correlation config + loaders (used by apd_croma_correlation.py
 # and apd_figure.py)
 # ---------------------------------------------------------------------------
-# The three tile-level benchmarks reported in the downstream-correlation table.
-# PCaBiop remains descriptive because its slide-level panel contains only four encoders.
+# The three tile-level benchmarks reported in the downstream-correlation *table*. PCaBiop is
+# kept out of that table because four encoders is too few for a rank correlation to carry a
+# conclusion -- but "not tabulated" is not "not computed": supp/panda.tex quotes its two
+# Spearman values in prose, under an explicit "these associations are descriptive" caveat.
+# So the exclusion lives in the table generator (_apd.FIGURE_DATASETS), not here.
 # Prostate-shift remains available to the experiment driver but is not part of the
 # manuscript's active benchmark panel.
 DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach"]
+#: Datasets the *join* covers, which is deliberately wider than the ones the correlation
+#: table reports. PCaBiop is excluded from the table (four encoders is too few for a rank
+#: correlation) but its figure is still rendered and cited, and that figure's scatter needs
+#: CRoMa joined onto its APD rows. Driving the join off ``DATASET_KEYS`` silently dropped
+#: those four rows, leaving ``apd_figure.py --pcabiop`` to fail with an empty scatter roster
+#: -- excluded from a *conclusion* is not the same as excluded from the *data*.
+#: Prostate-shift stays out: the experiment driver computes it, but nothing joins or plots it.
+JOIN_KEYS = [*DATASET_KEYS, "pcabiop"]
 #: Everything this study reads and writes: the APD CSVs, the join, and the plots drawn from
 #: them. Figures land here beside their data rather than under ``paper/`` -- see the note on
 #: ``OUT`` in ``scripts/repro/figures/apd_figure.py``.
@@ -414,7 +425,7 @@ def load_joined(apd_csv):
     """
     apd = pd.read_csv(apd_csv)
     frames = []
-    for ds in DATASET_KEYS:
+    for ds in JOIN_KEYS:
         m = pd.read_csv(REPO / metric_csv(ds))
         m["dataset"] = ds  # align with APD's dataset key (CSV stores the dir name)
         # Defensive: the canonical dirs are already signed-margin CRoMa; only convert

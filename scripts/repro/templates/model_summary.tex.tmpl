@@ -1,0 +1,14 @@
+\begin{table}[!htbp]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{2pt} % tightened to absorb the per-model citations
+\begin{tabular}{llcccl}
+\hline
+Model & Method & Params & WSIs / tiles & Dim & Pretraining corpus \\
+\hline
+%%BODY%%
+\hline
+\end{tabular}
+\caption{\textbf{Foundation models overview.} `n/d' undisclosed and `n/a' not applicable. Boldface pretraining corpora include TCGA. $^{\ast}$ Slide-encoder parameter count as reported by Ding et al.~\cite{titan}. \code{CONCHv1.5} lists the corpus of its vision trunk, which is initialised from \code{UNI}; its vision--language stage additionally used $1.26$M image--caption pairs. \code{Midnight-12k} draws tiles online during training, so $384$M counts tile draws rather than unique tiles. $\ddagger$ \code{MOOZY} is pretrained on slide feature grids rather than on slides directly: a slide available at two magnifications contributes one grid per magnification ($53{,}286$ at $20\times$ and $23{,}848$ at $40\times$), so the number of distinct WSIs is not separately reported. Its parameter count comprises a $64.1$M slide-and-case encoder and a frozen $21.7$M ViT-S patch encoder.}
+\label{tab:model-summary}
+\end{table}
