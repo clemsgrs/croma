@@ -22,8 +22,16 @@ import generate_model_tables as gmt  # noqa: E402
 # Columns the summary builder reads; the synthetic rows below fill the ones each
 # builder touches and default the rest to empty.
 COLUMNS = [
-    "model", "panel", "panel_order", "method", "params", "n_wsis", "n_tiles",
-    "wsis_source", "dim", "corpus",
+    "model",
+    "panel",
+    "panel_order",
+    "method",
+    "params",
+    "n_wsis",
+    "n_tiles",
+    "wsis_source",
+    "dim",
+    "corpus",
 ]
 
 
@@ -42,24 +50,52 @@ def _synthetic_df() -> pd.DataFrame:
     """
     rows = [
         _row(
-            model="TcgaModel", panel="tile", panel_order=1, method="iBOT",
-            params=r"$86$M", n_wsis=r"$6$k", n_tiles=r"$43$M", wsis_source="card",
-            dim=r"$768$", corpus=r"\textbf{TCGA (public)}",
+            model="TcgaModel",
+            panel="tile",
+            panel_order=1,
+            method="iBOT",
+            params=r"$86$M",
+            n_wsis=r"$6$k",
+            n_tiles=r"$43$M",
+            wsis_source="card",
+            dim=r"$768$",
+            corpus=r"\textbf{TCGA (public)}",
         ),
         _row(
-            model="CardModel", panel="tile", panel_order=2, method="DINOv2",
-            params=r"$307$M", n_wsis=r"$100$k", n_tiles=r"$100$M",
-            wsis_source="card", dim=r"$1024$", corpus="Vendor (prop.)",
+            model="CardModel",
+            panel="tile",
+            panel_order=2,
+            method="DINOv2",
+            params=r"$307$M",
+            n_wsis=r"$100$k",
+            n_tiles=r"$100$M",
+            wsis_source="card",
+            dim=r"$1024$",
+            corpus="Vendor (prop.)",
         ),
         _row(
-            model="MarkedModel", panel="tile", panel_order=3,
-            method="vision--language", params="n/d", n_wsis=r"$350$k",
-            n_tiles="n/d", wsis_source="pathorob", dim=r"$768$", corpus="PMC-OA",
+            model="MarkedModel",
+            panel="tile",
+            panel_order=3,
+            method="vision--language",
+            params="n/d",
+            n_wsis=r"$350$k",
+            n_tiles="n/d",
+            wsis_source="pathorob",
+            dim=r"$768$",
+            corpus="PMC-OA",
         ),
         _row(
-            model="SlideModel", panel="slide", panel_order=1, method="grid ViT",
-            params="n/d", n_wsis="n/d", n_tiles="n/d", wsis_source="card",
-            dim=r"$768$", corpus="Vendor (prop.)",
+            model="SlideModel",
+            panel="slide",
+            panel_order=1,
+            method="grid ViT",
+            params="n/d",
+            n_wsis="n/d",
+            n_tiles="n/d",
+            wsis_source="card",
+            dim=r"$768$",
+            corpus="Vendor (prop.)",
         ),
     ]
     return pd.DataFrame(rows, columns=COLUMNS)

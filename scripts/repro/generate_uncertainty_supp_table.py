@@ -174,13 +174,13 @@ def per_model_table(name: str, rel: str) -> list[str]:
             f"& {int(r['point_rank'])} {rank_ci} \\\\"
         )
     n_boot = summary.get("n_boot", "?")
-    n_slides = summary.get("n_slides", "?")
+    n_groups = summary.get("n_groups", "?")
     lines += [
         r"\hline",
         r"\end{tabular}",
         rf"\caption{{\textbf{{Bootstrap uncertainty on {name}.}} Per-model pooled-median "
-        rf"\code{{CRoMa}} at $m{{=}}{int(CROMA_HEADLINE_M)}$ with $95\%$ slide-level cluster-bootstrap "
-        rf"confidence intervals (${n_boot}$ resamples over ${n_slides}$ slides), and the paired-bootstrap "
+        rf"\code{{CRoMa}} at $m{{=}}{int(CROMA_HEADLINE_M)}$ with $95\%$ group-level cluster-bootstrap "
+        rf"confidence intervals (${n_boot}$ resamples over ${n_groups}$ independence groups), and the paired-bootstrap "
         r"rank interval. Sorted by point \code{CRoMa}. As on Camelyon, the sign is stable while the "
         r"closest models form rank ties.}",
         rf"\label{{tab:bootstrap-uncertainty-{suffix}}}",

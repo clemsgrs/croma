@@ -12,7 +12,7 @@ This writes two row-aligned artifacts, exactly the pair every APD dataset needs
    slide FM (ID rows stacked on top of OOD rows) plus a ``manifest.csv`` row-order
    contract, and
 2. the APD metadata ``data/pcabiop/metadata/pcabiop.csv`` (columns ``subset``,
-   ``group_id``, ``biological_class``, ``medical_center``) that ``loaders.load_data``
+   ``slide_id``, ``biological_class``, ``medical_center``) that ``loaders.load_data``
    reads, row-aligned index-for-index with every ``<model>.npy``.
 
 ID cohort = the 1,000 slides of ``data/benchmarks/panda.csv`` (the published PANDA
@@ -165,8 +165,13 @@ def main():
         "subset": meta["subset"],
     }).to_csv(layout.tileset_manifest(TILESET), index=False)
 
+    # APD metadata spells the independence unit the way PathoROB's own metadata CSVs do
+    # (loaders.APD_METADATA_GROUP_COLUMN), so all five cohorts share one input contract.
+    # The tileset manifest written above is canonical croma, hence ``group_id`` there.
     META_PATH.parent.mkdir(parents=True, exist_ok=True)
-    meta[["subset", "group_id", "biological_class", "medical_center"]].to_csv(META_PATH, index=False)
+    meta[["subset", "group_id", "biological_class", "medical_center"]].rename(
+        columns={"group_id": "slide_id"}
+    ).to_csv(META_PATH, index=False)
 
     print(f"\nwrote {out_dir}/ and {META_PATH}")
     print("ID cells (medical_center x biological_class):")

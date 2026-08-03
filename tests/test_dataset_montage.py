@@ -13,7 +13,6 @@ if str(FIGURES) not in sys.path:
 
 import dataset_montage as dm
 
-
 CLASSES = ("normal", "tumor")
 CENTERS = ("RUMC", "UMCU")
 
@@ -50,9 +49,7 @@ def _synthetic_manifest(
 
 def test_select_montage_tiles_covers_full_grid() -> None:
     manifest = _synthetic_manifest()
-    selected = dm.select_montage_tiles(
-        manifest, classes=CLASSES, centers=CENTERS, seed=0
-    )
+    selected = dm.select_montage_tiles(manifest, classes=CLASSES, centers=CENTERS, seed=0)
     assert set(selected.keys()) == set(product(CLASSES, CENTERS))
     # every cell filled with a real candidate path from that exact cell
     for (klass, center), path in selected.items():
@@ -92,11 +89,9 @@ def test_select_montage_tiles_restricts_to_requested_pair() -> None:
         classes=("normal", "tumor", "other"),
         centers=("RUMC", "UMCU", "CWZ"),
     )
-    selected = dm.select_montage_tiles(
-        manifest, classes=CLASSES, centers=CENTERS, seed=0
-    )
+    selected = dm.select_montage_tiles(manifest, classes=CLASSES, centers=CENTERS, seed=0)
     assert set(selected.keys()) == set(product(CLASSES, CENTERS))
-    for (klass, center) in selected:
+    for klass, center in selected:
         assert klass in CLASSES
         assert center in CENTERS
 
@@ -114,13 +109,9 @@ def test_select_montage_tiles_missing_cell_raises() -> None:
 def test_select_montage_tiles_requires_two_distinct_values() -> None:
     manifest = _synthetic_manifest()
     with pytest.raises(ValueError, match="2 distinct classes"):
-        dm.select_montage_tiles(
-            manifest, classes=("normal", "normal"), centers=CENTERS, seed=0
-        )
+        dm.select_montage_tiles(manifest, classes=("normal", "normal"), centers=CENTERS, seed=0)
     with pytest.raises(ValueError, match="2 distinct centers"):
-        dm.select_montage_tiles(
-            manifest, classes=CLASSES, centers=("RUMC", "RUMC"), seed=0
-        )
+        dm.select_montage_tiles(manifest, classes=CLASSES, centers=("RUMC", "RUMC"), seed=0)
 
 
 def test_select_montage_tiles_missing_column_raises() -> None:
@@ -161,9 +152,7 @@ def test_spec_filtered_applies_subset_and_grid() -> None:
     assert set(filtered["subset"].unique()) == {"BLCA_BRCA"}
     assert set(filtered["label"].unique()) == {"BLCA", "BRCA"}
     assert set(filtered["medical_center"].unique()) == {"MDA", "UPitt"}
-    selected = dm.select_montage_tiles(
-        filtered, classes=spec.classes, centers=spec.centers, seed=0
-    )
+    selected = dm.select_montage_tiles(filtered, classes=spec.classes, centers=spec.centers, seed=0)
     assert set(selected.keys()) == {
         ("BLCA", "MDA"),
         ("BLCA", "UPitt"),

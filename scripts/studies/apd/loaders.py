@@ -32,6 +32,12 @@ import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>
 from croma.downstream import pathorob_schedule  # noqa: E402
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
+#: Column naming the independence unit in the APD metadata CSVs. croma's canonical
+#: manifests call this ``group_id``, but the APD metadata is PathoROB's own published
+#: file -- joined against the source manifests on ``(slide_id, patch_id)`` -- and
+#: renaming a source-dataset column is out of scope for the manifest contract.
+APD_METADATA_GROUP_COLUMN = "slide_id"
+
 # ---------------------------------------------------------------------------
 # APD computation config (used by apd_experiment.py)
 # ---------------------------------------------------------------------------
@@ -256,6 +262,11 @@ class Cohort(NamedTuple):
     schedule addresses cells by position, so the names are mapped here, once. The OOD rows
     ride along as a test set the sweep scores but never trains on. ``group_ids`` is what
     Tolkach's case arrangement reads; it is the ID rows' own column, in the same order.
+
+    The independence unit is spelled ``group_id`` in croma's canonical manifests but read
+    here out of the APD metadata's ``slide_id``: those CSVs are PathoROB's published files,
+    joined against the source manifests on ``(slide_id, patch_id)``, and renaming a
+    source-dataset column is out of scope for the manifest contract.
     """
 
     embeddings: np.ndarray
@@ -296,7 +307,7 @@ def load_data(model, dataset):
         labels=np.array([bio.index(b) for b in md_id["biological_class"]]),
         ood_embeddings=emb[md_ood.index.to_numpy()],
         ood_labels=np.array([bio.index(b) for b in md_ood["biological_class"]]),
-        group_ids=list(md_id["group_id"]),
+        group_ids=list(md_id[APD_METADATA_GROUP_COLUMN]),
     )
 
 

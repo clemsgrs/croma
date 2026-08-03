@@ -17,7 +17,6 @@ if str(SCRIPTS) not in sys.path:
 
 import run_config as rc
 
-
 # ------------------------------------------------------------------------------- grids
 
 
@@ -29,7 +28,20 @@ def test_dense_grid_is_every_integer() -> None:
 def test_sparse_grid_matches_pathorob() -> None:
     """PathoROB's k_max is exclusive in the arange tail: k_max=100 tops out at 91."""
     assert rc.resolve_sweep_k_values(100, "sparse") == [
-        1, 3, 5, 7, 9, 11, 21, 31, 41, 51, 61, 71, 81, 91
+        1,
+        3,
+        5,
+        7,
+        9,
+        11,
+        21,
+        31,
+        41,
+        51,
+        61,
+        71,
+        81,
+        91,
     ]
 
 
@@ -83,10 +95,17 @@ def test_replay_requires_the_grid() -> None:
 
 def test_replay_renders_floats_readably() -> None:
     """A replayed command line should read like one a human would have typed."""
-    args = rc.replay_args({
-        "replay": {"k_max": 100, "k_grid": "sparse", "tau": "auto",
-                   "croma_alpha": 0.1, "croma_k_growth_factor": 2.0},
-    })
+    args = rc.replay_args(
+        {
+            "replay": {
+                "k_max": 100,
+                "k_grid": "sparse",
+                "tau": "auto",
+                "croma_alpha": 0.1,
+                "croma_k_growth_factor": 2.0,
+            },
+        }
+    )
     assert args[args.index("--croma-alpha") + 1] == "0.1"
     assert args[args.index("--croma-k-growth-factor") + 1] == "2.0"
 

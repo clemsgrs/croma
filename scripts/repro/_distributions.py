@@ -17,6 +17,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
@@ -108,14 +109,24 @@ def load(root: Path | None = None, entry: ResultsTable = CAMELYON) -> Distributi
 
     Defaults to Camelyon (the main-text ridgeline); pass ``entry`` for one of the
     ``SUPP_BENCHMARKS``. Medians and LTM come from ``metrics.csv`` (the same columns the
-    results table prints); F(0) is the fraction of per-sample margins below zero, read from
-    ``per_sample_metrics.csv`` at the headline radius -- the column the freshness fixtures
-    also write.
+    results table prints); F(0) is the fraction of defined per-sample margins at or below
+    zero, read from ``per_sample_metrics.csv`` at the headline radius -- the column the
+    freshness fixtures also write.
     """
     root = Path(root) if root is not None else HERE.parents[1]
     metrics = pd.read_csv(root / entry.metrics_rel)
     per_sample = pd.read_csv(root / entry.per_sample_rel)
     return build(metrics, per_sample)
+
+
+def _f0_closed(s: pd.Series) -> float:
+    """F(0) over the defined occurrences, with the boundary closed.
+
+    An exact zero is confounder-dominant and non-finite values leave the denominator --
+    the same definition ``CRoMaResult.f0`` computes inside the library.
+    """
+    defined = s[np.isfinite(s)]
+    return float((defined <= 0.0).mean())
 
 
 def build(metrics: pd.DataFrame, per_sample: pd.DataFrame) -> Distributions:
@@ -125,7 +136,7 @@ def build(metrics: pd.DataFrame, per_sample: pd.DataFrame) -> Distributions:
     # stored as the raw distance ratio (neutral at 1, never negative) is not read as 0% fragile.
     sample_col = f"croma_m{int(CROMA_HEADLINE_M)}"
     per_sample = per_sample.assign(_margin=croma_as_margin(per_sample[sample_col]))
-    f0 = per_sample.groupby("model")["_margin"].apply(lambda s: float((s < 0.0).mean()))
+    f0 = per_sample.groupby("model")["_margin"].apply(_f0_closed)
 
     models = [
         Model(

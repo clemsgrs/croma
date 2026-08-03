@@ -293,11 +293,17 @@ def _pvalue(pvalue: float, floor: float = 0.01) -> str:
 
 
 def _frac_negative(sample_path: str) -> float:
-    """F(0): the confounder-dominant fraction, read off a model's per-sample CRoMa."""
+    """F(0): the confounder-dominant fraction, read off a model's per-sample CRoMa.
+
+    Closed boundary (an exact zero is confounder-dominant) over the defined occurrences
+    only -- the definition ``CRoMaResult.f0`` computes inside the library.
+    """
     import numpy as np
 
     values = pd.Series(np.load(sample_path).astype(float))
-    return float((_to_margin(values, _detect_scale(values)) < 0.0).mean())
+    margin = _to_margin(values, _detect_scale(values))
+    defined = margin[np.isfinite(margin)]
+    return float((defined <= 0.0).mean())
 
 
 def _probe_macros(prefix: str, df: pd.DataFrame) -> tuple[list[str], list[float]]:

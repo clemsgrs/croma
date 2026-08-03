@@ -20,6 +20,7 @@ import argparse
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, croma_as_margin, scriptsize_ci
@@ -79,11 +80,22 @@ def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
 
 
 def _load_frac_neg(metrics_csv: Path, headline_m: int) -> dict[str, float]:
-    """Per-model fraction of confounder-dominant samples (CRoMa < 0 at the headline m)."""
+    """Per-model F(0) at the headline m: the confounder-dominant fraction.
+
+    The boundary is closed -- an exact zero is confounder-dominant -- matching
+    ``CRoMaResult.f0``, the canonical definition the library computes. Undefined
+    (non-finite) occurrences leave the denominator, as they do before the tail
+    statistics.
+    """
     ps = pd.read_csv(metrics_csv.parent / "per_sample_metrics.csv",
                      usecols=["model", f"croma_m{int(headline_m)}"])
     col = f"croma_m{int(headline_m)}"
-    return ps.groupby("model")[col].apply(lambda s: float((s < 0).mean())).to_dict()
+
+    def _f0(s: pd.Series) -> float:
+        defined = s[np.isfinite(s)]
+        return float((defined <= 0.0).mean())
+
+    return ps.groupby("model")[col].apply(_f0).to_dict()
 
 
 def load_frame(metrics_csv: Path) -> pd.DataFrame:
@@ -192,12 +204,12 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
         r" Columns: biological and confounder $k$-NN balanced accuracy (bio bacc and conf "
         rf"bacc; confounder: {confounder}); pooled \code{{RI}} "
         r"and \code{MaRI}; $\Delta{=}\code{MaRI}-\code{RI}$; median \code{CRoMa}; $F(0)$, the "
-        r"fraction with $\mcode{CRoMa}<0$; $\mcode{LTM}_{10}$, the mean of the lowest decile; "
+        r"fraction with $\mcode{CRoMa}\le0$; $\mcode{LTM}_{10}$, the mean of the lowest decile; "
         r"and support, the fraction of samples effectively contributing to \code{RI}/\code{MaRI}. "
         r"Bold denotes the best value in each score column (conf bacc and $\Delta$ are diagnostics)."
     )
     ci = (
-        r" \code{CRoMa} brackets are 95\% slide-level cluster-bootstrap confidence intervals on "
+        r" \code{CRoMa} brackets are 95\% group-level cluster-bootstrap confidence intervals on "
         r"the pooled median (Supplementary Table~\ref{tab:bootstrap-uncertainty})."
         if with_ci
         else ""

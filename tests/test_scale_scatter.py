@@ -19,7 +19,6 @@ if str(FIGURES) not in sys.path:
 
 import scale_scatter as ss  # noqa: E402
 
-
 DATASETS = ("Camelyon", "TCGA-4x4", "Tolkach")
 
 
@@ -30,14 +29,33 @@ def _synthetic_metadata() -> pd.DataFrame:
     the parser is exercised, not bypassed.
     """
     rows = [
-        dict(model="Alpha", panel="tile", panel_order=1,
-             params="$632$M", n_wsis="$3.1$M", regime="vision-only"),
-        dict(model="Beta", panel="tile", panel_order=2,
-             params="$86$M", n_wsis="$21.4$k", regime="vision--language"),
-        dict(model="Gamma", panel="tile", panel_order=3,
-             params="n/d", n_wsis="$100$k", regime="VLFM"),
-        dict(model="SlideOnly", panel="slide", panel_order=1,
-             params="$100$M", n_wsis="$50$k", regime="vision-only"),
+        dict(
+            model="Alpha",
+            panel="tile",
+            panel_order=1,
+            params="$632$M",
+            n_wsis="$3.1$M",
+            regime="vision-only",
+        ),
+        dict(
+            model="Beta",
+            panel="tile",
+            panel_order=2,
+            params="$86$M",
+            n_wsis="$21.4$k",
+            regime="vision--language",
+        ),
+        dict(
+            model="Gamma", panel="tile", panel_order=3, params="n/d", n_wsis="$100$k", regime="VLFM"
+        ),
+        dict(
+            model="SlideOnly",
+            panel="slide",
+            panel_order=1,
+            params="$100$M",
+            n_wsis="$50$k",
+            regime="vision-only",
+        ),
     ]
     return pd.DataFrame(rows)
 
