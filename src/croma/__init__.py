@@ -7,7 +7,7 @@ from croma.metrics.ri import RobustnessIndex
 RI = RobustnessIndex
 MaRI = MarginAwareRobustnessIndex
 CRoMa = CrossConfounderRobustnessMargin
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 __all__ = [
     "RI",
