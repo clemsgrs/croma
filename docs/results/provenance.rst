@@ -24,7 +24,8 @@ What is committed
    * - ``results/<cohort>.csv``
      - One row per encoder, holding exactly the columns the cohort pages render.
    * - ``results/cross_benchmark.csv``
-     - The two mean ranks, the frontier flag, and the three per-cohort margins.
+     - The two mean ranks and their average, the frontier flag, and the three per-cohort
+       margins.
    * - ``results/distributions.json``
      - 200-bin histograms of per-sample ``CRoMa``, per encoder and cohort. What the
        explorer reads.

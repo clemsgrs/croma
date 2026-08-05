@@ -152,7 +152,8 @@ def test_aggregate_ranks_are_the_mean_of_the_per_cohort_ranks():
     assert out.loc["B", "croma_rank"] == pytest.approx(2.0)
 
 
-def test_aggregate_sorts_by_croma_rank_then_tail_rank():
+def test_aggregate_breaks_a_mean_rank_tie_on_the_croma_rank():
+    """A and B both mean 1.5 (1st/2nd against 2nd/1st); the margin rank orders them."""
     per_cohort = {
         "one": _cohort(["A", "B", "C"], [0.9, 0.5, 0.1], [-0.5, -0.1, -0.9]),
         "two": _cohort(["A", "B", "C"], [0.9, 0.5, 0.1], [-0.5, -0.1, -0.9]),
@@ -181,19 +182,61 @@ def test_aggregate_marks_the_undominated_set_and_nothing_else():
     assert not out.loc["dominated", "on_frontier"]
 
 
-def test_aggregate_has_no_combined_rank_column():
-    """The mean of a margin rank and a tail rank is the composite scalar the two-axis
-    framing exists to refuse. A column named for it must never appear."""
+def test_aggregate_publishes_the_mean_rank_beside_the_two_it_averages():
+    """The aggregate rank is a reading order, so it ships with its own inputs.
+
+    Publishing it alone would make it a composite scalar -- a number whose disagreement
+    between margin and tail the reader cannot recover. Both columns it averages stay in
+    the same row.
+    """
     out = er.build_aggregate_table({"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
     assert list(out.columns) == [
         "model",
         "is_control",
         "on_frontier",
+        "mean_rank",
         "croma_rank",
         "ltm_rank",
         "croma_one",
     ]
-    assert not any("mean" in c or "combined" in c or c == "rank" for c in out.columns)
+
+
+def test_mean_rank_is_re_derivable_from_the_two_published_ranks():
+    """Averaged from the *published* ranks, not the raw ones, so a reader doing the
+    arithmetic on the two visible columns gets the third back exactly. Averaging the raw
+    ranks would put the column off its own inputs for exactly the encoders whose two axes
+    disagree -- the rows the aggregate is worth checking on.
+
+    Exact rather than to-within-rounding because ``MEAN_RANK_PRECISION`` carries the extra
+    decimal that halving a three-decimal sum produces.
+    """
+    per_cohort = {
+        # A, B, C fixed on margin; the tail order varies so the tail rank is fractional
+        # and the two axes disagree for B and C.
+        "one": _cohort(["A", "B", "C"], [0.9, 0.5, 0.1], [-0.1, -0.5, -0.9]),
+        "two": _cohort(["A", "B", "C"], [0.9, 0.5, 0.1], [-0.1, -0.9, -0.5]),
+        "three": _cohort(["A", "B", "C"], [0.9, 0.5, 0.1], [-0.1, -0.5, -0.9]),
+    }
+    out = er.build_aggregate_table(per_cohort)
+    assert out["croma_rank"].ne(out["ltm_rank"]).any(), "axes must disagree to be a test"
+    assert out["ltm_rank"].mod(1).ne(0).any(), "a rank must be fractional to be a test"
+    for _, row in out.iterrows():
+        assert row["mean_rank"] == pytest.approx((row["croma_rank"] + row["ltm_rank"]) / 2)
+
+
+def test_aggregate_sorts_by_mean_rank_not_by_either_axis_alone():
+    """``margin_king`` leads on margin and ``allrounder`` on neither, but ``allrounder``
+    has the better mean -- so a table still sorted by ``croma_rank`` would fail this."""
+    per_cohort = {
+        "one": _cohort(
+            ["margin_king", "allrounder", "laggard"],
+            [0.9, 0.5, 0.1],
+            [-0.9, -0.1, -0.5],
+        )
+    }
+    out = er.build_aggregate_table(per_cohort)
+    assert out["model"].tolist() == ["allrounder", "margin_king", "laggard"]
+    assert out["mean_rank"].tolist() == [1.5, 2.0, 2.5]
 
 
 def test_aggregate_drops_a_model_missing_from_a_cohort():
@@ -292,7 +335,7 @@ def test_the_readme_carries_the_generated_results_region():
     readme = (ROOT / "README.md").read_text()
     assert er.README_START in readme and er.README_END in readme
     block = readme.split(er.README_START)[1].split(er.README_END)[0]
-    assert "| Model | CRoMa rank | tail rank |" in block
+    assert "| Model | mean rank | CRoMa rank | tail rank |" in block
 
 
 def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
@@ -300,7 +343,7 @@ def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
     total, and a link to the rest -- is what keeps it a rule rather than a shortlist."""
     block = (ROOT / "README.md").read_text().split(er.README_START)[1]
     total = len(_read_csv("cross_benchmark.csv"))
-    assert f"Top {er.README_TOP} of {total} by CRoMa rank" in block
+    assert f"Top {er.README_TOP} of {total} by mean rank" in block
     assert "/results/" in block
 
 

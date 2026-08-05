@@ -12,24 +12,31 @@ tracked exporter, never transcribed. The method behind them is described in
 
 .. _aggregate-table:
 
-Two rankings, deliberately not one
-----------------------------------
+Two rankings, and an order to read them in
+------------------------------------------
 
 .. aggregate-table::
 
 **Bold** marks the Pareto frontier: the encoders no other encoder beats on *both* rankings
 at once. † marks the natural-image control (see :ref:`the-control` below).
 
-The two rank columns are the mean, across the three cohorts, of that encoder's rank within
-each cohort — by median ``CRoMa`` for the first, by tail severity ``LTM₁₀`` for the second.
-There is no combined column, and that omission is the point. A model can hold a strong
-median margin and still be brittle on a subgroup, and averaging the two ranks into one
-number would hide exactly the failure the tail statistic exists to expose. ``Midnight-12k``
-is the clearest case here: 3rd on median margin, 16th on the tail.
+The ``CRoMa`` and tail rank columns are the mean, across the three cohorts, of that
+encoder's rank within each cohort — by median ``CRoMa`` for the first, by tail severity
+``LTM₁₀`` for the second. The mean rank averages those two, and the table is sorted by it.
 
-So the honest summary of this table is a *set*, not an order. Anything on the frontier is a
-defensible choice; which one you want depends on whether you care more about the typical
-sample or the worst tenth of them.
+That aggregate is a reading order, not a score. It sorts the rows; it does not stand in for
+the two columns it averages, both of which stay in view at the precision it was computed
+from — so it can be re-derived, and so the disagreements it smooths over stay visible in the
+same row. ``Midnight-12k`` and ``UNI2-h`` are the case worth looking at: they tie exactly on
+the mean rank, and they are not similar models. ``Midnight-12k`` is 3rd on median margin and
+16th on the tail; ``UNI2-h`` is middling on the margin and comfortably better on the tail.
+A model can hold a strong median margin and still be brittle on a subgroup, and no single
+number will tell you that — which is why the mean sorts the rows and the two columns beside
+it carry the finding.
+
+So the claim this table makes is still the frontier — a *set*, not an order. Anything on it
+is a defensible choice; which one you want depends on whether you care more about the
+typical sample or the worst tenth of them.
 
 .. themed-figure:: /_static/figures/rank_pareto
    :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
