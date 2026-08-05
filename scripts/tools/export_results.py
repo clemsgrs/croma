@@ -67,6 +67,14 @@ VALUE_PRECISION = 6
 #: for a three-cohort mean and does not pretend to more.
 RANK_PRECISION = 3
 
+#: The aggregate rank halves a sum of two ``RANK_PRECISION`` values, which introduces one
+#: further decimal (2.000 and 2.333 average to 2.1665). Published one digit wider so the
+#: column is exactly the arithmetic mean of the two beside it -- at ``RANK_PRECISION`` the
+#: last digit would depend on whose rounding rule ran, and a reader checking the addition
+#: would find the table off by one in the last place precisely on the rows where the two
+#: axes disagree. Both are rendered to one decimal, so this costs nothing on the page.
+MEAN_RANK_PRECISION = RANK_PRECISION + 1
+
 
 @dataclass(frozen=True)
 class Cohort:
@@ -122,12 +130,18 @@ def _cohort_column(slug: str) -> str:
     return "croma_" + slug.replace("-", "_")
 
 
-#: Published columns, in order, for the aggregate. The two ranks come before the values
-#: they summarise, because the ranks are the reason the table exists.
+#: Published columns, in order, for the aggregate. The ranks come before the values they
+#: summarise, because the ranks are the reason the table exists, and the aggregate rank
+#: comes before the two it averages, because it is the order the table is sorted in.
 def aggregate_columns(slugs) -> list[str]:
-    return ["model", "is_control", "on_frontier", "croma_rank", "ltm_rank"] + [
-        _cohort_column(slug) for slug in slugs
-    ]
+    return [
+        "model",
+        "is_control",
+        "on_frontier",
+        "mean_rank",
+        "croma_rank",
+        "ltm_rank",
+    ] + [_cohort_column(slug) for slug in slugs]
 
 
 # --------------------------------------------------------------------------------------
@@ -201,16 +215,29 @@ def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """The cross-cohort aggregate: two mean ranks and the three margins behind them.
+    """The cross-cohort aggregate: three ranks and the three margins behind them.
 
     Each model is ranked within every cohort by median CRoMa (1 = highest margin) and by
     LTM10 (1 = mildest tail), and the published ranks are the means of those across
-    cohorts. There is deliberately **no combined rank**: the mean of a margin rank and a
-    tail rank is exactly the composite scalar the manuscript's two-axis framing exists to
-    refuse, and the site must not quietly elect a winner the paper declines to.
+    cohorts. ``mean_rank`` averages those two, and the table is sorted by it.
 
-    ``on_frontier`` marks the encoders no other encoder beats on both axes at once. That
-    is the honest summary of a two-axis comparison -- a set, not an order.
+    That aggregate rank is a reading order, not a metric, and the distinction is what
+    makes it publishable next to a two-axis framing that refuses a composite *score*. A
+    composite score fuses two quantities into a third whose inputs the reader cannot
+    recover; this column is the arithmetic mean of the two columns beside it, both
+    published at the precision it was computed from, so any reader can re-derive it and
+    see the disagreement it averages over. On the published panel Midnight-12k (3rd on
+    margin, 15.7th on the tail) and UNI2-h (10.7th and 8th) tie exactly on the mean, and
+    the two columns are what tell those apart -- so the aggregate orders the table without
+    being able to hide what the tail statistic exists to expose.
+
+    ``on_frontier`` still marks the encoders no other encoder beats on both axes at once,
+    and it, not the sort order, remains the claim the table makes: a set, not an order.
+
+    Averaged from the *published* ranks rather than the raw ones, so the reader's
+    arithmetic on the two visible columns reproduces the third to the precision all three
+    are printed at. Averaging the raw ranks would leave the column half a digit off its own
+    inputs for exactly the encoders whose two axes disagree -- the rows it matters for.
 
     The natural-image control takes part in the ranking here, where the manuscript's
     version of this aggregate drops it first. That is a deliberate divergence: the site
@@ -253,9 +280,10 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     for slug in per_cohort:
         out[_cohort_column(slug)] = croma[slug].to_numpy()
     out[["croma_rank", "ltm_rank"]] = out[["croma_rank", "ltm_rank"]].round(RANK_PRECISION)
+    out["mean_rank"] = ((out["croma_rank"] + out["ltm_rank"]) / 2).round(MEAN_RANK_PRECISION)
     return (
         out[aggregate_columns(per_cohort)]
-        .sort_values(["croma_rank", "ltm_rank", "model"], kind="stable")
+        .sort_values(["mean_rank", "croma_rank", "model"], kind="stable")
         .reset_index(drop=True)
         .round(VALUE_PRECISION)
     )
@@ -394,7 +422,9 @@ def render_readme(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
 def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
     labels = {_cohort_column(slug): info["label"] for slug, info in meta.items()}
     cohort_columns = [c for c in aggregate.columns if c in labels]
-    headers = ["Model", "CRoMa rank", "tail rank"] + [labels[c] for c in cohort_columns]
+    headers = ["Model", "mean rank", "CRoMa rank", "tail rank"] + [
+        labels[c] for c in cohort_columns
+    ]
 
     lines = [
         "",
@@ -405,17 +435,23 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
         name = f"**{row['model']}**" if row["on_frontier"] else str(row["model"])
         if row["is_control"]:
             name += " †"
-        cells = [name, f"{row['croma_rank']:.1f}", f"{row['ltm_rank']:.1f}"]
+        cells = [
+            name,
+            f"{row['mean_rank']:.1f}",
+            f"{row['croma_rank']:.1f}",
+            f"{row['ltm_rank']:.1f}",
+        ]
         cells += [f"{row[c]:.2f}" for c in cohort_columns]
         lines.append("| " + " | ".join(cells) + " |")
 
     lines += [
         "",
-        f"Top {README_TOP} of {len(aggregate)} by CRoMa rank, over {len(cohort_columns)} tile "
-        f"cohorts. Each rank is the mean of that encoder's within-cohort ranks — by median "
-        f"CRoMa, and by tail severity LTM₁₀. **Bold** marks the Pareto frontier: the encoders "
-        f"no other encoder beats on both at once. There is deliberately no combined rank, "
-        f"because a strong median can hide a brittle tail.",
+        f"Top {README_TOP} of {len(aggregate)} by mean rank, over {len(cohort_columns)} tile "
+        f"cohorts. The CRoMa and tail ranks are the means of that encoder's within-cohort "
+        f"ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages "
+        f"those two. It orders the table; it does not replace them, because a strong median "
+        f"can hide a brittle tail and only the two columns show that. **Bold** marks the "
+        f"Pareto frontier: the encoders no other encoder beats on both axes at once.",
         "",
         f"📊 **[Full panel, per-cohort detail and the distributions]({DOCS}/results/)**",
         "",

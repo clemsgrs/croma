@@ -65,7 +65,10 @@ COHORT_COLUMNS: tuple[Column, ...] = (
     Column("support", "support", "{:.1%}", "max"),
 )
 
+#: ``mean_rank`` leads because the table is sorted by it, and the two ranks it averages
+#: follow immediately, so the aggregate is always read next to its own inputs.
 AGGREGATE_RANKS: tuple[Column, ...] = (
+    Column("mean_rank", "mean rank", "{:.1f}", "min"),
     Column("croma_rank", "``CRoMa`` rank", "{:.1f}", "min"),
     Column("ltm_rank", "tail rank", "{:.1f}", "min"),
 )
@@ -164,7 +167,7 @@ class ResultsTable(_TableDirective):
 
 
 class AggregateTable(_TableDirective):
-    """The cross-cohort aggregate: two ranks, then the margins behind them.
+    """The cross-cohort aggregate: three ranks, then the margins behind them.
 
     ``:top:`` truncates to the first *n* rows. The truncation is a rule, not a selection,
     and the page that uses it has to say so -- which is why the count lands in the table
@@ -194,9 +197,9 @@ class AggregateTable(_TableDirective):
         ]
         headers = ["Model", *(c.header for c in columns)]
         default = (
-            f"Top {len(shown)} of {total} by ``CRoMa`` rank"
+            f"Top {len(shown)} of {total} by mean rank"
             if top and top < total
-            else f"All {total} encoders, by ``CRoMa`` rank"
+            else f"All {total} encoders, by mean rank"
         )
         return self._render(
             _list_table(headers, body, name=self.options.get("caption", default))
