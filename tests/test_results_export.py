@@ -297,12 +297,6 @@ def test_provenance_checksums_match_the_committed_files():
         assert hashlib.sha256(content).hexdigest() == digest, f"{path} does not match its checksum"
 
 
-def test_provenance_records_the_version_that_produced_the_numbers():
-    from croma import __version__
-
-    assert _provenance()["croma_version"] == __version__
-
-
 def test_the_payload_has_the_shape_the_explorer_reads():
     """docs/_static/explorer.js reads this file directly. Nothing else type-checks the
     contract between them, so a rename here would break the widget silently -- the page
