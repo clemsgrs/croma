@@ -37,7 +37,7 @@
   },
   "files": {
     "results/camelyon.csv": "ea585092ed5aca587ade1ddf7993d251e3cfd0c35bd6943c57495f37c78ea946",
-    "results/cross_benchmark.csv": "cae0a1a9cc8f226514ca3ef70e19994a6e0497618b3a802fe5960dbf21b3fc31",
+    "results/cross_benchmark.csv": "3b9598e4d26c43a27c53ab65094f46c588fd1fe844df57c522b3db83506a4302",
     "results/distributions.json": "6b8765b35eca3780de1e7bcfe83fdde89f2fdea53f2bd7809cf42ca327963613",
     "results/tcga-4x4.csv": "d27636e15964aca6d51d625f77426cbe9446f003ab7ac6c09d340ca82ed382e8",
     "results/tolkach-esca.csv": "c3a4993df1c9b55e7f7f65affd9b90b23fa16ddabe0db901f6cb3ff422e6ad06"

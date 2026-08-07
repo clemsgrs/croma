@@ -52,6 +52,38 @@ class Column:
     fmt: str
     best: str | None = None
 
+    @property
+    def keys(self) -> tuple[str, ...]:
+        return (self.key,)
+
+    def render(self, row: dict[str, str], best: dict[str, float | None]) -> str:
+        return _value(row, self.key, self.fmt, best[self.key])
+
+
+@dataclass(frozen=True)
+class PairColumn:
+    """A cohort cell carrying both quantities its two ranks are built from.
+
+    ``0.19/-0.05`` reads as median ``CRoMa`` over LTM10. They share a cell rather than
+    taking two columns because they are one cohort's answer, and because the pairing is
+    the point the whole aggregate makes: a strong median beside a severe tail is the case
+    the table exists to keep visible, and a reader scanning margins alone would miss it.
+    """
+
+    croma_key: str
+    ltm_key: str
+    header: str
+    fmt: str = "{:.2f}"
+
+    @property
+    def keys(self) -> tuple[str, ...]:
+        return (self.croma_key, self.ltm_key)
+
+    def render(self, row: dict[str, str], best: dict[str, float | None]) -> str:
+        return "/".join(
+            _value(row, key, self.fmt, best[key]) for key in (self.croma_key, self.ltm_key)
+        )
+
 
 COHORT_COLUMNS: tuple[Column, ...] = (
     Column("bio_bacc", "bio bacc", "{:.3f}", "max"),
@@ -89,16 +121,22 @@ def _is_true(value: str) -> bool:
     return str(value).strip().lower() == "true"
 
 
-def _cell(row: dict[str, str], column: Column, best: float | None) -> str:
-    value = float(row[column.key])
-    text = column.fmt.format(value)
+def _value(row: dict[str, str], key: str, fmt: str, best: float | None) -> str:
+    value = float(row[key])
+    text = fmt.format(value)
     if best is not None and abs(value - best) < 1e-9:
         return f"**{text}**"
     return text
 
 
+def _render_row(row: dict[str, str], columns, best: dict[str, float | None]) -> list[str]:
+    """One model's cells. The control is never bolded, whatever it happens to lead on."""
+    blank = dict.fromkeys(best)
+    return [column.render(row, blank if _is_true(row["is_control"]) else best) for column in columns]
+
+
 def _best_values(rows: list[dict[str, str]], columns) -> dict[str, float | None]:
-    """The bolded value per scored column, over the pathology encoders only.
+    """The bolded value per scored key, over the pathology encoders only.
 
     The control is excluded from the comparison, not merely from being bolded: it is a
     floor rather than a competitor, and on at least one cohort it holds the highest
@@ -108,11 +146,13 @@ def _best_values(rows: list[dict[str, str]], columns) -> dict[str, float | None]
     ranked = [r for r in rows if not _is_true(r["is_control"])]
     best: dict[str, float | None] = {}
     for column in columns:
-        if column.best is None or not ranked:
-            best[column.key] = None
-            continue
-        values = [float(r[column.key]) for r in ranked]
-        best[column.key] = min(values) if column.best == "min" else max(values)
+        direction = getattr(column, "best", "max")
+        for key in column.keys:
+            if direction is None or not ranked:
+                best[key] = None
+                continue
+            values = [float(r[key]) for r in ranked]
+            best[key] = min(values) if direction == "min" else max(values)
     return best
 
 
@@ -154,20 +194,13 @@ class ResultsTable(_TableDirective):
         rows = _read(f"{slug}.csv")
         best = _best_values(rows, COHORT_COLUMNS)
         headers = ["Model", *(c.header for c in COHORT_COLUMNS)]
-        body = [
-            [_model_cell(row)]
-            + [
-                _cell(row, column, None if _is_true(row["is_control"]) else best[column.key])
-                for column in COHORT_COLUMNS
-            ]
-            for row in rows
-        ]
+        body = [[_model_cell(row), *_render_row(row, COHORT_COLUMNS, best)] for row in rows]
         title = self.options.get("caption", f"{slug} — {len(rows)} encoders")
         return self._render(_list_table(headers, body, name=title))
 
 
 class AggregateTable(_TableDirective):
-    """The cross-cohort aggregate: three ranks, then the margins behind them.
+    """The cross-cohort aggregate: three ranks, then each cohort's margin/tail pair.
 
     ``:top:`` truncates to the first *n* rows. The truncation is a rule, not a selection,
     and the page that uses it has to say so -- which is why the count lands in the table
@@ -178,9 +211,10 @@ class AggregateTable(_TableDirective):
 
     def run(self) -> list[nodes.Node]:
         rows = _read("cross_benchmark.csv")
-        cohorts = [k for k in rows[0] if k.startswith("croma_") and k not in {c.key for c in AGGREGATE_RANKS}]
+        ranks = {c.key for c in AGGREGATE_RANKS}
+        cohorts = [k.removeprefix("croma_") for k in rows[0] if k.startswith("croma_") and k not in ranks]
         columns = list(AGGREGATE_RANKS) + [
-            Column(key, _cohort_header(key), "{:.2f}", "max") for key in cohorts
+            PairColumn(f"croma_{slug}", f"ltm_{slug}", _cohort_header(slug)) for slug in cohorts
         ]
         best = _best_values(rows, columns)
 
@@ -188,10 +222,9 @@ class AggregateTable(_TableDirective):
         top = self.options.get("top")
         shown = rows[:top] if top else rows
         body = [
-            [_model_cell(row, emphasise=_is_true(row["on_frontier"]))]
-            + [
-                _cell(row, column, None if _is_true(row["is_control"]) else best[column.key])
-                for column in columns
+            [
+                _model_cell(row, emphasise=_is_true(row["on_frontier"])),
+                *_render_row(row, columns, best),
             ]
             for row in shown
         ]
@@ -207,8 +240,8 @@ class AggregateTable(_TableDirective):
 
 
 def _cohort_header(key: str) -> str:
-    """``croma_tcga_4x4`` -> ``TCGA-4×4``. The CSV column carries the cohort slug."""
-    slug = key.removeprefix("croma_").replace("_", "-")
+    """``tcga_4x4`` -> ``TCGA-4×4``. The CSV column carries the cohort slug."""
+    slug = key.replace("_", "-")
     special = {"tcga-4x4": "TCGA-4×4", "tolkach-esca": "Tolkach-ESCA", "camelyon": "Camelyon"}
     return special.get(slug, slug)
 

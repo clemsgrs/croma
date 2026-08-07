@@ -130,9 +130,16 @@ def _cohort_column(slug: str) -> str:
     return "croma_" + slug.replace("-", "_")
 
 
+def _ltm_column(slug: str) -> str:
+    return "ltm_" + slug.replace("-", "_")
+
+
 #: Published columns, in order, for the aggregate. The ranks come before the values they
 #: summarise, because the ranks are the reason the table exists, and the aggregate rank
 #: comes before the two it averages, because it is the order the table is sorted in.
+#: Each cohort then contributes both of the quantities its two ranks are built from,
+#: adjacent -- a cohort's median margin is not readable without the tail beside it, which
+#: is the whole reason the aggregate refuses to collapse the two axes into one.
 def aggregate_columns(slugs) -> list[str]:
     return [
         "model",
@@ -141,7 +148,7 @@ def aggregate_columns(slugs) -> list[str]:
         "mean_rank",
         "croma_rank",
         "ltm_rank",
-    ] + [_cohort_column(slug) for slug in slugs]
+    ] + [column(slug) for slug in slugs for column in (_cohort_column, _ltm_column)]
 
 
 # --------------------------------------------------------------------------------------
@@ -215,7 +222,7 @@ def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
-    """The cross-cohort aggregate: three ranks and the three margins behind them.
+    """The cross-cohort aggregate: three ranks, and each cohort's margin and tail behind them.
 
     Each model is ranked within every cohort by median CRoMa (1 = highest margin) and by
     LTM10 (1 = mildest tail), and the published ranks are the means of those across
@@ -279,6 +286,7 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
     for slug in per_cohort:
         out[_cohort_column(slug)] = croma[slug].to_numpy()
+        out[_ltm_column(slug)] = ltm[slug].to_numpy()
     out[["croma_rank", "ltm_rank"]] = out[["croma_rank", "ltm_rank"]].round(RANK_PRECISION)
     out["mean_rank"] = ((out["croma_rank"] + out["ltm_rank"]) / 2).round(MEAN_RANK_PRECISION)
     return (
@@ -420,10 +428,13 @@ def render_readme(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
 
 
 def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
+    # Each cohort shows the pair its two ranks were taken over, `CRoMa/LTM10`, exactly as
+    # the site does. The margin alone would leave the caption's own point -- that a strong
+    # median can hide a brittle tail -- unillustrated in the table beneath it.
     labels = {_cohort_column(slug): info["label"] for slug, info in meta.items()}
     cohort_columns = [c for c in aggregate.columns if c in labels]
     headers = ["Model", "mean rank", "CRoMa rank", "tail rank"] + [
-        labels[c] for c in cohort_columns
+        f"{labels[c]}<br>CRoMa/LTM₁₀" for c in cohort_columns
     ]
 
     lines = [
@@ -441,7 +452,10 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
             f"{row['croma_rank']:.1f}",
             f"{row['ltm_rank']:.1f}",
         ]
-        cells += [f"{row[c]:.2f}" for c in cohort_columns]
+        cells += [
+            f"{row[c]:.2f}/{row[_ltm_column(c.removeprefix('croma_'))]:.2f}"
+            for c in cohort_columns
+        ]
         lines.append("| " + " | ".join(cells) + " |")
 
     lines += [
@@ -450,7 +464,8 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
         f"cohorts. The CRoMa and tail ranks are the means of that encoder's within-cohort "
         f"ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages "
         f"those two. It orders the table; it does not replace them, because a strong median "
-        f"can hide a brittle tail and only the two columns show that. **Bold** marks the "
+        f"can hide a brittle tail and only the two columns show that — which is why each "
+        f"cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the "
         f"Pareto frontier: the encoders no other encoder beats on both axes at once.",
         "",
         f"📊 **[Full panel, per-cohort detail and the distributions]({DOCS}/results/)**",

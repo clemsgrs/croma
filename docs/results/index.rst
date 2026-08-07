@@ -23,6 +23,8 @@ at once. † marks the natural-image control (see :ref:`the-control` below).
 The ``CRoMa`` and tail rank columns are the mean, across the three cohorts, of that
 encoder's rank within each cohort — by median ``CRoMa`` for the first, by tail severity
 ``LTM₁₀`` for the second. The mean rank averages those two, and the table is sorted by it.
+Each cohort column then shows what those ranks were taken over, in the same order:
+median ``CRoMa``/``LTM₁₀`` on that cohort.
 
 That aggregate is a reading order, not a score. It sorts the rows; it does not stand in for
 the two columns it averages, both of which stay in view at the precision it was computed

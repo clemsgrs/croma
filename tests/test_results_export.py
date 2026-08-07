@@ -198,7 +198,23 @@ def test_aggregate_publishes_the_mean_rank_beside_the_two_it_averages():
         "croma_rank",
         "ltm_rank",
         "croma_one",
+        "ltm_one",
     ]
+
+
+def test_aggregate_publishes_each_cohort_s_tail_beside_its_margin():
+    """A cohort's median margin ships with the tail its second rank was taken over.
+
+    The site prints the pair in one cell (``0.19/-0.05``), and it can only do that because
+    both are in the row. Publishing the margin alone would leave the table asserting a
+    two-axis reading it could not show per cohort.
+    """
+    out = er.build_aggregate_table(
+        {"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])}
+    ).set_index("model")
+    assert out.loc["A", "croma_one"] == pytest.approx(0.9)
+    assert out.loc["A", "ltm_one"] == pytest.approx(-0.1)
+    assert out.loc["B", "ltm_one"] == pytest.approx(-0.9)
 
 
 def test_mean_rank_is_re_derivable_from_the_two_published_ranks():
@@ -330,6 +346,18 @@ def test_the_readme_carries_the_generated_results_region():
     assert er.README_START in readme and er.README_END in readme
     block = readme.split(er.README_START)[1].split(er.README_END)[0]
     assert "| Model | mean rank | CRoMa rank | tail rank |" in block
+
+
+def test_the_readme_cohort_cells_carry_the_tail_beside_the_margin():
+    """Same pairing as the site: a caption about hidden tails over a margin-only table
+    would leave its own point unillustrated."""
+    aggregate = er.build_aggregate_table(
+        {"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])}
+    )
+    block = er.render_readme(aggregate, {"camelyon": {"label": "Camelyon"}})
+    block = block.split(er.README_START)[1].split(er.README_END)[0]
+    assert "Camelyon<br>CRoMa/LTM₁₀" in block
+    assert "| 0.90/-0.10 |" in block
 
 
 def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
