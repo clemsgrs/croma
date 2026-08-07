@@ -31,7 +31,8 @@ Twenty-one encoders, three cohorts
 **Bold** marks the Pareto frontier — the encoders no other encoder beats on both rankings at
 once. † is a natural-image control. The two ranks are kept apart on purpose: a strong median
 margin can hide a brittle tail, and one combined number would conceal exactly what the tail
-column is for. :doc:`Full panel and per-cohort detail → <results/index>`
+column is for — which is why each cohort cell shows both, median ``CRoMa``/``LTM₁₀``.
+:doc:`Full panel and per-cohort detail → <results/index>`
 
 .. themed-figure:: _static/figures/rank_pareto
    :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
