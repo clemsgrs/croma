@@ -1,8 +1,10 @@
+import json
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts" / "bench"
@@ -118,3 +120,39 @@ def test_embedding_fingerprint_changes_with_sidecar_metadata(tmp_path: Path) -> 
     )
     b = ifp.embedding_fingerprint(emb)
     assert a != b
+
+
+@pytest.mark.parametrize(
+    ("field", "changed_value"),
+    [
+        ("checkpoint_revision", "b" * 40),
+        ("extraction_contract", {"backend": "timm", "extract": "cls_and_patch"}),
+        ("precision", "mixed-float16"),
+        ("manifest_fingerprint", "manifest-v2"),
+        ("batch_size", 16),
+        ("output_dtype", "float64"),
+        ("output_shape", [2, 3]),
+    ],
+)
+def test_embedding_fingerprint_changes_with_metric_relevant_provenance(
+    tmp_path: Path, field: str, changed_value: object
+) -> None:
+    emb = tmp_path / "emb.npy"
+    np.save(emb, np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32))
+    sidecar = emb.with_suffix(".npy.json")
+    provenance = {
+        "checkpoint_revision": "a" * 40,
+        "extraction_contract": {"backend": "timm", "extract": "cls"},
+        "precision": "float32",
+        "manifest_fingerprint": "manifest-v1",
+        "batch_size": 8,
+        "output_dtype": "float32",
+        "output_shape": [2, 2],
+    }
+    sidecar.write_text(json.dumps(provenance), encoding="utf-8")
+    before = ifp.embedding_fingerprint(emb)
+
+    provenance[field] = changed_value
+    sidecar.write_text(json.dumps(provenance), encoding="utf-8")
+
+    assert ifp.embedding_fingerprint(emb) != before

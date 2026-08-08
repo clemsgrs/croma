@@ -1,7 +1,6 @@
 import argparse
 import contextlib
 import dataclasses
-import json
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -9,6 +8,13 @@ import numpy as np
 import pandas as pd
 
 import layout
+from embedding_artifacts import (
+    ArtifactCompatibilityError,
+    EmbeddingArtifactContract,
+    artifact_is_reusable,
+    publish_embedding_artifact,
+    sidecar_path,
+)
 from input_fingerprint import manifest_fingerprint
 
 from croma.alignment import build_embedding_source_manifest
@@ -45,6 +51,11 @@ except ModuleNotFoundError:
 
 from model_registry import ModelSpec, _build_model_registry, _parse_models
 from progress_utils import progress_bar, progress_write, resolve_progress_mode
+
+
+# Bump whenever preprocessing, model invocation, or feature reduction changes in a way
+# that can alter embeddings without changing the ModelSpec fields below.
+_EXTRACTION_CONTRACT_VERSION = 1
 
 
 def _extract_timm_features(out, extract: str):
@@ -100,11 +111,43 @@ def _load_manifest(manifest_path: Path) -> pd.DataFrame:
     return df.copy()
 
 
-def _optional_manifest_fingerprint(manifest: pd.DataFrame) -> str | None:
-    try:
-        return manifest_fingerprint(manifest)
-    except ValueError:
-        return None
+def build_embedding_artifact_contract(
+    *, manifest_path: Path, spec: ModelSpec, batch_size: int, device_arg: str
+) -> EmbeddingArtifactContract:
+    """Build the exact artifact contract expected for one extraction invocation."""
+
+    manifest = _load_manifest(manifest_path)
+    manifest_fp = manifest_fingerprint(manifest)
+    revision = spec.checkpoint_revision
+    if revision is not None and (
+        len(revision) != 40 or any(char not in "0123456789abcdef" for char in revision)
+    ):
+        raise ValueError(
+            f"checkpoint revision must be an immutable 40-character commit SHA, got {revision!r}"
+        )
+    device = _device_from_arg(device_arg)
+    return EmbeddingArtifactContract(
+        checkpoint_revision=revision,
+        extraction_contract={
+            "version": _EXTRACTION_CONTRACT_VERSION,
+            "backend": str(spec.backend),
+            "model_id": str(spec.model_id),
+            "extract": str(spec.extract),
+            "timm_kwargs": dict(spec.timm_kwargs),
+        },
+        precision=(
+            "mixed-float16"
+            if spec.mixed_precision and str(device).startswith("cuda")
+            else "float32"
+        ),
+        manifest_fingerprint=manifest_fp,
+        batch_size=int(batch_size),
+        output_dtype="float32",
+        output_shape=(
+            int(len(manifest)),
+            int(spec.embedding_dim) if spec.embedding_dim is not None else None,
+        ),
+    )
 
 
 def _device_from_arg(device_arg: str):
@@ -129,12 +172,20 @@ class TileDataset:
 def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "timm":
         timm_kwargs = dict(spec.timm_kwargs)
+        model_id = spec.model_id
+        if spec.checkpoint_revision is not None:
+            if model_id.startswith(("hf-hub:", "hf_hub:")):
+                model_id = f"{model_id}@{spec.checkpoint_revision}"
+            else:
+                timm_kwargs["pretrained_cfg_overlay"] = {
+                    "hf_hub_id": f"timm/{model_id}@{spec.checkpoint_revision}"
+                }
         if timm_kwargs.get("mlp_layer") == "SwiGLUPacked":
             timm_kwargs["mlp_layer"] = SwiGLUPacked
         if timm_kwargs.get("act_layer") == "SiLU":
             timm_kwargs["act_layer"] = torch.nn.SiLU
 
-        model = timm.create_model(spec.model_id, pretrained=True, **timm_kwargs)
+        model = timm.create_model(model_id, pretrained=True, **timm_kwargs)
         model.eval().to(device)
         transform = create_transform(
             **resolve_data_config(model.pretrained_cfg, model=model)
@@ -147,10 +198,17 @@ def _load_model_and_transform(spec: ModelSpec, device):
         return model, transform, embed_fn
 
     if spec.backend == "hf_auto":
-        processor = AutoImageProcessor.from_pretrained(
-            spec.model_id, trust_remote_code=True
+        revision_kwargs = (
+            {"revision": spec.checkpoint_revision}
+            if spec.checkpoint_revision is not None
+            else {}
         )
-        model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
+        processor = AutoImageProcessor.from_pretrained(
+            spec.model_id, trust_remote_code=True, **revision_kwargs
+        )
+        model = AutoModel.from_pretrained(
+            spec.model_id, trust_remote_code=True, **revision_kwargs
+        )
         model.eval().to(device)
         transform = lambda img: processor(img, return_tensors="pt")[
             "pixel_values"
@@ -171,7 +229,12 @@ def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "midnight":
         from torchvision.transforms import v2
 
-        model = AutoModel.from_pretrained(spec.model_id)
+        revision_kwargs = (
+            {"revision": spec.checkpoint_revision}
+            if spec.checkpoint_revision is not None
+            else {}
+        )
+        model = AutoModel.from_pretrained(spec.model_id, **revision_kwargs)
         model.eval().to(device)
         transform = v2.Compose(
             [
@@ -197,8 +260,18 @@ def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "conch_v1":
         from conch.open_clip_custom import create_model_from_pretrained
 
+        if spec.checkpoint_revision is None:
+            checkpoint_path = "hf_hub:MahmoodLab/conch"
+        else:
+            from huggingface_hub import hf_hub_download
+
+            checkpoint_path = hf_hub_download(
+                repo_id=spec.model_id,
+                filename="pytorch_model.bin",
+                revision=spec.checkpoint_revision,
+            )
         model, transform = create_model_from_pretrained(
-            "conch_ViT-B-16", "hf_hub:MahmoodLab/conch"
+            "conch_ViT-B-16", checkpoint_path
         )
         model.eval().to(device)
 
@@ -210,7 +283,19 @@ def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "conch_v1_5":
         from trident.patch_encoder_models import encoder_factory
 
-        encoder = encoder_factory(model_name="conch_v15")
+        if spec.checkpoint_revision is None:
+            encoder = encoder_factory(model_name="conch_v15")
+        else:
+            from huggingface_hub import hf_hub_download
+
+            checkpoint_path = hf_hub_download(
+                repo_id=spec.model_id,
+                filename="pytorch_model_vision.bin",
+                revision=spec.checkpoint_revision,
+            )
+            encoder = encoder_factory(
+                model_name="conch_v15", weights_path=checkpoint_path
+            )
         encoder.eval().to(device)
 
         def embed_fn(batch):
@@ -228,8 +313,15 @@ def _load_model_and_transform(spec: ModelSpec, device):
             init_values=1e-5,
             dynamic_img_size=True,
         )
+        revision_kwargs = (
+            {"revision": spec.checkpoint_revision}
+            if spec.checkpoint_revision is not None
+            else {}
+        )
         checkpoint_path = hf_hub_download(
-            repo_id=spec.model_id, filename=_GPFM_CHECKPOINT
+            repo_id=spec.model_id,
+            filename=_GPFM_CHECKPOINT,
+            **revision_kwargs,
         )
         # weights_only=False: GPFM.pth is a pickled checkpoint (executes code on load);
         # safe only from the trusted majiabo/GPFM repo. Do not repoint at untrusted repos.
@@ -256,7 +348,20 @@ def _load_model_and_transform(spec: ModelSpec, device):
         from torchvision.transforms import v2
 
         model = create_model("musk_large_patch16_384").eval()
-        utils.load_model_and_may_interpolate(spec.model_id, model, "model|module", "")
+        if spec.checkpoint_revision is None:
+            checkpoint_path = spec.model_id
+        else:
+            from huggingface_hub import hf_hub_download
+
+            repo_id = spec.model_id.removeprefix("hf_hub:")
+            checkpoint_path = hf_hub_download(
+                repo_id=repo_id,
+                filename="model.safetensors",
+                revision=spec.checkpoint_revision,
+            )
+        utils.load_model_and_may_interpolate(
+            checkpoint_path, model, "model|module", ""
+        )
         model.to(device)
         transform = v2.Compose(
             [
@@ -281,7 +386,14 @@ def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "genbio":
         from torchvision.transforms import v2
 
-        model = AutoModel.from_pretrained(spec.model_id, trust_remote_code=True)
+        revision_kwargs = (
+            {"revision": spec.checkpoint_revision}
+            if spec.checkpoint_revision is not None
+            else {}
+        )
+        model = AutoModel.from_pretrained(
+            spec.model_id, trust_remote_code=True, **revision_kwargs
+        )
         model.eval().to(device)
         transform = v2.Compose(
             [
@@ -317,11 +429,18 @@ def embed_manifest(
     batch_size: int,
     num_workers: int,
     device_arg: str,
+    artifact_contract: EmbeddingArtifactContract | None = None,
     progress_enabled: bool | None = None,
     tile_progress_leave: bool = True,
 ) -> tuple[Path, tuple[int, int]]:
     manifest = _load_manifest(manifest_path)
-    manifest_fp = _optional_manifest_fingerprint(manifest)
+    if artifact_contract is None:
+        artifact_contract = build_embedding_artifact_contract(
+            manifest_path=manifest_path,
+            spec=spec,
+            batch_size=batch_size,
+            device_arg=device_arg,
+        )
     device = _device_from_arg(device_arg)
     progress_on = bool(progress_enabled) if progress_enabled is not None else True
 
@@ -363,27 +482,20 @@ def embed_manifest(
                 all_emb.append(emb.cpu().numpy())
                 pbar.update(len(batch))
     arr = np.concatenate(all_emb, axis=0)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    np.save(output_path, arr)
-
-    sidecar = output_path.with_suffix(output_path.suffix + ".json")
-    sidecar.write_text(
-        json.dumps(
-            {
-                "manifest": str(manifest_path),
-                "manifest_fingerprint": manifest_fp,
-                "n_samples": int(arr.shape[0]),
-                "embedding_dim": int(arr.shape[1]),
-                "backend": spec.backend,
-                "model_id": spec.model_id,
-                "extract": spec.extract,
-                "mixed_precision": bool(spec.mixed_precision),
-            },
-            indent=2,
+    if int(arr.shape[0]) != artifact_contract.output_shape[0] or (
+        artifact_contract.output_shape[1] is not None
+        and int(arr.shape[1]) != artifact_contract.output_shape[1]
+    ):
+        raise ValueError(
+            "extracted embedding shape does not match the expected artifact shape: "
+            f"expected {artifact_contract.output_shape}, got {tuple(arr.shape)}"
         )
-        + "\n",
-        encoding="utf-8",
+    published_contract = dataclasses.replace(
+        artifact_contract,
+        output_shape=(int(arr.shape[0]), int(arr.shape[1])),
     )
+    publish_embedding_artifact(output_path, arr, published_contract)
+    sidecar = sidecar_path(output_path)
     progress_write(
         f"[embed] saved embeddings: {output_path} shape={arr.shape}",
         enabled=progress_on,
@@ -508,18 +620,27 @@ def main():
                 f"\n[embed] === model: {model_name} ===", enabled=progress_enabled
             )
             output = _output_path_in_dir(manifest_path, output_dir, model_name)
-            if output.exists() and not args.force:
-                progress_write(
-                    f"[embed] output exists, skipping: {output}",
-                    enabled=progress_enabled,
-                )
-                statuses.append(
-                    {"model": model_name, "status": "skipped", "output": str(output)}
-                )
-                model_bar.update(1)
-                continue
-
             try:
+                artifact_contract = build_embedding_artifact_contract(
+                    manifest_path=manifest_path,
+                    spec=spec,
+                    batch_size=int(args.batch_size),
+                    device_arg=str(args.device),
+                )
+                if not args.force and artifact_is_reusable(output, artifact_contract):
+                    progress_write(
+                        f"[embed] compatible artifact exists, skipping: {output}",
+                        enabled=progress_enabled,
+                    )
+                    statuses.append(
+                        {
+                            "model": model_name,
+                            "status": "skipped",
+                            "output": str(output),
+                        }
+                    )
+                    continue
+
                 model_bar.set_postfix_str(f"{model_name}:extract")
                 embed_manifest(
                     manifest_path=manifest_path,
@@ -528,6 +649,7 @@ def main():
                     batch_size=int(args.batch_size),
                     num_workers=int(args.num_workers),
                     device_arg=str(args.device),
+                    artifact_contract=artifact_contract,
                     progress_enabled=progress_enabled,
                     tile_progress_leave=False,
                 )

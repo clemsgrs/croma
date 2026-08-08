@@ -5,6 +5,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from embedding_artifacts import PROVENANCE_FIELDS
+
 from croma.confounders import CANONICAL_CONFOUNDER_COLUMN
 
 _MANIFEST_COLUMNS = (
@@ -60,7 +62,7 @@ def _sidecar_payload(sidecar_path: Path) -> dict:
         return {}
     keys = (
         "manifest",
-        "manifest_fingerprint",
+        *PROVENANCE_FIELDS,
         "model_id",
         "extract",
         "mixed_precision",
