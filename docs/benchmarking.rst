@@ -37,6 +37,14 @@ Three commands, split along the seams of what is expensive
    # 3. Render that run's figure set from the written artifacts.
    python scripts/bench/render.py output/metrics/median-k/camelyon
 
+Each ``<Model>.npy`` and ``<Model>.npy.json`` sidecar is one artifact. The sidecar is
+published last as the completion marker and records the checkpoint revision (an immutable
+SHA for pinned models, otherwise an explicit null), extraction-contract version, precision,
+batch size, output dtype and shape, and tileset-manifest fingerprint. Re-running extraction
+skips a pair only when that complete contract still matches. An orphaned, malformed, stale,
+or mismatched pair fails loudly; inspect the mismatch and pass ``--force`` only when you
+intend to replace it.
+
 Embeddings are a tileset; benchmarks are views
 ----------------------------------------------
 

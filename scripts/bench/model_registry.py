@@ -8,6 +8,8 @@ class ModelSpec:
     extract: str = "cls"
     timm_kwargs: dict = dataclasses.field(default_factory=dict)
     mixed_precision: bool = False
+    checkpoint_revision: str | None = None
+    embedding_dim: int | None = None
 
 
 def _parse_models(raw_models: str) -> list[str]:
