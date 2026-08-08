@@ -12,8 +12,8 @@ SCRIPTS = ROOT / "scripts" / "bench"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import extract_embeddings as ee
 import embedding_artifacts as artifacts
+import model_registry as mr
 
 
 def _write_manifest(path: Path) -> Path:
@@ -29,8 +29,8 @@ def _write_manifest(path: Path) -> Path:
     return path
 
 
-def _contract() -> ee.EmbeddingArtifactContract:
-    return ee.EmbeddingArtifactContract(
+def _contract() -> artifacts.EmbeddingArtifactContract:
+    return artifacts.EmbeddingArtifactContract(
         checkpoint_revision="a" * 40,
         extraction_contract={
             "version": 1,
@@ -62,7 +62,7 @@ def test_failed_publication_cannot_look_complete_on_resume(
     monkeypatch.setattr(artifacts.os, "replace", fail_sidecar_commit)
 
     with pytest.raises(OSError, match="simulated crash"):
-        ee.publish_embedding_artifact(
+        artifacts.publish_embedding_artifact(
             output,
             np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
             _contract(),
@@ -70,8 +70,8 @@ def test_failed_publication_cannot_look_complete_on_resume(
 
     assert output.exists()
     assert not sidecar.exists()
-    with pytest.raises(ee.ArtifactCompatibilityError, match="incomplete"):
-        ee.artifact_is_reusable(output, _contract())
+    with pytest.raises(artifacts.ArtifactCompatibilityError, match="incomplete"):
+        artifacts.artifact_is_reusable(output, _contract())
 
 
 def test_failed_durability_sync_removes_the_completion_marker(
@@ -90,7 +90,7 @@ def test_failed_durability_sync_removes_the_completion_marker(
     monkeypatch.setattr(artifacts, "_fsync_directory", fail_final_sync)
 
     with pytest.raises(OSError, match="fsync failure"):
-        ee.publish_embedding_artifact(
+        artifacts.publish_embedding_artifact(
             output,
             np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
             _contract(),
@@ -98,8 +98,8 @@ def test_failed_durability_sync_removes_the_completion_marker(
 
     assert output.exists()
     assert not metadata.exists()
-    with pytest.raises(ee.ArtifactCompatibilityError, match="incomplete"):
-        ee.artifact_is_reusable(output, _contract())
+    with pytest.raises(artifacts.ArtifactCompatibilityError, match="incomplete"):
+        artifacts.artifact_is_reusable(output, _contract())
 
 
 @pytest.mark.parametrize("orphan", ["matrix", "sidecar"])
@@ -111,21 +111,21 @@ def test_orphaned_artifact_members_are_rejected(tmp_path: Path, orphan: str) -> 
     else:
         sidecar.write_text("{}\n", encoding="utf-8")
 
-    with pytest.raises(ee.ArtifactCompatibilityError, match="incomplete"):
-        ee.artifact_is_reusable(output, _contract())
+    with pytest.raises(artifacts.ArtifactCompatibilityError, match="incomplete"):
+        artifacts.artifact_is_reusable(output, _contract())
 
 
 def test_compatible_artifact_is_reusable_without_modification(tmp_path: Path) -> None:
     output = tmp_path / "model.npy"
     sidecar = output.with_suffix(".npy.json")
-    ee.publish_embedding_artifact(
+    artifacts.publish_embedding_artifact(
         output,
         np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
         _contract(),
     )
     before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in (output, sidecar)}
 
-    assert ee.artifact_is_reusable(output, _contract()) is True
+    assert artifacts.artifact_is_reusable(output, _contract()) is True
     assert {
         path: (path.read_bytes(), path.stat().st_mtime_ns) for path in (output, sidecar)
     } == before
@@ -156,22 +156,22 @@ def test_incompatible_artifact_is_rejected_for_reuse(
     tmp_path: Path, field: str, replacement: object
 ) -> None:
     output = tmp_path / "model.npy"
-    ee.publish_embedding_artifact(
+    artifacts.publish_embedding_artifact(
         output,
         np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
         _contract(),
     )
     changed = dataclasses.replace(_contract(), **{field: replacement})
 
-    with pytest.raises(ee.ArtifactCompatibilityError, match=field):
-        ee.artifact_is_reusable(output, changed)
+    with pytest.raises(artifacts.ArtifactCompatibilityError, match=field):
+        artifacts.artifact_is_reusable(output, changed)
 
 
 def test_published_sidecar_records_the_complete_provenance_contract(
     tmp_path: Path,
 ) -> None:
     output = tmp_path / "model.npy"
-    ee.publish_embedding_artifact(
+    artifacts.publish_embedding_artifact(
         output,
         np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32),
         _contract(),
@@ -201,9 +201,11 @@ def test_published_sidecar_records_the_complete_provenance_contract(
 
 def test_model_and_manifest_define_the_expected_artifact_contract(
     tmp_path: Path,
+    extraction_module,
 ) -> None:
+    ee = extraction_module
     manifest_path = _write_manifest(tmp_path / "manifest.csv")
-    spec = ee.ModelSpec(
+    spec = mr.ModelSpec(
         backend="timm",
         model_id="owner/model",
         checkpoint_revision="a" * 40,
@@ -220,7 +222,7 @@ def test_model_and_manifest_define_the_expected_artifact_contract(
         device_arg="cuda",
     )
 
-    assert contract == ee.EmbeddingArtifactContract(
+    assert contract == artifacts.EmbeddingArtifactContract(
         checkpoint_revision="a" * 40,
         extraction_contract={
             "version": 1,
@@ -239,9 +241,11 @@ def test_model_and_manifest_define_the_expected_artifact_contract(
 
 def test_unpinned_cpu_extraction_records_honest_revision_and_precision(
     tmp_path: Path,
+    extraction_module,
 ) -> None:
+    ee = extraction_module
     manifest_path = _write_manifest(tmp_path / "manifest.csv")
-    spec = ee.ModelSpec(
+    spec = mr.ModelSpec(
         backend="timm",
         model_id="owner/model",
         mixed_precision=True,
@@ -259,7 +263,7 @@ def test_unpinned_cpu_extraction_records_honest_revision_and_precision(
     assert contract.output_shape == (2, None)
 
 
-def _write_unpinned_uni_artifact(batch_size: int) -> tuple[Path, Path]:
+def _write_unpinned_uni_artifact(ee, batch_size: int) -> tuple[Path, Path]:
     manifest_path = ee.layout.tileset_manifest("toy")
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     _write_manifest(manifest_path)
@@ -281,9 +285,10 @@ def _write_unpinned_uni_artifact(batch_size: int) -> tuple[Path, Path]:
 
 
 def test_extraction_cli_rejects_incompatible_resume(
-    bench_env, monkeypatch: pytest.MonkeyPatch
+    bench_env, monkeypatch: pytest.MonkeyPatch, extraction_module
 ) -> None:
-    _write_unpinned_uni_artifact(batch_size=8)
+    ee = extraction_module
+    _write_unpinned_uni_artifact(ee, batch_size=8)
     monkeypatch.setattr(
         sys,
         "argv",
@@ -309,9 +314,10 @@ def test_extraction_cli_rejects_incompatible_resume(
 
 
 def test_extraction_cli_skips_compatible_artifact_without_modification(
-    bench_env, monkeypatch: pytest.MonkeyPatch
+    bench_env, monkeypatch: pytest.MonkeyPatch, extraction_module
 ) -> None:
-    output, metadata = _write_unpinned_uni_artifact(batch_size=8)
+    ee = extraction_module
+    output, metadata = _write_unpinned_uni_artifact(ee, batch_size=8)
     before = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in (output, metadata)}
     monkeypatch.setattr(
         sys,

@@ -9,7 +9,6 @@ SCRIPTS = ROOT / "scripts" / "bench"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import extract_embeddings as ee
 import model_registry as mr
 
 
@@ -61,7 +60,8 @@ def test_parse_models_rejects_empty_and_duplicates() -> None:
         mr._parse_models("UNI,UNI")
 
 
-def test_unwrap_gpfm_state_dict_handles_wrappers_and_prefixes() -> None:
+def test_unwrap_gpfm_state_dict_handles_wrappers_and_prefixes(extraction_module) -> None:
+    ee = extraction_module
     bare = {"cls_token": 1, "blocks.0.norm.weight": 2}
     assert ee._unwrap_gpfm_state_dict(dict(bare)) == bare
 
@@ -72,15 +72,17 @@ def test_unwrap_gpfm_state_dict_handles_wrappers_and_prefixes() -> None:
     assert ee._unwrap_gpfm_state_dict(nested) == {"pos_embed": 3}
 
 
-def test_unwrap_gpfm_state_dict_rejects_non_mapping() -> None:
+def test_unwrap_gpfm_state_dict_rejects_non_mapping(extraction_module) -> None:
+    ee = extraction_module
     with pytest.raises(ValueError, match="state_dict mapping"):
         ee._unwrap_gpfm_state_dict(["not", "a", "state", "dict"])
 
 
 @pytest.mark.parametrize("revision", [None, "a" * 40])
 def test_hf_auto_loader_forwards_only_explicit_checkpoint_revision(
-    monkeypatch: pytest.MonkeyPatch, revision: str | None
+    monkeypatch: pytest.MonkeyPatch, revision: str | None, extraction_module
 ) -> None:
+    ee = extraction_module
     calls: list[tuple[str, dict]] = []
 
     class FakeModel:
@@ -136,7 +138,9 @@ def test_timm_loader_forwards_only_explicit_checkpoint_revision(
     monkeypatch: pytest.MonkeyPatch,
     revision: str | None,
     expected_model_id: str,
+    extraction_module,
 ) -> None:
+    ee = extraction_module
     calls: list[str] = []
 
     class FakeModel:
@@ -167,8 +171,9 @@ def test_timm_loader_forwards_only_explicit_checkpoint_revision(
 
 
 def test_conch_loader_downloads_pinned_checkpoint_before_loading(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extraction_module
 ) -> None:
+    ee = extraction_module
     import conch.open_clip_custom
     import huggingface_hub
 
@@ -217,8 +222,9 @@ def test_conch_loader_downloads_pinned_checkpoint_before_loading(
 
 
 def test_musk_loader_downloads_pinned_checkpoint_before_loading(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extraction_module
 ) -> None:
+    ee = extraction_module
     import huggingface_hub
     from musk import utils
     from timm import models
