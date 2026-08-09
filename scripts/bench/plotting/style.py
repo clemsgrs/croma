@@ -23,12 +23,14 @@ place here to swap the typeface project-wide.
 
 from __future__ import annotations
 
+import csv
 from pathlib import Path
 
 import matplotlib
 from matplotlib import font_manager
 
 _FONTS_DIR = Path(__file__).resolve().parent / "fonts"
+_MODEL_METADATA = Path(__file__).resolve().parent.parent / "model_metadata.csv"
 
 # ---------------------------------------------------------------------------
 # Canonical figure widths (inches). Mirrors journal column widths.
@@ -76,39 +78,41 @@ TREND_LINE_COLOR = "#5b6b7b"
 TREND_ALPHA = 0.55
 
 # ---------------------------------------------------------------------------
-# Model -> family mapping and family hue + within-family tone palette.
+# Model family and order come from the machine-readable provenance table; this module owns only
+# the visual palette assigned to each family. That keeps checkpoint relationships and plot order
+# auditable in the same source that generates the model tables (ADR-0005).
+def _load_model_identity(path: Path = _MODEL_METADATA) -> tuple[dict[str, str], dict[str, int], list[str]]:
+    rows = []
+    with path.open(newline="") as handle:
+        for row in csv.DictReader(handle):
+            if str(row.get("plot_order", "")).strip():
+                rows.append(row)
+    rows.sort(key=lambda row: int(row["plot_order"]))
+
+    families: dict[str, str] = {}
+    tones: dict[str, int] = {}
+    order: list[str] = []
+    for row in rows:
+        model = str(row["model"])
+        family = str(row["family"])
+        tone = int(row["family_order"])
+        if model in families:
+            if (families[model], tones[model]) != (family, tone):
+                raise ValueError(f"inconsistent plot identity for duplicate metadata row {model!r}")
+            continue
+        families[model] = family
+        tones[model] = tone
+        order.append(model)
+    return families, tones, order
+
+
+MODEL_FAMILY_MAP, MODEL_TONE_INDEX, CANONICAL_MODEL_ORDER = _load_model_identity()
+
+
+# Family hue + within-family tone palette.
 # Families share a hue; tones (light -> dark) distinguish members.
 # Palette is retuned for cohesion and best-effort colourblind separation
 # (colour-only; no marker/dash backup).
-# ---------------------------------------------------------------------------
-MODEL_FAMILY_MAP: dict[str, str] = {
-    "Virchow2": "paige",
-    "Virchow": "paige",
-    "PRISM": "paige",
-    "UNI2-h": "uni",
-    "UNI": "uni",
-    "CONCHv1.5": "conch",
-    "CONCH": "conch",
-    "TITAN": "conch",
-    "Phikon-v2": "phikon",
-    "Phikon": "phikon",
-    "H-optimus-1": "hoptimus",
-    "H-optimus-0": "hoptimus",
-    "H0-mini": "hoptimus",
-    "Prov-GigaPath": "gigapath",
-    "Midnight-12k": "midnight",
-    "Hibou-L": "hibou",
-    "Hibou-B": "hibou",
-    "Prost40M": "prost",
-    # Ported from slide2vec (provisional hues — validate via the dataviz skill
-    # before these appear in paper figures).
-    "mSTAR": "mstar",
-    "GPFM": "gpfm",
-    "MUSK": "musk",
-    "GenBio-PathFM": "genbio",
-    "DINOv2-B": "dinov2",
-}
-
 # Per-family tones ordered light -> dark. Saturated for a lively, readable look.
 FAMILY_PALETTE: dict[str, list[str]] = {
     "paige": ["#fb9a3c", "#e2660c"],  # orange
@@ -125,64 +129,11 @@ FAMILY_PALETTE: dict[str, list[str]] = {
     "gpfm": ["#d94a8c"],  # rose
     "musk": ["#2aa198"],  # teal
     "genbio": ["#9a7d0a"],  # olive / amber
+    "rudolfv2": ["#8fc4df", "#4b98c2", "#246b98"],  # blue, teacher -> students
+    "waiv": ["#ef8a62", "#b94b73"],  # coral -> berry
     "dinov2": ["#5f6b7a"],  # slate grey — natural-image control
     "other": ["#aab2bb", "#7e8790", "#565d65"],
 }
-
-# Tone index of each model within its family palette.
-MODEL_TONE_INDEX: dict[str, int] = {
-    "Virchow": 0,
-    "Virchow2": 1,
-    "PRISM": 1,
-    "UNI": 0,
-    "UNI2-h": 1,
-    "CONCH": 0,
-    "CONCHv1.5": 1,
-    "TITAN": 1,
-    "Phikon": 0,
-    "Phikon-v2": 1,
-    "H-optimus-1": 0,
-    "H-optimus-0": 1,
-    "H0-mini": 2,
-    "Prov-GigaPath": 0,
-    "Midnight-12k": 0,
-    "Hibou-L": 0,
-    "Hibou-B": 1,
-    "Prost40M": 0,
-    "mSTAR": 0,
-    "GPFM": 0,
-    "MUSK": 0,
-    "GenBio-PathFM": 0,
-    "DINOv2-B": 0,
-}
-
-# Canonical model order: grouped by family, newest/strongest first within group.
-CANONICAL_MODEL_ORDER: list[str] = [
-    "Virchow2",
-    "Virchow",
-    "PRISM",
-    "UNI2-h",
-    "UNI",
-    "CONCHv1.5",
-    "CONCH",
-    "TITAN",
-    "Phikon-v2",
-    "Phikon",
-    "H-optimus-1",
-    "H-optimus-0",
-    "H0-mini",
-    "Prov-GigaPath",
-    "Midnight-12k",
-    "Hibou-L",
-    "Hibou-B",
-    "Prost40M",
-    # Ported from slide2vec; DINOv2-B last as the natural-image control.
-    "mSTAR",
-    "GPFM",
-    "MUSK",
-    "GenBio-PathFM",
-    "DINOv2-B",
-]
 
 # The natural-image control: pretrained on LVD-142M, never on a whole-slide image. It is a
 # floor, not a competitor -- it is excluded from rankings, from per-column bolding, and from

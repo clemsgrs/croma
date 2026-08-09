@@ -10,9 +10,10 @@ freshness test.
 ## Why
 
 The docs build runs `sphinx -W` on a clean CI checkout. It cannot see `output/`
-(git-ignored, ADR-0007), `paper/` (git-ignored, ADR-0003) or `scripts/repro/`
-(git-ignored, ADR-0012). Anything the site shows must therefore already be committed.
-That is not a preference; it is the only shape a published number can take.
+(git-ignored, ADR-0007) or `paper/` (git-ignored, ADR-0003). The generators under
+`scripts/repro/` are tracked after manuscript publication (ADR-0012), but their run inputs and
+LaTeX outputs remain absent. Anything the site shows must therefore already be committed. That
+is not a preference; it is the only shape a published number can take.
 
 The alternative was to hand-write the tables into `.rst`. Rejected: a benchmark re-run
 would leave the site asserting numbers no run produced, and nothing would detect it.
@@ -28,15 +29,11 @@ its git history is the record of what the public site has claimed over time. A t
 island inside a tree that pipelines clear — and that `git clean -xdf` targets — is a
 footgun for the sake of tidiness.
 
-**Why the exporter is tracked, when `scripts/repro/` is not.** ADR-0012 keeps the paper
-generators local because "publishing the build system for a document nobody can read is
-the worst of both worlds: a reader cannot check the generators against the artifacts
-they produce, because the artifacts are absent." That reasoning does not carry over
-here — it inverts. The artifact *is* present: `results/*.csv` is committed and rendered
-on a public site. Publishing the exporter is what makes the numbers checkable rather
-than asserted. Keeping it local would leave `results/` in the public repo as data with
-no visible derivation, which is the failure ADR-0012 was avoiding, not an instance of
-the rule it set.
+**Why the exporter lives outside the paper generators.** The artifact is public:
+`results/*.csv` is committed and rendered on the documentation site. Its tracked exporter makes
+the numbers checkable rather than asserted. It belongs under `scripts/tools/` because output
+destination, not tracking status, defines script ownership (ADR-0006): it writes repository
+publication artifacts, whereas `scripts/repro/` writes the ignored paper assembly.
 
 ## Shape
 
@@ -71,10 +68,10 @@ the rule it set.
 **Still git-ignored, unchanged:**
 
 - `output/` in full — scratch, wipe-safe, the single source the exporter reads.
-- `paper/` and `scripts/repro/` — ADR-0003 and ADR-0012 are untouched. The paper's
-  `.tex` tables and this exporter render overlapping numbers through separate paths;
-  they are not unified, because unifying them would drag the local-only tree into the
-  public build.
+- `paper/` — ADR-0003 and ADR-0012 are untouched. The tracked paper generators under
+  `scripts/repro/` remain excluded from distributions. Their `.tex` tables and this exporter
+  render overlapping numbers through separate paths; they are not unified, because unifying
+  them would drag paper-only assembly into the public build.
 
 ## Consequences
 
@@ -97,7 +94,6 @@ the rule it set.
 
 ## When this changes
 
-If the manuscript is published and `paper/` becomes tracked (the reversal ADR-0012
-describes), the paper tables and `results/` become two views of one tracked tree, and
-merging the generators becomes worth considering. Until then, the duplication is the
-price of publishing numbers whose LaTeX assembly is not public.
+If the paper assembly itself becomes tracked, the paper tables and `results/` become two views
+of one tracked tree, and merging the generators becomes worth considering. Until then, the
+duplication is the price of publishing numbers whose LaTeX assembly is not in the repository.

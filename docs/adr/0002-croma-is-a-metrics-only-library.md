@@ -8,7 +8,7 @@
 > out of scope.
 >
 > **See also [ADR-0012](0012-paper-tooling-stays-local.md)** for the current status of
-> `scripts/` — the paper generators are local-only while the manuscript is unpublished.
+> `scripts/` — paper generators are tracked in the repository but excluded from distributions.
 
 `croma` ships as a lean Python library of robustness metrics. General benchmarking is
 the job of a separate package; the `scripts/` in this repo are paper-reproduction
@@ -38,8 +38,8 @@ was never in the wheel. `pip install ...[bench]` gave dependencies and no pipeli
 - **`scripts/` (repo-only):** reproduces *this paper* — it writes
   `paper/sections/generated_values.tex`, the result tables, and the figures.
   Excluded from the wheel. The paper `.tex` source stays local (arXiv is its home),
-  and per ADR-0012 the generators that render into it are local-only too while the
-  manuscript is unpublished; the benchmarking pipeline and studies remain committed.
+  and per ADR-0012 the generators that render into it are tracked but excluded from source
+  distributions; the benchmarking pipeline and studies remain committed and distributed.
   See ADR-0003 and ADR-0012 for what is and isn't committed.
 - **Extras:** the `[bench]` extra is renamed `[repro]` — the deps needed to
   regenerate the paper from a clone, not to run a general benchmark.

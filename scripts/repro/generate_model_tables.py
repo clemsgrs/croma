@@ -1,5 +1,5 @@
 """Generate the model-summary LaTeX table BODY from the single committed metadata
-source ``scripts/repro/model_metadata.csv``.
+source ``scripts/bench/model_metadata.csv``.
 
 Only the ``\\hline``-separated row body is generated. The float wrapper, header
 row, ``\\caption`` and prose footnotes live in the hand-maintained template
@@ -11,7 +11,7 @@ function of a metadata ``DataFrame`` and is callable/testable without the
 
 Metadata columns read here (single source of truth):
   model, panel, panel_order, method, params, n_wsis, n_tiles, wsis_source, dim,
-  corpus, cite
+  corpus, cite, parent_model, variant_role, adaptation, shared_corpus
 
 Run: python scripts/repro/generate_model_tables.py
 """
@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CSV = HERE / "model_metadata.csv"
+DEFAULT_CSV = HERE.parent / "bench" / "model_metadata.csv"
 TEMPLATE_DIR = HERE / "templates"
 SUMMARY_TMPL = TEMPLATE_DIR / "model_summary.tex.tmpl"
 PAPER_SECTIONS = HERE.parents[1] / "paper" / "sections"
@@ -47,7 +47,7 @@ def load_metadata(path: Path = DEFAULT_CSV) -> pd.DataFrame:
     cell ``n/a`` (not applicable -- the natural-image control has no #WSIs) as NaN,
     which ``fillna("")`` would then render as an empty table cell.
     """
-    return pd.read_csv(path, keep_default_na=False, na_values=[])
+    return pd.read_csv(path, keep_default_na=False, na_values=[]).fillna("")
 
 
 # ---------------------------------------------------------------------------
@@ -85,14 +85,35 @@ def _cite(row: pd.Series) -> str:
     return rf"~\cite{{{key}}}" if key else ""
 
 
+def _method_cell(row: pd.Series) -> str:
+    """Render structured checkpoint relationships in the method column."""
+    role = _s(row.get("variant_role", ""))
+    parent = _s(row.get("parent_model", ""))
+    if role == "robustness-finetune":
+        return rf"acquisition-robustness fine-tune of \code{{{parent}}}"
+    if role == "teacher":
+        return f'{_s(row["method"])} (teacher)'
+    if role == "distilled-student":
+        return rf"distilled from \code{{{parent}}}"
+    return _s(row["method"])
+
+
+def _corpus_cell(row: pd.Series) -> str:
+    """Make a machine-readable shared-corpus relationship visible in the table."""
+    corpus = _s(row["corpus"])
+    if _s(row.get("shared_corpus", "")):
+        return f"{corpus} (shared family corpus)"
+    return corpus
+
+
 def _summary_row(row: pd.Series) -> str:
     cells = [
         _s(row["model"]) + _cite(row),
-        _s(row["method"]),
+        _method_cell(row),
         _s(row["params"]),
         _wsis_tiles_cell(row["n_wsis"], row["n_tiles"], _s(row["wsis_source"])),
         _s(row["dim"]),
-        _s(row["corpus"]),
+        _corpus_cell(row),
     ]
     return " & ".join(cells) + r" \\"
 

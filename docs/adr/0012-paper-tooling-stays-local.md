@@ -1,68 +1,58 @@
-# Paper tooling stays local until the manuscript is published
+# Paper tooling is tracked after manuscript publication
 
-Everything that renders into `paper/` is untracked: the `.tex` and figure generators
-under `scripts/repro/`, the manifest mapping runs to paper artifacts, and their tests.
-They remain on disk and keep working; they are simply not published.
+The manuscript is public, so the reversal condition in the original version of this ADR has
+occurred. Paper generators, their tests, and the machine-readable model metadata are tracked in
+the repository. This restores ADR-0003's reproducibility posture: a reader can inspect the
+generators together with the public manuscript artifacts they produce.
 
-This supersedes ADR-0003's "commit the generators" posture for as long as the
-manuscript is unpublished. ADR-0003's *reasons* still hold and this is not a rejection
-of them — see "When this reverses".
+The paper assembly remains outside the Python package. `scripts/repro/` and tests that require
+paper-only inputs are excluded from the source distribution without exception. The canonical
+model registry lives at `scripts/bench/model_metadata.csv`, because benchmark plotting consumes
+its structured family, tone, and order fields at runtime (ADR-0005 and ADR-0017); paper
+generators read that same benchmark-owned source.
 
 ## Why
 
-`paper/` was already git-ignored (ADR-0003: the manuscript belongs on arXiv, not
-coupled to repo history). Publishing the build system for a document nobody can read
-is the worst of both worlds: a reader cannot check the generators against the artifacts
-they produce, because the artifacts are absent.
+Before the manuscript was public, tracking a build system for an unavailable document offered
+readers no reproducibility benefit. The original decision therefore kept `scripts/repro/`, its
+tests, and ADR-0010 local until the paper could be read and checked. That temporary publication
+boundary no longer applies.
 
-It also removed a defect rather than papering over one. `tests/test_paper_artifacts.py`
-had eight builder cases that called the float builders directly instead of guarding on
-`paper/` the way the freshness cases do. They read `output/metrics/`, which is
-git-ignored and absent from any fresh checkout, so they raised `FileNotFoundError`
-rather than skipping — and passed only on a machine that happened to hold the run
-outputs. A clean checkout scored 8 failed / 382 passed; the first CI run on this branch
-would have been red.
-
-The deeper point is that the paper-artifact tests cannot be meaningfully public while
-their inputs are not. The freshness guarantee is a local pre-flight by construction
-(see the `tests/test_paper_artifacts.py` docstring), and a test suite whose every case
-skips in CI is not a guarantee the repository can offer anyone else.
+Repository tracking and package distribution have different audiences. The repository is the
+auditable home for the paper workflow; the package ships the metrics library and benchmark
+tools. Excluding paper assembly from the source distribution keeps `pip`-facing artifacts
+focused and avoids tests whose ignored run outputs are unavailable in a clean package build.
+Keeping shared runtime data under `scripts/bench/` prevents the plotting code from reaching
+across that boundary or acquiring a second, hard-coded identity map.
 
 ## Shape
 
-**Local-only (on disk, git-ignored):**
+**Tracked in the repository:**
 
-- `scripts/repro/` — the `.tex` and figure generators, `paper_manifest.py`,
-  `build_paper.py`, `check_paper_figures.py`, the templates and `model_metadata.csv`
-- `tests/test_paper_artifacts.py`, `tests/test_generate_model_tables.py`,
-  `tests/test_dataset_montage.py`, `tests/test_scale_scatter.py`
-- ADR-0010, which governs them
+- `scripts/repro/`, including `paper_manifest.py` and templates
+- the corresponding tests under `tests/`
+- ADR-0010 and the other presentation ADRs
 
-**Still public, deliberately:**
+**Excluded from the source distribution:**
 
-- `src/croma/` — the library is the contribution
-- `scripts/bench/` — the benchmarking pipeline is a stated deliverable of this
-  repository, and `run_benchmarks.sh` moved here from `scripts/repro/` because its
-  output destination is `output/metrics/`, not `paper/` (ADR-0006)
-- `scripts/studies/` — the APD/nIPD source that `croma.downstream` is ported from
-  (ADR-0011, issues #79–#84)
-- `scripts/prep/`, `scripts/tools/`
+- paper generators under `scripts/repro/`
+- paper-only tests and ADR-0010
+- all paper assembly artifacts not otherwise published
+
+**Included benchmark runtime data:**
+
+- `scripts/bench/model_metadata.csv`, the single model registry used by benchmark plots and
+  paper generators
 
 ## Consequences
 
-- **ADR-0010 is local-only**, which is why the published `docs/adr/` skips from 0009
-  to 0011. The number is not reused.
-- **`scripts/studies/apd/loaders.py` and `bootstrap_uncertainty.py` import
-  `paper_manifest`**, so those two studies cannot run from a fresh clone. No test
-  imports them, so CI is unaffected. Porting them onto `croma.downstream` resolves it.
-- Tracked files that *mention* local-only paths in prose are marked `(local-only)`
-  rather than rewritten, so the pointer survives for whoever has the tree.
-- The reproducibility claim narrows honestly: the repo publishes everything needed to
-  compute the metrics and reproduce the benchmark numbers, not the LaTeX assembly.
+- Paper-tool changes are reviewed and tested like other repository code.
+- Tests requiring ignored benchmark outputs remain local pre-flight checks by construction.
+- Model provenance and plot identity stay machine-readable and single-sourced without making
+  the paper assembly part of the installed `croma` library.
 
-## When this reverses
+## Historical decision
 
-When the manuscript is public. At that point `paper/`, its artifacts and this tooling
-can be tracked together, ADR-0003's original posture applies again as written, and the
-freshness test becomes enforceable in CI because its inputs would finally be present.
-Reversing is `git add` plus deleting the `.gitignore` block; nothing here is destructive.
+The original ADR was titled “Paper tooling stays local until the manuscript is published.” Its
+explicit reversal condition was manuscript publication. This revision records that transition
+rather than silently deleting the reason the tooling was once untracked.

@@ -19,9 +19,8 @@ replicate. A PathoROB checkout is not needed to run any of this.
 The CRoMa-vs-APD scatter that consumes these outputs lives in
 ``scripts/repro/figures/apd_figure.py`` (a paper-figure emitter); it reaches the
 shared data loaders and per-dataset configuration in ``loaders.py`` here via a
-``sys.path`` shim. That emitter is local-only while the manuscript is unpublished and is
-absent from a clone (ADR-0012), as is the ``paper_manifest`` naming which run each
-benchmark's metrics come from -- which is why ``loaders`` imports it inside the join that
-needs it rather than at module scope: computing APD must not wait on the manuscript's
+``sys.path`` shim. That emitter and ``paper_manifest`` are tracked paper tooling excluded from
+source distributions (ADR-0012), which is why ``loaders`` imports the manifest inside the join
+that needs it rather than at module scope: computing APD must not wait on the manuscript's
 build, only correlating it against RI/MaRI/CRoMa does.
 """

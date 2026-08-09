@@ -112,14 +112,16 @@ jobs:
               sys.exit(f'::error::force-included files missing from the wheel: {missing}')
           "
 
-      # These are absent from a clean checkout, so this never fires here. It is a tripwire
-      # for a build run where the tree *does* exist -- a local `python -m build`, or a
-      # release cut from a working machine -- because an `include` entry overrides
-      # VCS-ignore and would otherwise publish the paper tooling. See ADR-0012.
+      # Paper generators are tracked for repository-level reproducibility but deliberately
+      # excluded from the distribution. The benchmark-owned model registry is the runtime
+      # input that must ship instead. Keep both sides of that boundary executable here.
       - name: Assert the sdist carries no paper tooling
         run: |
           if tar tzf dist/*.tar.gz | grep -E '(/scripts/repro/|test_paper_artifacts|adr/0010-)'; then
-            echo "::error::local-only paper tooling leaked into the sdist"
+            echo "::error::paper tooling leaked into the sdist"
             exit 1
           fi
-
+          tar tzf dist/*.tar.gz | grep -E '/scripts/bench/model_metadata.csv$' >/dev/null || {
+            echo "::error::benchmark model identity metadata missing from the sdist"
+            exit 1
+          }

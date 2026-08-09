@@ -7,8 +7,7 @@ typed the caption beside it -- and they drifted apart in three separate ways at 
 * the caption said "TCGA and Tolkach-ESCA produce none [confounder-dominant markers]",
   which stopped being true when the TCGA-4x4 run was corrected from eight centres to
   PathoROB's four in-domain ones and ``Prost40M`` crossed below zero;
-* it said "the five models whose pretraining data overlaps TCGA" while
-  ``model_metadata.csv`` records nine;
+* it once hard-coded a count of TCGA-exposed models instead of reading metadata;
 * it called Tolkach-ESCA "an unexposed benchmark", though one of its four cohorts *is*
   TCGA -- the premise of ``tab:pretraining-overlap``, in the same supplement.
 
@@ -31,8 +30,12 @@ for _p in (REPO / "src", HERE):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
+from _model_provenance import exposed_models_for_domain  # noqa: E402
 from _paper_tables import CROMA_HEADLINE_M, croma_as_margin  # noqa: E402
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
+
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
 from plotting.style import CONTROL_MODEL  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 
@@ -46,7 +49,7 @@ PANEL: list[str] = [
     "pathorob-tolkach-esca",
 ]
 
-METADATA = HERE / "model_metadata.csv"
+METADATA = HERE.parent / "bench" / "model_metadata.csv"
 
 #: Cohort of Tolkach-ESCA drawn from TCGA. Tolkach is therefore *partly* exposed, and a
 #: TCGA-pretrained model's rank on it cannot be called leakage-free without checking.
@@ -112,7 +115,7 @@ def load() -> CrossBenchmark:
     ranks = croma.rank(ascending=False, method="first").astype(int)
 
     md = pd.read_csv(METADATA)
-    exposed = frozenset(md.loc[md["tcga_exposed"], "model"]) & set(croma.index)
+    exposed = exposed_models_for_domain(md, "tcga", set(croma.index))
     return CrossBenchmark(croma=croma, ranks=ranks, exposed=exposed)
 
 

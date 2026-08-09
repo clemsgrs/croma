@@ -145,10 +145,10 @@ Prevalence and severity are independent; a quantile is neither.
 The vocabulary of the output layout (see ADR-0007).
 
 Entries below that name `scripts/repro/` paths — *generated artifact*, *caption claim*,
-*float basis*, *prose claim*, and the manifest referenced under *run* — describe tooling
-that is local-only while the manuscript is unpublished (ADR-0012). The terms are defined
-here because the vocabulary is the project's, not the tree's; the files themselves are
-absent from a clone.
+*float basis*, *prose claim*, and the manifest referenced under *run* — describe tracked
+paper tooling that is excluded from the Python source distribution (ADR-0012). The canonical
+model registry is benchmark-owned at `scripts/bench/model_metadata.csv`, so runtime plotting
+does not depend on that excluded paper layer (ADR-0005 and ADR-0017).
 
 **Tileset**:
 A physical set of tiles that was pushed through the encoders, holding one embedding
@@ -323,3 +323,17 @@ How much data a model was pretrained on, measured in **#WSIs** (whole-slide imag
 values are undisclosed by model cards and sourced from PathoROB with a citation
 marker.
 _Avoid_: model size (that is the parameter count, a separate attribute).
+
+**Checkpoint family and variant**:
+Machine-readable model provenance carried as `family`, `parent_model` and
+`variant_role`. A robustness fine-tune remains linked to the parent whose pretraining facts it
+inherits; a distilled student names its teacher. `training_run` and `shared_corpus` identify
+family members produced together from one disclosed corpus. Plot hue, within-family tone and
+canonical order are read from this metadata rather than a second model list in plotting code.
+_Avoid_: encoding parent/student or fine-tune relationships only in a display label.
+
+**Institutional/source-domain exposure**:
+A conservative benchmark marker used when a model's disclosed institutional corpus and a scored
+cohort share a source institution. It means possible source-domain overlap only. Unless source
+records establish otherwise, exact patient or slide overlap is unknown and the marker does not
+establish leakage.

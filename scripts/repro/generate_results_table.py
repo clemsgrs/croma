@@ -27,11 +27,12 @@ from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, croma_as_margin, 
 from paper_manifest import ResultsTable, rendered
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
-METADATA = Path(__file__).resolve().parent / "model_metadata.csv"
 
 # column -> (header, decimals, percent). ``k`` is deliberately absent: it is a single shared
 # value under the median-k protocol, so it belongs in the caption rather than in a column of
@@ -87,8 +88,10 @@ def _load_frac_neg(metrics_csv: Path, headline_m: int) -> dict[str, float]:
     (non-finite) occurrences leave the denominator, as they do before the tail
     statistics.
     """
-    ps = pd.read_csv(metrics_csv.parent / "per_sample_metrics.csv",
-                     usecols=["model", f"croma_m{int(headline_m)}"])
+    ps = pd.read_csv(
+        metrics_csv.parent / "per_sample_metrics.csv",
+        usecols=["model", f"croma_m{int(headline_m)}"],
+    )
     col = f"croma_m{int(headline_m)}"
 
     def _f0(s: pd.Series) -> float:
@@ -120,22 +123,23 @@ def split_panel(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     return ranked, df[is_control].reset_index(drop=True)
 
 
-def tcga_exposed(entry: ResultsTable, ranked: pd.DataFrame) -> set[str]:
-    """The panel's TCGA-exposed encoders, read from model_metadata.csv.
+def benchmark_exposed(entry: ResultsTable, ranked: pd.DataFrame) -> set[str]:
+    """The panel's marked encoders, read from model_metadata.csv.
 
-    Empty unless the entry is a TCGA benchmark (``tcga_dagger``). The two TCGA tables mark
-    these with a superscript dagger; the same ``tcga_exposed`` flag drives the pretraining
-    -overlap table and the rank-aggregate Pareto, so all three read one source and never drift.
+    The two TCGA tables mark corpus exposure; Tolkach-ESCA marks possible institutional exposure
+    to its scored CHA cohort. Both are resolved from the same metadata as the Pareto figure.
     """
-    if not entry.tcga_dagger:
+    if not entry.mark_exposure_in_table:
         return set()
-    md = pd.read_csv(METADATA)
-    return set(md.loc[md["tcga_exposed"], "model"]) & set(ranked["model"])
+    from _distributions import metadata_exposed_models
+
+    return set(metadata_exposed_models(entry, set(ranked["model"])))
 
 
 # --------------------------------------------------------------------------------------
 # Caption. Structural details are derived from the run; observed results are not narrated.
 # --------------------------------------------------------------------------------------
+
 
 def _operating_point(df: pd.DataFrame, protocol: str) -> str:
     ks = sorted(df["k"].unique())
@@ -151,9 +155,7 @@ def _operating_point(df: pd.DataFrame, protocol: str) -> str:
         )
     lo, hi = int(min(ks)), int(max(ks))
     span = rf"$k^\star{{=}}{lo}$" if lo == hi else rf"$k^\star$ ranging from ${lo}$ to ${hi}$"
-    return (
-        rf"Each model is evaluated at its own biological $k^\star$ ({span})."
-    )
+    return rf"Each model is evaluated at its own biological $k^\star$ ({span})."
 
 
 def _control_clause(control: pd.DataFrame) -> str:
@@ -166,15 +168,20 @@ def _control_clause(control: pd.DataFrame) -> str:
     """
     if control.empty:
         return ""
-    return (
-        rf", with the natural-image control \code{{{CONTROL_MODEL}}} shown separately"
-    )
+    return rf", with the natural-image control \code{{{CONTROL_MODEL}}} shown separately"
 
 
 def _dagger_clause(entry: ResultsTable, exposed: set[str]) -> str:
-    """The sentence that reads the dagger for the two TCGA tables; empty otherwise."""
+    """The domain-appropriate dagger explanation; empty when no model is marked."""
     if not exposed:
         return ""
+    if entry.exposure_domain == "charite":
+        return (
+            rf" $\dagger$ marks the ${len(exposed)}$ RudolfV 2 encoders with possible "
+            r"institutional/source-domain overlap: their disclosed training corpus includes "
+            r"Charit\'e, and the scored CHA cohort is from Charit\'e. Exact patient or slide "
+            r"overlap is unknown; the marker does not establish leakage."
+        )
     return (
         rf" $\dagger$ marks the ${len(exposed)}$ TCGA-exposed encoders "
         r"(Table~\ref{tab:model-summary})."
@@ -237,8 +244,8 @@ def build_table(entry: ResultsTable, metrics_csv: Path) -> str:
         for col, _, _, _ in COLS
         if col not in NO_BOLD
     }
-    # The two TCGA tables dagger their TCGA-exposed encoders; every other benchmark marks none.
-    exposed = tcga_exposed(entry, ranked)
+    # TCGA tables mark corpus exposure; Tolkach marks conservative institutional exposure.
+    exposed = benchmark_exposed(entry, ranked)
 
     def row(record: pd.Series, *, bold: bool) -> str:
         name = record["model"]
@@ -284,8 +291,11 @@ def render(entry: ResultsTable, root: Path = REPO) -> str:
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--only", help="Render just this manifest entry, by macro prefix.")
-    p.add_argument("--check", action="store_true",
-                   help="Render and report drift against disk; write nothing. Exit 1 if stale.")
+    p.add_argument(
+        "--check",
+        action="store_true",
+        help="Render and report drift against disk; write nothing. Exit 1 if stale.",
+    )
     p.add_argument("--root", type=Path, default=REPO)
     args = p.parse_args()
 

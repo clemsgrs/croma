@@ -191,9 +191,9 @@ def _draw_rank_pareto(scratch: Path) -> Path:
     table's ``on_frontier`` column marks.
 
     No TCGA-exposure daggers, unlike the manuscript's version of this panel: the exposure
-    flags live in ``scripts/repro/model_metadata.csv``, which is git-ignored (ADR-0012),
-    and a public figure must not depend on a private file. The results page carries the
-    caveat in prose instead.
+    flags live in ``scripts/bench/model_metadata.csv`` (ADR-0005). This public figure omits
+    them because its committed results export does not carry per-benchmark exposure marks;
+    the results page carries that caveat in prose instead.
     """
     import pandas as pd  # noqa: PLC0415
 

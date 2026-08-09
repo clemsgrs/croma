@@ -1,7 +1,7 @@
 # Every number in `paper/sections/` is generated, never typed
 
 Any quantity in the manuscript that can be derived from a persisted artifact — a
-benchmark `metrics.csv` under `output/`, or `scripts/repro/model_metadata.csv` — is
+benchmark `metrics.csv` under `output/`, or `scripts/bench/model_metadata.csv` — is
 emitted by a generator. This holds for table bodies, for the scalars in
 `generated_values.tex`, **and for captions**. A `.tex` file under `paper/sections/`
 that a generator owns is a build output: it is rebuilt from a single manifest by a

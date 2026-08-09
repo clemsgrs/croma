@@ -147,6 +147,68 @@ def test_committed_metadata_sources_every_wsi_count_from_a_model_card() -> None:
     assert r"Prost40M~\cite{grisi2026bcr} & DINO & $22$M & $2$k / ${\sim}40$M" in body
 
 
+def test_waiv_finetunes_inherit_parent_pretraining_provenance() -> None:
+    """Waiv variants add acquisition robustness without rewriting their pretraining history."""
+    metadata = gmt.load_metadata().set_index("model")
+    inherited = [
+        "params",
+        "n_wsis",
+        "n_tiles",
+        "wsis_source",
+        "regime",
+        "corpus",
+        "tcga_exposed",
+        "disclosed",
+        "disclosed_sources",
+        "source_marker",
+        "corpus_domains",
+    ]
+
+    for model, parent in [("Mascaret", "Midnight-12k"), ("Phaet", "Phikon-v2")]:
+        row = metadata.loc[model]
+        assert row["parent_model"] == parent
+        assert row["variant_role"] == "robustness-finetune"
+        assert row["adaptation"] == "acquisition-robustness"
+        assert row["family"] == "waiv"
+        assert row["cite"] == "filiot2026robustifying"
+        assert row[inherited].to_dict() == metadata.loc[parent, inherited].to_dict()
+
+    body = gmt.summary_table_body(metadata.reset_index())
+    assert (
+        r"Mascaret~\cite{filiot2026robustifying} & acquisition-robustness fine-tune of \code{Midnight-12k}"
+        in body
+    )
+    assert (
+        r"Phaet~\cite{filiot2026robustifying} & acquisition-robustness fine-tune of \code{Phikon-v2}"
+        in body
+    )
+
+
+def test_rudolfv2_metadata_describes_one_teacher_student_training_run() -> None:
+    metadata = gmt.load_metadata().set_index("model")
+    names = ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"]
+    family = metadata.loc[names]
+
+    assert family["family"].tolist() == ["rudolfv2"] * 3
+    assert family["variant_role"].tolist() == ["teacher", "distilled-student", "distilled-student"]
+    assert family["parent_model"].tolist() == ["", "RudolfV 2", "RudolfV 2"]
+    assert family["training_run"].nunique() == 1
+    assert family["shared_corpus"].nunique() == 1
+    assert family["params"].tolist() == [r"$1.1$B", r"$86$M", r"$22$M"]
+    assert family["dim"].tolist() == [r"$3072$", r"$1536$", r"$768$"]
+    assert family["n_wsis"].tolist() == [r"${>}300$k"] * 3
+    assert family["n_tiles"].tolist() == ["n/d"] * 3
+    assert family["disclosed"].tolist() == ["yes"] * 3
+    assert family["tcga_exposed"].tolist() == [False] * 3
+    assert family["cite"].tolist() == ["rudolfv2"] * 3
+
+    body = gmt.summary_table_body(metadata.reset_index())
+    assert r"RudolfV 2~\cite{rudolfv2} & DINOv2 (teacher)" in body
+    assert r"RudolfV 2-B~\cite{rudolfv2} & distilled from \code{RudolfV 2}" in body
+    assert r"RudolfV 2-S~\cite{rudolfv2} & distilled from \code{RudolfV 2}" in body
+    assert body.count(r"Charit\'e + LMU (shared family corpus)") == 3
+
+
 #: Methods that denote a vision--language model however the cell names them. The ``method``
 #: column records the architecture where the source paper does (TITAN is a CoCa, i.e. a
 #: contrastive captioner), so the regime cannot be read off a single literal.
