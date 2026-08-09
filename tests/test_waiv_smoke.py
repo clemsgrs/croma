@@ -32,17 +32,21 @@ def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
     import extract_embeddings as ee
     from model_registry import _build_model_registry
 
-    model, transform, embed_fn = ee._load_model_and_transform(
-        _build_model_registry()[name], torch.device("cpu")
-    )
+    device = torch.device(os.environ.get("CROMA_WAIV_SMOKE_DEVICE", "cpu"))
+    if device.type == "cuda" and not torch.cuda.is_available():
+        pytest.skip("requested Waiv CUDA smoke check but CUDA is unavailable")
+    model, transform, embed_fn = ee._load_model_and_transform(_build_model_registry()[name], device)
     image = image_module.fromarray(np.zeros((112, 224, 3), dtype=np.uint8))
-    batch = transform(image).unsqueeze(0)
+    batch = transform(image).unsqueeze(0).to(device)
 
     with torch.inference_mode():
         first = embed_fn(batch)
         second = embed_fn(batch)
 
     assert model.training is False
+    assert {
+        parameter.dtype for parameter in model.parameters() if parameter.is_floating_point()
+    } == {torch.float32}
     assert batch.shape == (1, 3, 224, 224)
     assert batch.dtype == torch.float32
     assert first.shape == (1, embedding_dim)
@@ -50,5 +54,8 @@ def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
     assert torch.isfinite(first).all()
     torch.testing.assert_close(first, second, rtol=0, atol=0)
     torch.testing.assert_close(
-        torch.linalg.vector_norm(first, dim=1), torch.ones(1), rtol=1e-5, atol=1e-6
+        torch.linalg.vector_norm(first, dim=1),
+        torch.ones(1, device=first.device),
+        rtol=1e-5,
+        atol=1e-6,
     )
