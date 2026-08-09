@@ -50,6 +50,35 @@ offline test run:
    CROMA_RUN_WAIV_SMOKE=1 .venv-waiv/bin/python -m pytest \
      tests/test_waiv_smoke.py -q
 
+RudolfV 2
+----------
+
+The pinned RudolfV 2 family also uses a Transformers 5 remote-code runtime. Its published
+implementation requires timm, so reproduce it in a dedicated environment without
+slide2vec:
+
+.. code-block:: bash
+
+   python -m venv .venv-rudolfv2
+   .venv-rudolfv2/bin/pip install -e ".[dev]" \
+     -r scripts/bench/requirements-rudolfv2.txt
+   .venv-rudolfv2/bin/python scripts/bench/extract_embeddings.py \
+     --tileset pathorob-camelyon \
+     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
+     --models "RudolfV 2,RudolfV 2-B,RudolfV 2-S"
+
+``requirements-rudolfv2.txt`` constrains Transformers to ``>=5.14,<6`` and includes the
+remote code's timm dependency. The three immutable revisions live in the model registry;
+all use FP32 inference and the released 224 px preprocessing contract.
+
+An opt-in gated-weight smoke test verifies exact published pooling, deterministic repeated
+inference, and the three output dimensions. The default offline suite skips it:
+
+.. code-block:: bash
+
+   CROMA_RUN_RUDOLFV2_SMOKE=1 .venv-rudolfv2/bin/python -m pytest \
+     tests/test_rudolfv2_smoke.py -q
+
 Three commands, split along the seams of what is expensive
 ----------------------------------------------------------
 
