@@ -197,6 +197,33 @@ def _load_model_and_transform(spec: ModelSpec, device):
 
         return model, transform, embed_fn
 
+    if spec.backend == "waiv":
+        from torchvision.transforms import v2
+
+        model = AutoModel.from_pretrained(
+            spec.model_id,
+            trust_remote_code=True,
+            revision=spec.checkpoint_revision,
+        ).eval()
+        model.to(device)
+        transform = v2.Compose(
+            [
+                v2.ToImage(),
+                v2.Resize(224),
+                v2.CenterCrop(224),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(
+                    mean=model.config.pixel_mean,
+                    std=model.config.pixel_std,
+                ),
+            ]
+        )
+
+        def embed_fn(batch):
+            return model.encode(batch)
+
+        return model, transform, embed_fn
+
     if spec.backend == "hf_auto":
         revision_kwargs = (
             {"revision": spec.checkpoint_revision}

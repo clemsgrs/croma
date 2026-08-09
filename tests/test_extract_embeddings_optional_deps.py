@@ -16,7 +16,7 @@ def test_module_imports_without_bench_dependencies(
 
     def fake_import(name, globals=None, locals=None, fromlist=(), level=0):  # type: ignore[no-untyped-def]
         root = str(name).split(".")[0]
-        if root in {"torch", "timm", "transformers", "PIL"}:
+        if root in {"torch", "torchvision", "timm", "transformers", "PIL", "slide2vec"}:
             raise ModuleNotFoundError(f"No module named '{root}'")
         return real_import(name, globals, locals, fromlist, level)
 
@@ -31,3 +31,17 @@ def test_module_imports_without_bench_dependencies(
         spec.loader.exec_module(module)
     finally:
         sys.modules.pop(module_name, None)
+
+
+def test_waiv_reproduction_environment_pins_transformers_5_without_slide2vec() -> None:
+    requirements = (ROOT / "scripts" / "bench" / "requirements-waiv.txt").read_text(
+        encoding="utf-8"
+    )
+    dependencies = [
+        line.strip().lower()
+        for line in requirements.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    assert "transformers>=5.14,<6" in dependencies
+    assert all(not dependency.startswith("slide2vec") for dependency in dependencies)

@@ -1,7 +1,10 @@
+import contextlib
 import sys
 import types
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +54,196 @@ def test_registry_includes_ported_slide2vec_models() -> None:
 
     assert registry["GenBio-PathFM"].backend == "genbio"
     assert registry["GenBio-PathFM"].model_id == "genbio-ai/genbio-pathfm"
+
+
+@pytest.mark.parametrize(
+    ("name", "model_id", "revision", "embedding_dim"),
+    [
+        (
+            "Mascaret",
+            "wearewaiv/mascaret",
+            "e95e7ea15e039e78d74def101415e19d9a67ba80",
+            1536,
+        ),
+        (
+            "Phaet",
+            "wearewaiv/phaet",
+            "e0ce6e0ee248470bd8604823e412ca64048a2495",
+            1024,
+        ),
+    ],
+)
+def test_registry_includes_pinned_fp32_waiv_models(
+    name: str, model_id: str, revision: str, embedding_dim: int
+) -> None:
+    spec = mr._build_model_registry()[name]
+
+    assert spec == mr.ModelSpec(
+        backend="waiv",
+        model_id=model_id,
+        extract="raw",
+        mixed_precision=False,
+        checkpoint_revision=revision,
+        embedding_dim=embedding_dim,
+    )
+
+
+@pytest.mark.parametrize("name", ["Mascaret", "Phaet"])
+def test_waiv_loader_implements_the_released_embedding_contract(
+    monkeypatch: pytest.MonkeyPatch, name: str, extraction_module
+) -> None:
+    ee = extraction_module
+    spec = mr._build_model_registry()[name]
+    expected_embedding = object()
+    batch = object()
+    calls: list[tuple] = []
+
+    class FakeModel:
+        config = types.SimpleNamespace(
+            pixel_mean=[0.25, 0.5, 0.75],
+            pixel_std=[0.5, 0.25, 0.25],
+        )
+
+        def eval(self):
+            calls.append(("eval",))
+            return self
+
+        def to(self, device):
+            calls.append(("to", device))
+            return self
+
+        def encode(self, pixel_values):
+            calls.append(("encode", pixel_values))
+            return expected_embedding
+
+    fake_model = FakeModel()
+    monkeypatch.setattr(
+        ee,
+        "AutoModel",
+        types.SimpleNamespace(
+            from_pretrained=lambda model_id, **kwargs: (
+                calls.append(("load", model_id, kwargs)) or fake_model
+            )
+        ),
+    )
+
+    from torchvision.transforms import v2
+
+    monkeypatch.setattr(v2, "Compose", lambda steps: steps)
+    monkeypatch.setattr(v2, "ToImage", lambda: ("to_image",))
+    monkeypatch.setattr(v2, "Resize", lambda size: ("resize", size))
+    monkeypatch.setattr(v2, "CenterCrop", lambda size: ("center_crop", size))
+    monkeypatch.setattr(v2, "ToDtype", lambda dtype, *, scale: ("to_dtype", dtype, scale))
+    monkeypatch.setattr(v2, "Normalize", lambda *, mean, std: ("normalize", mean, std))
+
+    model, transform, embed_fn = ee._load_model_and_transform(spec, "cpu")
+    embedding = embed_fn(batch)
+
+    assert model is fake_model
+    assert transform == [
+        ("to_image",),
+        ("resize", 224),
+        ("center_crop", 224),
+        ("to_dtype", ee.torch.float32, True),
+        ("normalize", [0.25, 0.5, 0.75], [0.5, 0.25, 0.25]),
+    ]
+    assert embedding is expected_embedding
+    assert calls == [
+        (
+            "load",
+            spec.model_id,
+            {
+                "trust_remote_code": True,
+                "revision": spec.checkpoint_revision,
+            },
+        ),
+        ("eval",),
+        ("to", "cpu"),
+        ("encode", batch),
+    ]
+
+
+@pytest.mark.parametrize(("name", "embedding_dim"), [("Mascaret", 1536), ("Phaet", 1024)])
+def test_waiv_embedding_extraction_publishes_finite_fp32_vectors(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    name: str,
+    embedding_dim: int,
+    extraction_module,
+) -> None:
+    ee = extraction_module
+    manifest_path = tmp_path / "manifest.csv"
+    output_path = tmp_path / f"{name}.npy"
+    pd.DataFrame(
+        {
+            "sample_id": ["first", "second"],
+            "image_path": ["first.png", "second.png"],
+            "label": ["a", "b"],
+            "confounder": ["x", "y"],
+            "group_id": ["first", "second"],
+        }
+    ).to_csv(manifest_path, index=False)
+    upstream = np.zeros((2, embedding_dim), dtype=np.float64)
+    upstream[0, 0] = 1.0
+    upstream[1, 1] = 1.0
+
+    class FakeTensor:
+        def __init__(self, values: np.ndarray):
+            self.values = values
+
+        def __len__(self):
+            return len(self.values)
+
+        def to(self, device, non_blocking=False):
+            return self
+
+        def float(self):
+            return FakeTensor(self.values.astype(np.float32))
+
+        def cpu(self):
+            return self
+
+        def numpy(self):
+            return self.values
+
+    class FakeModel:
+        config = types.SimpleNamespace(
+            pixel_mean=[0.485, 0.456, 0.406],
+            pixel_std=[0.229, 0.224, 0.225],
+        )
+
+        def eval(self):
+            return self
+
+        def to(self, device):
+            return self
+
+        def encode(self, batch):
+            return FakeTensor(upstream)
+
+    monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
+    monkeypatch.setattr(
+        ee,
+        "DataLoader",
+        lambda *args, **kwargs: [FakeTensor(np.zeros((2, 3, 224, 224)))],
+    )
+    monkeypatch.setattr(ee.torch, "inference_mode", contextlib.nullcontext, raising=False)
+
+    saved_path, shape = ee.embed_manifest(
+        manifest_path=manifest_path,
+        output_path=output_path,
+        spec=mr._build_model_registry()[name],
+        batch_size=2,
+        num_workers=0,
+        device_arg="cpu",
+        progress_enabled=False,
+    )
+
+    embeddings = np.load(saved_path)
+    assert shape == (2, embedding_dim)
+    assert embeddings.dtype == np.float32
+    assert np.isfinite(embeddings).all()
+    np.testing.assert_array_equal(np.linalg.norm(embeddings, axis=1), [1.0, 1.0])
 
 
 def test_parse_models_rejects_empty_and_duplicates() -> None:

@@ -18,6 +18,38 @@ repositories and so cannot be pinned in the package metadata:
 
 Scoring embeddings that already exist needs none of them.
 
+Mascaret and Phaet
+------------------
+
+The pinned Waiv checkpoints use a Transformers 5 remote-code runtime. Reproduce their
+public embedding contracts in a dedicated environment so that this constraint does not
+change the runtime used by the other encoders:
+
+.. code-block:: bash
+
+   python -m venv .venv-waiv
+   .venv-waiv/bin/pip install -e ".[dev]" \
+     -r scripts/bench/requirements-waiv.txt
+   .venv-waiv/bin/python scripts/bench/extract_embeddings.py \
+     --tileset pathorob-camelyon \
+     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
+     --models Mascaret,Phaet
+
+``requirements-waiv.txt`` constrains Transformers to ``>=5.14,<6`` and directly lists
+only the image/model runtime. It deliberately has no dependency on slide2vec. The models
+are loaded from ``wearewaiv/mascaret`` and ``wearewaiv/phaet`` at the immutable revisions
+recorded in the model registry; both use FP32 inference and their checkpoint configuration's
+``pixel_mean`` and ``pixel_std``.
+
+An opt-in real-weight smoke test verifies repeatable finite outputs and unit L2 norms for
+both checkpoints. It can download gated weights and is therefore excluded from the default,
+offline test run:
+
+.. code-block:: bash
+
+   CROMA_RUN_WAIV_SMOKE=1 .venv-waiv/bin/python -m pytest \
+     tests/test_waiv_smoke.py -q
+
 Three commands, split along the seams of what is expensive
 ----------------------------------------------------------
 
