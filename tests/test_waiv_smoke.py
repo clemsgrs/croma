@@ -6,7 +6,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from PIL import Image
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("CROMA_RUN_WAIV_SMOKE") != "1",
@@ -26,6 +25,7 @@ def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
     torch = pytest.importorskip("torch")
     pytest.importorskip("torchvision")
     transformers = pytest.importorskip("transformers")
+    image_module = pytest.importorskip("PIL.Image")
     if int(transformers.__version__.split(".", maxsplit=1)[0]) != 5:
         pytest.skip("Waiv real-weight smoke checks require Transformers 5")
 
@@ -35,7 +35,7 @@ def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
     model, transform, embed_fn = ee._load_model_and_transform(
         _build_model_registry()[name], torch.device("cpu")
     )
-    image = Image.fromarray(np.zeros((112, 224, 3), dtype=np.uint8))
+    image = image_module.fromarray(np.zeros((112, 224, 3), dtype=np.uint8))
     batch = transform(image).unsqueeze(0)
 
     with torch.inference_mode():
