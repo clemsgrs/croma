@@ -145,10 +145,10 @@ Prevalence and severity are independent; a quantile is neither.
 The vocabulary of the output layout (see ADR-0007).
 
 Entries below that name `scripts/repro/` paths — *generated artifact*, *caption claim*,
-*float basis*, *prose claim*, and the manifest referenced under *run* — describe tooling
-that is local-only while the manuscript is unpublished (ADR-0012). The terms are defined
-here because the vocabulary is the project's, not the tree's; the files themselves are
-absent from a clone.
+*float basis*, *prose claim*, and the manifest referenced under *run* — describe tracked
+paper tooling that is excluded from the Python source distribution (ADR-0012). The canonical
+model registry is benchmark-owned at `scripts/bench/model_metadata.csv`, so runtime plotting
+does not depend on that excluded paper layer (ADR-0005 and ADR-0017).
 
 **Tileset**:
 A physical set of tiles that was pushed through the encoders, holding one embedding

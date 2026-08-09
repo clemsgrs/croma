@@ -33,7 +33,7 @@ sys.path.insert(
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
 OUT = Path("paper/sections/supp/pretraining_overlap.tex")
-METADATA = Path(__file__).resolve().parent / "model_metadata.csv"
+METADATA = Path(__file__).resolve().parent.parent / "bench" / "model_metadata.csv"
 
 
 def build() -> str:

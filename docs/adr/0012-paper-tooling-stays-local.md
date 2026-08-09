@@ -6,10 +6,10 @@ the repository. This restores ADR-0003's reproducibility posture: a reader can i
 generators together with the public manuscript artifacts they produce.
 
 The paper assembly remains outside the Python package. `scripts/repro/` and tests that require
-paper-only inputs are excluded from the source distribution. The one exception is
-`scripts/repro/model_metadata.csv`: shared benchmark plot styling reads its structured model
-family, tone, and order fields (ADR-0005 and ADR-0017), so the source distribution must carry
-that metadata beside `scripts/bench/plotting/style.py`.
+paper-only inputs are excluded from the source distribution without exception. The canonical
+model registry lives at `scripts/bench/model_metadata.csv`, because benchmark plotting consumes
+its structured family, tone, and order fields at runtime (ADR-0005 and ADR-0017); paper
+generators read that same benchmark-owned source.
 
 ## Why
 
@@ -22,14 +22,14 @@ Repository tracking and package distribution have different audiences. The repos
 auditable home for the paper workflow; the package ships the metrics library and benchmark
 tools. Excluding paper assembly from the source distribution keeps `pip`-facing artifacts
 focused and avoids tests whose ignored run outputs are unavailable in a clean package build.
-The small metadata exception prevents the packaged plotting code from acquiring a second,
-hard-coded identity map.
+Keeping shared runtime data under `scripts/bench/` prevents the plotting code from reaching
+across that boundary or acquiring a second, hard-coded identity map.
 
 ## Shape
 
 **Tracked in the repository:**
 
-- `scripts/repro/`, including `paper_manifest.py`, templates, and `model_metadata.csv`
+- `scripts/repro/`, including `paper_manifest.py` and templates
 - the corresponding tests under `tests/`
 - ADR-0010 and the other presentation ADRs
 
@@ -39,10 +39,10 @@ hard-coded identity map.
 - paper-only tests and ADR-0010
 - all paper assembly artifacts not otherwise published
 
-**Source-distribution exception:**
+**Included benchmark runtime data:**
 
-- `scripts/repro/model_metadata.csv`, because tracked benchmark plotting consumes its model
-  identity and ordering fields
+- `scripts/bench/model_metadata.csv`, the single model registry used by benchmark plots and
+  paper generators
 
 ## Consequences
 

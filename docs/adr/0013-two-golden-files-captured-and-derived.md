@@ -84,4 +84,5 @@ it is meant to be updated.
   asserted against `tests/metric_harness.py`, so moving `PINNED_K` fails loudly rather
   than leaving the file pinning a configuration nobody computes.
 - ADR-0003's reproducibility posture is unaffected: both files are inputs to tests, not
-  paper artifacts. Numbering skips 0010, which is local-only per ADR-0012.
+  paper artifacts. Numbering originally skipped 0010 while it was local-only; ADR-0012 now
+  records that the paper tooling is tracked after publication.

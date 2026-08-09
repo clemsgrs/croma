@@ -5,7 +5,7 @@ This is the single entrypoint. Run it after any benchmark re-run; the freshness 
 
 It does not compute anything. Metrics come from ``output/metrics/<protocol>/<benchmark>/``,
 produced by ``scripts/repro/run_benchmarks.sh``; model metadata comes from
-``scripts/repro/model_metadata.csv``. This script only re-renders LaTeX from them.
+``scripts/bench/model_metadata.csv``. This script only re-renders LaTeX from them.
 
 Usage:
   python scripts/repro/build_paper.py            # rebuild everything it can

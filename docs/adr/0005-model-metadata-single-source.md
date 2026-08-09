@@ -3,10 +3,11 @@
 Per-model facts (params, #WSIs, #tiles, regime, embedding dim, pretraining corpus,
 TCGA exposure), checkpoint relationships (family, parent, variant role, shared training
 run/corpus), institutional provenance domains, and plot identity (family tone and order)
-live in one machine-readable metadata table. A generator emits the **table bodies** of the
-model-summary and model-provenance sections from it, and the same source feeds the
-CRoMa-vs-scale figure and shared plot style. In/out-of-distribution status is derived from
-corpus or institutional provenance intersected with the benchmark domain rather than hand-kept.
+live in one machine-readable metadata table at `scripts/bench/model_metadata.csv`. A generator
+emits the **table bodies** of the model-summary and model-provenance sections from it, and the
+same source feeds the CRoMa-vs-scale figure and shared plot style. In/out-of-distribution status
+is derived from corpus or institutional provenance intersected with the benchmark domain rather
+than hand-kept.
 
 ## Why
 
@@ -33,3 +34,6 @@ one family training corpus auditable across every variant row.
   carry a superscript source marker so provenance stays honest and table/figure agree.
 - Institutional exposure is conservative. A shared institution or source domain can be marked
   without asserting that any benchmark patient or slide appeared in pretraining.
+- The registry belongs to the benchmark layer rather than `scripts/repro/`: runtime plot
+  identity ships with `scripts/bench/`, while the source distribution continues to exclude all
+  paper tooling (ADR-0012 and ADR-0017).

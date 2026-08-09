@@ -52,12 +52,12 @@ rather than the 200-bin summary the export carries, so they read the run under `
 directly — which means, like the schematics, they can only be rebuilt where that tree exists.
 
 They carry no TCGA-exposure daggers, unlike the manuscript's versions. The exposure flags
-live in `scripts/repro/model_metadata.csv`, which is git-ignored, and a public figure must
-not depend on a private file; the results pages carry that caveat in prose instead.
+live in `scripts/bench/model_metadata.csv`; these figures omit them because their committed
+results export does not carry per-benchmark exposure marks. The results pages carry that
+caveat in prose instead.
 
 ## Figures whose generator is not here
 
 `dataset_cardinality` and `dataset_montage` come from the paper tooling under
-`scripts/repro/`, which is local-only while the manuscript is unpublished (ADR-0012). They
-are published as artifacts whose generator is not yet public; that gap closes when ADR-0012
-reverses.
+`scripts/repro/`, which is tracked in the repository but excluded from the Python source
+distribution (ADR-0012). Their committed artifacts remain available to documentation builds.

@@ -41,9 +41,11 @@ breaking change for real installs.
 - **`scripts/bench/plotting/style.py`** — the former `croma/plotstyle.py`, unchanged but for
   its docstring.
 - **`scripts/bench/plotting/fonts/`** — the four Arimo faces, unchanged.
+- **`scripts/bench/model_metadata.csv`** — the canonical model registry whose structured family,
+  tone, and order fields drive runtime plot identity (ADR-0005).
 - **Call sites inside the plotting package** use relative imports (`from .style import ...`).
 - **Call sites elsewhere** (`scripts/repro/`, `scripts/studies/`, `scripts/tools/`, the
-  local-only paper tests) reach it as `from plotting.style import ...`, with
+  paper-only tests) reach it as `from plotting.style import ...`, with
   `scripts/bench` placed on `sys.path` by the same shim idiom those files already use for
   `src/` (ADR-0006 accepts cross-directory imports in the reproduction layer).
 
@@ -57,9 +59,9 @@ breaking change for real installs.
 - **A figure cannot be rendered from an installed `croma` alone.** It never could — every
   renderer is in `scripts/` — but the dependency is now structural instead of implied.
 - **`scripts/bench/` becomes load-bearing for the paper figures**, which live in the
-  local-only `scripts/repro/` (ADR-0012). The tracked half now owns the identity the
-  untracked half depends on. That is the right way round: the published deliverable owns
-  the shared code.
+  source-distribution-excluded `scripts/repro/` (ADR-0012). The packaged benchmark layer owns
+  the identity data the paper layer consumes. That is the right way round: the published
+  deliverable owns its shared runtime inputs.
 
 ## When this reverses
 

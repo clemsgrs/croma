@@ -66,7 +66,7 @@ from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_METADATA = HERE.parent / "model_metadata.csv"
+DEFAULT_METADATA = HERE.parents[1] / "bench" / "model_metadata.csv"
 # Rendered beside the study data it reads, under plots/{pdf,png}/ -- the same convention as
 # cross_benchmark_figure.py. Nothing writes into paper/figures/; a human copies the PDF a
 # float earns, and check_paper_figures.py reports when that copy falls behind this render.

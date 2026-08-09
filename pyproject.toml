@@ -146,11 +146,6 @@ exclude = [
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
-# Plot identity is part of scripts/bench, which is present in the sdist, and reads the single
-# metadata source even though the rest of scripts/repro stays unpublished (ADR-0005/0012/0017).
-[tool.hatch.build.targets.sdist.force-include]
-"scripts/repro/model_metadata.csv" = "scripts/repro/model_metadata.csv"
-
 # Formatting is enforced on the packaged code and its tests only -- the paths a PyPI user
 # or a reviewer actually reads. scripts/ is repro machinery and is deliberately not gated;
 # see the lint job in .github/workflows/ci.yaml.

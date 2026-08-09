@@ -49,7 +49,7 @@ PANEL: list[str] = [
     "pathorob-tolkach-esca",
 ]
 
-METADATA = HERE / "model_metadata.csv"
+METADATA = HERE.parent / "bench" / "model_metadata.csv"
 
 #: Cohort of Tolkach-ESCA drawn from TCGA. Tolkach is therefore *partly* exposed, and a
 #: TCGA-pretrained model's rank on it cannot be called leakage-free without checking.

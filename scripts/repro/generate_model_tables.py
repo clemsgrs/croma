@@ -1,5 +1,5 @@
 """Generate the model-summary LaTeX table BODY from the single committed metadata
-source ``scripts/repro/model_metadata.csv``.
+source ``scripts/bench/model_metadata.csv``.
 
 Only the ``\\hline``-separated row body is generated. The float wrapper, header
 row, ``\\caption`` and prose footnotes live in the hand-maintained template
@@ -21,7 +21,7 @@ from pathlib import Path
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_CSV = HERE / "model_metadata.csv"
+DEFAULT_CSV = HERE.parent / "bench" / "model_metadata.csv"
 TEMPLATE_DIR = HERE / "templates"
 SUMMARY_TMPL = TEMPLATE_DIR / "model_summary.tex.tmpl"
 PAPER_SECTIONS = HERE.parents[1] / "paper" / "sections"

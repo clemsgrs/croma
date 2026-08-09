@@ -50,7 +50,7 @@ SUPP_BENCHMARKS: tuple[ResultsTable, ...] = (by_prefix("TcgaFourByFour"), by_pre
 PANDA = by_prefix("Panda")
 
 #: model_metadata.csv, the same provenance table the cross-benchmark rank figure reads.
-METADATA = HERE / "model_metadata.csv"
+METADATA = HERE.parent / "bench" / "model_metadata.csv"
 
 
 def has_exposure_domain(entry: ResultsTable) -> bool:

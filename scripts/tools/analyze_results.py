@@ -22,8 +22,8 @@ removed to avoid duplication:
 - rank tables / rank-agreement -> ``scripts/repro/generate_results_table.py``,
 - k / m-sweep sensitivity -> ``scripts/repro/figures/cross_benchmark_figure.py``.
 
-The two ``scripts/repro/`` paths are local-only while the manuscript is unpublished and
-are absent from a clone; see ADR-0012.
+The two ``scripts/repro/`` paths are tracked paper tooling but excluded from source
+distributions; see ADR-0012.
 """
 
 import argparse

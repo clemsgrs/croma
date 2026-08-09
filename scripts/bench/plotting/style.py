@@ -30,7 +30,7 @@ import matplotlib
 from matplotlib import font_manager
 
 _FONTS_DIR = Path(__file__).resolve().parent / "fonts"
-_MODEL_METADATA = Path(__file__).resolve().parents[2] / "repro" / "model_metadata.csv"
+_MODEL_METADATA = Path(__file__).resolve().parent.parent / "model_metadata.csv"
 
 # ---------------------------------------------------------------------------
 # Canonical figure widths (inches). Mirrors journal column widths.
