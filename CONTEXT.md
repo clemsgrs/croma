@@ -323,3 +323,17 @@ How much data a model was pretrained on, measured in **#WSIs** (whole-slide imag
 values are undisclosed by model cards and sourced from PathoROB with a citation
 marker.
 _Avoid_: model size (that is the parameter count, a separate attribute).
+
+**Checkpoint family and variant**:
+Machine-readable model provenance carried as `family`, `parent_model` and
+`variant_role`. A robustness fine-tune remains linked to the parent whose pretraining facts it
+inherits; a distilled student names its teacher. `training_run` and `shared_corpus` identify
+family members produced together from one disclosed corpus. Plot hue, within-family tone and
+canonical order are read from this metadata rather than a second model list in plotting code.
+_Avoid_: encoding parent/student or fine-tune relationships only in a display label.
+
+**Institutional/source-domain exposure**:
+A conservative benchmark marker used when a model's disclosed institutional corpus and a scored
+cohort share a source institution. It means possible source-domain overlap only. Unless source
+records establish otherwise, exact patient or slide overlap is unknown and the marker does not
+establish leakage.

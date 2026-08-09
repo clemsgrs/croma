@@ -45,10 +45,13 @@ class ResultsTable:
     label: str = ""
     out_tex: str | None = None
     model_type: str = "tile-level"
-    #: Whether this benchmark's table daggers its TCGA-exposed encoders. True only for the two
-    #: TCGA benchmarks, whose scored cohorts are entirely TCGA-drawn; Camelyon and Tolkach-ESCA
-    #: are scored TCGA-free, so they mark nothing. The dagger set is read from model_metadata.csv.
-    tcga_dagger: bool = False
+    #: Provenance domain represented by a scored cohort. This drives exposure markers in plots;
+    #: ``charite`` is institutional/source-domain exposure, not an assertion of record overlap.
+    exposure_domain: str = ""
+    #: Whether the results table marks models exposed to ``exposure_domain``. Camelyon's figure
+    #: marks its exposed encoder but its primary table deliberately does not; the two TCGA tables
+    #: and Tolkach do. Membership is always resolved from model_metadata.csv.
+    mark_exposure_in_table: bool = False
     #: The column-defining table. Its caption spells the columns out; every other caption
     #: refers back to it. Exactly one entry may set this.
     primary: bool = False
@@ -91,6 +94,7 @@ TABLES: list[ResultsTable] = [
         label="tab:main-results",
         out_tex="paper/sections/results_table.tex",
         primary=True,
+        exposure_domain="camelyon",
     ),
     ResultsTable(
         prefix="TcgaTwoByTwo",
@@ -100,7 +104,8 @@ TABLES: list[ResultsTable] = [
         short_name="TCGA-2x2",
         label="tab:main-results-tcga",
         out_tex="paper/sections/results_table_tcga.tex",
-        tcga_dagger=True,
+        exposure_domain="tcga",
+        mark_exposure_in_table=True,
     ),
     ResultsTable(
         prefix="TcgaFourByFour",
@@ -110,7 +115,8 @@ TABLES: list[ResultsTable] = [
         short_name="TCGA-4x4",
         label="tab:main-results-tcga4x4",
         out_tex="paper/sections/results_table_tcga4x4.tex",
-        tcga_dagger=True,
+        exposure_domain="tcga",
+        mark_exposure_in_table=True,
     ),
     ResultsTable(
         prefix="Tolkach",
@@ -120,6 +126,8 @@ TABLES: list[ResultsTable] = [
         short_name="Tolkach-ESCA",
         label="tab:main-results-tolkach",
         out_tex="paper/sections/results_table_tolkach.tex",
+        exposure_domain="charite",
+        mark_exposure_in_table=True,
     ),
     # Prostate reaches the paper only as macros: its results table was cut from the manuscript,
     # so it owns no .tex file (out_tex is None) and drops out of rendered().

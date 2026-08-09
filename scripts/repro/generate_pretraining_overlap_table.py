@@ -23,10 +23,13 @@ from pathlib import Path
 import pandas as pd
 
 from _overlap import rows as overlap_rows
+from _model_provenance import exposed_models_for_domain
 from _paper_tables import CROMA_HEADLINE_M
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
 OUT = Path("paper/sections/supp/pretraining_overlap.tex")
@@ -37,10 +40,10 @@ def build() -> str:
     r = overlap_rows()  # every encoder incl. the control, ordered by boost (descending)
     ranked = r[r["model"] != CONTROL_MODEL]
     control = r[r["model"] == CONTROL_MODEL]
-    # The nine TCGA-exposed encoders carry a dagger, exactly as in the two TCGA results tables
+    # The TCGA-exposed encoders carry a dagger, exactly as in the two TCGA results tables
     # and the rank-aggregate Pareto -- one source (model_metadata.csv), so the sets never drift.
     md = pd.read_csv(METADATA)
-    exposed = set(md.loc[md["tcga_exposed"], "model"]) & set(ranked["model"])
+    exposed = set(exposed_models_for_domain(md, "tcga", set(ranked["model"])))
 
     def _row(x: pd.Series) -> str:
         name = x["model"] + (r"$^{\dagger}$" if x["model"] in exposed else "")

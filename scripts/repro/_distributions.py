@@ -29,10 +29,13 @@ from _paper_tables import (  # noqa: E402
     CaptionClaimError,
     croma_as_margin,
 )
+from _model_provenance import exposed_models_for_domain  # noqa: E402
 from paper_manifest import ResultsTable, by_prefix  # noqa: E402
 
 sys.path.insert(0, str(HERE.parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
 #: The Camelyon run backs the main-text tail analysis; its protocol comes from the manifest.
@@ -49,28 +52,10 @@ PANDA = by_prefix("Panda")
 #: model_metadata.csv, the same provenance table the cross-benchmark rank figure reads.
 METADATA = HERE / "model_metadata.csv"
 
-#: The pretraining-corpus domain each tile benchmark's *scored* cohorts are drawn from. An
-#: encoder is "exposed" on a panel when its pretraining overlaps a cohort actually evaluated in
-#: that benchmark, so the relevant domain differs by panel: PathoROB Camelyon contains a CAMELYON
-#: cohort; TCGA-4x4 is entirely TCGA. Tolkach-ESCA is deliberately absent -- its scored run holds
-#: TCGA out (VALSET1_UKK, VALSET2_WNS, VALSET4_CHA_FULL only; the source manifest's VALSET3_TCGA
-#: is embedded but not scored), so TCGA pretraining buys no in-distribution advantage there and
-#: the panel marks nothing. The TCGA set reuses the ``tcga_exposed`` flag the rank-aggregate
-#: Pareto marks (a model marked on TCGA-4x4 is marked on the overview too); CAMELYON exposure,
-#: which has no dedicated flag, comes from the finer ``corpus_domains`` provenance tags. Do NOT
-#: derive the TCGA set from ``corpus_domains`` -- that column is blank for Prost40M, so it would
-#: undercount the nine to eight.
-_BENCHMARK_DOMAIN: dict[str, str] = {
-    "pathorob-camelyon": "camelyon",
-    "pathorob-tcga-4x4": "tcga",
-}
-
 
 def has_exposure_domain(entry: ResultsTable) -> bool:
-    """Whether ``entry``'s scored cohorts overlap a pretraining domain, so the panel is expected
-    to mark at least one encoder. False for a benchmark whose scored cohorts nothing was
-    pretrained on (Tolkach-ESCA, scored TCGA-free), which legitimately marks nothing."""
-    return entry.benchmark in _BENCHMARK_DOMAIN
+    """Whether a scored cohort has a declared corpus or institutional provenance domain."""
+    return bool(entry.exposure_domain)
 
 
 @dataclass(frozen=True)
@@ -163,11 +148,10 @@ def assert_control_is_the_control(dist: Distributions) -> Model:
     return ctrl
 
 
-def _corpus_domains(cell: object) -> set[str]:
-    """The ';'-separated provenance-domain tags in one ``corpus_domains`` cell (empty when NaN)."""
-    if not isinstance(cell, str) or not cell.strip():
-        return set()
-    return {token.strip() for token in cell.split(";") if token.strip()}
+def metadata_exposed_models(entry: ResultsTable, roster: set[str]) -> frozenset[str]:
+    """Resolve corpus/institutional exposure from the single model metadata source."""
+    md = pd.read_csv(METADATA)
+    return exposed_models_for_domain(md, entry.exposure_domain, roster)
 
 
 def exposed_models(entry: ResultsTable, dist: Distributions) -> frozenset[str]:
@@ -176,25 +160,13 @@ def exposed_models(entry: ResultsTable, dist: Distributions) -> frozenset[str]:
 
     The Pareto figure marks exactly this set (a dagger after each exposed encoder's name in the
     legend) and its caption counts it, so the two read one source. TCGA benchmarks reuse the
-    ``tcga_exposed`` flag the rank-aggregate overview marks -- an encoder marked on TCGA-4x4 is
-    marked there too; CAMELYON exposure, lacking a dedicated flag, is read from the
-    ``corpus_domains`` tags. A benchmark with no mapped domain returns an empty set, so the figure
-    simply draws no marks.
+    ``corpus_domains`` tags the rank-aggregate overview also reads. CAMELYON exposure is read
+    from the same field; conservative Charit\'e/CHA exposure is read from
+    ``institutional_domains``. A benchmark with no declared domain returns an empty set, so the
+    figure simply draws no marks.
     """
-    domain = _BENCHMARK_DOMAIN.get(entry.benchmark)
-    if domain is None:
-        return frozenset()
-    md = pd.read_csv(METADATA)
-    if domain == "tcga":
-        marked = set(md.loc[md["tcga_exposed"], "model"])
-    else:
-        marked = {
-            str(row["model"])
-            for _, row in md.iterrows()
-            if domain in _corpus_domains(row.get("corpus_domains"))
-        }
     roster = {m.name for m in dist.pathology}
-    return frozenset(marked) & roster
+    return metadata_exposed_models(entry, roster)
 
 
 # --- slide-level (PANDA) predicates: the supplement's fourth ridgeline (supp:panda) ---------

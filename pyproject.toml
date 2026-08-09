@@ -134,18 +134,22 @@ exclude = [
   "/scripts/experiments",
   "**/.ipynb_checkpoints",
   "**/__pycache__",
-  # Paper tooling (ADR-0012). These are git-ignored, but an `include` entry overrides
-  # VCS-ignore in hatchling, so "/scripts" and "/docs" would drag them in. Without this a
-  # build on a machine that has the tree -- the only kind of machine that has it -- ships
-  # to PyPI exactly what the repository declines to publish, and a CI build from a clean
-  # checkout would silently produce a different sdist.
+  # Paper tooling is tracked for repository-level reproducibility but is not part of the
+  # Python package (ADR-0012). Keep the source distribution focused on the metrics library
+  # and benchmark tools, and omit tests whose paper-only inputs are unavailable there.
   "/scripts/repro",
   "/tests/test_paper_artifacts.py",
   "/tests/test_generate_model_tables.py",
+  "/tests/test_presentation_provenance.py",
   "/tests/test_dataset_montage.py",
   "/tests/test_scale_scatter.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
+
+# Plot identity is part of scripts/bench, which is present in the sdist, and reads the single
+# metadata source even though the rest of scripts/repro stays unpublished (ADR-0005/0012/0017).
+[tool.hatch.build.targets.sdist.force-include]
+"scripts/repro/model_metadata.csv" = "scripts/repro/model_metadata.csv"
 
 # Formatting is enforced on the packaged code and its tests only -- the paths a PyPI user
 # or a reviewer actually reads. scripts/ is repro machinery and is deliberately not gated;

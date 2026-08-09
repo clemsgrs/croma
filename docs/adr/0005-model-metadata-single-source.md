@@ -1,10 +1,12 @@
 # Model metadata is a single machine-readable source that generates the model tables
 
 Per-model facts (params, #WSIs, #tiles, regime, embedding dim, pretraining corpus,
-TCGA-exposure) live in one machine-readable metadata table. A generator emits the
-**table bodies** of the model-summary and model-provenance sections from it, and the
-same source feeds the CRoMa-vs-scale figure. In/out-of-distribution status is derived
-from corpus ∩ benchmark domain rather than hand-kept.
+TCGA exposure), checkpoint relationships (family, parent, variant role, shared training
+run/corpus), institutional provenance domains, and plot identity (family tone and order)
+live in one machine-readable metadata table. A generator emits the **table bodies** of the
+model-summary and model-provenance sections from it, and the same source feeds the
+CRoMa-vs-scale figure and shared plot style. In/out-of-distribution status is derived from
+corpus or institutional provenance intersected with the benchmark domain rather than hand-kept.
 
 ## Why
 
@@ -12,6 +14,11 @@ The metadata previously existed only as a hand-authored LaTeX table, so it could
 be plotted and drifted from any other use. Single-sourcing the numbers means editing
 one place updates the tables and the figure together, and the scale figure never
 disagrees with the table.
+
+Structured variant roles are presentation-bearing: the table identifies robustness-targeted
+fine-tunes and teacher/distilled-student relationships from `parent_model` and `variant_role`
+rather than embedding those relationships in prose-only cells. A shared-corpus identifier makes
+one family training corpus auditable across every variant row.
 
 ## Considered options
 
@@ -24,3 +31,5 @@ disagrees with the table.
 
 - Some #WSIs are undisclosed by the model cards; those are filled from PathoROB and
   carry a superscript source marker so provenance stays honest and table/figure agree.
+- Institutional exposure is conservative. A shared institution or source domain can be marked
+  without asserting that any benchmark patient or slide appeared in pretraining.
