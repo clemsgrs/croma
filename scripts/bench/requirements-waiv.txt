@@ -1,0 +1,7 @@
+# Isolated runtime for the pinned Mascaret and Phaet remote-code checkpoints.
+# Install this beside an editable croma checkout; slide2vec is intentionally absent.
+
+torch
+torchvision
+transformers>=5.14,<6
+Pillow>=10.0

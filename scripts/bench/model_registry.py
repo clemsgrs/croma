@@ -3,7 +3,7 @@ import dataclasses
 
 @dataclasses.dataclass
 class ModelSpec:
-    backend: str  # "timm", "hf_auto", "conch_v1", "conch_v1_5", "midnight", "gpfm", "musk", or "genbio"
+    backend: str  # Loader family selected by extract_embeddings._load_model_and_transform.
     model_id: str
     extract: str = "cls"
     timm_kwargs: dict = dataclasses.field(default_factory=dict)
@@ -162,5 +162,19 @@ def _build_model_registry():
             backend="genbio",
             model_id="genbio-ai/genbio-pathfm",
             extract="raw",
+        ),
+        "Mascaret": ModelSpec(
+            backend="waiv",
+            model_id="wearewaiv/mascaret",
+            extract="raw",
+            checkpoint_revision="e95e7ea15e039e78d74def101415e19d9a67ba80",
+            embedding_dim=1536,
+        ),
+        "Phaet": ModelSpec(
+            backend="waiv",
+            model_id="wearewaiv/phaet",
+            extract="raw",
+            checkpoint_revision="e0ce6e0ee248470bd8604823e412ca64048a2495",
+            embedding_dim=1024,
         ),
     }
