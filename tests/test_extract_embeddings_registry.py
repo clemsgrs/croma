@@ -15,6 +15,246 @@ if str(SCRIPTS) not in sys.path:
 import model_registry as mr
 
 
+def _load_rudolfv2_embed_with_published_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+    extraction_module,
+    published_tokens: np.ndarray,
+    *,
+    name: str = "RudolfV 2-S",
+    encode_calls: list[object] | None = None,
+):
+    ee = extraction_module
+
+    class FakeBackbone:
+        def encode(self, batch):
+            if encode_calls is not None:
+                encode_calls.append(batch)
+            return {"last_hidden_state": published_tokens}
+
+    class FakeModel:
+        model = FakeBackbone()
+
+        def eval(self):
+            return self
+
+        def to(self, device):
+            return self
+
+    monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
+    monkeypatch.setattr(
+        ee.torch,
+        "cat",
+        lambda tensors, dim: np.concatenate(tensors, axis=dim),
+        raising=False,
+    )
+    _model, _transform, embed = ee._load_model_and_transform(
+        mr._build_model_registry()[name], ee.torch.device("cpu")
+    )
+    return embed
+
+
+@pytest.mark.parametrize(
+    ("name", "model_id", "revision", "embedding_dim"),
+    [
+        (
+            "RudolfV 2",
+            "Aignostics/RudolfV-2",
+            "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",
+            3072,
+        ),
+        (
+            "RudolfV 2-B",
+            "Aignostics/RudolfV-2-B",
+            "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",
+            1536,
+        ),
+        (
+            "RudolfV 2-S",
+            "Aignostics/RudolfV-2-S",
+            "76abacd512a98c72a6db6192af9fc98313c3bd78",
+            768,
+        ),
+    ],
+)
+def test_registry_includes_pinned_fp32_rudolfv2_family(
+    name: str, model_id: str, revision: str, embedding_dim: int
+) -> None:
+    spec = mr._build_model_registry()[name]
+
+    assert spec == mr.ModelSpec(
+        backend="rudolfv2",
+        model_id=model_id,
+        extract="cls_and_patch",
+        mixed_precision=False,
+        checkpoint_revision=revision,
+        embedding_dim=embedding_dim,
+    )
+
+
+@pytest.mark.parametrize("name", ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"])
+def test_rudolfv2_loader_uses_pinned_remote_code_model_in_eval_mode(
+    monkeypatch: pytest.MonkeyPatch, name: str, extraction_module
+) -> None:
+    ee = extraction_module
+    spec = mr._build_model_registry()[name]
+    calls: list[tuple[str, dict]] = []
+
+    class FakeModel:
+        training = True
+
+        def eval(self):
+            self.training = False
+            return self
+
+        def to(self, device):
+            return self
+
+    fake_model = FakeModel()
+    monkeypatch.setattr(
+        ee,
+        "AutoModel",
+        types.SimpleNamespace(
+            from_pretrained=lambda model_id, **kwargs: (
+                calls.append((model_id, kwargs)) or fake_model
+            )
+        ),
+    )
+
+    loaded_model, _transform, _embed = ee._load_model_and_transform(spec, ee.torch.device("cpu"))
+
+    assert (calls, loaded_model, fake_model.training) == (
+        [
+            (
+                spec.model_id,
+                {
+                    "trust_remote_code": True,
+                    "revision": spec.checkpoint_revision,
+                },
+            )
+        ],
+        fake_model,
+        False,
+    )
+
+
+def test_rudolfv2_loader_uses_official_native_preprocessing(
+    monkeypatch: pytest.MonkeyPatch, extraction_module
+) -> None:
+    ee = extraction_module
+
+    class FakeModel:
+        def eval(self):
+            return self
+
+        def to(self, device):
+            return self
+
+    monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
+    v2 = sys.modules["torchvision.transforms.v2"]
+    monkeypatch.setattr(v2, "Compose", lambda operations: operations)
+    monkeypatch.setattr(v2, "ToImage", lambda: ("to_image",))
+    monkeypatch.setattr(
+        v2,
+        "Resize",
+        lambda size, **kwargs: ("resize", size, kwargs),
+    )
+    monkeypatch.setattr(v2, "CenterCrop", lambda size: ("center_crop", size))
+    monkeypatch.setattr(
+        v2,
+        "ToDtype",
+        lambda dtype, **kwargs: ("to_dtype", dtype, kwargs),
+    )
+    monkeypatch.setattr(
+        v2,
+        "Normalize",
+        lambda **kwargs: ("normalize", kwargs),
+    )
+
+    _model, transform, _embed = ee._load_model_and_transform(
+        mr._build_model_registry()["RudolfV 2-S"], ee.torch.device("cpu")
+    )
+
+    assert transform == [
+        ("to_image",),
+        (
+            "resize",
+            (224, 224),
+            {"interpolation": "bicubic", "antialias": True},
+        ),
+        ("center_crop", (224, 224)),
+        ("to_dtype", ee.torch.float32, {"scale": True}),
+        (
+            "normalize",
+            {
+                "mean": (0.7072, 0.5787, 0.7036),
+                "std": (0.2119, 0.2301, 0.1775),
+            },
+        ),
+    ]
+
+
+def test_rudolfv2_native_forward_pools_cls_and_784_patches_without_registers(
+    monkeypatch: pytest.MonkeyPatch, extraction_module
+) -> None:
+    ee = extraction_module
+    cls = np.array([[[-1.0, -2.0]]], dtype=np.float32)
+    registers = np.full((1, 8, 2), 100.0, dtype=np.float32)
+    patches = np.full((1, 784, 2), (4.0, 6.0), dtype=np.float32)
+    published_tokens = np.concatenate((cls, registers, patches), axis=1)
+    encode_calls: list[object] = []
+    embed = _load_rudolfv2_embed_with_published_tokens(
+        monkeypatch, ee, published_tokens, encode_calls=encode_calls
+    )
+    batch = object()
+
+    output = embed(batch)
+
+    assert encode_calls == [batch]
+    np.testing.assert_array_equal(output, np.array([[-1.0, -2.0, 4.0, 6.0]], dtype=np.float32))
+
+
+def test_rudolfv2_native_forward_rejects_an_unexpected_token_layout(
+    monkeypatch: pytest.MonkeyPatch, extraction_module
+) -> None:
+    ee = extraction_module
+    unexpected_tokens = np.zeros((1, 792, 2), dtype=np.float32)
+    embed = _load_rudolfv2_embed_with_published_tokens(monkeypatch, ee, unexpected_tokens)
+
+    with pytest.raises(RuntimeError, match="793 tokens"):
+        embed(object())
+
+
+@pytest.mark.parametrize(
+    ("name", "model_width", "pooled_width"),
+    [
+        ("RudolfV 2", 1536, 3072),
+        ("RudolfV 2-B", 768, 1536),
+        ("RudolfV 2-S", 384, 768),
+    ],
+)
+def test_rudolfv2_family_returns_finite_fp32_pooled_vectors(
+    monkeypatch: pytest.MonkeyPatch,
+    extraction_module,
+    name: str,
+    model_width: int,
+    pooled_width: int,
+) -> None:
+    ee = extraction_module
+    cls = np.full((1, 1, model_width), 1.0, dtype=np.float32)
+    registers = np.full((1, 8, model_width), np.inf, dtype=np.float32)
+    patches = np.full((1, 784, model_width), 2.0, dtype=np.float32)
+    published_tokens = np.concatenate((cls, registers, patches), axis=1)
+    embed = _load_rudolfv2_embed_with_published_tokens(monkeypatch, ee, published_tokens, name=name)
+
+    output = embed(object())
+
+    expected = np.full((1, pooled_width), 2.0, dtype=np.float32)
+    expected[:, :model_width] = 1.0
+    np.testing.assert_array_equal(output, expected)
+    assert output.dtype == np.float32
+    assert np.isfinite(output).all()
+
+
 def test_registry_includes_conch_and_midnight_models() -> None:
     registry = mr._build_model_registry()
 

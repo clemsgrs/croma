@@ -41,6 +41,27 @@ def _build_model_registry():
     h0_mini_kwargs = {"mlp_layer": "SwiGLUPacked", "act_layer": "SiLU"}
 
     return {
+        "RudolfV 2": ModelSpec(
+            backend="rudolfv2",
+            model_id="Aignostics/RudolfV-2",
+            extract="cls_and_patch",
+            checkpoint_revision="482d9519c6a10fc22fbe5bcd6a87d5daf056643c",
+            embedding_dim=3072,
+        ),
+        "RudolfV 2-B": ModelSpec(
+            backend="rudolfv2",
+            model_id="Aignostics/RudolfV-2-B",
+            extract="cls_and_patch",
+            checkpoint_revision="b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",
+            embedding_dim=1536,
+        ),
+        "RudolfV 2-S": ModelSpec(
+            backend="rudolfv2",
+            model_id="Aignostics/RudolfV-2-S",
+            extract="cls_and_patch",
+            checkpoint_revision="76abacd512a98c72a6db6192af9fc98313c3bd78",
+            embedding_dim=768,
+        ),
         "Virchow2": ModelSpec(
             backend="timm",
             model_id="hf-hub:paige-ai/Virchow2",

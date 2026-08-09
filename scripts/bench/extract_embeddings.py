@@ -57,6 +57,14 @@ from progress_utils import progress_bar, progress_write, resolve_progress_mode
 # that can alter embeddings without changing the ModelSpec fields below.
 _EXTRACTION_CONTRACT_VERSION = 1
 
+_RUDOLFV2_INPUT_SIZE = 224
+_RUDOLFV2_NUM_REGISTERS = 8
+_RUDOLFV2_NUM_PATCHES = 784
+_RUDOLFV2_NUM_PREFIX_TOKENS = 1 + _RUDOLFV2_NUM_REGISTERS
+_RUDOLFV2_NUM_TOKENS = _RUDOLFV2_NUM_PREFIX_TOKENS + _RUDOLFV2_NUM_PATCHES
+_RUDOLFV2_MEAN = (0.7072, 0.5787, 0.7036)
+_RUDOLFV2_STD = (0.2119, 0.2301, 0.1775)
+
 
 def _extract_timm_features(out, extract: str):
     if extract == "cls":
@@ -250,6 +258,46 @@ def _load_model_and_transform(spec: ModelSpec, device):
             raise ValueError(
                 f"Unsupported extract mode for hf_auto backend: {spec.extract}"
             )
+
+        return model, transform, embed_fn
+
+    if spec.backend == "rudolfv2":
+        from torchvision.transforms import v2
+
+        revision_kwargs = (
+            {"revision": spec.checkpoint_revision}
+            if spec.checkpoint_revision is not None
+            else {}
+        )
+        model = AutoModel.from_pretrained(
+            spec.model_id, trust_remote_code=True, **revision_kwargs
+        )
+        model.eval().to(device)
+        transform = v2.Compose(
+            [
+                v2.ToImage(),
+                v2.Resize(
+                    (_RUDOLFV2_INPUT_SIZE, _RUDOLFV2_INPUT_SIZE),
+                    interpolation=v2.InterpolationMode.BICUBIC,
+                    antialias=True,
+                ),
+                v2.CenterCrop((_RUDOLFV2_INPUT_SIZE, _RUDOLFV2_INPUT_SIZE)),
+                v2.ToDtype(torch.float32, scale=True),
+                v2.Normalize(mean=_RUDOLFV2_MEAN, std=_RUDOLFV2_STD),
+            ]
+        )
+
+        def embed_fn(batch):
+            tokens = model.model.encode(batch)["last_hidden_state"]
+            if tokens.ndim != 3 or tokens.shape[1] != _RUDOLFV2_NUM_TOKENS:
+                raise RuntimeError(
+                    f"RudolfV 2 published native forward must return {_RUDOLFV2_NUM_TOKENS} "
+                    f"tokens (CLS + {_RUDOLFV2_NUM_REGISTERS} registers + "
+                    f"{_RUDOLFV2_NUM_PATCHES} patches); "
+                    f"got shape {tuple(tokens.shape)}."
+                )
+            patch_tokens = tokens[:, _RUDOLFV2_NUM_PREFIX_TOKENS :]
+            return torch.cat([tokens[:, 0], patch_tokens.mean(1)], dim=-1)
 
         return model, transform, embed_fn
 
