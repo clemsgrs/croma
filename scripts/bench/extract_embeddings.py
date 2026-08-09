@@ -60,10 +60,127 @@ _EXTRACTION_CONTRACT_VERSION = 1
 _RUDOLFV2_INPUT_SIZE = 224
 _RUDOLFV2_NUM_REGISTERS = 8
 _RUDOLFV2_NUM_PATCHES = 784
-_RUDOLFV2_NUM_PREFIX_TOKENS = 1 + _RUDOLFV2_NUM_REGISTERS
-_RUDOLFV2_NUM_TOKENS = _RUDOLFV2_NUM_PREFIX_TOKENS + _RUDOLFV2_NUM_PATCHES
 _RUDOLFV2_MEAN = (0.7072, 0.5787, 0.7036)
 _RUDOLFV2_STD = (0.2119, 0.2301, 0.1775)
+
+
+@dataclasses.dataclass(frozen=True)
+class _WaivExtractionConfig:
+    input_size: int = 224
+    input_dtype: str = "float32"
+    scale_uint8: bool = True
+
+    def details(self) -> dict:
+        return {
+            "preprocessing": {
+                "resize": self.input_size,
+                "center_crop": self.input_size,
+                "input_dtype": self.input_dtype,
+                "input_scaling": (
+                    "uint8-to-unit-float" if self.scale_uint8 else "unscaled"
+                ),
+                "normalization": "checkpoint-config:pixel_mean,pixel_std",
+            },
+            "pooling": {
+                "method": "checkpoint-native:model.encode",
+                "output_normalization": "checkpoint-native",
+            },
+        }
+
+    def build_transform(self, v2, model):
+        return v2.Compose(
+            [
+                v2.ToImage(),
+                v2.Resize(self.input_size),
+                v2.CenterCrop(self.input_size),
+                v2.ToDtype(getattr(torch, self.input_dtype), scale=self.scale_uint8),
+                v2.Normalize(
+                    mean=model.config.pixel_mean,
+                    std=model.config.pixel_std,
+                ),
+            ]
+        )
+
+    @staticmethod
+    def embed(model, batch):
+        return model.encode(batch)
+
+
+@dataclasses.dataclass(frozen=True)
+class _RudolfV2ExtractionConfig:
+    input_size: int = _RUDOLFV2_INPUT_SIZE
+    interpolation: str = "bicubic"
+    antialias: bool = True
+    input_dtype: str = "float32"
+    scale_uint8: bool = True
+    normalization_mean: tuple[float, float, float] = _RUDOLFV2_MEAN
+    normalization_std: tuple[float, float, float] = _RUDOLFV2_STD
+    register_tokens: int = _RUDOLFV2_NUM_REGISTERS
+    patch_tokens: int = _RUDOLFV2_NUM_PATCHES
+
+    def details(self) -> dict:
+        size = [self.input_size, self.input_size]
+        return {
+            "preprocessing": {
+                "resize": size,
+                "resize_interpolation": self.interpolation,
+                "resize_antialias": self.antialias,
+                "center_crop": list(size),
+                "input_dtype": self.input_dtype,
+                "input_scaling": (
+                    "uint8-to-unit-float" if self.scale_uint8 else "unscaled"
+                ),
+                "normalization_mean": list(self.normalization_mean),
+                "normalization_std": list(self.normalization_std),
+            },
+            "pooling": {
+                "method": "concatenate-cls-and-mean-patches",
+                "register_tokens_excluded": self.register_tokens,
+                "patch_tokens": self.patch_tokens,
+            },
+        }
+
+    def build_transform(self, v2):
+        size = (self.input_size, self.input_size)
+        return v2.Compose(
+            [
+                v2.ToImage(),
+                v2.Resize(
+                    size,
+                    interpolation=getattr(
+                        v2.InterpolationMode,
+                        self.interpolation.upper(),
+                    ),
+                    antialias=self.antialias,
+                ),
+                v2.CenterCrop(size),
+                v2.ToDtype(getattr(torch, self.input_dtype), scale=self.scale_uint8),
+                v2.Normalize(
+                    mean=self.normalization_mean,
+                    std=self.normalization_std,
+                ),
+            ]
+        )
+
+    def embed(self, model, batch):
+        tokens = model.model.encode(batch)["last_hidden_state"]
+        prefix_tokens = 1 + self.register_tokens
+        expected_tokens = prefix_tokens + self.patch_tokens
+        if tokens.ndim != 3 or tokens.shape[1] != expected_tokens:
+            raise RuntimeError(
+                f"RudolfV 2 published native forward must return {expected_tokens} "
+                f"tokens (CLS + {self.register_tokens} registers + "
+                f"{self.patch_tokens} patches); "
+                f"got shape {tuple(tokens.shape)}."
+            )
+        patch_tokens = tokens[:, prefix_tokens:]
+        return torch.cat([tokens[:, 0], patch_tokens.mean(1)], dim=-1)
+
+
+_BACKEND_EXTRACTION_CONFIGS = {
+    "waiv": _WaivExtractionConfig(),
+    "rudolfv2": _RudolfV2ExtractionConfig(),
+}
 
 
 def _extract_timm_features(out, extract: str):
@@ -119,6 +236,61 @@ def _load_manifest(manifest_path: Path) -> pd.DataFrame:
     return df.copy()
 
 
+def _resolve_image_paths(manifest_path: Path, image_path_map: Path | None) -> list[str] | None:
+    """Resolve optional access-only paths without changing manifest identity."""
+
+    if image_path_map is None:
+        return None
+    manifest = _load_manifest(manifest_path)
+    mapping = pd.read_csv(image_path_map)
+    required = ("sample_id", "canonical_image_path", "access_path")
+    missing = [column for column in required if column not in mapping.columns]
+    if missing:
+        raise ValueError(f"image path map is missing required columns: {missing}")
+
+    canonical_keys = list(
+        zip(
+            manifest["sample_id"].astype(str),
+            manifest["image_path"].astype(str),
+            strict=True,
+        )
+    )
+    mapped_keys = list(
+        zip(
+            mapping["sample_id"].astype(str),
+            mapping["canonical_image_path"].astype(str),
+            strict=True,
+        )
+    )
+    if len(set(mapped_keys)) != len(mapped_keys):
+        raise ValueError("image path map contains duplicate canonical tile identities")
+    access_paths = mapping["access_path"].astype(str).tolist()
+    if len(set(access_paths)) != len(access_paths):
+        raise ValueError("image path map must map canonical tiles one-to-one to access paths")
+    if set(mapped_keys) != set(canonical_keys):
+        missing_keys = len(set(canonical_keys) - set(mapped_keys))
+        extra_keys = len(set(mapped_keys) - set(canonical_keys))
+        raise ValueError(
+            "image path map must cover the canonical manifest exactly: "
+            f"missing={missing_keys}, extra={extra_keys}"
+        )
+
+    by_key = dict(zip(mapped_keys, access_paths, strict=True))
+    resolved = [by_key[key] for key in canonical_keys]
+    missing_files = [path for path in resolved if not Path(path).is_file()]
+    if missing_files:
+        raise FileNotFoundError(
+            f"image path map resolves to {len(missing_files)} missing access path(s); "
+            f"first: {missing_files[0]}"
+        )
+    return resolved
+
+
+def _model_extraction_details(spec: ModelSpec) -> dict:
+    config = _BACKEND_EXTRACTION_CONFIGS.get(spec.backend)
+    return config.details() if config is not None else {}
+
+
 def build_embedding_artifact_contract(
     *, manifest_path: Path, spec: ModelSpec, batch_size: int, device_arg: str
 ) -> EmbeddingArtifactContract:
@@ -142,6 +314,7 @@ def build_embedding_artifact_contract(
             "model_id": str(spec.model_id),
             "extract": str(spec.extract),
             "timm_kwargs": dict(spec.timm_kwargs),
+            **_model_extraction_details(spec),
         },
         precision=(
             "mixed-float16"
@@ -208,27 +381,17 @@ def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "waiv":
         from torchvision.transforms import v2
 
+        config = _BACKEND_EXTRACTION_CONFIGS["waiv"]
         model = AutoModel.from_pretrained(
             spec.model_id,
             trust_remote_code=True,
             revision=spec.checkpoint_revision,
         ).eval()
         model.to(device)
-        transform = v2.Compose(
-            [
-                v2.ToImage(),
-                v2.Resize(224),
-                v2.CenterCrop(224),
-                v2.ToDtype(torch.float32, scale=True),
-                v2.Normalize(
-                    mean=model.config.pixel_mean,
-                    std=model.config.pixel_std,
-                ),
-            ]
-        )
+        transform = config.build_transform(v2, model)
 
         def embed_fn(batch):
-            return model.encode(batch)
+            return config.embed(model, batch)
 
         return model, transform, embed_fn
 
@@ -264,6 +427,7 @@ def _load_model_and_transform(spec: ModelSpec, device):
     if spec.backend == "rudolfv2":
         from torchvision.transforms import v2
 
+        config = _BACKEND_EXTRACTION_CONFIGS["rudolfv2"]
         revision_kwargs = (
             {"revision": spec.checkpoint_revision}
             if spec.checkpoint_revision is not None
@@ -273,31 +437,10 @@ def _load_model_and_transform(spec: ModelSpec, device):
             spec.model_id, trust_remote_code=True, **revision_kwargs
         )
         model.eval().to(device)
-        transform = v2.Compose(
-            [
-                v2.ToImage(),
-                v2.Resize(
-                    (_RUDOLFV2_INPUT_SIZE, _RUDOLFV2_INPUT_SIZE),
-                    interpolation=v2.InterpolationMode.BICUBIC,
-                    antialias=True,
-                ),
-                v2.CenterCrop((_RUDOLFV2_INPUT_SIZE, _RUDOLFV2_INPUT_SIZE)),
-                v2.ToDtype(torch.float32, scale=True),
-                v2.Normalize(mean=_RUDOLFV2_MEAN, std=_RUDOLFV2_STD),
-            ]
-        )
+        transform = config.build_transform(v2)
 
         def embed_fn(batch):
-            tokens = model.model.encode(batch)["last_hidden_state"]
-            if tokens.ndim != 3 or tokens.shape[1] != _RUDOLFV2_NUM_TOKENS:
-                raise RuntimeError(
-                    f"RudolfV 2 published native forward must return {_RUDOLFV2_NUM_TOKENS} "
-                    f"tokens (CLS + {_RUDOLFV2_NUM_REGISTERS} registers + "
-                    f"{_RUDOLFV2_NUM_PATCHES} patches); "
-                    f"got shape {tuple(tokens.shape)}."
-                )
-            patch_tokens = tokens[:, _RUDOLFV2_NUM_PREFIX_TOKENS :]
-            return torch.cat([tokens[:, 0], patch_tokens.mean(1)], dim=-1)
+            return config.embed(model, batch)
 
         return model, transform, embed_fn
 
@@ -507,6 +650,7 @@ def embed_manifest(
     artifact_contract: EmbeddingArtifactContract | None = None,
     progress_enabled: bool | None = None,
     tile_progress_leave: bool = True,
+    image_paths: list[str] | None = None,
 ) -> tuple[Path, tuple[int, int]]:
     manifest = _load_manifest(manifest_path)
     if artifact_contract is None:
@@ -518,6 +662,14 @@ def embed_manifest(
         )
     device = _device_from_arg(device_arg)
     progress_on = bool(progress_enabled) if progress_enabled is not None else True
+    resolved_image_paths = manifest["image_path"].astype(str).tolist()
+    if image_paths is not None:
+        if len(image_paths) != len(manifest):
+            raise ValueError(
+                "image access paths must have one entry per canonical manifest row: "
+                f"expected {len(manifest)}, got {len(image_paths)}"
+            )
+        resolved_image_paths = [str(path) for path in image_paths]
 
     progress_write(f"[embed] manifest: {manifest_path}", enabled=progress_on)
     progress_write(f"[embed] samples: {len(manifest)}", enabled=progress_on)
@@ -527,7 +679,7 @@ def embed_manifest(
     progress_write(f"[embed] device: {device}", enabled=progress_on)
 
     _model, transform, embed_fn = _load_model_and_transform(spec, device)
-    dataset = TileDataset(manifest["image_path"].tolist(), transform)
+    dataset = TileDataset(resolved_image_paths, transform)
     loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -612,6 +764,16 @@ def parse_args():
         help="Comma-separated model names (e.g. Virchow2,UNI,Phikon-v2).",
     )
     parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument(
+        "--image-path-map",
+        type=Path,
+        default=None,
+        help=(
+            "Optional CSV with sample_id, canonical_image_path, and access_path. "
+            "It may redirect tile reads to a one-to-one local mirror without changing "
+            "the frozen manifest or artifact provenance."
+        ),
+    )
     parser.add_argument("--num-workers", type=int, default=4)
     parser.add_argument("--device", default="auto", help="auto|cpu|cuda|cuda:0")
     parser.add_argument(
@@ -675,6 +837,7 @@ def main():
     manifest_path = _resolve_tileset_manifest(
         str(args.tileset), args.manifest, str(args.confounder_column), progress_enabled
     )
+    image_paths: list[str] | None = None
 
     progress_write(
         f"[embed] models: {', '.join(model_names)}", enabled=progress_enabled
@@ -716,6 +879,8 @@ def main():
                     )
                     continue
 
+                if args.image_path_map is not None and image_paths is None:
+                    image_paths = _resolve_image_paths(manifest_path, args.image_path_map)
                 model_bar.set_postfix_str(f"{model_name}:extract")
                 embed_manifest(
                     manifest_path=manifest_path,
@@ -727,6 +892,7 @@ def main():
                     artifact_contract=artifact_contract,
                     progress_enabled=progress_enabled,
                     tile_progress_leave=False,
+                    image_paths=image_paths,
                 )
                 statuses.append(
                     {"model": model_name, "status": "ok", "output": str(output)}

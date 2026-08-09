@@ -106,6 +106,13 @@ skips a pair only when that complete contract still matches. An orphaned, malfor
 or mismatched pair fails loudly; inspect the mismatch and pass ``--force`` only when you
 intend to replace it.
 
+When canonical image storage is too slow for extraction, ``--image-path-map`` may redirect
+reads to a local mirror. The CSV must contain ``sample_id``, ``canonical_image_path`` (the
+exact ``image_path`` stored in ``manifest.csv``), and ``access_path``. It must cover the
+frozen manifest one-to-one; map rows may be in any order. Access paths never enter tile
+identity or sidecar provenance, so the canonical manifest and its fingerprint remain
+unchanged.
+
 Embeddings are a tileset; benchmarks are views
 ----------------------------------------------
 
