@@ -84,12 +84,33 @@
     var cohort = data.cohorts[state.cohort];
 
     container.innerHTML = "";
-    container.appendChild(controls(data, cohort));
+    var bar = controls(data, cohort);
+    container.appendChild(bar);
 
     var counts = cohort.models[state.model];
-    var svg = histogram(cohort, counts, data.n_bins);
+    var view = { cohort: cohort, counts: counts, nBins: data.n_bins, bars: [] };
+    var svg = histogram(cohort, counts, data.n_bins, view);
     container.appendChild(svg);
-    container.appendChild(readout(cohort, counts, data.n_bins));
+    view.readout = readout(cohort, counts, data.n_bins);
+    container.appendChild(view.readout);
+    view.reset = bar.querySelector(".croma-explorer-reset");
+
+    /* Repaint the selection on the DOM that is already there. A full render() inside the
+       drag would destroy the SVG holding the pointer capture — the bug that reduced the
+       brush to single-bin clicks. */
+    state.applySelection = function () {
+      var selection = selectedBins(view.nBins);
+      view.bars.forEach(function (rect, i) {
+        if (!rect) return;
+        var inRange = selection && i >= selection.lo && i <= selection.hi;
+        rect.setAttribute(
+          "class",
+          "croma-explorer-bar" + (selection ? (inRange ? " is-selected" : " is-dimmed") : "")
+        );
+      });
+      view.reset.disabled = selection === null;
+      writeReadout(view.readout, view.cohort, view.counts, view.nBins);
+    };
   }
 
   function controls(data, cohort) {
@@ -138,13 +159,13 @@
     reset.disabled = state.from === null;
     reset.addEventListener("click", function () {
       state.from = state.to = null;
-      render();
+      state.applySelection();
     });
     bar.appendChild(reset);
     return bar;
   }
 
-  function histogram(cohort, counts, nBins) {
+  function histogram(cohort, counts, nBins, view) {
     var width = 640;
     var plotWidth = width - PAD.left - PAD.right;
     var plotHeight = HEIGHT - PAD.top - PAD.bottom;
@@ -181,15 +202,15 @@
       if (!counts[i]) continue;
       var height = (counts[i] / peak) * plotHeight;
       var inRange = selection && i >= selection.lo && i <= selection.hi;
-      svg.appendChild(
-        svgEl("rect", {
-          x: PAD.left + i * binWidth,
-          y: PAD.top + plotHeight - height,
-          width: Math.max(binWidth, 0.6),
-          height: height,
-          class: "croma-explorer-bar" + (selection ? (inRange ? " is-selected" : " is-dimmed") : ""),
-        })
-      );
+      var rect = svgEl("rect", {
+        x: PAD.left + i * binWidth,
+        y: PAD.top + plotHeight - height,
+        width: Math.max(binWidth, 0.6),
+        height: height,
+        class: "croma-explorer-bar" + (selection ? (inRange ? " is-selected" : " is-dimmed") : ""),
+      });
+      view.bars[i] = rect;
+      svg.appendChild(rect);
     }
 
     if (cohort.lo < 0 && cohort.hi > 0) {
@@ -261,7 +282,7 @@
       anchor = binAt(event);
       state.from = state.to = anchor;
       svg.setPointerCapture(event.pointerId);
-      render();
+      state.applySelection();
       event.preventDefault();
     });
 
@@ -270,7 +291,7 @@
       var current = binAt(event);
       state.from = Math.min(anchor, current);
       state.to = Math.max(anchor, current);
-      render();
+      state.applySelection();
     });
 
     ["pointerup", "pointercancel"].forEach(function (type) {
@@ -287,6 +308,11 @@
 
   function readout(cohort, counts, nBins) {
     var box = el("p", "croma-explorer-readout");
+    writeReadout(box, cohort, counts, nBins);
+    return box;
+  }
+
+  function writeReadout(box, cohort, counts, nBins) {
     var total = counts.reduce(function (sum, value) {
       return sum + value;
     }, 0);
@@ -296,7 +322,7 @@
       box.textContent =
         total.toLocaleString() +
         " samples. Drag across the histogram to count a range.";
-      return box;
+      return;
     }
 
     var width = (cohort.hi - cohort.lo) / nBins;
@@ -317,7 +343,6 @@
       "</strong> and <strong>" +
       hi.toFixed(2) +
       "</strong>.";
-    return box;
   }
 
   /* ------------------------------------------------------------------- helpers */
