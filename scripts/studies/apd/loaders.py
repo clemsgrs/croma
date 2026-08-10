@@ -32,6 +32,53 @@ import layout  # noqa: E402  (on-disk output layout: output/embeddings/<tileset>
 from croma.downstream import pathorob_schedule  # noqa: E402
 from plotting.style import CONTROL_MODEL  # noqa: E402
 
+#: The tile-level PathoROB views that make one coherent robustness/downstream panel.
+#: TCGA-2x2 has no APD split and therefore cannot enter this study; prostate-shift and
+#: PCaBiop are separate studies and are deliberately outside the expanded tile panel.
+PATHOROB_DOWNSTREAM_DATASETS = ("camelyon", "tcga_4x4", "tolkach")
+
+#: Fixed panel cardinality after issue #132: 25 pathology encoders plus one natural-image
+#: floor. Model identity and relationships themselves remain owned by model_metadata.csv.
+PATHOROB_PATHOLOGY_MODELS = 25
+PATHOROB_PANEL_MODELS = PATHOROB_PATHOLOGY_MODELS + 1
+
+
+def pathorob_tile_panel(metadata_path: Path | None = None) -> pd.DataFrame:
+    """Return the ordered PathoROB tile panel and its model relationships.
+
+    The study must not treat every stray ``.npy`` in an embedding directory as a
+    study participant. The model metadata is already the single source of truth for panel
+    identity, ordering, controls, and parent/student or parent/fine-tuned relationships;
+    this narrow view makes those facts part of the downstream summary too.
+    """
+    path = metadata_path or REPO / "scripts" / "bench" / "model_metadata.csv"
+    metadata = pd.read_csv(path)
+    panel = (
+        metadata.loc[
+            metadata["panel"] == "tile",
+            ["model", "panel_order", "parent_model", "variant_role"],
+        ]
+        .sort_values("panel_order")
+        .reset_index(drop=True)
+    )
+    if panel["model"].duplicated().any():
+        duplicates = sorted(panel.loc[panel["model"].duplicated(False), "model"].unique())
+        raise ValueError(f"tile model metadata contains duplicate models: {duplicates}")
+    if len(panel) != PATHOROB_PANEL_MODELS:
+        raise ValueError(
+            f"expanded PathoROB panel must contain {PATHOROB_PANEL_MODELS} models, "
+            f"got {len(panel)} in {path}"
+        )
+    controls = panel["model"] == CONTROL_MODEL
+    if controls.sum() != 1 or int((~controls).sum()) != PATHOROB_PATHOLOGY_MODELS:
+        raise ValueError(
+            "expanded PathoROB panel must contain 25 pathology encoders and exactly "
+            f"one {CONTROL_MODEL} control"
+        )
+    panel["ranked"] = ~controls
+    return panel[["model", "parent_model", "variant_role", "ranked"]]
+
+
 #: Column naming the independence unit in the APD metadata CSVs. croma's canonical
 #: manifests call this ``group_id``, but the APD metadata is PathoROB's own published
 #: file -- joined against the source manifests on ``(slide_id, patch_id)`` -- and

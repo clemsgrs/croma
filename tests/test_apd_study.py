@@ -26,6 +26,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -233,11 +234,15 @@ def test_the_assembled_csv_reports_a_value_for_every_cell(tmp_path: Path) -> Non
 
     chance = 1.0 / len(DATASETS["pcabiop"]["biological_classes"])
     cramers_v = training_correlations("pcabiop")
-    cached = dict(  # what a swept cell leaves behind; the reductions read the two matrices
-        apd_id=-0.1,
-        apd_ood=-0.2,
-        id_test_accuracies=[[0.9 - 0.2 * v] for v in cramers_v],
-        ood_test_accuracies=[[chance + SUPPRESSED_CELL_HEADROOM * (1.0 - v)] for v in cramers_v],
+    id_test_accuracies = [[0.9 - 0.2 * v] for v in cramers_v]
+    ood_test_accuracies = [[chance + SUPPRESSED_CELL_HEADROOM * (1.0 - v)] for v in cramers_v]
+    cached = dict(  # the complete raw cell the resumable driver validates before reuse
+        apd_id=apd_experiment.apd(id_test_accuracies),
+        apd_ood=apd_experiment.apd(ood_test_accuracies),
+        id_accuracy_means=np.asarray(id_test_accuracies).mean(axis=1).tolist(),
+        ood_accuracy_means=np.asarray(ood_test_accuracies).mean(axis=1).tolist(),
+        id_test_accuracies=id_test_accuracies,
+        ood_test_accuracies=ood_test_accuracies,
     )
     (tmp_path / "pcabiop").mkdir()
     (tmp_path / "pcabiop" / "Stand-In.json").write_text(json.dumps(cached), encoding="utf-8")
@@ -310,3 +315,226 @@ def test_the_correlation_still_computes_the_scopes_the_supplement_quotes() -> No
     )
 
     assert set(correlations["scope"]) == scopes
+
+
+EXPANDED_PATHOROB_MODELS = [
+    "Virchow2",
+    "Virchow",
+    "UNI2-h",
+    "UNI",
+    "CONCHv1.5",
+    "CONCH",
+    "H-optimus-1",
+    "H-optimus-0",
+    "H0-mini",
+    "Prov-GigaPath",
+    "Midnight-12k",
+    "Prost40M",
+    "Phikon",
+    "Phikon-v2",
+    "Hibou-L",
+    "Hibou-B",
+    "mSTAR",
+    "GPFM",
+    "MUSK",
+    "GenBio-PathFM",
+    "RudolfV 2",
+    "RudolfV 2-B",
+    "RudolfV 2-S",
+    "Mascaret",
+    "Phaet",
+    "DINOv2-B",
+]
+
+
+def test_the_pathorob_downstream_panel_is_explicit_and_relationship_aware() -> None:
+    """The computed panel is metadata-owned, not whatever happens to be in a cache dir."""
+    import loaders
+
+    panel = loaders.pathorob_tile_panel()
+
+    assert list(panel["model"]) == EXPANDED_PATHOROB_MODELS
+    assert list(loaders.PATHOROB_DOWNSTREAM_DATASETS) == ["camelyon", "tcga_4x4", "tolkach"]
+    assert panel.loc[panel["ranked"], "model"].tolist() == EXPANDED_PATHOROB_MODELS[:-1]
+    assert panel.loc[~panel["ranked"], "model"].tolist() == ["DINOv2-B"]
+    assert panel.set_index("model").loc[
+        ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "Mascaret", "Phaet"],
+        ["parent_model", "variant_role"],
+    ].fillna("").to_dict("index") == {
+        "RudolfV 2": {"parent_model": "", "variant_role": "teacher"},
+        "RudolfV 2-B": {
+            "parent_model": "RudolfV 2",
+            "variant_role": "distilled-student",
+        },
+        "RudolfV 2-S": {
+            "parent_model": "RudolfV 2",
+            "variant_role": "distilled-student",
+        },
+        "Mascaret": {
+            "parent_model": "Midnight-12k",
+            "variant_role": "robustness-finetune",
+        },
+        "Phaet": {
+            "parent_model": "Phikon-v2",
+            "variant_role": "robustness-finetune",
+        },
+    }
+
+
+def _valid_cached_cell(dataset: str, iterations: int) -> dict:
+    import apd_experiment
+    from loaders import training_correlations
+
+    v = np.asarray(training_correlations(dataset), dtype=float)
+    id_acc = np.column_stack([0.85 - 0.10 * v - i * 0.001 for i in range(iterations)])
+    ood_acc = np.column_stack([0.75 - 0.15 * v - i * 0.001 for i in range(iterations)])
+    return {
+        "apd_id": apd_experiment.apd(id_acc),
+        "apd_ood": apd_experiment.apd(ood_acc),
+        "id_accuracy_means": id_acc.mean(axis=1).tolist(),
+        "ood_accuracy_means": ood_acc.mean(axis=1).tolist(),
+        "id_test_accuracies": id_acc.tolist(),
+        "ood_test_accuracies": ood_acc.tolist(),
+    }
+
+
+def test_a_malformed_resumed_cell_fails_closed_without_being_recomputed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import apd_experiment
+
+    raw = tmp_path / "camelyon" / "Mascaret.json"
+    raw.parent.mkdir()
+    malformed = _valid_cached_cell("camelyon", iterations=2)
+    malformed["ood_test_accuracies"] = malformed["ood_test_accuracies"][:-1]
+    raw.write_text(json.dumps(malformed), encoding="utf-8")
+    before = raw.read_bytes()
+    monkeypatch.setattr(
+        apd_experiment,
+        "compute",
+        lambda *args, **kwargs: pytest.fail("a malformed cache must not be silently recomputed"),
+    )
+
+    with pytest.raises(ValueError, match=r"camelyon/Mascaret.*ood_test_accuracies.*shape"):
+        apd_experiment._job(("camelyon", "Mascaret", 2, tmp_path, False))
+
+    assert raw.read_bytes() == before
+
+
+def test_a_new_cell_is_published_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import apd_experiment
+
+    raw = tmp_path / "camelyon" / "Mascaret.json"
+    raw.parent.mkdir()
+    raw.write_text('{"sealed": true}\n', encoding="utf-8")
+    before = raw.read_bytes()
+    replacement = _valid_cached_cell("camelyon", iterations=2)
+    monkeypatch.setattr(apd_experiment, "compute", lambda *args, **kwargs: replacement)
+
+    def interrupted_replace(source, destination):
+        raise OSError("simulated publication interruption")
+
+    monkeypatch.setattr(apd_experiment.os, "replace", interrupted_replace)
+
+    with pytest.raises(OSError, match="publication interruption"):
+        apd_experiment._job(("camelyon", "Mascaret", 2, tmp_path, True))
+
+    assert raw.read_bytes() == before
+    assert list(raw.parent.glob(".*.tmp")) == []
+
+
+def test_an_incomplete_expanded_panel_cannot_replace_the_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import apd_experiment
+
+    summary = tmp_path / "apd.csv"
+    summary.write_text("dataset,model,nipd_id\nsealed,baseline,0.0\n", encoding="utf-8")
+    before = summary.read_bytes()
+    row = {
+        "dataset": "camelyon",
+        "model": "Mascaret",
+        "nipd_id": -0.1,
+        "nipd_ood": -0.2,
+        "apd_id": -0.08,
+        "apd_ood": -0.12,
+        "id_baseline": 0.8,
+        "ood_baseline": 0.7,
+    }
+    monkeypatch.setattr(apd_experiment, "_job", lambda task: row)
+
+    with pytest.raises(ValueError, match=r"complete expanded PathoROB panel.*camelyon"):
+        apd_experiment.run(
+            ["camelyon"],
+            ["Mascaret"],
+            iterations=20,
+            out_dir=tmp_path,
+            overwrite=False,
+            require_complete_panel=True,
+        )
+
+    assert summary.read_bytes() == before
+
+
+def test_a_summary_reduction_must_match_its_raw_accuracy_matrix() -> None:
+    import apd_experiment
+
+    raw = _valid_cached_cell("camelyon", iterations=2)
+    reductions = apd_experiment._reductions(
+        raw,
+        chance=0.5,
+        cramers_v=np.linspace(0.0, 1.0, 8),
+    )
+    row = {
+        "nipd_id": reductions["nipd_id"] + 0.01,
+        "nipd_ood": reductions["nipd_ood"],
+        "apd_id": raw["apd_id"],
+        "apd_ood": raw["apd_ood"],
+        "id_baseline": reductions["id_baseline"],
+        "ood_baseline": reductions["ood_baseline"],
+    }
+
+    with pytest.raises(ValueError, match=r"camelyon/Mascaret.*nipd_id.*summary.*raw"):
+        apd_experiment._validate_summary_cell(
+            row,
+            raw,
+            dataset="camelyon",
+            model="Mascaret",
+        )
+
+
+def test_the_canonical_panel_freezes_the_probe_seed_and_iteration_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import apd_experiment
+    from loaders import Cohort
+
+    seen = {}
+
+    def sweep(*args, **kwargs):
+        seen.update(kwargs)
+        shape = (8, kwargs["iterations"])
+        return {
+            apd_experiment.IN_DOMAIN: np.full(shape, 0.8),
+            apd_experiment.OUT_OF_DOMAIN: np.full(shape, 0.7),
+        }
+
+    cohort = Cohort(
+        embeddings=np.zeros((4, 2)),
+        confounders=np.array([0, 0, 1, 1]),
+        labels=np.array([0, 1, 0, 1]),
+        ood_embeddings=np.zeros((2, 2)),
+        ood_labels=np.array([0, 1]),
+        group_ids=["a", "b", "c", "d"],
+    )
+    monkeypatch.setattr(apd_experiment, "load_data", lambda *args: cohort)
+    monkeypatch.setattr(apd_experiment, "probe_sweep_over_test_sets", sweep)
+
+    apd_experiment.compute("Mascaret", "camelyon", iterations=20)
+
+    assert apd_experiment.CANONICAL_ITERATIONS == 20
+    assert apd_experiment.PROBE_SEED == 1000
+    assert seen["iterations"] == 20
+    assert seen["seed"] == 1000
