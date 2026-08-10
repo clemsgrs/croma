@@ -24,8 +24,9 @@ What is committed
    * - ``results/<cohort>.csv``
      - One row per encoder, holding exactly the columns the cohort pages render.
    * - ``results/cross_benchmark.csv``
-     - The two mean ranks and their average, the frontier flag, and the median ``CRoMa``
-       and ``LTM₁₀`` behind them on each of the three cohorts.
+     - The two pathology-only mean ranks and their average, the pathology frontier flag,
+       and the median ``CRoMa`` and ``LTM₁₀`` behind them on each of the three cohorts.
+       The DINOv2-B control keeps its measurements but has blank rank fields.
    * - ``results/distributions.json``
      - 200-bin histograms of per-sample ``CRoMa``, per encoder and cohort. What the
        explorer reads.
@@ -46,6 +47,68 @@ embedding at that ``k``, which is the only setting under which ``MaRI`` is compa
 models (see :ref:`choosing-tau`). ``CRoMa`` is reported at its headline averaging radius,
 ``m = 5``, and LTM₁₀ at ``α = 0.10``.
 
+Five-encoder extraction contract
+--------------------------------
+
+The expanded panel adds two robustness-targeted fine-tunes and the three-member
+RudolfV 2 teacher/student family. The values below are read from the completion sidecars
+under ``output/embeddings/<tileset>/<model>.npy.json``; the complete extraction audit,
+including source-manifest and access-map digests, per-tileset runtimes, dimensions, norm
+checks and compatible-resume evidence, is committed in
+``docs/extraction-records/issue-130.md``.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 17 33 10 40
+
+   * - Encoder
+     - Checkpoint revision
+     - Selected batch
+     - Pooling
+   * - Mascaret
+     - ``e95e7ea15e039e78d74def101415e19d9a67ba80``
+     - 32
+     - ``checkpoint-native:model.encode``
+   * - Phaet
+     - ``e0ce6e0ee248470bd8604823e412ca64048a2495``
+     - 64
+     - ``checkpoint-native:model.encode``
+   * - RudolfV 2
+     - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c``
+     - 32
+     - ``concatenate-cls-and-mean-patches``
+   * - RudolfV 2-B
+     - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8``
+     - 32
+     - ``concatenate-cls-and-mean-patches``
+   * - RudolfV 2-S
+     - ``76abacd512a98c72a6db6192af9fc98313c3bd78``
+     - 64
+     - ``concatenate-cls-and-mean-patches``
+
+Selected batches were Mascaret 32, Phaet 64, RudolfV 2 32, RudolfV 2-B 32 and RudolfV 2-S
+64. All five used FP32 inference and FP32 ``.npy`` storage. Mascaret and Phaet use a 224 px
+resize and centre crop followed by the checkpoint's ``pixel_mean``/``pixel_std`` contract;
+their checkpoint-native output normalization is retained. The RudolfV 2 family uses the
+released 224×224 bicubic, antialiased preprocessing and RGB mean ``(0.7072, 0.5787,
+0.7036)`` / standard deviation ``(0.2119, 0.2301, 0.1775)``. Its pooling concatenates the
+CLS token with the mean of 784 patch tokens after excluding eight register tokens; native,
+non-unit output norms are retained.
+
+Mascaret is a robustness-targeted fine-tune of Midnight-12k, and Phaet of Phikon-v2.
+RudolfV 2 is the teacher; RudolfV 2-B and RudolfV 2-S are distilled students from the same
+disclosed training run. RudolfV 2's disclosed Charité/LMU institutional corpus creates a
+possible institutional/source-domain overlap with the CHA component of Tolkach-ESCA. Exact
+patient or slide overlap is unknown, so this caveat does not establish leakage.
+
+Public cohort boundary
+----------------------
+
+The committed web export deliberately contains three cohorts: Camelyon, TCGA-4×4 and
+Tolkach-ESCA. TCGA-2×2 was recomputed with the same 26-model roster and is available in the
+local metric tree and manuscript supplement, but is not a fourth public results page or
+committed CSV. Prostate-shift and the whole-slide panels are outside this expansion.
+
 Staying honest
 --------------
 
@@ -57,7 +120,9 @@ difference, so a run that was never republished is caught rather than silently l
 numbers here. It skips where ``output/`` is absent, which is every machine but the one
 holding the runs.
 
-The manuscript's tables are assembled by a separate, currently local-only toolchain
-(`ADR-0012 <https://github.com/clemsgrs/croma/blob/main/docs/adr/0012-paper-tooling-stays-local.md>`_).
-The two paths render overlapping numbers and are not unified. They agree today; nothing here
-enforces that they always will.
+The manuscript remains a local-only build tree
+(`ADR-0012 <https://github.com/clemsgrs/croma/blob/main/docs/adr/0012-paper-tooling-stays-local.md>`_),
+but its tables, macros, captions and guarded prose are regenerated from the same live runs by
+``scripts/repro/build_paper.py``. The local ``tests/test_paper_artifacts.py`` freshness gate
+compares generator output with the ignored manuscript tree; it cannot run in a clean CI
+checkout, so it is an explicit pre-publication gate rather than a hosted guarantee.

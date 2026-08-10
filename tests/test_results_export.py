@@ -152,6 +152,31 @@ def test_aggregate_ranks_are_the_mean_of_the_per_cohort_ranks():
     assert out.loc["B", "croma_rank"] == pytest.approx(2.0)
 
 
+def test_aggregate_excludes_the_natural_image_control_from_pathology_ranks():
+    """The public panel is 25 ranked pathology encoders plus one unranked control.
+
+    Put the control between two pathology models on both axes so including it would move
+    B from rank 2 to rank 3. Its measurements remain visible, but it receives no rank and
+    cannot enter the pathology Pareto frontier.
+    """
+    per_cohort = {
+        "one": _cohort(
+            ["A", er.CONTROL_MODEL, "B"],
+            [0.9, 0.5, 0.1],
+            [-0.1, -0.5, -0.9],
+        )
+    }
+
+    out = er.build_aggregate_table(per_cohort).set_index("model")
+
+    assert out.loc["B", "croma_rank"] == pytest.approx(2.0)
+    assert out.loc["B", "ltm_rank"] == pytest.approx(2.0)
+    assert pd.isna(out.loc[er.CONTROL_MODEL, "croma_rank"])
+    assert pd.isna(out.loc[er.CONTROL_MODEL, "ltm_rank"])
+    assert pd.isna(out.loc[er.CONTROL_MODEL, "mean_rank"])
+    assert not out.loc[er.CONTROL_MODEL, "on_frontier"]
+
+
 def test_aggregate_breaks_a_mean_rank_tie_on_the_croma_rank():
     """A and B both mean 1.5 (1st/2nd against 2nd/1st); the margin rank orders them."""
     per_cohort = {
@@ -364,8 +389,8 @@ def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
     """Cutting the panel at eight is a judgement call. Stating it mechanically -- with the
     total, and a link to the rest -- is what keeps it a rule rather than a shortlist."""
     block = (ROOT / "README.md").read_text().split(er.README_START)[1]
-    total = len(_read_csv("cross_benchmark.csv"))
-    assert f"Top {er.README_TOP} of {total} by mean rank" in block
+    assert f"Top {er.README_TOP} of 25 ranked pathology encoders" in block
+    assert "DINOv2-B control is shown unranked" in block
     assert "/results/" in block
 
 

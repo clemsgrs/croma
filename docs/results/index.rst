@@ -17,8 +17,8 @@ Two rankings, and an order to read them in
 
 .. aggregate-table::
 
-**Bold** marks the Pareto frontier: the encoders no other encoder beats on *both* rankings
-at once. † marks the natural-image control (see :ref:`the-control` below).
+**Bold** marks the Pareto frontier: the encoders no other pathology encoder beats on *both*
+rankings at once. † marks the unranked natural-image control (see :ref:`the-control` below).
 
 The ``CRoMa`` and tail rank columns are the mean, across the three cohorts, of that
 encoder's rank within each cohort — by median ``CRoMa`` for the first, by tail severity
@@ -30,8 +30,8 @@ That aggregate is a reading order, not a score. It sorts the rows; it does not s
 the two columns it averages, both of which stay in view at the precision it was computed
 from — so it can be re-derived, and so the disagreements it smooths over stay visible in the
 same row. ``Midnight-12k`` and ``H-optimus-1`` are the case worth looking at, and they are
-not similar models. ``Midnight-12k`` ranks 4.7 on median margin but 20.7 on the tail;
-``H-optimus-1`` ranks 12.7 on the margin and 6.0 on the tail.
+not similar models: the table shows the former ranking much better by median margin than
+by tail severity and the latter showing the opposite pattern.
 A model can hold a strong median margin and still be brittle on a subgroup, and no single
 number will tell you that — which is why the mean sorts the rows and the two columns beside
 it carry the finding.
@@ -76,9 +76,9 @@ three different licences.
 Reading the control
 -------------------
 
-``DINOv2-B`` is pretrained on natural images and has never seen a whole-slide image. It is
-ranked inline rather than banded off, because it lands mid-panel and hiding that would
-misrepresent where the floor actually is — but it is a floor, not a competitor.
+``DINOv2-B`` is pretrained on natural images and has never seen a whole-slide image. Its
+measurements are shown with the panel, but it is excluded from the pathology ranks and
+frontier because it is a calibration floor, not a competitor.
 
 Its positive margin is not evidence that a natural-image model beats pathology encoders. It
 has the *lowest* biological retrieval accuracy in the panel on every cohort, and ``CRoMa``
@@ -97,7 +97,8 @@ What these numbers do and do not say
   differently from the other two — which are scored on centres outside TCGA. The
   `paper <https://arxiv.org/abs/2607.25497>`_ quantifies the overlap encoder by encoder;
   these pages do not.
-- **The roster is fixed at 26 across all three cohorts.** Cohorts computed on a different
+- **The roster is fixed at 25 pathology encoders plus one control across all three cohorts.**
+  Cohorts computed on a different
   roster — prostate (16 encoders) and a slide-level panel (4) — are deliberately not
   published here, because a table whose roster silently differs from the one beside it
   misleads more than it informs.

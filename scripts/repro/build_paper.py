@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from paper_manifest import by_prefix  # noqa: E402
+from paper_manifest import HISTORICAL_TYPED_NEIGHBOUR_RUN, by_prefix  # noqa: E402
 
 _CAMELYON = by_prefix("Camelyon")
 
@@ -57,8 +57,8 @@ STUDIES = [
     ),
     (
         "generate_supp_rank_table.py",
-        f"{_CAMELYON.studies_rel}/typed_neighbor_rank_summary.csv",
-        "run scripts/repro/figures/typed_neighbor_rank_experiment.py",
+        f"{HISTORICAL_TYPED_NEIGHBOUR_RUN.studies_rel}/typed_neighbor_rank_summary.csv",
+        "restore the sealed issue-131 prepublication snapshot",
     ),
     (
         "generate_pretraining_overlap_table.py",

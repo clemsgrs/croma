@@ -22,14 +22,14 @@ introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are descri
 
    pip install croma
 
-Twenty-six encoders, three cohorts
-----------------------------------
+Twenty-five ranked pathology encoders plus control
+--------------------------------------------------
 
 .. aggregate-table::
    :top: 8
 
-**Bold** marks the Pareto frontier — the encoders no other encoder beats on both rankings at
-once. † is a natural-image control. The two ranks are kept apart on purpose: a strong median
+**Bold** marks the Pareto frontier — the encoders no other pathology encoder beats on both
+rankings at once. † is an unranked natural-image control. The two ranks are kept apart on purpose: a strong median
 margin can hide a brittle tail, and one combined number would conceal exactly what the tail
 column is for — which is why each cohort cell shows both, median ``CRoMa``/``LTM₁₀``.
 :doc:`Full panel and per-cohort detail → <results/index>`

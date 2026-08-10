@@ -297,7 +297,7 @@ def _shared_operating_k(per_model_best_k: dict[str, int]) -> int:
     ``{5, 5, 7, 7} -> 6``, a k the sparse grid never scores, leaving every model's metrics
     unresolvable. The lower median is an order statistic, so it is always some model's own
     ``k*`` and therefore on the grid, whatever the grid. For an odd model count it coincides
-    with ``np.median``, so the 21-model tile-panel runs are unaffected.
+    with ``np.median``; for the 26-model tile panel it selects the 13th ordered ``k*``.
     """
     if not per_model_best_k:
         raise ValueError("no per-model k*; cannot choose a shared operating k")

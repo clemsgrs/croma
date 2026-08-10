@@ -113,8 +113,9 @@ SATURATION_PAIR = ("Camelyon", "Hibou-B", "Hibou-L")
 PROVENANCE_PREFIX = "TcgaFourByFour"
 PROVENANCE_MODEL = "Midnight-12k"
 PROVENANCE_TWIN = "CONCHv1.5"
-PROVENANCE_TOP_BIO_DEPTH = 5  # "of the five most biologically accurate encoders ..."
+PROVENANCE_TOP_BIO_DEPTH = 5
 PROVENANCE_MIN_FOLD = 2.0  # the twin's CRoMa must be at least this many times smaller
+MODEL_METADATA_CSV = Path(__file__).resolve().parent.parent / "bench" / "model_metadata.csv"
 
 
 _CARDINALS = ["none", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
@@ -354,8 +355,9 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
     The paragraph argues that neither pooled probe explains ``PROVENANCE_MODEL``'s lead: it
     has the panel's *best* biology (so the margin is not bought by surrendering class
     separation) yet is *not* the least centre-decodable encoder (so it is not bought by
-    invariance alone). What distinguishes it is the joint position, and the twin shows the
-    probes fix a ranking but not a scale.
+    invariance alone). Its declared robustness-targeted fine-tune may improve centre
+    invariance without invalidating that parent-model argument. What distinguishes the
+    leader is the joint position, and the twin shows the probes fix a ranking but not a scale.
 
     Every one of those is an ordinal claim over a frame that moves whenever the benchmark is
     re-run, so each is checked here. The previous hand-typed version asserted the exact
@@ -370,6 +372,17 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
     d = d.set_index("model")
 
     model, twin = PROVENANCE_MODEL, PROVENANCE_TWIN
+    metadata = pd.read_csv(MODEL_METADATA_CSV, keep_default_na=False, na_values=[])
+    fine_tunes = metadata[
+        (metadata["parent_model"] == model)
+        & (metadata["variant_role"] == "robustness-finetune")
+    ]["model"].tolist()
+    if len(fine_tunes) != 1:
+        raise CaptionClaimError(
+            f"Sec 3.4 expects one robustness-targeted child of {model} in "
+            f"{MODEL_METADATA_CSV}; got {fine_tunes}."
+        )
+    fine_tune = str(fine_tunes[0])
     for name in (model, twin):
         if name not in d.index:
             raise CaptionClaimError(f"Sec 3.4 names {name!r}, absent from the ranked panel.")
@@ -391,10 +404,17 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
             "rests on it NOT being the least centre-decodable encoder. It now is."
         )
     top_bio = d["bio_knn_bacc"].nlargest(PROVENANCE_TOP_BIO_DEPTH).index
-    if d.loc[top_bio, "confounder_knn_bacc"].idxmin() != model:
+    top_bio_least_conf = d.loc[top_bio, "confounder_knn_bacc"].idxmin()
+    allowed = {model}
+    if fine_tune in d.index:
+        allowed.add(fine_tune)
+    if top_bio_least_conf not in allowed:
         raise CaptionClaimError(
-            f"Sec 3.4 claims {model} alone resists centre decoding among the top "
-            f"{PROVENANCE_TOP_BIO_DEPTH} biological encoders; it no longer does."
+            "Sec 3.4's original 'alone resists centre decoding' guard now treats "
+            f"{fine_tune} explicitly as {model}'s "
+            "robustness-targeted child; neither family member is now least "
+            f"centre-decodable among the top {PROVENANCE_TOP_BIO_DEPTH} biological "
+            f"encoders ({top_bio_least_conf} is)."
         )
     nearest = (others["gap"] - d.loc[model, "gap"]).abs().idxmin()
     if nearest != twin:
@@ -428,6 +448,22 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
         ("RunnerUpCroma", _num(float(others["croma"].max()))),
         ("CromaFold", f"${fold:.1f}\\times$"),
     ]
+    if fine_tune in d.index:
+        specs.extend(
+            [
+                ("FineTuneModel", fine_tune),
+                ("FineTuneParent", model),
+                (
+                    "FineTuneBioBacc",
+                    _num(float(d.loc[fine_tune, "bio_knn_bacc"]), decimals=3),
+                ),
+                (
+                    "FineTuneConfBacc",
+                    _num(float(d.loc[fine_tune, "confounder_knn_bacc"]), decimals=3),
+                ),
+                ("FineTuneCroma", _num(float(d.loc[fine_tune, "croma"]))),
+            ]
+        )
     return [rf"\newcommand{{\Provenance{suffix}}}{{{body}}}" for suffix, body in specs]
 
 
@@ -540,13 +576,74 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
 # may enter it.
 CROSS_COHORT_BENCHMARKS = ["Camelyon", "Tolkach", "TcgaFourByFour"]
 SLIDE_PANEL_BENCHMARK = "Panda"
+EXPANDED_ENCODERS = frozenset(
+    {"Mascaret", "Phaet", "RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"}
+)
+
+
+def _historical_rank_pareto(current: "RankPareto") -> "RankPareto":
+    """Re-rank the current panel after removing exactly the five issue #133 additions."""
+    from _rank_pareto import RankPareto
+
+    missing = EXPANDED_ENCODERS - set(current.models)
+    if missing:
+        raise CaptionClaimError(
+            f"Discussion frontier guard is missing issue #133 encoders: {sorted(missing)}"
+        )
+
+    prior_models = [model for model in current.models if model not in EXPANDED_ENCODERS]
+    return RankPareto(
+        medians=current.medians.loc[prior_models],
+        median_ranks=current.median_ranks.loc[prior_models]
+        .rank(ascending=True, method="first")
+        .astype(int),
+        tail_ranks=current.tail_ranks.loc[prior_models]
+        .rank(ascending=True, method="first")
+        .astype(int),
+        exposed=frozenset(current.exposed & set(prior_models)),
+        adversarial=current.adversarial,
+    )
+
+
+def _rank_frontier_change_macros(
+    historical: "RankPareto", current: "RankPareto"
+) -> list[str]:
+    """Guard the Discussion claim from two explicit rank-Pareto inputs.
+
+    This comparison is deliberately I/O-free so committed tests can exercise the exact
+    claim without the git-ignored benchmark tree. Both inputs use ``RankPareto.frontier``,
+    the same property that rings the generated figure.
+    """
+    current_frontier = frozenset(current.frontier)
+    prior_frontier = frozenset(historical.frontier)
+    if not current_frontier or not prior_frontier:
+        raise CaptionClaimError("Discussion frontier guard produced an empty frontier.")
+    if current_frontier == prior_frontier:
+        raise CaptionClaimError(
+            "Discussion says frontier membership changed after issue #133, but the "
+            f"historical and expanded sets are both {sorted(current_frontier)}."
+        )
+
+    return [
+        rf"\newcommand{{\TilePriorRankFrontierNModels}}{{{len(prior_frontier)}}}",
+        rf"\newcommand{{\TileRankFrontierNModels}}{{{len(current_frontier)}}}",
+        rf"\newcommand{{\TileRankFrontierModels}}{{{', '.join(sorted(current_frontier))}}}",
+    ]
+
+
+def _load_rank_frontier_change_macros() -> list[str]:
+    """Load live benchmark ranks for the canonical local paper build."""
+    from _rank_pareto import load as load_rank_pareto
+
+    current = load_rank_pareto()
+    return _rank_frontier_change_macros(_historical_rank_pareto(current), current)
 
 
 def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
     """Panel sizes and the cross-cohort CRoMa rank-agreement cited by the abstract and intro.
 
     Correlations are cross-model, so the natural-image control is excluded; the tile-panel
-    count reported alongside them is therefore the ranked panel, not the full 21.
+    count reported alongside them is therefore the ranked panel, not the full 26.
     """
     import itertools
 
@@ -630,6 +727,8 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         out.append(rf"\newcommand{{\ProbePooledRhoRange}}{{{_span(lo, hi)}}}")
 
     out.extend(_cross_cohort_macros(croma_by_prefix, panel_sizes))
+    out.append("% Expanded-panel frontier guard (Discussion)")
+    out.extend(_load_rank_frontier_change_macros())
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel

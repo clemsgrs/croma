@@ -224,19 +224,18 @@ def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
 def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     """The cross-cohort aggregate: three ranks, and each cohort's margin and tail behind them.
 
-    Each model is ranked within every cohort by median CRoMa (1 = highest margin) and by
-    LTM10 (1 = mildest tail), and the published ranks are the means of those across
-    cohorts. ``mean_rank`` averages those two, and the table is sorted by it.
+    Each pathology encoder is ranked within every cohort by median CRoMa (1 = highest
+    margin) and by LTM10 (1 = mildest tail), and the published ranks are the means of
+    those across cohorts. ``mean_rank`` averages those two, and the table is sorted by it.
 
     That aggregate rank is a reading order, not a metric, and the distinction is what
     makes it publishable next to a two-axis framing that refuses a composite *score*. A
     composite score fuses two quantities into a third whose inputs the reader cannot
     recover; this column is the arithmetic mean of the two columns beside it, both
     published at the precision it was computed from, so any reader can re-derive it and
-    see the disagreement it averages over. On the published panel Midnight-12k (3rd on
-    margin, 15.7th on the tail) and UNI2-h (10.7th and 8th) tie exactly on the mean, and
-    the two columns are what tell those apart -- so the aggregate orders the table without
-    being able to hide what the tail statistic exists to expose.
+    see the disagreement it averages over. The two input columns therefore remain beside
+    the reading-order column, so the aggregate cannot hide the median-versus-tail
+    disagreement that the tail statistic exists to expose.
 
     ``on_frontier`` still marks the encoders no other encoder beats on both axes at once,
     and it, not the sort order, remains the claim the table makes: a set, not an order.
@@ -246,12 +245,10 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     are printed at. Averaging the raw ranks would leave the column half a digit off its own
     inputs for exactly the encoders whose two axes disagree -- the rows it matters for.
 
-    The natural-image control takes part in the ranking here, where the manuscript's
-    version of this aggregate drops it first. That is a deliberate divergence: the site
-    sorts it inline, and a table sorted by a rank that does not count every row it shows
-    would be incoherent. The cost is that a rank on this page can sit half a position
-    below the manuscript's for encoders the control outranks; the frontier is unaffected,
-    having been checked both ways.
+    The natural-image control remains in the table with its cohort measurements, but is
+    excluded from the ranks and frontier and shown last. It calibrates the panel rather
+    than competing with the 25 pathology encoders, so assigning it an ordinal rank would
+    contradict the comparison the table claims to make.
 
     Only models present in every cohort take part; a model scored on two of three has no
     comparable mean rank.
@@ -262,16 +259,17 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     )
     complete = croma.dropna().index.intersection(ltm.dropna().index)
     croma, ltm = croma.loc[complete], ltm.loc[complete]
+    ranked = complete[complete != CONTROL_MODEL]
 
     # `method="first"` breaks exact ties by row order rather than averaging them into a
     # fractional rank, so a rank is always an integer before it is averaged across cohorts.
-    croma_rank = croma.rank(ascending=False, method="first").mean(axis=1)
-    ltm_rank = ltm.rank(ascending=False, method="first").mean(axis=1)
+    croma_rank = croma.loc[ranked].rank(ascending=False, method="first").mean(axis=1)
+    ltm_rank = ltm.loc[ranked].rank(ascending=False, method="first").mean(axis=1)
 
     # Negated: the primitive prefers larger on both axes, and a smaller mean rank is better.
     frontier = set(
         _pareto_frontier_max_max(
-            [(m, -float(croma_rank[m]), -float(ltm_rank[m])) for m in complete]
+            [(m, -float(croma_rank[m]), -float(ltm_rank[m])) for m in ranked]
         )
     )
 
@@ -280,8 +278,8 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
             "model": list(complete),
             "is_control": [m == CONTROL_MODEL for m in complete],
             "on_frontier": [m in frontier for m in complete],
-            "croma_rank": croma_rank.to_numpy(),
-            "ltm_rank": ltm_rank.to_numpy(),
+            "croma_rank": croma_rank.reindex(complete).to_numpy(),
+            "ltm_rank": ltm_rank.reindex(complete).to_numpy(),
         }
     )
     for slug in per_cohort:
@@ -291,7 +289,7 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
     out["mean_rank"] = ((out["croma_rank"] + out["ltm_rank"]) / 2).round(MEAN_RANK_PRECISION)
     return (
         out[aggregate_columns(per_cohort)]
-        .sort_values(["mean_rank", "croma_rank", "model"], kind="stable")
+        .sort_values(["is_control", "mean_rank", "croma_rank", "model"], kind="stable")
         .reset_index(drop=True)
         .round(VALUE_PRECISION)
     )
@@ -460,13 +458,16 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
 
     lines += [
         "",
-        f"Top {README_TOP} of {len(aggregate)} by mean rank, over {len(cohort_columns)} tile "
-        f"cohorts. The CRoMa and tail ranks are the means of that encoder's within-cohort "
+        f"Top {README_TOP} of {int((~aggregate['is_control']).sum())} ranked pathology "
+        f"encoders, over {len(cohort_columns)} tile cohorts; the DINOv2-B control is shown "
+        f"unranked in the full table. The CRoMa and tail ranks are the means of that "
+        f"encoder's within-cohort "
         f"ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages "
         f"those two. It orders the table; it does not replace them, because a strong median "
         f"can hide a brittle tail and only the two columns show that — which is why each "
         f"cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the "
-        f"Pareto frontier: the encoders no other encoder beats on both axes at once.",
+        f"Pareto frontier: the encoders no other pathology encoder beats on both axes at "
+        f"once.",
         "",
         f"📊 **[Full panel, per-cohort detail and the distributions]({DOCS}/results/)**",
         "",
