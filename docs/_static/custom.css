@@ -107,6 +107,82 @@ table.croma-results th code {
   opacity: 0.45;
 }
 
+/* Master list: one compact histogram row per encoder, shared axis, table order. */
+.croma-explorer-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 0.9rem;
+  max-height: 21rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.35rem;
+}
+
+.croma-explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.1rem 0.5rem;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  color: var(--color-foreground-primary);
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.croma-explorer-row:hover {
+  background: var(--color-background-secondary);
+}
+
+.croma-explorer-row.is-selected {
+  background: var(--color-background-secondary);
+  border-left-color: var(--color-brand-primary);
+}
+
+.croma-explorer-row.is-compare {
+  border-left-color: var(--croma-compare);
+}
+
+.croma-explorer-row-name {
+  flex: 0 0 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.croma-explorer-mini {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 1.35rem;
+}
+
+.croma-explorer-detail-heading {
+  margin: 0 0 0.2rem;
+  font-size: 0.85rem;
+  color: var(--color-foreground-primary);
+}
+
+.croma-explorer {
+  /* The comparison encoder's hue: a warm counterpoint to furo's brand primary,
+     legible on both themes. */
+  --croma-compare: #d0653f;
+}
+
+.croma-explorer-compare-name {
+  color: var(--croma-compare);
+}
+
+.croma-explorer-compare-outline {
+  fill: none;
+  stroke: var(--croma-compare);
+  stroke-width: 1.4;
+}
+
 .croma-explorer-plot {
   width: 100%;
   height: auto;
@@ -124,11 +200,7 @@ table.croma-results th code {
   fill: var(--color-foreground-border);
 }
 
-.croma-explorer-bar.is-selected {
-  fill: var(--color-brand-primary);
-}
-
-/* The confounder-dominant half, shaded as the static ridgelines shade it. */
+/* The confounder-dominant half. */
 .croma-explorer-fragile {
   fill: var(--color-foreground-primary);
   opacity: 0.05;
