@@ -34,13 +34,16 @@ The claim the table makes is the frontier — a *set*, not an order. Anything on
 defensible choice; which one you want depends on whether you care more about the typical
 sample or the worst tenth of them.
 
-.. themed-figure:: /_static/figures/rank_pareto
-   :figclass: croma-fig-narrow
-   :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
+.. raw:: html
 
-   The same two rankings as axes. Better is up and to the right; ringed points are
-   undominated, and the shaded region below-left of the staircase is dominated on both
-   axes.
+   <div class="croma-pareto" data-kind="rank">
+     <noscript>The Pareto overview needs JavaScript; the same ranks are in the table
+     above.</noscript>
+   </div>
+
+The same two rankings as axes. Better is up and to the right; the ringed, named points
+are undominated, and the shaded region below-left of the staircase is dominated on both
+axes. Hover or tab to any point to name it with its two mean ranks.
 
 .. _explorer:
 

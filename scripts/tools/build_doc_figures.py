@@ -4,7 +4,9 @@ The site publishes figures the same way it publishes numbers: as committed artif
 Nothing is fetched or compiled at docs-build time, because the docs build runs on a
 clean checkout that cannot see ``paper/`` or ``output/`` (both git-ignored).
 
-Three figure families, three treatments:
+Two figure families, two treatments (the results Pareto panels are no longer built here:
+``docs/_static/pareto.js`` draws them in the browser from the committed ``results/`` CSVs,
+so the panel and the tables beside it come from one export):
 
 **Vector figures** (the standalone TikZ schematics) convert to SVG and get a light and a
 dark variant. The dark variant is produced by inverting the lightness of the *neutral*
@@ -13,12 +15,6 @@ colours carry meaning (SO green, OS red, SS purple, OO orange, anchor blue) and 
 preserved, with a mild lift so they stay legible against a dark background. This is a
 transformation of the rendered figure rather than a recompile, which is what lets it run
 without a LaTeX toolchain.
-
-**Plotted figures** (the results panels) are drawn here by the tracked benchmark plot
-library, then run through exactly the same conversion. Unlike the schematics, whose
-sources are ``paper/figures/*.pdf``, these are generated from the committed ``results/``
-tree, so the figure a visitor sees and the numbers in the table beside it come from one
-export (ADR-0016).
 
 **Raster figures** (the dataset montage, which is photographic) get one downscaled
 variant. Photographs do not theme, and a 4 MB PNG has no place on a docs page.
@@ -35,16 +31,12 @@ import argparse
 import colorsys
 import re
 import sys
-import tempfile
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 ROOT = Path(__file__).resolve().parents[2]
 PAPER_FIGURES = ROOT / "paper" / "figures"
 DEST = ROOT / "docs" / "_static" / "figures"
-RESULTS = ROOT / "results"
 
 # A colour is treated as neutral ink -- and therefore inverted for the dark variant --
 # when it carries essentially no hue. Everything above this saturation is a semantic
@@ -94,46 +86,6 @@ class VectorFigure:
 
 
 @dataclass(frozen=True)
-class PlottedFigure:
-    """A figure drawn here by the benchmark plot library, then themed like any other.
-
-    ``draw`` is handed a scratch directory and returns the PDF it produced. Going through
-    a PDF rather than saving SVG directly is deliberate: it is the one conversion path in
-    this script, so a plotted figure and a TikZ schematic get provably identical treatment
-    -- same background strip, same ink inversion, same clamps.
-    """
-
-    name: str
-    draw: Callable[[Path], Path]
-    #: Inputs that must exist before ``draw`` can run. Reported by name when absent.
-    requires: tuple[Path, ...] = ()
-
-    @property
-    def source(self) -> Path:
-        """The first missing requirement, or a path that exists. Lets the missing-source
-        check in ``main`` treat every figure kind alike."""
-        for path in self.requires:
-            if not path.exists():
-                return path
-        return ROOT
-
-    def build(self) -> list[Path]:
-        import pymupdf
-
-        with tempfile.TemporaryDirectory() as scratch:
-            pdf = self.draw(Path(scratch))
-            with pymupdf.open(pdf) as doc:
-                svg = doc[0].get_svg_image()
-
-        written = []
-        for theme in ("light", "dark"):
-            out = DEST / f"{self.name}-{theme}.svg"
-            out.write_text(_recolour(svg, theme), encoding="utf-8")
-            written.append(out)
-        return written
-
-
-@dataclass(frozen=True)
 class RasterFigure:
     """A photographic figure published as a single downscaled raster."""
 
@@ -155,128 +107,7 @@ class RasterFigure:
         return [out]
 
 
-# --------------------------------------------------------------------------------------
-# Drawing the results panels
-# --------------------------------------------------------------------------------------
-
-
-def _plotting():
-    """The tracked benchmark plot library, imported lazily.
-
-    Lazily because the TikZ and raster figures need none of the matplotlib stack, and this
-    script is often run for one of those.
-    """
-    bench = str(ROOT / "scripts" / "bench")
-    if bench not in sys.path:
-        sys.path.insert(0, bench)
-    import plotting  # noqa: PLC0415
-
-    return plotting
-
-
-@contextmanager
-def _published_identity(style):
-    """Alias the published display names into the plot-identity maps, then restore.
-
-    The published CSVs restyle a few registry identities (``export_results.PUBLISHED_NAMES``),
-    but the style maps are keyed by registry name -- without the alias a renamed model
-    silently falls into the "other" palette and sorts to the end. Scoped rather than a
-    module-level mutation because ``style`` is shared state: leaving the aliases in
-    place leaks into anything else inspecting its canonical order.
-    """
-    from export_results import PUBLISHED_NAMES  # noqa: PLC0415
-
-    added: list[str] = []
-    for identity, name in PUBLISHED_NAMES.items():
-        if name in style.MODEL_FAMILY_MAP:
-            continue
-        style.MODEL_FAMILY_MAP[name] = style.MODEL_FAMILY_MAP[identity]
-        style.MODEL_TONE_INDEX[name] = style.MODEL_TONE_INDEX[identity]
-        style.CANONICAL_MODEL_ORDER.insert(style.CANONICAL_MODEL_ORDER.index(identity) + 1, name)
-        added.append(name)
-    try:
-        yield
-    finally:
-        for name in added:
-            del style.MODEL_FAMILY_MAP[name]
-            del style.MODEL_TONE_INDEX[name]
-            style.CANONICAL_MODEL_ORDER.remove(name)
-
-
-def _cohorts():
-    """The published cohorts, from the exporter -- the one place they are declared."""
-    tools = str(Path(__file__).resolve().parent)
-    if tools not in sys.path:
-        sys.path.insert(0, tools)
-    from export_results import COHORTS  # noqa: PLC0415
-
-    return COHORTS
-
-
-def _draw_rank_pareto(scratch: Path) -> Path:
-    """Mean CRoMa rank against mean tail rank, over the three published cohorts.
-
-    Drawn from ``results/cross_benchmark.csv``, so the ringed frontier is the same set the
-    table's ``on_frontier`` column marks.
-
-    No TCGA-exposure daggers, unlike the manuscript's version of this panel: the exposure
-    flags live in ``scripts/bench/model_metadata.csv`` (ADR-0005). This public figure omits
-    them because its committed results export does not carry per-benchmark exposure marks;
-    the results page carries that caveat in prose instead.
-    """
-    import pandas as pd  # noqa: PLC0415
-
-    P = _plotting()
-    frame = pd.read_csv(RESULTS / "cross_benchmark.csv")
-    rows = [
-        {
-            "model": str(r.model),
-            "median_rank": float(r.croma_rank),
-            "tail_rank": float(r.ltm_rank),
-            "exposed": False,
-        }
-        for r in frame.itertuples()
-    ]
-    out = scratch / "rank_pareto.png"
-    with _published_identity(P.style):
-        P.plot_rank_pareto(rows, out, n_benchmarks=len(_cohorts()))
-    return P._pdf_export_path(out)
-
-
-def _draw_cohort_pareto(slug: str) -> Callable[[Path], Path]:
-    """Median ``CRoMa`` against ``LTM`` for one cohort, from ``results/<slug>.csv``.
-
-    The natural-image control is excluded: the frontier is a pathology-only claim, and a
-    weak representation can hold a positive margin simply by lacking strong structure of
-    either kind (the results page's control caveat). Like ``rank_pareto``, the panel omits
-    the manuscript's TCGA-exposure daggers -- the committed export carries no exposure
-    flags, so the cohort page states that caveat in prose instead.
-    """
-
-    def draw(scratch: Path) -> Path:
-        import pandas as pd  # noqa: PLC0415
-
-        P = _plotting()
-        frame = pd.read_csv(RESULTS / f"{slug}.csv")
-        rows = [
-            {
-                "model": str(r.model),
-                "croma": float(r.croma),
-                "croma_ltm_alpha": float(r.croma_ltm10),
-                "croma_alpha": 0.10,
-            }
-            for r in frame.itertuples()
-            if not bool(r.is_control)
-        ]
-        out = scratch / f"pareto_{slug}.png"
-        with _published_identity(P.style):
-            P.plot_croma_pareto(rows, out)
-        return P._pdf_export_path(out)
-
-    return draw
-
-
-FIGURES: dict[str, VectorFigure | PlottedFigure | RasterFigure] = {
+FIGURES: dict[str, VectorFigure | RasterFigure] = {
     # Explanatory schematics (standalone TikZ; sources tracked under docs/figures/src/).
     "concept_metrics": VectorFigure("concept_metrics", PAPER_FIGURES / "concept_metrics.pdf"),
     "ri_mari": VectorFigure("ri_mari", PAPER_FIGURES / "ri_mari.pdf"),
@@ -288,16 +119,6 @@ FIGURES: dict[str, VectorFigure | PlottedFigure | RasterFigure] = {
     "dataset_montage": RasterFigure(
         "dataset_montage", PAPER_FIGURES / "png" / "dataset_montage.png"
     ),
-    # Results panels, drawn from the committed export.
-    "rank_pareto": PlottedFigure(
-        "rank_pareto", _draw_rank_pareto, requires=(RESULTS / "cross_benchmark.csv",)
-    ),
-    **{
-        f"pareto_{slug}": PlottedFigure(
-            f"pareto_{slug}", _draw_cohort_pareto(slug), requires=(RESULTS / f"{slug}.csv",)
-        )
-        for slug in ("camelyon", "tcga-4x4", "tolkach-esca")
-    },
 }
 
 

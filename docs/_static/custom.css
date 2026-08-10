@@ -274,3 +274,106 @@ figure.croma-fig-narrow {
   margin-left: auto;
   margin-right: auto;
 }
+
+/* Interactive Pareto panels (pareto.js): furo's theme variables carry both themes, the
+   compare hue rings the frontier. Sized like the narrow figures above. */
+.croma-pareto {
+  max-width: 26rem;
+  margin: 1rem auto;
+}
+
+.croma-pareto-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.croma-pareto-grid {
+  stroke: var(--color-background-border);
+  stroke-width: 0.6;
+}
+
+.croma-pareto-frame {
+  fill: none;
+  stroke: var(--color-foreground-border);
+  stroke-width: 1;
+}
+
+.croma-pareto-ref {
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.55;
+}
+
+.croma-pareto-shade {
+  fill: var(--color-foreground-primary);
+  opacity: 0.04;
+}
+
+.croma-pareto-stair {
+  fill: none;
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1.4;
+}
+
+.croma-pareto-tick,
+.croma-pareto-axis {
+  fill: var(--color-foreground-secondary);
+  font-size: 11px;
+}
+
+.croma-pareto-axis {
+  font-size: 12px;
+}
+
+.croma-pareto-dot {
+  fill: var(--color-brand-primary);
+  fill-opacity: 0.55;
+  stroke: var(--color-background-primary);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.croma-pareto-dot-frontier {
+  fill: var(--croma-compare);
+  fill-opacity: 0.9;
+}
+
+.croma-pareto-ring {
+  fill: none;
+  stroke: var(--color-foreground-primary);
+  stroke-width: 1.2;
+}
+
+.croma-pareto-pt:focus {
+  outline: none;
+}
+
+.croma-pareto-pt-active .croma-pareto-dot {
+  fill-opacity: 1;
+  stroke: var(--color-foreground-primary);
+}
+
+.croma-pareto-tag {
+  fill: var(--color-foreground-primary);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.croma-pareto-tip {
+  position: absolute;
+  display: none;
+  transform: translate(-50%, -100%);
+  background: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 4px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  z-index: 40;
+  white-space: nowrap;
+}

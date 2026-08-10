@@ -22,14 +22,17 @@ separating models here while ``CRoMa`` still spreads the panel.
 
 The two rankings, on this cohort alone:
 
-.. themed-figure:: /_static/figures/pareto_tolkach-esca
-   :figclass: croma-fig-narrow
-   :alt: Median CRoMa against lower-tail mean on Tolkach-ESCA, one point per encoder,
-         frontier ringed.
+.. raw:: html
 
-   Median ``CRoMa`` against tail severity LTM₁₀ on Tolkach-ESCA. Better is up and to the
-   right; ringed points are undominated on both axes and named in bold. The natural-image
-   control is excluded — the frontier is a pathology-only claim.
+   <div class="croma-pareto" data-cohort="tolkach-esca">
+     <noscript>The Pareto panel needs JavaScript; the same numbers are in the table
+     above.</noscript>
+   </div>
+
+Median ``CRoMa`` against tail severity LTM₁₀ on Tolkach-ESCA. Better is up and to the
+right; ringed points are undominated on both axes and named, and the shaded region is
+dominated on both. Hover or tab to any point to name it with its two values. The
+natural-image control is excluded — the frontier is a pathology-only claim.
 
 Several encoders are also visibly bimodal in the :ref:`explorer <explorer>` — one
 population of neighbourhoods comfortably biology-dominant, another close to the line. A

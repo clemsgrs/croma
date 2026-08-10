@@ -43,12 +43,15 @@ one roster, very different separability — the argument for reporting more than
 
 The two rankings, on this cohort alone:
 
-.. themed-figure:: /_static/figures/pareto_tcga-4x4
-   :figclass: croma-fig-narrow
-   :alt: Median CRoMa against lower-tail mean on TCGA-4×4, one point per encoder,
-         frontier ringed.
+.. raw:: html
 
-   Median ``CRoMa`` against tail severity LTM₁₀ on TCGA-4×4. Better is up and to the
-   right; ringed points are undominated on both axes and named in bold. The natural-image
-   control is excluded, and pretraining exposure is not marked — the caveat above applies
-   to every point.
+   <div class="croma-pareto" data-cohort="tcga-4x4">
+     <noscript>The Pareto panel needs JavaScript; the same numbers are in the table
+     above.</noscript>
+   </div>
+
+Median ``CRoMa`` against tail severity LTM₁₀ on TCGA-4×4. Better is up and to the right;
+ringed points are undominated on both axes and named, and the shaded region is dominated
+on both. Hover or tab to any point to name it with its two values. The natural-image
+control is excluded, and pretraining exposure is not marked — the caveat above applies to
+every point.

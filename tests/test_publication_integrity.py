@@ -96,7 +96,7 @@ def test_public_results_section_carries_only_the_three_public_cohorts() -> None:
         page = (ROOT / f"docs/results/{slug}.rst").read_text()
         assert f".. _{slug}:" in page
         assert f"results-table:: {slug}" in page
-        assert f"themed-figure:: /_static/figures/pareto_{slug}" in page
+        assert f'class="croma-pareto" data-cohort="{slug}"' in page
         assert "tcga-2x2" not in page.lower()
     assert "tcga-2x2" not in index.lower()
 

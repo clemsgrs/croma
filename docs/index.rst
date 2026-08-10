@@ -35,12 +35,16 @@ median ``CRoMa``/LTM₁₀. Orange rows mark encoders whose disclosed pretrainin
 TCGA (:ref:`legend <exposure-legend>`).
 :doc:`Full panel, cohort detail and the distribution explorer → <results/index>`
 
-.. themed-figure:: _static/figures/rank_pareto
-   :figclass: croma-fig-narrow
-   :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
+.. raw:: html
 
-   Median margin against tail severity, aggregated by rank across the three cohorts. Better
-   is up and to the right; ringed points are undominated.
+   <div class="croma-pareto" data-kind="rank">
+     <noscript>The Pareto overview needs JavaScript; the same ranks are in the table
+     above.</noscript>
+   </div>
+
+Median margin against tail severity, aggregated by rank across the three cohorts. Better
+is up and to the right; the ringed, named points are undominated. Hover or tab to any
+point to name it.
 
 .. raw:: html
 

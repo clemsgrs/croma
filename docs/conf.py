@@ -78,7 +78,7 @@ html_extra_path = ["../results"]
 html_css_files = ["custom.css"]
 # Loaded on every page but inert on all but one: the explorer returns immediately unless
 # the page provides its mount point, and only then does it fetch the 35 KB payload.
-html_js_files = ["explorer.js", "figures.js"]
+html_js_files = ["explorer.js", "figures.js", "pareto.js"]
 html_title = f"croma {release}"
 html_show_sourcelink = False
 html_theme_options = {
