@@ -18,7 +18,22 @@ pretrained on TCGA and on nothing else.
 .. results-table:: tcga-4x4
    :caption: TCGA-4×4, sorted by median ``CRoMa``. Columns are explained under
              :ref:`result-columns`; † marks the natural-image control
-             (:ref:`the-control`).
+             (:ref:`the-control`); row tint marks pretraining overlap (legend below).
+
+.. _exposure-legend:
+
+The row tint is that overlap, made visible, in three states rather than two because a
+missing disclosure is not a clean bill:
+
+- **Orange — TCGA-exposed.** TCGA appears in the encoder's disclosed pretraining corpus
+  or institutional provenance. Discount an advantage here.
+- **Grey — undisclosed.** A proprietary corpus that cannot be verified TCGA-free. Not an
+  accusation; an absence of evidence.
+- **Untinted — disclosed-clean.** A disclosed corpus without TCGA.
+
+The states are derived from the tracked model registry's domain tags and published in
+``results/cross_benchmark.csv``, so the tint here and the shading on the
+:doc:`aggregate table <index>` come from one committed fact per model.
 
 Only :results-value:`below_zero(tcga-4x4)` encoder falls below zero, and support is
 near-total — every model sits at :results-value:`support_min(tcga-4x4)` or above, so ``RI``

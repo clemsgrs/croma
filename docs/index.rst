@@ -28,10 +28,11 @@ The panel at a glance
 .. aggregate-table::
    :top: 8
 
-**Bold** marks the Pareto frontier — the encoders no other pathology encoder beats on both
-rankings at once; † is the unranked natural-image control. The two ranks are kept apart on
+**Bold** marks the Pareto frontier — the encoder(s) no other pathology encoder beats on both
+rankings at once. The two ranks are kept apart on
 purpose: a strong median margin can hide a brittle tail, so each cohort cell shows both,
-median ``CRoMa``/LTM₁₀.
+median ``CRoMa``/LTM₁₀. Tinted rows carry a TCGA pretraining-overlap caveat: orange for
+exposed, grey for undisclosed (:ref:`legend <exposure-legend>`).
 :doc:`Full panel, cohort detail and the distribution explorer → <results/index>`
 
 .. themed-figure:: _static/figures/rank_pareto
@@ -45,19 +46,19 @@ median ``CRoMa``/LTM₁₀.
    <div class="croma-card-grid">
      <a class="croma-card" href="getting-started.html">
        <h3>Getting started</h3>
-       <p>Install croma and score your first model in a few lines.</p>
+       <p>Install croma and score your first model</p>
      </a>
      <a class="croma-card" href="metrics.html">
        <h3>Metrics</h3>
-       <p>What RI, MaRI, and CRoMa measure, and when they disagree.</p>
+       <p>What RI, MaRI, and CRoMa measure</p>
      </a>
      <a class="croma-card" href="manifest.html">
        <h3>Manifest</h3>
-       <p>The manifest and embedding contracts, and the two evaluation designs.</p>
+       <p>The manifest and embedding contracts</p>
      </a>
      <a class="croma-card" href="results/index.html">
        <h3>Results</h3>
-       <p>Every cohort, every column, and the distribution explorer behind them.</p>
+       <p>Explore results in depth</p>
      </a>
    </div>
 

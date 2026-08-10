@@ -20,6 +20,9 @@ Two rankings, one frontier
 
 **Bold** marks the Pareto frontier: the encoders no other pathology encoder beats on *both*
 rankings at once. † marks the unranked natural-image control (see :ref:`the-control`).
+Tinted rows carry a TCGA pretraining-overlap caveat — one of the three cohorts behind
+these ranks is TCGA — orange for exposed, grey for undisclosed
+(:ref:`legend <exposure-legend>`).
 
 The ``CRoMa`` and tail ranks are each encoder's mean rank across the three cohorts — by
 median ``CRoMa`` and by tail severity LTM₁₀ respectively — and the mean rank averages the
