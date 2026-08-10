@@ -75,7 +75,7 @@ def main() -> None:
             for m in dist.pathology
         ]
         out_png = REPO / entry.studies_rel / "plots" / "croma_pareto.png"
-        # Every panel labels its frontier and marks (a dagger in the legend) the encoders exposed
+        # Every panel labels every point and daggers (in the point label) the encoders exposed
         # to a scored cohort of this benchmark (Camelyon: corpus; TCGA-4x4: corpus; Tolkach:
         # possible Charite institutional/source-domain overlap), from the same metadata the
         # captions read.

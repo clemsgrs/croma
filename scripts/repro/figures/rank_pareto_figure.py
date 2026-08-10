@@ -5,7 +5,7 @@ median-\\code{CRoMa} rank on the x-axis against mean ``LTM_10`` rank on the y-ax
 pathology encoder, with the Pareto frontier drawn. Ranking is scale-free, so -- unlike a mean of
 the raw margins -- a wider-margin benchmark cannot dominate the aggregate, and the TCGA
 in-distribution boost counts as one rank rather than a large margin. TCGA-exposed encoders carry
-a dagger after their name in the legend, because two of the three benchmarks contain a TCGA cohort.
+a dagger after their name in their point label, because two of the three benchmarks contain a TCGA cohort.
 
   output/studies/rank-pareto/plots/pdf/rank_pareto.pdf   fig:croma-pareto-rank   (supplement)
 

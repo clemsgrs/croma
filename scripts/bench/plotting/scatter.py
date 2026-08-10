@@ -18,14 +18,36 @@ import matplotlib.pyplot as plt
 from . import style as plotstyle
 from .style import COL_ONEHALF
 
-
 #: The Pareto panels enlarge the default scatter marker so each family colour reads clearly, with
 #: the hollow frontier ring scaled to sit outside the bigger fill. Benchmark-exposed encoders are
 #: NOT marked on the point -- an on-marker dot or cross competed with the fill colour and hurt
-#: readability -- but by a dagger after their name in the legend (see ``_draw_model_scatter``'s
-#: ``exposed`` argument); the caption spells the dagger out.
+#: readability -- but by a dagger after their name in its point label; the caption spells the
+#: dagger out.
 _PARETO_MARKER_S = 90.0
 _PARETO_RING_S = 210.0
+
+#: Every point on a Pareto panel is labelled directly and the legend is gone: at 25 encoders a
+#: family palette collapses into half a dozen near-identical blues, and matching a dot to a
+#: 25-swatch legend is a lookup nobody completes. Bold tags name the frontier (the panel's
+#: claim); these smaller muted labels name everyone else, so colour is a family cue rather than
+#: the sole identity channel.
+_POINT_LABEL_FS = 6.0
+
+#: Shared geometry of both Pareto panels. One definition, because ``_pareto_pt_scale`` converts
+#: typographic points to data units from exactly these numbers -- a margin edited in one place
+#: but not the other silently mis-sizes every reserved label box.
+_PARETO_FIGSIZE = (COL_ONEHALF, 5.2)
+_PARETO_MARGINS = dict(top=0.95, bottom=0.11, left=0.135, right=0.975)
+
+
+def _daggered(name: str, exposed: set[str] | frozenset[str]) -> str:
+    """The display label for a point: the model name, daggered when exposed."""
+    return rf"{name} $\dagger$" if name in exposed else name
+
+
+def _display_len(label: str) -> int:
+    """The label's rendered length in characters: the mathtext dagger is one glyph."""
+    return len(label.replace(r" $\dagger$", " x"))
 
 
 def _halo(linewidth: float) -> list:
@@ -91,9 +113,7 @@ def _draw_mari_vs_ri_scatter(ax, rows: list[dict]) -> None:
 
 def _draw_croma_vs_mari_scatter(ax, rows: list[dict]) -> None:
     croma_rows = [
-        r
-        for r in rows
-        if "croma" in r and "mari" in r and np.isfinite(float(r["croma"]))
+        r for r in rows if "croma" in r and "mari" in r and np.isfinite(float(r["croma"]))
     ]
     if not croma_rows:
         ax.set_visible(False)
@@ -242,14 +262,13 @@ def _pareto_boundary(
     return boundary
 
 
-def _pareto_pt_scale(
-    xlim: tuple[float, float], ylim: tuple[float, float]
-) -> tuple[float, float]:
-    """Data units per typographic point for the fixed Pareto figure cell (the margins both panels
-    pass to ``_finalize_figure``), so tag room can be reserved before the axes exist. A bold 7 pt
-    glyph is ~0.6 pt wide per character."""
-    ax_w_pt = (0.975 - 0.135) * COL_ONEHALF * 72.0
-    ax_h_pt = (0.95 - 0.30) * 6.3 * 72.0
+def _pareto_pt_scale(xlim: tuple[float, float], ylim: tuple[float, float]) -> tuple[float, float]:
+    """Data units per typographic point for the fixed Pareto figure cell (the shared
+    ``_PARETO_FIGSIZE``/``_PARETO_MARGINS`` both panels pass to ``_finalize_figure``), so tag
+    room can be reserved before the axes exist. A bold 7 pt glyph is ~0.6 pt wide per
+    character."""
+    ax_w_pt = (_PARETO_MARGINS["right"] - _PARETO_MARGINS["left"]) * _PARETO_FIGSIZE[0] * 72.0
+    ax_h_pt = (_PARETO_MARGINS["top"] - _PARETO_MARGINS["bottom"]) * _PARETO_FIGSIZE[1] * 72.0
     return (xlim[1] - xlim[0]) / ax_w_pt, (ylim[1] - ylim[0]) / ax_h_pt
 
 
@@ -282,23 +301,23 @@ def _layout_frontier_tags(
     xlo, xhi = xlim
     ylo, yhi = ylim
     x_per_pt, y_per_pt = _pareto_pt_scale(xlim, ylim)
-    dx = 9.0 * x_per_pt   # tag anchor sits this far right (or left) of the ring centre
-    dy = 8.0 * y_per_pt   # ...and this far above it
+    dx = 9.0 * x_per_pt  # tag anchor sits this far right (or left) of the ring centre
+    dy = 8.0 * y_per_pt  # ...and this far above it
     char_w = 0.60 * plotstyle.FS_ANNOT * x_per_pt
     line_h = 1.35 * plotstyle.FS_ANNOT * y_per_pt
     stack_gap = 1.55 * plotstyle.FS_ANNOT * y_per_pt  # min vertical spacing between two tags
     marker_r = (float(_PARETO_MARKER_S) / np.pi) ** 0.5  # scatter marker radius, in points
-    clear_x = marker_r * x_per_pt          # half-width of a marker, in data units
-    clear_y = (marker_r + 0.35 * plotstyle.FS_ANNOT) * y_per_pt  # marker half-height + breathing room
+    clear_x = marker_r * x_per_pt  # half-width of a marker, in data units
+    clear_y = (
+        marker_r + 0.35 * plotstyle.FS_ANNOT
+    ) * y_per_pt  # marker half-height + breathing room
 
     xs = [x for x, _ in all_xy]
     xspan = float(max(xs) - min(xs))
     xmax = float(max(xs))
-    tag_left = {
-        name: (xmax - fx) < 0.08 * xspan for name, (fx, _fy) in zip(frontier, frontier_xy)
-    }
+    tag_left = {name: (xmax - fx) < 0.08 * xspan for name, (fx, _fy) in zip(frontier, frontier_xy)}
     for name, (fx, _fy) in zip(frontier, frontier_xy):
-        room = len(name) * char_w + dx + 3.0 * x_per_pt
+        room = _display_len(name) * char_w + dx + 3.0 * x_per_pt
         if tag_left[name]:
             xlo = min(xlo, fx - room)
         else:
@@ -320,8 +339,8 @@ def _layout_frontier_tags(
         # Drop below any non-frontier marker whose centre falls inside this tag's label box. Loop
         # because dropping past one marker can bring a lower one into range; each pass lowers ly
         # past at least one point, so it terminates.
-        x0 = (fx - dx) - len(name) * char_w if tag_left[name] else fx + dx
-        x1 = fx - dx if tag_left[name] else (fx + dx) + len(name) * char_w
+        x0 = (fx - dx) - _display_len(name) * char_w if tag_left[name] else fx + dx
+        x1 = fx - dx if tag_left[name] else (fx + dx) + _display_len(name) * char_w
         moved = True
         while moved:
             moved = False
@@ -359,16 +378,166 @@ def _draw_frontier_tags(ax, tags: list[dict]) -> None:
     for t in tags:
         fx, fy = t["ring"]
         ax.annotate(
-            "", xy=(fx, fy), xytext=t["anchor"],
-            arrowprops=dict(arrowstyle="-", color=plotstyle.SPINE_COLOR,
-                            linewidth=0.6, shrinkA=1.5, shrinkB=3.0),
+            "",
+            xy=(fx, fy),
+            xytext=t["anchor"],
+            arrowprops=dict(
+                arrowstyle="-", color=plotstyle.SPINE_COLOR, linewidth=0.6, shrinkA=1.5, shrinkB=3.0
+            ),
             zorder=4,
         )
         ax.annotate(
-            t["name"], xy=t["anchor"], xytext=(t["text_dx"], 0), textcoords="offset points",
-            ha=t["ha"], va="center", fontsize=plotstyle.FS_ANNOT,
-            color=plotstyle.TEXT_COLOR, weight="bold", zorder=6,
+            t["name"],
+            xy=t["anchor"],
+            xytext=(t["text_dx"], 0),
+            textcoords="offset points",
+            ha=t["ha"],
+            va="center",
+            fontsize=plotstyle.FS_ANNOT,
+            color=plotstyle.TEXT_COLOR,
+            weight="bold",
+            zorder=6,
             path_effects=_halo(2.6),
+        )
+
+
+def _layout_point_labels(
+    labels: dict[str, str],
+    coords: dict[str, tuple[float, float]],
+    *,
+    frontier: list[str],
+    frontier_tags: list[dict],
+    xlim: tuple[float, float],
+    ylim: tuple[float, float],
+) -> list[dict]:
+    """Place a small label beside every non-frontier point, dodging what is already inked.
+
+    Greedy, top-down: each label tries eight compass offsets at two radii and keeps the
+    candidate whose box overlaps least with (in rising cost) the markers, the bold frontier
+    tags, the labels already placed, and the panel edges. Best-effort by design -- on a
+    25-encoder cloud some contact is unavoidable, and a slightly crowded label beats an
+    unnamed point; the greedy order is y-descending so the dodging cascades downward, the
+    direction with room on these bottom-heavy panels.
+    """
+    x_per_pt, y_per_pt = _pareto_pt_scale(xlim, ylim)
+    char_w_pt = 0.58 * _POINT_LABEL_FS
+    line_h_pt = 1.15 * _POINT_LABEL_FS
+    marker_r_pt = (float(_PARETO_MARKER_S) / np.pi) ** 0.5
+
+    def label_box(text, px, py, dx_pt, dy_pt, ha):
+        width = _display_len(text) * char_w_pt * x_per_pt
+        height = line_h_pt * y_per_pt
+        x = px + dx_pt * x_per_pt
+        y = py + dy_pt * y_per_pt
+        x0 = x if ha == "left" else x - width if ha == "right" else x - width / 2
+        return (x0, x0 + width, y - height / 2, y + height / 2)
+
+    def overlap(a, b):
+        return max(0.0, min(a[1], b[1]) - max(a[0], b[0])) * max(
+            0.0, min(a[3], b[3]) - max(a[2], b[2])
+        )
+
+    markers = [
+        (
+            px - marker_r_pt * x_per_pt,
+            px + marker_r_pt * x_per_pt,
+            py - marker_r_pt * y_per_pt,
+            py + marker_r_pt * y_per_pt,
+        )
+        for px, py in coords.values()
+    ]
+    tag_boxes = []
+    for tag in frontier_tags:
+        tx, ty = tag["anchor"]
+        width = _display_len(tag["name"]) * 0.60 * plotstyle.FS_ANNOT * x_per_pt
+        height = 1.35 * plotstyle.FS_ANNOT * y_per_pt
+        x0 = tx - width if tag["ha"] == "right" else tx
+        tag_boxes.append((x0, x0 + width, ty - height / 2, ty + height / 2))
+
+    near = marker_r_pt + 2.0
+    compass = [
+        (near, 0.0, "left"),
+        (-near, 0.0, "right"),
+        (0.0, near + 2.5, "center"),
+        (0.0, -(near + 2.5), "center"),
+        (near - 1.0, near - 1.0, "left"),
+        (-(near - 1.0), near - 1.0, "right"),
+        (near - 1.0, -(near - 1.0), "left"),
+        (-(near - 1.0), -(near - 1.0), "right"),
+    ]
+    candidates = [(dx, dy, ha, False) for dx, dy, ha in compass] + [
+        (dx * 1.9, dy * 1.9, ha, True) for dx, dy, ha in compass
+    ]
+
+    specs: list[dict] = []
+    placed: list[tuple[float, float, float, float]] = []
+    on_frontier = set(frontier)
+    order = sorted(
+        (name for name in coords if name not in on_frontier),
+        key=lambda name: coords[name][1],
+        reverse=True,
+    )
+    area_unit = (char_w_pt * x_per_pt) * (line_h_pt * y_per_pt)  # one glyph's box, for scaling
+    for name in order:
+        text = labels[name]
+        px, py = coords[name]
+        best = None
+        for dx_pt, dy_pt, ha, far in candidates:
+            box = label_box(text, px, py, dx_pt, dy_pt, ha)
+            oob = (
+                max(0.0, xlim[0] - box[0])
+                + max(0.0, box[1] - xlim[1])
+                + max(0.0, ylim[0] - box[2])
+                + max(0.0, box[3] - ylim[1])
+            )
+            cost = (
+                sum(overlap(box, m) for m in markers)
+                + 2.0 * sum(overlap(box, t) for t in tag_boxes)
+                + 3.0 * sum(overlap(box, p) for p in placed)
+                + 40.0 * area_unit * (oob / max(y_per_pt, 1e-12)) / line_h_pt
+            )
+            if best is None or cost < best[0]:
+                best = (cost, dx_pt, dy_pt, ha, box, far)
+        _cost, dx_pt, dy_pt, ha, box, far = best
+        placed.append(box)
+        specs.append(
+            {"text": text, "point": (px, py), "offset": (dx_pt, dy_pt), "ha": ha, "leader": far}
+        )
+    return specs
+
+
+def _draw_point_labels(ax, specs: list[dict]) -> None:
+    """Draw the muted non-frontier labels from ``_layout_point_labels``. Haloed like the bold
+    tags, so a label crossing the staircase or a gridline stays legible; a label the dodging
+    pushed to the far ring gets a thin leader back to its point, because at that distance the
+    pairing stops being self-evident."""
+    for spec in specs:
+        if spec["leader"]:
+            ax.annotate(
+                "",
+                xy=spec["point"],
+                xytext=spec["offset"],
+                textcoords="offset points",
+                arrowprops=dict(
+                    arrowstyle="-",
+                    color=plotstyle.SPINE_COLOR,
+                    linewidth=0.5,
+                    shrinkA=1.0,
+                    shrinkB=2.5,
+                ),
+                zorder=4,
+            )
+        ax.annotate(
+            spec["text"],
+            xy=spec["point"],
+            xytext=spec["offset"],
+            textcoords="offset points",
+            ha=spec["ha"],
+            va="center",
+            fontsize=_POINT_LABEL_FS,
+            color=plotstyle.MUTED_TEXT_COLOR,
+            zorder=5.5,
+            path_effects=_halo(1.8),
         )
 
 
@@ -399,7 +568,7 @@ def plot_croma_pareto(
     dashed \\code{CRoMa}\\,=\\,0 and ``LTM``\\,=\\,0 references, the shaded dominated region and
     the frontier staircase are always drawn.
     """
-    fig, ax = plt.subplots(figsize=(COL_ONEHALF, 6.3))
+    fig, ax = plt.subplots(figsize=_PARETO_FIGSIZE)
     valid_rows = _valid_croma_ltm_rows(rows)
     if not valid_rows:
         ax.set_visible(False)
@@ -430,8 +599,9 @@ def plot_croma_pareto(
 
     # Reserve room for the bold frontier tags and lay them out (drawn after the scatter, below),
     # so each up-right/up-left tag lands inside the panel rather than clipping the spine.
+    frontier_labels = [_daggered(name, exposed) for name in frontier]
     xlim, ylim, frontier_tags = _layout_frontier_tags(
-        frontier, frontier_xy, list(coords.values()), xlim=(xlo, xhi), ylim=(ylo, yhi)
+        frontier_labels, frontier_xy, list(coords.values()), xlim=(xlo, xhi), ylim=(ylo, yhi)
     )
 
     _draw_model_scatter(
@@ -447,7 +617,6 @@ def plot_croma_pareto(
         hline=0.0,
         vline=0.0,
         marker_size=_PARETO_MARKER_S,
-        exposed=exposed,
     )
     # The scatter primitive forces a square data box (its own identity); here that compresses
     # the axes into the bottom legend. Let the panel fill its figure cell instead (cf.
@@ -460,20 +629,32 @@ def plot_croma_pareto(
     # beaten on both axes. Drawn beneath the points and the grid.
     shade = boundary + [(xlim[0], ylim[0])]
     ax.fill(
-        [p[0] for p in shade], [p[1] for p in shade],
-        color=plotstyle.SPINE_COLOR, alpha=0.05, linewidth=0, zorder=0.5,
+        [p[0] for p in shade],
+        [p[1] for p in shade],
+        color=plotstyle.SPINE_COLOR,
+        alpha=0.05,
+        linewidth=0,
+        zorder=0.5,
     )
     # The frontier itself: a solid neutral staircase, heavier than the dashed zero references.
     ax.plot(
-        [p[0] for p in boundary], [p[1] for p in boundary],
-        color=plotstyle.SPINE_COLOR, linewidth=1.1, zorder=2.5, solid_capstyle="butt",
+        [p[0] for p in boundary],
+        [p[1] for p in boundary],
+        color=plotstyle.SPINE_COLOR,
+        linewidth=1.1,
+        zorder=2.5,
+        solid_capstyle="butt",
     )
     # Ring the non-dominated encoders so "these are the only undominated choices" reads at a
     # glance.
     ax.scatter(
-        [x for x, _ in frontier_xy], [y for _, y in frontier_xy],
-        s=_PARETO_RING_S, facecolors="none", edgecolors=plotstyle.SPINE_COLOR,
-        linewidths=1.1, zorder=5,
+        [x for x, _ in frontier_xy],
+        [y for _, y in frontier_xy],
+        s=_PARETO_RING_S,
+        facecolors="none",
+        edgecolors=plotstyle.SPINE_COLOR,
+        linewidths=1.1,
+        zorder=5,
     )
     # Label every ringed frontier encoder in bold -- the frontier answers "so which model is
     # best?", so it is named on every panel. Placement (up-right/up-left routing, y-de-collision,
@@ -481,20 +662,21 @@ def plot_croma_pareto(
     # rank-aggregate panel.
     _draw_frontier_tags(ax, frontier_tags)
 
-    # Encoders exposed to a cohort of this benchmark are flagged by a dagger after their name in
-    # the legend (passed to _draw_model_scatter above as ``exposed``), never by a glyph on the
-    # point: an on-marker dot or cross competed with the fill colour and hurt readability. The
-    # caption spells the dagger out.
-
-    # The full 25-model ranked roster makes a multi-row legend; the shared finaliser caps
-    # its bottom margin below that, so the x-label lands on the top legend row. Reserve the
-    # room explicitly instead.
-    _finalize_figure(
-        fig, out_path=out_path, legend_axes=[ax],
-        top=0.95, bottom=0.30, left=0.135, right=0.975,
-        legend_y=0.02, legend_ncol=4, legend_fontsize=8.4,
-        legend_columnspacing=1.2, legend_handlelength=1.9,
+    # Every dominated encoder gets a small muted label beside its point (exposure daggered
+    # there, as on the frontier tags), and the legend is gone -- see _POINT_LABEL_FS.
+    _draw_point_labels(
+        ax,
+        _layout_point_labels(
+            {name: _daggered(name, exposed) for name in coords},
+            coords,
+            frontier=frontier,
+            frontier_tags=frontier_tags,
+            xlim=xlim,
+            ylim=ylim,
+        ),
     )
+
+    _finalize_figure(fig, out_path=out_path, legend_axes=[ax], add_legend=False, **_PARETO_MARGINS)
 
 
 def plot_rank_pareto(
@@ -525,7 +707,7 @@ def plot_rank_pareto(
     """
     from matplotlib.ticker import FuncFormatter, MultipleLocator
 
-    fig, ax = plt.subplots(figsize=(COL_ONEHALF, 6.3))
+    fig, ax = plt.subplots(figsize=_PARETO_FIGSIZE)
     points = [
         (
             str(r["model"]),
@@ -568,8 +750,9 @@ def plot_rank_pareto(
     # non-dominated set, reserve the room its tags need, and lay them out (drawn after the scatter).
     frontier = _pareto_frontier_max_max([(name, gx, gy) for name, (gx, gy) in coords.items()])
     frontier_xy = [coords[name] for name in frontier]
+    frontier_labels = [_daggered(name, exposed) for name in frontier]
     xlim, ylim, frontier_tags = _layout_frontier_tags(
-        frontier, frontier_xy, list(coords.values()), xlim=xlim, ylim=ylim
+        frontier_labels, frontier_xy, list(coords.values()), xlim=xlim, ylim=ylim
     )
 
     _draw_model_scatter(
@@ -583,7 +766,6 @@ def plot_rank_pareto(
         xlim=xlim,
         ylim=ylim,
         marker_size=_PARETO_MARKER_S,
-        exposed=exposed,
     )
     ax.set_box_aspect(None)
     show_rank = FuncFormatter(lambda value, _pos: f"{-value:.0f}")
@@ -595,29 +777,47 @@ def plot_rank_pareto(
 
     shade = boundary + [(xlim[0], ylim[0])]
     ax.fill(
-        [p[0] for p in shade], [p[1] for p in shade],
-        color=plotstyle.SPINE_COLOR, alpha=0.05, linewidth=0, zorder=0.5,
+        [p[0] for p in shade],
+        [p[1] for p in shade],
+        color=plotstyle.SPINE_COLOR,
+        alpha=0.05,
+        linewidth=0,
+        zorder=0.5,
     )
     ax.plot(
-        [p[0] for p in boundary], [p[1] for p in boundary],
-        color=plotstyle.SPINE_COLOR, linewidth=1.1, zorder=2.5, solid_capstyle="butt",
+        [p[0] for p in boundary],
+        [p[1] for p in boundary],
+        color=plotstyle.SPINE_COLOR,
+        linewidth=1.1,
+        zorder=2.5,
+        solid_capstyle="butt",
     )
     ax.scatter(
-        [x for x, _ in frontier_xy], [y for _, y in frontier_xy],
-        s=_PARETO_RING_S, facecolors="none", edgecolors=plotstyle.SPINE_COLOR,
-        linewidths=1.1, zorder=5,
+        [x for x, _ in frontier_xy],
+        [y for _, y in frontier_xy],
+        s=_PARETO_RING_S,
+        facecolors="none",
+        edgecolors=plotstyle.SPINE_COLOR,
+        linewidths=1.1,
+        zorder=5,
     )
     # Bold frontier labels, drawn by the same helper the per-benchmark panels use.
     _draw_frontier_tags(ax, frontier_tags)
 
-    # TCGA-exposed encoders (two of the three benchmarks contain a TCGA cohort, so an exposed
-    # encoder's mean rank may reflect pretraining overlap) are flagged by a dagger after their name
-    # in the legend (passed to _draw_model_scatter above as ``exposed``), never by a glyph on the
-    # point: an on-marker dot or cross competed with the fill colour. The caption spells it out.
-
-    _finalize_figure(
-        fig, out_path=out_path, legend_axes=[ax],
-        top=0.95, bottom=0.30, left=0.135, right=0.975,
-        legend_y=0.02, legend_ncol=4, legend_fontsize=8.4,
-        legend_columnspacing=1.2, legend_handlelength=1.9,
+    # Every dominated encoder gets a small muted label beside its point. TCGA-exposed
+    # encoders (two of the three benchmarks contain a TCGA cohort, so an exposed encoder's
+    # mean rank may reflect pretraining overlap) are daggered in their labels, never by a
+    # glyph on the point: an on-marker dot or cross competed with the fill colour.
+    _draw_point_labels(
+        ax,
+        _layout_point_labels(
+            {name: _daggered(name, exposed) for name in coords},
+            coords,
+            frontier=frontier,
+            frontier_tags=frontier_tags,
+            xlim=xlim,
+            ylim=ylim,
+        ),
     )
+
+    _finalize_figure(fig, out_path=out_path, legend_axes=[ax], add_legend=False, **_PARETO_MARGINS)

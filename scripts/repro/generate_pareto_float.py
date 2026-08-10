@@ -58,7 +58,7 @@ def _exposure_clause(entry, dist) -> str:
 
     A benchmark whose scored cohorts overlap a pretraining domain (``has_exposure_domain``) MUST
     mark at least one encoder -- an empty set there means the mapping or the roster is broken, and
-    a silent empty would drop the legend daggers the figure is asked to draw. A benchmark with no
+    a silent empty would drop the point-label daggers the figure is asked to draw. A benchmark with no
     such domain legitimately marks nothing, so it gets no sentence. The figure marks exactly
     ``exposed_models(...)``, so caption and figure agree by construction.
     """
