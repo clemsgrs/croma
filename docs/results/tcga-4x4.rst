@@ -15,12 +15,12 @@ nothing else.
 
 Only one encoder falls below zero here. Support is the other thing to notice: at ``k = 71``
 every model sits above 99%, so ``RI`` and ``MaRI`` rest on essentially every tile. That is
-worth contrasting with :doc:`Camelyon <camelyon>`, where support never exceeds 68% for any
+worth contrasting with :doc:`Camelyon <camelyon>`, where support never exceeds 73% for any
 encoder in the same panel — the same two indices, resting on very different amounts of
 evidence.
 
 .. results-table:: tcga-4x4
-   :caption: TCGA-4×4 — all 21 encoders, by median ``CRoMa``
+   :caption: TCGA-4×4 — all 26 encoders, by median ``CRoMa``
 
 Columns are explained under :ref:`result-columns`; † marks the natural-image control
 (:ref:`the-control`). Every model is evaluated at the shared operating point ``k = 71``,

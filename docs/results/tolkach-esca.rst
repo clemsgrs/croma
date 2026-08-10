@@ -10,13 +10,13 @@ This is the mildest of the three cohorts: no encoder's median falls below zero, 
 of the panel keeps confounder-dominant mass under 6%. Margins are correspondingly wide, and
 every median sits to the right of the neutral line.
 
-It is also where the count-based indices run out of room. Eleven of the twenty-one encoders
+It is also where the count-based indices run out of room. Sixteen of the twenty-six encoders
 score above ``0.90`` on ``RI``, and the whole panel spans a third of the scale — so ``RI``
 and ``MaRI`` have largely stopped separating models here, while ``CRoMa`` still spreads them
 across a factor of five. That is the case these metrics were built for.
 
 .. results-table:: tolkach-esca
-   :caption: Tolkach-ESCA — all 21 encoders, by median ``CRoMa``
+   :caption: Tolkach-ESCA — all 26 encoders, by median ``CRoMa``
 
 Columns are explained under :ref:`result-columns`; † marks the natural-image control
 (:ref:`the-control`). Every model is evaluated at the shared operating point ``k = 61``,

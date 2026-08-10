@@ -25,8 +25,8 @@ import export_results as er  # noqa: E402
 
 RESULTS = ROOT / "results"
 
-#: The committed payload is fetched by every visitor to the results page. 200 bins x 21
-#: models x 3 cohorts lands near 35 KB; the budget catches a change that quietly makes it
+#: The committed payload is fetched by every visitor to the results page. 200 bins x 26
+#: models x 3 cohorts lands near 43 KB; the budget catches a change that quietly makes it
 #: an order of magnitude bigger (per-sample values, say, or a much finer grid).
 PAYLOAD_BUDGET_BYTES = 100 * 1024
 

@@ -59,21 +59,21 @@ print(f"CRoMa {croma.value:+.3f}  (lower-tail mean {croma.ltm_alpha:+.3f})")
 
 ## Results
 
-Twenty-one encoders — twenty pathology foundation models and one natural-image control (†) — scored on three tile cohorts from [PathoROB](https://arxiv.org/abs/2507.17845).
+Twenty-six encoders — twenty-five pathology foundation models and one natural-image control (†) — scored on three tile cohorts from [PathoROB](https://arxiv.org/abs/2507.17845).
 
 <!-- results:start -->
 | Model | mean rank | CRoMa rank | tail rank | Camelyon<br>CRoMa/LTM₁₀ | TCGA-4×4<br>CRoMa/LTM₁₀ | Tolkach-ESCA<br>CRoMa/LTM₁₀ |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **CONCHv1.5** | 3.8 | 3.3 | 4.3 | 0.19/-0.14 | 0.15/-0.13 | 0.39/-0.03 |
-| **GenBio-PathFM** | 4.7 | 3.0 | 6.3 | 0.19/-0.07 | 0.16/-0.19 | 0.39/-0.02 |
-| Virchow2 | 5.0 | 4.3 | 5.7 | 0.20/-0.11 | 0.13/-0.17 | 0.35/-0.04 |
-| **CONCH** | 5.5 | 2.7 | 8.3 | 0.20/-0.20 | 0.15/-0.15 | 0.44/-0.04 |
-| **H-optimus-1** | 5.7 | 8.3 | 3.0 | 0.08/-0.14 | 0.09/-0.10 | 0.26/-0.04 |
-| Virchow | 7.8 | 6.3 | 9.3 | 0.16/-0.18 | 0.09/-0.18 | 0.37/-0.05 |
-| H0-mini | 8.0 | 5.3 | 10.7 | 0.17/-0.16 | 0.12/-0.19 | 0.38/-0.07 |
-| H-optimus-0 | 8.3 | 10.7 | 6.0 | 0.05/-0.15 | 0.05/-0.11 | 0.23/-0.08 |
+| **Mascaret** | 1.7 | 2.0 | 1.3 | 0.29/-0.02 | 0.27/-0.11 | 0.51/0.01 |
+| RudolfV 2-S | 4.5 | 2.3 | 6.7 | 0.32/-0.02 | 0.19/-0.16 | 0.49/-0.00 |
+| RudolfV 2 | 4.7 | 4.3 | 5.0 | 0.24/-0.04 | 0.17/-0.12 | 0.41/-0.01 |
+| RudolfV 2-B | 5.7 | 4.7 | 6.7 | 0.24/-0.05 | 0.17/-0.14 | 0.41/-0.02 |
+| CONCHv1.5 | 7.7 | 7.3 | 8.0 | 0.19/-0.14 | 0.15/-0.13 | 0.39/-0.03 |
+| GenBio-PathFM | 8.7 | 7.0 | 10.3 | 0.19/-0.07 | 0.16/-0.19 | 0.39/-0.02 |
+| Virchow2 | 9.3 | 8.3 | 10.3 | 0.20/-0.11 | 0.13/-0.17 | 0.35/-0.04 |
+| H-optimus-1 | 9.3 | 12.7 | 6.0 | 0.08/-0.14 | 0.09/-0.10 | 0.26/-0.04 |
 
-Top 8 of 21 by mean rank, over 3 tile cohorts. The CRoMa and tail ranks are the means of that encoder's within-cohort ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages those two. It orders the table; it does not replace them, because a strong median can hide a brittle tail and only the two columns show that — which is why each cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the Pareto frontier: the encoders no other encoder beats on both axes at once.
+Top 8 of 26 by mean rank, over 3 tile cohorts. The CRoMa and tail ranks are the means of that encoder's within-cohort ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages those two. It orders the table; it does not replace them, because a strong median can hide a brittle tail and only the two columns show that — which is why each cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the Pareto frontier: the encoders no other encoder beats on both axes at once.
 
 📊 **[Full panel, per-cohort detail and the distributions](https://clemsgrs.github.io/croma/results/)**
 <!-- results:end -->
