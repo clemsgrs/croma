@@ -15,7 +15,7 @@ nothing else.
 
 Only one encoder falls below zero here. Support is the other thing to notice: at ``k = 71``
 every model sits above 99%, so ``RI`` and ``MaRI`` rest on essentially every tile. That is
-worth contrasting with :doc:`Camelyon <camelyon>`, where support never exceeds 68% for any
+worth contrasting with :doc:`Camelyon <camelyon>`, where support never exceeds 73% for any
 encoder in the same panel — the same two indices, resting on very different amounts of
 evidence.
 

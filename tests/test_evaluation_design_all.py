@@ -249,6 +249,7 @@ def test_a_cached_summary_without_tail_statistics_is_not_reused() -> None:
     import benchmark as bm
 
     payload = {
+        "k": 5,
         "value": 0.6,
         "std": 0.1,
         "undefined_frac": 0.0,
@@ -258,6 +259,7 @@ def test_a_cached_summary_without_tail_statistics_is_not_reused() -> None:
         "evaluation_design": "all",
         "evaluation_unit": "sample",
     }
+    assert bm._summary_from_payload(payload) is not None
     missing_tail = {key: value for key, value in payload.items() if key != "ltm_alpha"}
     assert bm._summary_from_payload(missing_tail) is None
 
