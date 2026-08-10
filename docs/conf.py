@@ -88,7 +88,8 @@ html_css_files = ["custom.css"]
 # Loaded on every page but inert on all but one: the explorer returns immediately unless
 # the page provides its mount point, and only then does it fetch the 35 KB payload.
 html_js_files = ["explorer.js", "figures.js", "pareto.js"]
-html_title = f"croma {release}"
+# Bare project name: the version lives in the sidebar card's release badge instead.
+html_title = "croma"
 html_show_sourcelink = False
 # Furo's default sidebar, with the repository card inserted above the navigation tree.
 html_sidebars = {
