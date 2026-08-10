@@ -31,13 +31,17 @@ class ThemedFigure(Figure):
 
     def run(self) -> list[nodes.Node]:
         stem = self.arguments[0]
+        options = self.options.copy()
         emitted: list[nodes.Node] = []
 
         for theme in THEMES:
             # Figure.run() reads self.arguments[0], so point it at this theme's file and
             # let the base directive do the real work -- including caption parsing, which
-            # re-parses self.content cleanly on each call.
+            # re-parses self.content cleanly on each call. It also *pops* options it
+            # consumes (figclass, align), so each pass gets its own copy -- without this
+            # the dark variant silently lost every popped option.
             self.arguments[0] = f"{stem}-{theme}.svg"
+            self.options = options.copy()
             produced = super().run()
 
             figure = next((n for n in produced if isinstance(n, nodes.figure)), None)

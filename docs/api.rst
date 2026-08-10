@@ -6,7 +6,8 @@ Reference for the Python API. See :doc:`getting-started` for introductory exampl
 
 ``croma`` exposes three metric classes, the downstream probe protocol and two
 reductions, and one alignment helper. Each metric class is a namespace of classmethods --
-you never instantiate them. The short names are the ones to import:
+you never instantiate them; ``apd``, ``nipd`` and ``probe_sweep`` are plain functions. The
+short names are the ones to import:
 
 .. code-block:: python
 
@@ -29,13 +30,13 @@ you never instantiate them. The short names are the ones to import:
      - :class:`~croma.CrossConfounderRobustnessMargin`
      - :class:`~croma.types.CRoMaResult`
    * - ``apd``
-     - :func:`~croma.apd` (a function, not a metric namespace)
+     - :func:`~croma.apd`
      - ``float``
    * - ``nipd``
-     - :func:`~croma.nipd` (a function, not a metric namespace)
+     - :func:`~croma.nipd`
      - ``float``
    * - ``probe_sweep``
-     - :func:`~croma.probe_sweep` (a function, not a metric namespace)
+     - :func:`~croma.probe_sweep`
      - ``numpy.ndarray``
 
 RI
@@ -72,7 +73,7 @@ no output layout touched.
 
    accuracies = probe_sweep(
        embeddings,                  # (n_rows, n_features)
-       centre_index,                # (n_rows,) confounder index per row
+       center_index,                # (n_rows,) confounder index per row
        class_index,                 # (n_rows,) biological class index per row
        schedule=pathorob_schedule("camelyon", rows_per_slide=300),
        rows_per_slide=300,

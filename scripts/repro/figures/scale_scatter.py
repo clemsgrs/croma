@@ -192,7 +192,8 @@ def load_metadata(path: Path = DEFAULT_METADATA) -> pd.DataFrame:
     from truly empty ones; ``_parse_scale`` maps both to NaN anyway, but the distinction
     matters to anything that reads the raw cell.
     """
-    return pd.read_csv(path, keep_default_na=False, na_values=[])
+    # Registry identities on disk, published names on the figure.
+    return plotstyle.published_models(pd.read_csv(path, keep_default_na=False, na_values=[]))
 
 
 def load_per_dataset_croma(repo: Path = REPO) -> dict[str, dict[str, float]] | None:
@@ -208,7 +209,7 @@ def load_per_dataset_croma(repo: Path = REPO) -> dict[str, dict[str, float]] | N
         path = Path(repo) / by_benchmark(benchmark).metrics_rel
         if not path.exists():
             return None
-        series = pd.read_csv(path).set_index("model")["croma"]
+        series = plotstyle.published_models(pd.read_csv(path)).set_index("model")["croma"]
         per[name] = {str(k): float(v) for k, v in series.items()}
     return per
 

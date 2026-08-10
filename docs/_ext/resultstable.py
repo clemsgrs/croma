@@ -105,6 +105,58 @@ AGGREGATE_RANKS: tuple[Column, ...] = (
 )
 
 
+#: The tint is binary, matching the paper's dagger convention: exposed rows are marked,
+#: everything else is the unmarked default -- and colour alone carries no text, so the
+#: tinted class pairs with a visually-hidden label for screen readers, print, and
+#: copy-paste. Untinted means *no disclosed overlap*, not an audited absence; the legend
+#: beside the TCGA-4×4 table carries that caveat.
+EXPOSED_CLASS = "croma-exposure-exposed"
+
+EXPOSURE_LABELS = {EXPOSED_CLASS: " (TCGA-exposed pretraining)"}
+
+
+def _parse_exposed(value: str) -> bool:
+    """Strict boolean parse: a corrupted cell must fail the build, not render unmarked."""
+    if value not in ("True", "False"):
+        raise ValueError(f"tcga_exposed must be True or False, got {value!r}")
+    return value == "True"
+
+
+def _exposure_map() -> dict[str, bool]:
+    """Model -> exposed flag, from the model-level export."""
+    return {
+        row["model"]: _parse_exposed(row["tcga_exposed"]) for row in _read("cross_benchmark.csv")
+    }
+
+
+def exposure_row_classes(models: list[str], exposure: dict[str, bool]) -> list[str | None]:
+    """The row class (or ``None``) for each model, in table order.
+
+    Raises on a model without a state: it means the cohort CSV and the model-level
+    export disagree, which should fail the ``-W`` build rather than publish an
+    unmarked row.
+    """
+    return [EXPOSED_CLASS if exposure[model] else None for model in models]
+
+
+def _tint_rows(rendered: list[nodes.Node], models: list[str], exposure: dict[str, bool]) -> None:
+    """Apply the exposure classes and screen-reader labels to a rendered table's body."""
+    tables = [n for node in rendered for n in node.findall(nodes.table)]
+    if len(tables) != 1:
+        raise ValueError(f"expected one rendered table, found {len(tables)}")
+    body = next(tables[0].findall(nodes.tbody))
+    row_nodes = list(body.findall(nodes.row))
+    if len(row_nodes) != len(models):
+        raise ValueError(f"{len(models)} models but {len(row_nodes)} body rows")
+    for row_node, row_class in zip(row_nodes, exposure_row_classes(models, exposure)):
+        if row_class is None:
+            continue
+        row_node["classes"].append(row_class)
+        first_cell = next(row_node.findall(nodes.entry))
+        label = EXPOSURE_LABELS[row_class]
+        first_cell += nodes.inline(label, label, classes=["croma-sr-only"])
+
+
 def _read(name: str) -> list[dict[str, str]]:
     path = RESULTS / name
     if not path.exists():
@@ -133,7 +185,9 @@ def _value(row: dict[str, str], key: str, fmt: str, best: float | None) -> str:
 def _render_row(row: dict[str, str], columns, best: dict[str, float | None]) -> list[str]:
     """One model's cells. The control is never bolded, whatever it happens to lead on."""
     blank = dict.fromkeys(best)
-    return [column.render(row, blank if _is_true(row["is_control"]) else best) for column in columns]
+    return [
+        column.render(row, blank if _is_true(row["is_control"]) else best) for column in columns
+    ]
 
 
 def _best_values(rows: list[dict[str, str]], columns) -> dict[str, float | None]:
@@ -197,7 +251,12 @@ class ResultsTable(_TableDirective):
         headers = ["Model", *(c.header for c in COHORT_COLUMNS)]
         body = [[_model_cell(row), *_render_row(row, COHORT_COLUMNS, best)] for row in rows]
         title = self.options.get("caption", f"{slug} — {len(rows)} encoders")
-        return self._render(_list_table(headers, body, name=title))
+        rendered = self._render(_list_table(headers, body, name=title))
+        # Only the cohort whose scored domain the exposure states are derived for; on the
+        # TCGA-free cohorts the tint would imply a caveat their scores do not carry.
+        if slug == "tcga-4x4":
+            _tint_rows(rendered, [row["model"] for row in rows], _exposure_map())
+        return rendered
 
 
 class AggregateTable(_TableDirective):
@@ -213,7 +272,9 @@ class AggregateTable(_TableDirective):
     def run(self) -> list[nodes.Node]:
         rows = _read("cross_benchmark.csv")
         ranks = {c.key for c in AGGREGATE_RANKS}
-        cohorts = [k.removeprefix("croma_") for k in rows[0] if k.startswith("croma_") and k not in ranks]
+        cohorts = [
+            k.removeprefix("croma_") for k in rows[0] if k.startswith("croma_") and k not in ranks
+        ]
         columns = list(AGGREGATE_RANKS) + [
             PairColumn(f"croma_{slug}", f"ltm_{slug}", _cohort_header(slug)) for slug in cohorts
         ]
@@ -235,9 +296,13 @@ class AggregateTable(_TableDirective):
             if top and top < ranked_total
             else f"{ranked_total} ranked pathology encoders plus control"
         )
-        return self._render(
+        rendered = self._render(
             _list_table(headers, body, name=self.options.get("caption", default))
         )
+        # Tinted wherever the aggregate renders (results page and landing page): one of
+        # its three cohorts is TCGA, so the caveat travels with the ranks.
+        _tint_rows(rendered, [row["model"] for row in shown], _exposure_map())
+        return rendered
 
 
 def _cohort_header(key: str) -> str:

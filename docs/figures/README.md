@@ -32,29 +32,31 @@ no LaTeX toolchain.
 One colour rule is worth knowing about, because it is not the obvious one. A colour is
 inverted when it is a *neutral ink* **or** when it is simply very pale, whatever its hue —
 nothing legible is drawn that pale on a white page, so a pale tint is always a background
-wash and has to invert like one. Without that second clause the ridgelines' warm
-fragile-region shade counted as a semantic colour, kept its lightness, and covered the left
-half of every dark-mode ridgeline in a pale block.
+wash and has to invert like one. Without that second clause a warm fragile-region shade
+counted as a semantic colour, kept its lightness, and covered the left half of a dark-mode
+figure in a pale block.
 
 ## Results panels
 
-`rank_pareto` and the three `distribution-<cohort>` ridgelines have no `.tex` source: the
+`rank_pareto` and the three per-cohort `pareto_<cohort>` panels have no `.tex` source: the
 same script draws them with the tracked benchmark plot library and then runs them through
 the identical conversion, so a plotted figure and a schematic are themed by one code path.
 
 ```
-results/cross_benchmark.csv  --plotting-->  <name>.pdf  --build_doc_figures.py-->  ../_static/figures/<name>-{light,dark}.svg
+results/*.csv  --plotting-->  <name>.pdf  --build_doc_figures.py-->  ../_static/figures/<name>-{light,dark}.svg
 ```
 
-The Pareto panel is drawn from the committed `results/` export, so the encoders it rings are
-the ones the table's `on_frontier` column marks. The ridgelines need every sample's CRoMa
-rather than the 200-bin summary the export carries, so they read the run under `output/`
-directly — which means, like the schematics, they can only be rebuilt where that tree exists.
+The Pareto panels are drawn from the committed `results/` export, so the encoders
+`rank_pareto` rings are the ones the table's `on_frontier` column marks, and each
+`pareto_<cohort>` panel plots that cohort's CSV directly (median `CRoMa` against `LTM₁₀`,
+natural-image control excluded). They carry no TCGA-exposure daggers, unlike the
+manuscript's versions: the exposure flags live in `scripts/bench/model_metadata.csv`, and
+the committed results export does not carry per-benchmark exposure marks. The results pages
+carry that caveat in prose instead.
 
-They carry no TCGA-exposure daggers, unlike the manuscript's versions. The exposure flags
-live in `scripts/bench/model_metadata.csv`; these figures omit them because their committed
-results export does not carry per-benchmark exposure marks. The results pages carry that
-caveat in prose instead.
+The per-sample CRoMa distributions have no static figure at all: the distribution explorer
+(`docs/_static/explorer.js`) draws them in the browser from the committed
+`results/distributions.json`.
 
 ## Figures whose generator is not here
 

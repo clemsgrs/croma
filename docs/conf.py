@@ -16,6 +16,15 @@ author = "Clément Grisi"
 copyright = "2026, Clément Grisi"
 release = __version__
 
+# Consumed by the sidebar GitHub card (docs/_templates/sidebar/github.html): the version
+# badge links to the release tag that matches the installed package.
+html_context = {
+    "github_latest_release_tag": release,
+    "github_latest_release_url": (
+        f"https://github.com/clemsgrs/croma/releases/tag/{release}"
+    ),
+}
+
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -23,10 +32,12 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
-    # Local: the themed-figure directive (docs/_ext/themedfigure.py) and the directives
-    # that render the committed results/ CSVs (docs/_ext/resultstable.py).
+    # Local: the themed-figure directive (docs/_ext/themedfigure.py), the directives that
+    # render the committed results/ CSVs (docs/_ext/resultstable.py), and the inline role
+    # that computes run-derived numbers from them (docs/_ext/resultsvalue.py).
     "themedfigure",
     "resultstable",
+    "resultsvalue",
 ]
 
 templates_path = ["_templates"]
@@ -34,6 +45,9 @@ exclude_patterns = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
+    # Editor droppings: stale page copies that shadow real documents and break -W builds.
+    ".ipynb_checkpoints",
+    "**/.ipynb_checkpoints",
     # Internal decision records and working notes. They are Markdown, they are written for
     # contributors rather than users, and they read fine on GitHub -- so they stay out of
     # the published site instead of being converted.
@@ -73,9 +87,23 @@ html_extra_path = ["../results"]
 html_css_files = ["custom.css"]
 # Loaded on every page but inert on all but one: the explorer returns immediately unless
 # the page provides its mount point, and only then does it fetch the 35 KB payload.
-html_js_files = ["explorer.js"]
-html_title = f"croma {release}"
+html_js_files = ["explorer.js", "figures.js", "pareto.js"]
+# Bare project name: the version lives in the sidebar card's release badge instead.
+html_title = "croma"
 html_show_sourcelink = False
+# Furo's default sidebar, with the repository card inserted above the navigation tree.
+html_sidebars = {
+    "**": [
+        "sidebar/brand.html",
+        "sidebar/search.html",
+        "sidebar/scroll-start.html",
+        "sidebar/github.html",
+        "sidebar/navigation.html",
+        "sidebar/ethical-ads.html",
+        "sidebar/scroll-end.html",
+        "sidebar/variant-selector.html",
+    ]
+}
 html_theme_options = {
     "source_repository": "https://github.com/clemsgrs/croma",
     "source_branch": "main",

@@ -5,13 +5,8 @@ All three metrics ask the same question of every sample: among its nearest neigh
 feature space, does it sit closer to samples that share its **biology** or to samples that
 share its **confounder**? They differ in how they turn that neighbourhood into a number.
 
-.. themed-figure:: _static/figures/concept_metrics
-   :alt: One neighbourhood read three ways -- counted by RI, distance-weighted by MaRI,
-         and reduced to a signed margin by CRoMa.
-
-   One neighbourhood, read three ways. RI counts typed neighbours inside a fixed ``k``;
-   MaRI keeps the window but weights by distance; CRoMa drops the window and compares the
-   nearest ``SO`` and ``OS`` distances directly.
+RI counts typed neighbours inside a fixed ``k``. MaRI keeps the fixed window but weights by distance. CRoMa drops the fixed window and compares the
+nearest ``SO`` and ``OS`` distances directly.
 
 Neighbour types
 ---------------
@@ -48,23 +43,32 @@ at.
 
 .. note::
 
-   A sample whose top-``k`` contains no typed neighbour at all is **undefined** for RI and
-   MaRI. Always read ``result.undefined_frac`` alongside the score: a high RI over a
-   handful of defined samples is not a strong result. CRoMa avoids this by searching
+   A sample whose top-``k`` contains no typed neighbour carries no evidence for RI and
+   MaRI. The pooled score is still defined -- it just silently rests on the subset of
+   samples that *do* carry typed evidence. That subset, the **support**, is
+   model-dependent: two models' scores on the same cohort can summarize different sets of
+   samples, which undermines a direct comparison between them. Always read the support
+   fraction (``1 - result.undefined_frac``) alongside the score; a high RI resting on a
+   thin support is not a strong result. CRoMa scores every sample instead, by searching
    outward until it finds typed neighbours.
 
-RI -- Robustness Index
-----------------------
+Robustness Index
+----------------
 
-RI counts. Within a sample's top ``k``, it weighs ``SO`` neighbours against ``OS``
-neighbours and scores the biological share of that typed evidence,
-:math:`n_{SO} / (n_{SO} + n_{OS})`. Every neighbour counts the same, whether adjacent to
-the sample or at the edge of the neighbourhood.
+RI counts, and it counts at the **dataset level**. Within each sample's top ``k``, count
+the typed neighbours of each kind, :math:`n_{SO}(i)` and :math:`n_{OS}(i)`; RI is the
+pooled share of all that typed evidence that is biological:
 
-``result.value`` pools this across the dataset -- total ``SO`` evidence over total typed
-evidence -- so it lies in :math:`[0, 1]`: above ``0.5`` biology dominates, below it the
-confounder does. Pooling means samples with richer typed neighbourhoods contribute more;
-the median of the per-sample scores is reported separately as ``result.median_value``.
+.. math::
+
+   \mathrm{RI} = \frac{\sum_i n_{SO}(i)}{\sum_i \left( n_{SO}(i) + n_{OS}(i) \right)}
+
+One number for the whole dataset, in :math:`[0, 1]`: above ``0.5`` biology dominates the
+typed evidence, below it the confounder does. Two limitations follow from the form. Every
+counted neighbour weighs the same, whether adjacent to the sample or at the edge of the
+window, so RI cannot see *how decisively* biology wins -- the gap MaRI closes. And because
+it pools raw counts, samples with richer typed neighbourhoods contribute more while samples
+with none contribute nothing at all -- the support caveat in the note above.
 
 ``k`` is not a free parameter. It is chosen from ``k_candidates`` as the value maximizing
 biological kNN balanced accuracy, so RI and MaRI always operate at the same ``k``.
@@ -81,8 +85,8 @@ biological kNN balanced accuracy, so RI and MaRI always operate at the same ``k`
    )
    print(ri.value, ri.k, ri.undefined_frac)
 
-MaRI -- Margin-aware Robustness Index
--------------------------------------
+Margin-aware Robustness Index
+-----------------------------
 
 Two models can earn the same RI while one keeps its biological matches far closer than its
 impostors and the other barely separates them. MaRI recovers that difference by replacing
@@ -127,11 +131,8 @@ distortion MaRI exists to remove. So ``croma`` resolves it automatically, per mo
 **median typed-neighbour cosine distance at the operating** ``k``, and reports the value
 used on ``result.tau``. Leave it unset.
 
-This is not circular: ``k`` is selected by biological kNN balanced accuracy, which never
-consults the weighting, so ``k`` is fixed before ``tau`` is chosen.
-
 You can still pin ``tau`` -- to reproduce a published number, say. ``croma`` warns if the
-pinned value sits more than a factor of 4 from the dataset's typed-distance median; silence
+pinned value sits more than a factor of 4 from the data's typed-distance median; silence
 that with ``warn_tau=False``. To inspect the recommendation without scoring, call
 :meth:`~croma.MaRI.recommend_tau`.
 
@@ -140,12 +141,14 @@ that with ``warn_tau=False``. To inspect the recommendation without scoring, cal
    Pinned ``tau`` values are comparable across models only if those models' typed-neighbour
    distances share a scale. They generally do not.
 
-CRoMa -- Cross-confounder Robustness Margin
--------------------------------------------
+Cross-confounder Robustness Margin
+----------------------------------
 
-RI and MaRI are undefined whenever the top ``k`` happens to contain no typed neighbour, and
-both compress a whole neighbourhood into a win/lose verdict. CRoMa instead searches outward
-until it finds typed neighbours of both kinds, then reports a signed margin:
+RI and MaRI share two structural limits: each compresses the whole dataset into one pooled
+number, and each rests on a model-dependent support -- a sample with no typed neighbour
+inside ``k`` silently drops out of the pool. CRoMa removes both. It searches outward until
+it finds typed neighbours of both kinds, so it scores every sample, and each sample gets
+its own signed margin:
 
 .. math::
 
@@ -154,9 +157,10 @@ until it finds typed neighbours of both kinds, then reports a signed margin:
 where :math:`d_{SO}` and :math:`d_{OS}` are the mean cosine distances to the ``m`` nearest
 ``SO`` and ``OS`` neighbours. The result lies in :math:`(-1, 1)`: positive is
 **biology-dominant** (the biological match is closer than the impostor), negative is
-**confounder-dominant** and fragile, and zero is an exactly contested boundary.
-Equivalently, the impostor accounts for a fraction :math:`(1 + \mathrm{CRoMa}_i)/2` of the
-total typed distance.
+**confounder-dominant** and fragile, and zero is an exactly contested boundary. The margin
+exists for every sample as long as the evaluation set holds at least ``m`` neighbours of
+each type -- a property of the dataset, not the model, and satisfied by construction in
+the benchmark cohorts.
 
 .. themed-figure:: _static/figures/croma_geometry
    :alt: A fragile and a robust model, with their nearest SO and OS distances marked.
@@ -173,13 +177,13 @@ total typed distance.
        confounder_column="center",
        evaluation_design="paired_2x2",
    )
-   print(croma.value, croma.q_alpha, croma.ltm_alpha, croma.f0)
+   print(croma.value, croma.ltm_alpha, croma.f0)
 
 Choosing ``m``
 ~~~~~~~~~~~~~~
 
 ``m`` is the number of typed neighbours averaged per type. The default ``m=5`` is the
-headline operating point: ``m=1`` is maximally sensitive to a single outlier neighbour,
+headline radius: ``m=1`` is maximally sensitive to a single outlier neighbour,
 while ``m=5`` is the smallest window in which no one neighbour exceeds 20% of the estimate,
 without leaving the local typed shell.
 
@@ -193,47 +197,44 @@ per-sample magnitudes and the tail statistics. Pass a list to sweep it in one pa
 
 .. _tail-reporting:
 
-Tail reporting
---------------
+The distribution, and its tail
+------------------------------
 
-A pooled score hides brittle subgroups: a model can look robust on average while an
-identifiable slice of its samples is confounder-dominant. Every CRoMa result therefore
-carries two tail statistics at level ``alpha`` (default ``0.10``):
+Because every sample gets a margin, CRoMa produces something RI and MaRI cannot: a
+**per-sample distribution** over the full evaluation cohort. That distribution is the
+primary readout -- it preserves the sample-level heterogeneity a pooled score compresses,
+and you can query it for whatever your deployment cares about (it is what the
+:ref:`distribution explorer <explorer>` draws). ``value`` reports its middle; a model can
+look robust there while an identifiable slice of its samples is confounder-dominant, so
+every result also summarizes the fragile side from two angles:
 
-- ``q_alpha`` -- the ``alpha``-quantile of the per-sample CRoMa distribution.
-- ``ltm_alpha`` -- the **lower-tail mean**: the mean of the worst ``alpha`` fraction.
+- **How bad** -- ``ltm_alpha``, the lower-tail mean: the mean of the worst ``alpha``
+  fraction of samples (default ``0.10``). The severity of the failures.
+- **How common** -- ``f0``, the confounder-dominant fraction :math:`F(0)`: the fraction of
+  samples at or below zero. The prevalence of the failures.
 
-Report these next to ``value``. Two models with the same pooled CRoMa can have very
-different lower tails, and the lower tail is where deployment risk lives.
+Two models with the same median can differ sharply on both, and the lower tail is where
+deployment risk lives.
 
 .. _confounder-dominant-fraction:
 
 The confounder-dominant fraction
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Every CRoMa result also carries ``f0``, the confounder-dominant fraction
-:math:`F(0)` -- the empirical CDF of the per-sample distribution at zero:
+:math:`F(0)` is the empirical CDF of the per-sample distribution at zero:
 
 .. math::
 
-   F(0) = \frac{\#\{i : \mathrm{CRoMa}_i \le 0\}}{\#\{i : \mathrm{CRoMa}_i \text{ defined}\}}
+   F(0) = \frac{\#\{i : \mathrm{CRoMa}_i \le 0\}}{\#\{i\}}
 
-The inequality is **closed**: an exactly contested unit (:math:`\mathrm{CRoMa}_i = 0`, the
-impostor and the biological match equidistant) counts as confounder-dominant, because
-nothing about it says biology won.
-
-The denominator is the **defined** evaluation units only, exactly as for ``q_alpha`` and
-``ltm_alpha`` -- under ``all`` each defined manifest sample counts once, under
-``paired_2x2`` each defined subset occurrence counts once, so a sample scored in two
-subsets contributes twice. Undefined units carry no margin to place on either side of
-zero; ``undefined_frac`` reports them separately, over *all* units. If nothing is defined,
-``f0`` is ``nan`` rather than 0.
-
-.. code-block:: python
-
-   print(croma.f0, croma.undefined_frac)   # 0.18, 0.03
+The inequality is **closed**: an exactly contested sample (:math:`\mathrm{CRoMa}_i = 0`,
+the impostor and the biological match equidistant) counts as confounder-dominant, because
+nothing about it says biology won. Under ``all`` each sample counts once; under
+``paired_2x2`` each subset occurrence counts once, so a sample scored in two subsets
+contributes twice. In the degenerate case of an evaluation set holding fewer than ``m``
+typed neighbours of a kind, the unscorable samples are excluded from the denominator and
+reported by ``undefined_frac``.
 
 Read ``f0`` as "how much of this model's evidence is on the fragile side", where ``value``
 says where the middle of the distribution sits and ``ltm_alpha`` how bad the worst decile
-gets. Consumers should read the value CRoMa stores rather than recomputing it from a
-per-sample artifact, which is how a boundary or a denominator quietly drifts.
+gets.

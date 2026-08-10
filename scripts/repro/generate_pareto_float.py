@@ -42,7 +42,7 @@ def _exposure_sentence(entry, exposed: frozenset[str]) -> str:
         return rf"$\dagger$ marks the {len(exposed)} TCGA-exposed encoders."
     if entry.benchmark == "pathorob-tolkach-esca":
         return (
-            rf"$\dagger$ marks the {len(exposed)} RudolfV 2 encoders with possible "
+            rf"$\dagger$ marks the {len(exposed)} RudolfV-2 encoders with possible "
             r"institutional/source-domain overlap: their disclosed training corpus includes "
             r"Charit\'e, and the scored CHA cohort is from Charit\'e. Exact patient or slide "
             r"overlap is unknown; the marker does not establish leakage."
@@ -58,7 +58,7 @@ def _exposure_clause(entry, dist) -> str:
 
     A benchmark whose scored cohorts overlap a pretraining domain (``has_exposure_domain``) MUST
     mark at least one encoder -- an empty set there means the mapping or the roster is broken, and
-    a silent empty would drop the legend daggers the figure is asked to draw. A benchmark with no
+    a silent empty would drop the point-label daggers the figure is asked to draw. A benchmark with no
     such domain legitimately marks nothing, so it gets no sentence. The figure marks exactly
     ``exposed_models(...)``, so caption and figure agree by construction.
     """

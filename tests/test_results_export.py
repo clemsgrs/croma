@@ -444,3 +444,141 @@ def test_committed_results_match_a_fresh_export():
         assert (
             ROOT / path
         ).read_text() == content, f"{path} is stale; run python scripts/tools/export_results.py"
+
+
+# --------------------------------------------------------------------------------------
+# TCGA exposure: derived from domain tags, published as a model-level column.
+# --------------------------------------------------------------------------------------
+
+
+def _provenance_metadata(rows) -> pd.DataFrame:
+    """A model_metadata.csv-shaped frame: (model, panel, disclosed, corpus, institutional)."""
+    return pd.DataFrame(
+        [
+            {
+                "model": model,
+                "panel": panel,
+                "disclosed": disclosed,
+                "corpus_domains": corpus,
+                "institutional_domains": institutional,
+            }
+            for model, panel, disclosed, corpus, institutional in rows
+        ]
+    )
+
+
+def test_published_restyles_the_rudolfv_names():
+    """The registry identity keeps its historical spelling ("RudolfV 2"); every published
+    artifact carries the dashed styling, applied at this one boundary."""
+    frame = pd.DataFrame({"model": ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "UNI"]})
+    assert list(er.published(frame)["model"]) == [
+        "RudolfV-2",
+        "RudolfV-2-B",
+        "RudolfV-2-S",
+        "UNI",
+    ]
+
+
+def test_the_exporter_and_the_paper_style_layer_agree_on_published_names():
+    """Two deliberately independent implementations (the exporter shares no code with the
+    paper's generators), one rename. The paper side derives its mapping from
+    model_metadata.csv's ``published_name`` column; this pin keeps the exporter's
+    hardcoded copy from drifting away from it."""
+    bench = ROOT / "scripts" / "bench"
+    if str(bench) not in sys.path:
+        sys.path.insert(0, str(bench))
+    from plotting import style
+
+    assert er.PUBLISHED_NAMES == style.PUBLISHED_MODEL_NAMES
+
+
+def test_exposed_models_derives_from_the_domain_tags():
+    """A model is exposed iff the domain appears in its corpus or institutional tags --
+    the paper's dagger convention, never the legacy ``tcga_exposed`` flag."""
+    metadata = _provenance_metadata(
+        [
+            ("A", "tile", "yes", "tcga;camelyon", ""),
+            ("B", "tile", "yes", "", "charite"),
+            ("C", "tile", "no", "", ""),
+        ]
+    )
+    assert er.exposed_models(metadata, "tcga", roster={"A", "B", "C"}) == {
+        "A": True,
+        "B": False,
+        "C": False,
+    }
+    assert er.exposed_models(metadata, "charite", roster={"A", "B", "C"}) == {
+        "A": False,
+        "B": True,
+        "C": False,
+    }
+
+
+def test_exposed_models_reads_only_the_tile_panel():
+    """``model`` is not a unique key: Prov-GigaPath has a tile row and a slide row.
+
+    A slide row with conflicting facts must neither shadow the tile row nor add a
+    non-roster entry.
+    """
+    metadata = _provenance_metadata(
+        [
+            ("A", "tile", "no", "", ""),
+            ("A", "slide", "yes", "tcga", ""),
+            ("slide-only", "slide", "yes", "tcga", ""),
+        ]
+    )
+    assert er.exposed_models(metadata, "tcga", roster={"A"}) == {"A": False}
+
+
+def test_exposed_models_raises_on_a_roster_member_without_metadata():
+    metadata = _provenance_metadata([("A", "tile", "yes", "tcga", "")])
+    with pytest.raises(KeyError):
+        er.exposed_models(metadata, "tcga", roster={"A", "unknown"})
+
+
+def test_with_exposure_inserts_the_column_after_on_frontier():
+    aggregate = er.build_aggregate_table({"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
+    out = er.with_exposure(aggregate, {"A": True, "B": False})
+    assert list(out.columns[:4]) == ["model", "is_control", "on_frontier", "tcga_exposed"]
+    assert out.set_index("model")["tcga_exposed"].to_dict() == {"A": True, "B": False}
+
+
+def test_with_exposure_raises_rather_than_publishing_a_blank_state():
+    aggregate = er.build_aggregate_table({"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
+    with pytest.raises(KeyError):
+        er.with_exposure(aggregate, {"A": True})
+
+
+def test_exposed_models_matches_the_published_roster_and_the_paper_helper():
+    """Pin the public reimplementation and the paper's helper to one answer.
+
+    The exporter deliberately shares no code with ``scripts/repro/`` (see its module
+    docstring), so the two derivations are pinned to each other here -- and to the
+    published 11-model exposed set, so a metadata edit that moves a model is a reviewed
+    diff, not a silent reclassification.
+    """
+    repro = ROOT / "scripts" / "repro"
+    if str(repro) not in sys.path:
+        sys.path.insert(0, str(repro))
+    from _model_provenance import exposed_models_for_domain  # noqa: PLC0415
+
+    metadata = er.published(pd.read_csv(er.METADATA))
+    roster = set(pd.read_csv(RESULTS / "cross_benchmark.csv")["model"])
+    exposed_flags = er.exposed_models(metadata, er.TCGA_DOMAIN, roster)
+
+    assert set(exposed_flags) == roster
+    exposed = {m for m, flag in exposed_flags.items() if flag}
+    assert exposed == set(exposed_models_for_domain(metadata, er.TCGA_DOMAIN, roster))
+    assert exposed == {
+        "H0-mini",
+        "Midnight-12k",
+        "Prost40M",
+        "Phikon",
+        "Phikon-v2",
+        "mSTAR",
+        "GPFM",
+        "MUSK",
+        "GenBio-PathFM",
+        "Mascaret",
+        "Phaet",
+    }

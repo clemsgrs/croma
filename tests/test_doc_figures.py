@@ -108,6 +108,24 @@ def test_path_coordinates_are_rounded():
     assert bdf._shrink_paths(svg) == '<path d="M69.98 484.24L70.85 12.5"/>'
 
 
+def test_the_root_size_is_dropped_but_the_viewbox_kept():
+    """A root width/height pins the standalone view to the render size in points --
+    opening a figure in its own tab showed it a few hundred CSS pixels wide. With only a
+    viewBox the browser scales it to the window, and the page's CSS keeps sizing the
+    inline <img>."""
+    fluid = bdf._recolour(f"{_SVG_HEAD}<g/></svg>", "light")
+    root = fluid[: fluid.index(">") + 1]
+    assert 'viewBox="0 0 100.0 50.0"' in root
+    assert "width=" not in root and "height=" not in root
+
+
+def test_only_the_root_size_is_dropped():
+    """A sized element inside the figure (an embedded image, a nested svg) keeps its
+    dimensions; only the document root goes fluid."""
+    svg = f'{_SVG_HEAD}<image width="10" height="5"/></svg>'
+    assert '<image width="10" height="5"/>' in bdf._recolour(svg, "light")
+
+
 def test_a_glyph_placement_transform_is_left_alone():
     """Glyphs are drawn in a 1000-unit em space and scaled by 0.001. Rounding that matrix
     to two decimals collapses every letter in the figure to a point."""

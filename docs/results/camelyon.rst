@@ -1,40 +1,45 @@
+.. _camelyon:
+
 Camelyon
 ========
 
 20,400 breast lymph-node tiles, labelled tumour or normal, contributed by two medical
-centres (RUMC and UMCU). Scored entirely outside TCGA, so no encoder here holds an
-in-distribution advantage from its pretraining corpus — which makes this the cleanest of
-the three cohorts to read.
-
-It is also the most discriminating of the three. Seven encoders score below zero, meaning
-the typical neighbourhood is closer to a different-biology tile from the *same* centre than
-to a same-biology tile from another.
+centers (RUMC and UMCU) and scored at ``k`` = :results-value:`k(camelyon)`. Scored entirely
+outside TCGA, so no encoder holds an in-distribution advantage from its pretraining corpus
+— the cleanest of the three cohorts to read, and the most discriminating:
+:results-value:`below_zero(camelyon)` pathology encoders score below zero, meaning their
+typical neighbourhood is closer to a different-biology tile from the *same* center than to
+a same-biology tile from another.
 
 .. results-table:: camelyon
-   :caption: Camelyon — all 26 encoders, by median ``CRoMa``
+   :caption: Camelyon, sorted by median ``CRoMa``. Columns are explained under
+             :ref:`result-columns`; † marks the natural-image control
+             (:ref:`the-control`).
 
-Columns are explained under :ref:`result-columns`; † marks the natural-image control
-(:ref:`the-control`). Every model is evaluated at the shared operating point ``k = 11``,
-the cohort median of the per-model biological ``k*``, with ``tau`` resolved per model.
+Read the support column carefully here. Two biological classes across two centers is a
+sparse neighbourhood: no encoder's support fraction clears
+:results-value:`support_max(camelyon)`, and the floor is
+:results-value:`support_min(camelyon)`. A high ``RI`` over that little evidence is not the
+same claim as one over :ref:`TCGA-4×4 <tcga-4x4>`'s near-total support — the same two
+indices, resting on very different amounts of evidence.
 
-Read the support column carefully here. Two biological classes across two centres is a
-sparse neighbourhood, and no encoder in this panel clears 73% — several sit near 10%. A high
-``RI`` over that little evidence is not the same claim as a high ``RI`` over a full cohort,
-which is why :doc:`TCGA-4×4 <tcga-4x4>` (support above 99% throughout) reads so differently.
+The two rankings, on this cohort alone:
 
-The shape behind the numbers
-----------------------------
+.. raw:: html
 
-.. themed-figure:: /_static/figures/distribution-camelyon
-   :alt: Per-sample CRoMa density for each encoder, sorted by median, with the
-         confounder-dominant region shaded.
+   <div class="croma-pareto" data-cohort="camelyon">
+     <noscript>The Pareto panel needs JavaScript; the same numbers are in the table
+     above.</noscript>
+   </div>
 
-   Per-sample ``CRoMa``, one density per encoder, ordered by median. The shaded half is
-   ``CRoMa < 0``: the mass sitting there is *F*\ (0), and LTM₁₀ is the mean of its worst
-   tenth.
+Median ``CRoMa`` against tail severity LTM₁₀ on Camelyon. Better is up and to the
+right; ringed points are undominated on both axes and named, and the shaded region is
+dominated on both. Hover or tab to any point to name it with its two values. The
+natural-image control is excluded — the frontier is a pathology-only claim.
 
-This is what the two tail columns summarise, and why they are worth reading. ``Virchow2``
-and ``CONCH`` sit within ``0.003`` of each other on median ``CRoMa`` — indistinguishable on
-that column alone — while ``CONCH`` carries three quarters again as much
-confounder-dominant mass and twice the tail severity. A single pooled score cannot separate
-them; the shape does.
+The shape says more than the median. ``Virchow2`` and ``CONCH`` sit within
+:results-value:`gap(camelyon, croma, Virchow2, CONCH)` of each other on median ``CRoMa`` —
+indistinguishable on that column alone — while ``CONCH`` carries
+:results-value:`ratio(camelyon, croma_f0, CONCH, Virchow2)` the confounder-dominant mass
+and :results-value:`ratio(camelyon, croma_ltm10, CONCH, Virchow2)` the tail severity.
+Overlay the two in the :ref:`explorer <explorer>` to see it.

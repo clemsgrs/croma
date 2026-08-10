@@ -1,3 +1,100 @@
+/* Sidebar repository card: repo link plus the release-tag badge. */
+
+.croma-sidebar-github {
+  margin: 0.75rem 1rem 0.9rem 0;
+}
+
+.croma-sidebar-github__main {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 6px;
+  color: var(--color-foreground-primary);
+  background: var(--color-background-primary);
+}
+
+.croma-sidebar-github__main:hover {
+  border-color: var(--color-brand-primary);
+  background: var(--color-background-hover);
+}
+
+.croma-sidebar-github__repo {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+.croma-sidebar-github__repo:hover,
+.croma-sidebar-github__release:hover {
+  text-decoration: none;
+}
+
+.croma-sidebar-github__icon {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  opacity: 0.72;
+}
+
+.croma-sidebar-github__text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.croma-sidebar-github__repo-name {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.croma-sidebar-github__cta {
+  color: var(--color-foreground-muted);
+  font-size: 0.7rem;
+  line-height: 1.2;
+}
+
+.croma-sidebar-github__arrow {
+  width: 0.65rem;
+  height: 0.65rem;
+  flex: 0 0 auto;
+  opacity: 0.45;
+}
+
+.croma-sidebar-github__release {
+  flex: 0 0 auto;
+  padding: 0.14rem 0.38rem;
+  border: 1px solid var(--color-brand-primary);
+  border-radius: 4px;
+  color: var(--color-brand-content);
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.croma-sidebar-github__release:hover {
+  background: var(--color-background-hover);
+}
+
+@media (max-width: 63em) {
+  .croma-sidebar-github {
+    margin-top: 0.75rem;
+  }
+}
+
 /* Landing-page card grid. Kept deliberately small: furo does the rest. */
 
 .croma-card-grid {
@@ -24,6 +121,11 @@
 
 .croma-card h3 {
   margin: 0 0 0.35rem;
+  /* furo indents every heading (padding-left with a matching negative margin); inside a
+     card that padding survives the margin override and shifts the title off the text
+     beneath it. */
+  padding-left: 0;
+  padding-right: 0;
   font-size: 1rem;
   color: var(--color-brand-primary);
 }
@@ -63,6 +165,27 @@ table.croma-results th code {
   font-size: inherit;
   background: none;
   padding: 0;
+}
+
+/* TCGA-exposure tint (aggregate + TCGA-4×4 tables), the paper's dagger convention as a
+   row shade. Translucent, so one declaration reads on both themes with no data-theme
+   block; reuses the compare hue. The legend lives on the TCGA-4×4 page. */
+table.croma-results tr.croma-exposure-exposed {
+  background: rgba(208, 101, 63, 0.16);
+}
+
+/* Visually hidden, present for screen readers, print, and copy-paste: the tint's text
+   equivalent, appended to the model cell of every tinted row. */
+.croma-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* --------------------------------------------------------------------------
@@ -107,6 +230,82 @@ table.croma-results th code {
   opacity: 0.45;
 }
 
+/* Master list: one compact histogram row per encoder, shared axis, table order. */
+.croma-explorer-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-bottom: 0.9rem;
+  max-height: 21rem;
+  overflow-y: auto;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.35rem;
+}
+
+.croma-explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.1rem 0.5rem;
+  font: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  color: var(--color-foreground-primary);
+  background: transparent;
+  border: none;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+
+.croma-explorer-row:hover {
+  background: var(--color-background-secondary);
+}
+
+.croma-explorer-row.is-selected {
+  background: var(--color-background-secondary);
+  border-left-color: var(--color-brand-primary);
+}
+
+.croma-explorer-row.is-compare {
+  border-left-color: var(--croma-compare);
+}
+
+.croma-explorer-row-name {
+  flex: 0 0 11rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.croma-explorer-mini {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 1.35rem;
+}
+
+.croma-explorer-detail-heading {
+  margin: 0 0 0.2rem;
+  font-size: 0.85rem;
+  color: var(--color-foreground-primary);
+}
+
+.croma-explorer {
+  /* The comparison encoder's hue: a warm counterpoint to furo's brand primary,
+     legible on both themes. */
+  --croma-compare: #d0653f;
+}
+
+.croma-explorer-compare-name {
+  color: var(--croma-compare);
+}
+
+.croma-explorer-compare-outline {
+  fill: none;
+  stroke: var(--croma-compare);
+  stroke-width: 1.4;
+}
+
 .croma-explorer-plot {
   width: 100%;
   height: auto;
@@ -124,11 +323,7 @@ table.croma-results th code {
   fill: var(--color-foreground-border);
 }
 
-.croma-explorer-bar.is-selected {
-  fill: var(--color-brand-primary);
-}
-
-/* The confounder-dominant half, shaded as the static ridgelines shade it. */
+/* The confounder-dominant half. */
 .croma-explorer-fragile {
   fill: var(--color-foreground-primary);
   opacity: 0.05;
@@ -154,4 +349,122 @@ table.croma-results th code {
   margin: 0.5rem 0 0;
   font-size: 0.85rem;
   color: var(--color-foreground-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   Themed figures. The SVG pairs are rendered at a paper column's natural size,
+   which is small on a docs page: let them fill the content column instead.
+   figures.js wraps each in a link to the full-size SVG; the cursor says so.
+   -------------------------------------------------------------------------- */
+
+figure.only-light img,
+figure.only-dark img {
+  width: 100%;
+  height: auto;
+  cursor: zoom-in;
+}
+
+/* The Pareto panels are portrait; at the full content-column width they tower over the
+   page. Cap and centre them -- the click-through still opens the fluid SVG full-window. */
+figure.croma-fig-narrow {
+  max-width: 24rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Interactive Pareto panels (pareto.js): furo's theme variables carry both themes, the
+   compare hue rings the frontier. Sized like the narrow figures above. */
+.croma-pareto {
+  max-width: 26rem;
+  margin: 1rem auto;
+}
+
+.croma-pareto-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.croma-pareto-grid {
+  stroke: var(--color-background-border);
+  stroke-width: 0.6;
+}
+
+.croma-pareto-frame {
+  fill: none;
+  stroke: var(--color-foreground-border);
+  stroke-width: 1;
+}
+
+.croma-pareto-ref {
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.55;
+}
+
+.croma-pareto-shade {
+  fill: var(--color-foreground-primary);
+  opacity: 0.04;
+}
+
+.croma-pareto-stair {
+  fill: none;
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1.4;
+}
+
+.croma-pareto-tick,
+.croma-pareto-axis {
+  fill: var(--color-foreground-secondary);
+  font-size: 11px;
+}
+
+.croma-pareto-axis {
+  font-size: 12px;
+}
+
+.croma-pareto-dot {
+  fill: var(--color-brand-primary);
+  fill-opacity: 0.55;
+  stroke: var(--color-background-primary);
+  stroke-width: 1;
+  cursor: pointer;
+}
+
+.croma-pareto-dot-frontier {
+  fill: var(--croma-compare);
+  fill-opacity: 0.9;
+}
+
+.croma-pareto-ring {
+  fill: none;
+  stroke: var(--color-foreground-primary);
+  stroke-width: 1.2;
+}
+
+.croma-pareto-pt:focus {
+  outline: none;
+}
+
+.croma-pareto-pt-active .croma-pareto-dot {
+  fill-opacity: 1;
+  stroke: var(--color-foreground-primary);
+}
+
+.croma-pareto-tip {
+  position: absolute;
+  display: none;
+  transform: translate(-50%, -100%);
+  background: var(--color-background-primary);
+  color: var(--color-foreground-primary);
+  border: 1px solid var(--color-background-border);
+  border-radius: 4px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  z-index: 40;
+  white-space: nowrap;
 }

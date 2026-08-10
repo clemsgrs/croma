@@ -286,6 +286,19 @@ macro in the paragraph updates itself and stays individually correct — which i
 happened to §3.4 when TCGA-4×4 went from eight medical centres to four.
 _Avoid_: hand-typing a number, a rank, or a superlative that a `metrics.csv` can answer.
 
+### Documentation site
+
+**Distribution explorer**:
+The documentation site's interactive view of the per-sample CRoMa distribution — the
+central evidence object of the work. One widget, master–detail: a permanently visible
+**overview** (all panel encoders as compact aligned histogram rows, in the result tables'
+sort order), a permanently visible **detail** below it showing the selected encoder's full
+histogram with a range brush and a count readout, and an optional **comparison** encoder
+overlaid in the detail. It is the site's only distribution view: it replaces the static
+per-cohort ridgeline figures, and there is no non-interactive fallback.
+_Avoid_: "the histogram widget", "the ridgelines" (retired as site artifacts; the term
+survives only for the manuscript's figures).
+
 ### Model attributes
 
 Per-model properties carried in the single-source model metadata (see ADR-0005) and

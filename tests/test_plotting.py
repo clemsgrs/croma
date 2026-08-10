@@ -426,16 +426,20 @@ def test_pareto_frontier_collapses_to_one_when_a_point_wins_both_axes() -> None:
 def test_plot_croma_pareto_rings_labels_the_frontier_and_marks_the_exposed(
     tmp_path: Path,
 ) -> None:
-    """Every panel rings the frontier, writes a bold label on each ringed encoder, and flags the
-    encoders exposed to the benchmark's cohort with a dagger after their name in the legend. No
-    contrast callout, no direction cue."""
+    """Every panel rings the frontier, labels every point directly -- bold for frontier
+    members, muted for the dominated -- and flags exposure with a dagger in the point label.
+    There is no legend: 25 swatches were unmatchable to 25 dots. No contrast callout, no
+    direction cue."""
     import matplotlib.axes
+    import matplotlib.figure
 
     ring_calls: list[int] = []
     scatter_labels: list[str] = []
     annotate_texts: list[str] = []
+    figure_legend_calls: list[dict] = []
     original_scatter = matplotlib.axes.Axes.scatter
     original_annotate = matplotlib.axes.Axes.annotate
+    original_figure_legend = matplotlib.figure.Figure.legend
 
     def spy_scatter(self, x, y, *args, **kwargs):
         # The frontier halo is the one scatter drawn with hollow markers; capture how many
@@ -453,14 +457,19 @@ def test_plot_croma_pareto_rings_labels_the_frontier_and_marks_the_exposed(
         annotate_texts.append(text)
         return original_annotate(self, text, *args, **kwargs)
 
+    def spy_figure_legend(self, *args, **kwargs):
+        figure_legend_calls.append(kwargs)
+        return original_figure_legend(self, *args, **kwargs)
+
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
     monkeypatch.setattr(matplotlib.axes.Axes, "annotate", spy_annotate)
+    monkeypatch.setattr(matplotlib.figure.Figure, "legend", spy_figure_legend)
     try:
         # Virchow2 (highest median) and GenBio-PathFM (mildest tail) are the two undominated
         # encoders; CONCH ties Virchow2's median with a deeper tail, so it is dominated, and
-        # Phikon is dominated outright. GenBio-PathFM is exposed, so it carries both a frontier
-        # label and a legend dagger; Virchow2 is a labelled frontier member with no dagger.
+        # Phikon is dominated outright. GenBio-PathFM is exposed, so its point label carries
+        # the dagger; Virchow2 is a labelled frontier member with no dagger.
         rows = [
             {"model": "Virchow2", "croma": 0.20, "croma_ltm_alpha": -0.11, "croma_alpha": 0.1},
             {"model": "GenBio-PathFM", "croma": 0.19, "croma_ltm_alpha": -0.07, "croma_alpha": 0.1},
@@ -476,12 +485,15 @@ def test_plot_croma_pareto_rings_labels_the_frontier_and_marks_the_exposed(
     assert _pdf_export_path(out_path).exists()
     # Exactly the two undominated encoders are ringed; CONCH (median tie, deeper tail) is not.
     assert ring_calls == [2]
-    # Both ringed encoders are labelled in bold.
+    # Every point is labelled: the frontier in bold, the dominated in muted text, and the
+    # single exposed encoder carries the dagger in its point label.
     assert any(t == "Virchow2" for t in annotate_texts)
-    assert any(t == "GenBio-PathFM" for t in annotate_texts)
-    # The single exposed encoder gets a dagger in its legend label; nothing is drawn on the point,
-    # so no standalone dagger annotation, no contrast callout, no direction cue.
-    assert [l for l in scatter_labels if r"$\dagger$" in l] == [r"GenBio-PathFM $\dagger$"]
+    assert any(t == r"GenBio-PathFM $\dagger$" for t in annotate_texts)
+    assert any(t == "CONCH" for t in annotate_texts)
+    assert any(t == "Phikon" for t in annotate_texts)
+    # No legend, and no daggered legend entries: identity lives on the points now.
+    assert figure_legend_calls == []
+    assert not any(r"$\dagger$" in l for l in scatter_labels)
     assert not any(t == r"$\dagger$" for t in annotate_texts)
     assert not any("dominated" in t for t in annotate_texts)
     assert not any("more robust" in t for t in annotate_texts)
@@ -491,9 +503,9 @@ def test_plot_croma_pareto_labels_every_frontier_member_and_marks_off_frontier(
     tmp_path: Path,
 ) -> None:
     """What the supplementary panels used to suppress is now always drawn: a larger, clustered
-    frontier still gets a bold label on every ringed member, and an exposed encoder gets a legend
-    dagger whether or not it sits on the frontier, so the ring count and the exposure count are
-    independent."""
+    frontier still gets a bold label on every ringed member, and an exposed encoder carries its
+    point-label dagger whether or not it sits on the frontier, so the ring count and the
+    exposure count are independent."""
     import matplotlib.axes
 
     ring_calls: list[int] = []
@@ -535,14 +547,12 @@ def test_plot_croma_pareto_labels_every_frontier_member_and_marks_off_frontier(
     assert _png_export_path(out_path).exists()
     # The three-member frontier is ringed (Midnight, CONCHv1.5, H-optimus-1)...
     assert ring_calls == [3]
-    # ...and every ringed member is now labelled.
-    for name in ("Midnight-12k", "CONCHv1.5", "H-optimus-1"):
+    # ...and every ringed member is labelled, with the exposed one daggered in its label.
+    for name in (r"Midnight-12k $\dagger$", "CONCHv1.5", "H-optimus-1"):
         assert any(t == name for t in annotate_texts)
-    # Two exposed encoders get a legend dagger (one on the frontier, one dominated); nothing is
-    # drawn on the point, so no standalone dagger annotation, no direction cue.
-    assert sorted(l for l in scatter_labels if r"$\dagger$" in l) == sorted(
-        [r"Midnight-12k $\dagger$", r"Phikon $\dagger$"]
-    )
+    # The exposed *dominated* encoder is daggered too: exposure and frontier are independent.
+    assert any(t == r"Phikon $\dagger$" for t in annotate_texts)
+    assert not any(r"$\dagger$" in l for l in scatter_labels)
     assert not any(t == r"$\dagger$" for t in annotate_texts)
     assert not any("more robust" in t for t in annotate_texts)
 
@@ -550,10 +560,10 @@ def test_plot_croma_pareto_labels_every_frontier_member_and_marks_off_frontier(
 def test_plot_rank_pareto_rings_labels_the_frontier_and_marks_the_exposed(
     tmp_path: Path,
 ) -> None:
-    """The mean-rank overview rings the min-min frontier, writes a bold label on each ringed
-    encoder (as the per-benchmark panels do), and flags every TCGA-exposed encoder with a legend
-    dagger. One exposed encoder is on the frontier, one is dominated, so the ring count and the
-    exposure count are genuinely independent."""
+    """The mean-rank overview rings the min-min frontier, labels every point directly (as the
+    per-benchmark panels do), and daggers every TCGA-exposed encoder in its point label. One
+    exposed encoder is on the frontier, one is dominated, so the ring count and the exposure
+    count are genuinely independent."""
     import matplotlib.axes
 
     ring_calls: list[int] = []
@@ -598,14 +608,12 @@ def test_plot_rank_pareto_rings_labels_the_frontier_and_marks_the_exposed(
     assert _pdf_export_path(out_path).exists()
     # The four undominated encoders are ringed; Midnight-12k (good median, deep tail) is not.
     assert ring_calls == [4]
-    # ...and each ringed frontier member carries a bold in-plot label, like the per-benchmark panels.
-    for name in ("CONCH", "CONCHv1.5", "H-optimus-1", "GenBio-PathFM"):
+    # ...and every point is labelled, with the two exposed encoders daggered in their labels --
+    # the frontier one and the dominated one alike.
+    for name in ("CONCH", "CONCHv1.5", "H-optimus-1", r"GenBio-PathFM $\dagger$"):
         assert any(t == name for t in annotate_texts)
-    # A legend dagger is added for each of the two exposed encoders; nothing on the point, so no
-    # standalone dagger annotation, no direction cue.
-    assert sorted(l for l in scatter_labels if r"$\dagger$" in l) == sorted(
-        [r"GenBio-PathFM $\dagger$", r"Midnight-12k $\dagger$"]
-    )
+    assert any(t == r"Midnight-12k $\dagger$" for t in annotate_texts)
+    assert not any(r"$\dagger$" in l for l in scatter_labels)
     assert not any(t == r"$\dagger$" for t in annotate_texts)
     assert not any("more robust" in t for t in annotate_texts)
 

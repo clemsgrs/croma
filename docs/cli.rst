@@ -60,7 +60,7 @@ No further arguments.
      - Notes
    * - ``--tau``
      - *auto*
-     - Omit it. ``croma`` then uses this dataset's median typed-neighbour distance at the
+     - Omit it. ``croma`` then uses the data's median typed-neighbour distance at the
        operating ``k`` -- the on-scale value. Pass a float only to reproduce a published
        number. See :ref:`choosing-tau`.
 
@@ -94,10 +94,10 @@ Searches outward for typed neighbours rather than using a fixed ``k``, so it tak
      - Notes
    * - ``--m``
      - ``5``
-     - Typed neighbours averaged per type. The headline operating point.
+     - Typed neighbours averaged per type. The headline radius.
    * - ``--alpha``
      - ``0.10``
-     - Tail level for ``q_alpha`` and ``ltm_alpha``.
+     - Tail level for the tail statistics (:ref:`tail-reporting`).
    * - ``--start-k``
      - ``200``
      - Initial neighbour-search radius.
@@ -118,10 +118,8 @@ The payload adds the distributional statistics to the pooled value:
      "undefined_frac": 0.004
    }
 
-``f0`` is the confounder-dominant fraction :math:`F(0)`: the share of *defined* evaluation
-units whose margin is ``<= 0`` (exact zero included), and ``NaN`` when nothing is defined.
-Undefined units are excluded from its denominator and counted by ``undefined_frac``
-instead. See :ref:`confounder-dominant-fraction`.
+``f0`` is the confounder-dominant fraction :math:`F(0)`; its boundary and denominator are
+defined under :ref:`confounder-dominant-fraction`.
 
 Preparing aligned embeddings
 ----------------------------

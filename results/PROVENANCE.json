@@ -36,10 +36,10 @@
     }
   },
   "files": {
-    "results/camelyon.csv": "e9af73df8fe91cb957d0a6a753ff2c20d307add445021f3e11b3db4f98ab3dc8",
-    "results/cross_benchmark.csv": "b4109cda8ee120cc6e80812f9a5fba085e6439e3a3544d979c5dde9911cbefea",
-    "results/distributions.json": "052d7d810b873b874d1011a714bf26c9ce9603888b1eaa5f7abd53da9dfb5abd",
-    "results/tcga-4x4.csv": "903100a3ca68ab457f02a8debaa9be324e52af59e5faefa2fa1d474e87d7bbae",
-    "results/tolkach-esca.csv": "b81b1ba7ceb2321ba733df8b8e5b089d67c893e39b3fab0e6cfeb428d9710990"
+    "results/camelyon.csv": "bb0a0dd0e62db64cd6d240fc98cfc4ae06794d46b06d5eae80e9bd3b6535d4d7",
+    "results/cross_benchmark.csv": "a1c3574667ef7d2e6a125e6ca7c57f16598697b023b80db977a43021c7aaa16f",
+    "results/distributions.json": "e5228fbfd842552afa27dfb59876404eac5ceb35d25d24656b089fe40c199ba6",
+    "results/tcga-4x4.csv": "d30c1ae9305a83fe5bd0a9e4afa90cfbf7b09663cb41e66571b1abb18eaa231b",
+    "results/tolkach-esca.csv": "43fb47f602c35a3a12cd473b3ef08336739763972dd42e8fd0b8778a89b4cd3a"
   }
 }

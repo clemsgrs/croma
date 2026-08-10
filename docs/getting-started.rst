@@ -6,10 +6,9 @@ Install
 
 .. code-block:: bash
 
-   pip install croma          # core
-   pip install "croma[repro]" # + embedding extraction and plotting
+   pip install croma
 
-The core package depends only on ``numpy``, ``pandas``, ``scikit-learn`` and ``tqdm``. It
+The package depends only on ``numpy``, ``pandas``, ``scikit-learn`` and ``tqdm``. It
 never loads a model or reads an image -- you bring the embeddings.
 
 What you need
@@ -56,8 +55,10 @@ RI and MaRI live in :math:`[0, 1]`, favouring biology above ``0.5``. CRoMa lives
 Before you trust a number
 -------------------------
 
-- Read ``undefined_frac`` beside RI and MaRI: a high score over a thin support is not a
-  strong result (:ref:`undefined neighbourhoods <undefined-neighbourhoods>`).
+- Read the support beside RI and MaRI: both pool only over the samples with typed
+  evidence inside ``k``, so a high score resting on a thin support fraction
+  (``1 - undefined_frac``) is not a strong result (:ref:`undefined neighbourhoods
+  <undefined-neighbourhoods>`).
 - Leave ``tau`` at its default. A fixed ``tau`` shared across models distorts exactly what
   MaRI exists to measure (:ref:`choosing-tau`).
 - Read the tail. ``ltm_alpha`` is the mean of the worst 10% of samples; pooled scores hide

@@ -23,9 +23,10 @@ from plotting import style  # noqa: E402
 
 
 def _tolkach_distributions() -> distributions.Distributions:
+    # As the guarded loader returns them: published spellings (the run stores "RudolfV 2").
     models = [
         distributions.Model(name, 0.2, -0.2, 0.3, False)
-        for name in ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "UNI"]
+        for name in ["RudolfV-2", "RudolfV-2-B", "RudolfV-2-S", "UNI"]
     ]
     models.append(distributions.Model("DINOv2-B", 0.0, -0.4, 0.5, True))
     return distributions.Distributions(tuple(models))
@@ -40,7 +41,7 @@ def test_tolkach_presentation_marks_possible_institutional_overlap_conservativel
     assert entry.exposure_domain == "charite"
     assert rudolf["institutional_domains"].tolist() == ["charite"] * 3
     exposed = distributions.exposed_models(entry, dist)
-    assert exposed == frozenset({"RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"})
+    assert exposed == frozenset({"RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"})
 
     ranked = pd.DataFrame({"model": [model.name for model in dist.pathology]})
     assert results_table.benchmark_exposed(entry, ranked) == set(exposed)
@@ -67,7 +68,8 @@ def test_tolkach_presentation_marks_possible_institutional_overlap_conservativel
 
 
 def test_tolkach_table_daggers_each_rudolf_variant(monkeypatch) -> None:
-    models = ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "UNI", "DINOv2-B"]
+    # As ``load_frame`` returns them: published spellings.
+    models = ["RudolfV-2", "RudolfV-2-B", "RudolfV-2-S", "UNI", "DINOv2-B"]
     frame = pd.DataFrame(
         {
             "model": models,
@@ -88,7 +90,7 @@ def test_tolkach_table_daggers_each_rudolf_variant(monkeypatch) -> None:
 
     table = results_table.build_table(by_prefix("Tolkach"), Path("unused.csv"))
 
-    for model in ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"]:
+    for model in ["RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"]:
         assert f"{model}$^{{\\dagger}}$ &" in table
     assert "UNI$^{\\dagger}$" not in table
 
@@ -116,7 +118,7 @@ def test_tolkach_pareto_renderer_receives_the_rudolf_exposure_set(
 
     assert calls == [
         {
-            "exposed": frozenset({"RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"}),
+            "exposed": frozenset({"RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"}),
             "ltm_alpha_pct": 10,
         }
     ]
@@ -265,3 +267,36 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         len({style.color_for_model(model) for model in ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"]})
         == 3
     )
+
+
+def test_published_names_restyle_the_rudolfv_family_and_nothing_else() -> None:
+    """The registry keeps the spaced checkpoint names (embedding files, metrics rows,
+    extraction records); every reader-facing surface prints the dashed form. The mapping
+    is data, not code: the ``published_name`` column of model_metadata.csv."""
+    assert style.PUBLISHED_MODEL_NAMES == {
+        "RudolfV 2": "RudolfV-2",
+        "RudolfV 2-B": "RudolfV-2-B",
+        "RudolfV 2-S": "RudolfV-2-S",
+    }
+
+
+def test_a_published_name_resolves_to_its_registry_identity_in_the_style_maps() -> None:
+    """Frames renamed for publication must keep their family hue, tone and canonical
+    position -- otherwise a restyled model silently falls into the 'other' palette."""
+    for registry, published in style.PUBLISHED_MODEL_NAMES.items():
+        assert style.color_for_model(published) == style.color_for_model(registry)
+        assert style.family_for_model(published) == style.family_for_model(registry)
+        assert style.model_sort_key(published) == style.model_sort_key(registry)
+        assert style.model_sort_key(published) < len(style.CANONICAL_MODEL_ORDER)
+
+
+def test_published_models_renames_the_name_columns_without_mutating_the_input() -> None:
+    frame = pd.DataFrame(
+        {"model": ["RudolfV 2", "UNI"], "parent_model": ["", "RudolfV 2-B"], "croma": [0.1, 0.2]}
+    )
+    out = style.published_models(frame, columns=("model", "parent_model"))
+    assert list(out["model"]) == ["RudolfV-2", "UNI"]
+    assert list(out["parent_model"]) == ["", "RudolfV-2-B"]
+    assert list(frame["model"]) == ["RudolfV 2", "UNI"]
+    missing = style.published_models(frame, columns=("model", "absent"))
+    assert list(missing["model"]) == ["RudolfV-2", "UNI"]

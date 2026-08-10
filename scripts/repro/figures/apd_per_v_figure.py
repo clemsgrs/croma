@@ -67,14 +67,17 @@ def _roster(dataset):
     not appear here and contradict the scatter's roster. The natural-image control is a
     floor, not a competitor, and ``ranked`` drops it here for the same reason it does there.
     """
-    apd = ranked(pd.read_csv(RAW / "apd.csv"))
+    # The study CSV stores registry identities; the figure labels are a published surface.
+    apd = plotstyle.published_models(ranked(pd.read_csv(RAW / "apd.csv")))
     models = apd.loc[apd["dataset"] == dataset, "model"]
     return sorted(models, key=lambda m: (plotstyle.model_sort_key(m), m))
 
 
 @cache
 def _accuracy_matrix(dataset, model, regime):
-    raw = json.loads((RAW / dataset / f"{model}.json").read_text())
+    # The rosters carry published names; the per-model JSONs keep registry filenames.
+    filename = f"{plotstyle.registry_model_name(model)}.json"
+    raw = json.loads((RAW / dataset / filename).read_text())
     return np.asarray(raw[f"{regime}_test_accuracies"], dtype=float)
 
 

@@ -45,9 +45,9 @@ EXPECTED_PANEL = {
     "Phikon-v2",
     "Prost40M",
     "Prov-GigaPath",
-    "RudolfV 2",
-    "RudolfV 2-B",
-    "RudolfV 2-S",
+    "RudolfV-2",
+    "RudolfV-2-B",
+    "RudolfV-2-S",
     "UNI",
     "UNI2-h",
     "Virchow",
@@ -57,9 +57,9 @@ EXPECTED_PANEL = {
 EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
     "Mascaret",
     "Phaet",
-    "RudolfV 2",
-    "RudolfV 2-B",
-    "RudolfV 2-S",
+    "RudolfV-2",
+    "RudolfV-2-B",
+    "RudolfV-2-S",
 }
 
 
@@ -84,30 +84,38 @@ def test_public_export_is_exactly_three_cohorts_and_25_plus_control() -> None:
     assert "tcga-2x2" not in provenance["files"]
 
 
-def test_public_result_toctree_names_only_the_three_public_cohorts() -> None:
-    text = (ROOT / "docs/results/index.rst").read_text()
-    toctree = text.split(".. toctree::", 1)[1]
+def test_public_results_section_carries_only_the_three_public_cohorts() -> None:
+    """One page per public cohort, each carrying its table and Pareto panel.
 
-    assert "   camelyon\n" in toctree
-    assert "   tcga-4x4\n" in toctree
-    assert "   tolkach-esca\n" in toctree
-    assert "tcga-2x2" not in text.lower()
+    The invariant is the cohort set: exactly the three public cohorts in the results
+    toctree, and no supplementary TCGA-2x2 leaking onto the public site.
+    """
+    index = (ROOT / "docs/results/index.rst").read_text()
+    for slug in ("camelyon", "tcga-4x4", "tolkach-esca"):
+        assert f"\n   {slug}\n" in index
+        page = (ROOT / f"docs/results/{slug}.rst").read_text()
+        assert f".. _{slug}:" in page
+        assert f"results-table:: {slug}" in page
+        assert f'class="croma-pareto" data-cohort="{slug}"' in page
+        assert "tcga-2x2" not in page.lower()
+    assert "tcga-2x2" not in index.lower()
 
 
 def test_five_encoder_provenance_is_exact_and_auditable() -> None:
-    provenance = (ROOT / "docs/results/provenance.rst").read_text()
+    provenance = (ROOT / "docs/results/index.rst").read_text()
     normalized = " ".join(provenance.split())
     expected_facts = [
         "e95e7ea15e039e78d74def101415e19d9a67ba80",  # Mascaret
         "e0ce6e0ee248470bd8604823e412ca64048a2495",  # Phaet
-        "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",  # RudolfV 2
-        "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",  # RudolfV 2-B
-        "76abacd512a98c72a6db6192af9fc98313c3bd78",  # RudolfV 2-S
-        "Mascaret 32",
-        "Phaet 64",
-        "RudolfV 2 32",
-        "RudolfV 2-B 32",
-        "RudolfV 2-S 64",
+        "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",  # RudolfV-2
+        "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",  # RudolfV-2-B
+        "76abacd512a98c72a6db6192af9fc98313c3bd78",  # RudolfV-2-S
+        # Encoder, revision and batch as adjacent cells of the contract table.
+        "Mascaret - ``e95e7ea15e039e78d74def101415e19d9a67ba80`` - 32",
+        "Phaet - ``e0ce6e0ee248470bd8604823e412ca64048a2495`` - 64",
+        "RudolfV-2 - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c`` - 32",
+        "RudolfV-2-B - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8`` - 32",
+        "RudolfV-2-S - ``76abacd512a98c72a6db6192af9fc98313c3bd78`` - 64",
         "FP32",
         "checkpoint-native:model.encode",
         "concatenate-cls-and-mean-patches",

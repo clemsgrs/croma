@@ -36,7 +36,7 @@ from _paper_tables import CROMA_HEADLINE_M, croma_as_margin  # noqa: E402
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
 )  # noqa: E402  (plotting.style lives with the benchmark plot library)
-from plotting.style import CONTROL_MODEL  # noqa: E402
+from plotting.style import CONTROL_MODEL, published_models  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 
 #: The three tile benchmarks the chart spans, in the paper's order. Labels are the
@@ -108,13 +108,16 @@ def load() -> CrossBenchmark:
     """
     cols = {}
     for benchmark in PANEL:
-        series = pd.read_csv(by_benchmark(benchmark).metrics_rel).set_index("model")["croma"]
+        # The runs store registry identities; the chart, its caption and the exposure
+        # daggers are published surfaces, so the frame is restyled at this boundary.
+        frame = published_models(pd.read_csv(by_benchmark(benchmark).metrics_rel))
+        series = frame.set_index("model")["croma"]
         cols[short_label(benchmark)] = croma_as_margin(series)
 
     croma = pd.DataFrame(cols).dropna().drop(index=CONTROL_MODEL, errors="ignore")
     ranks = croma.rank(ascending=False, method="first").astype(int)
 
-    md = pd.read_csv(METADATA)
+    md = published_models(pd.read_csv(METADATA))
     exposed = exposed_models_for_domain(md, "tcga", set(croma.index))
     return CrossBenchmark(croma=croma, ranks=ranks, exposed=exposed)
 
