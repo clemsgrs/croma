@@ -37,7 +37,7 @@ matplotlib.use("Agg")  # lock a headless backend before plotstyle/pyplot is impo
 from plotting import style as plotstyle  # noqa: E402
 
 # The natural-image control (DINOv2-B) is not a pathology encoder; exclude it so the pooled
-# composition matches the manuscript's 20-pathology-model roster (see typed_neighbor_rank).
+# composition matches the manuscript's live 25-pathology-model roster.
 CONTROL_MODEL = plotstyle.CONTROL_MODEL
 
 PROTOCOL = "k-star"
@@ -54,7 +54,7 @@ df = view.eval_manifest
 labels, conf, slide = load_meta(df, compact=True)
 n = len(df)
 
-models = [m for m in view.models if m != CONTROL_MODEL]  # 20 pathology encoders (drop control)
+models = [m for m in view.models if m != CONTROL_MODEL]  # 25 pathology encoders (drop control)
 print(f"{n} samples, {len(models)} pathology models (control {CONTROL_MODEL} excluded)\n")
 
 self_idx = np.arange(n)

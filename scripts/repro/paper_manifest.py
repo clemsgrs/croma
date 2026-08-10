@@ -24,6 +24,26 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
+class ArchivedRun:
+    """A sealed historical run that still backs an explicitly historical paper study."""
+
+    archive: str
+    benchmark: str
+
+    @property
+    def run_rel(self) -> str:
+        return f"output/metrics/_archive/{self.archive}/runs/{self.benchmark}"
+
+    @property
+    def metrics_rel(self) -> str:
+        return f"{self.run_rel}/results/metrics.csv"
+
+    @property
+    def studies_rel(self) -> str:
+        return f"{self.run_rel}/studies"
+
+
+@dataclass(frozen=True)
 class ResultsTable:
     """One benchmark run and the paper artifacts derived from it.
 
@@ -161,6 +181,14 @@ TABLES: list[ResultsTable] = [
         model_type="slide-level",
     ),
 ]
+
+# The typed-neighbour-depth supplement is intentionally frozen at the last pre-expansion
+# snapshot. It remains a historical 20-pathology-encoder analysis and must not inherit the
+# live Camelyon run's expanded roster.
+HISTORICAL_TYPED_NEIGHBOUR_RUN = ArchivedRun(
+    archive="issue-131-prepublish-full-runs-20260810T012511Z",
+    benchmark="pathorob-camelyon",
+)
 
 
 def rendered() -> list[ResultsTable]:

@@ -486,7 +486,7 @@ def plot_croma_pareto(
     # point: an on-marker dot or cross competed with the fill colour and hurt readability. The
     # caption spells the dagger out.
 
-    # The full 20-model roster makes a 5-row legend; the shared single-panel finaliser caps
+    # The full 25-model ranked roster makes a multi-row legend; the shared finaliser caps
     # its bottom margin below that, so the x-label lands on the top legend row. Reserve the
     # room explicitly instead.
     _finalize_figure(

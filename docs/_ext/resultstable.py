@@ -31,9 +31,8 @@ from docutils.statemachine import StringList
 
 RESULTS = Path(__file__).resolve().parents[2] / "results"
 
-#: Appended to the natural-image control's name. It is ranked inline like every other
-#: entry -- it earns its position -- but a reader who does not know it is a control would
-#: draw the wrong conclusion from that position, so the pages footnote it beneath.
+#: Appended to the natural-image control's name. Its cohort measurements remain visible,
+#: but it is excluded from the pathology ranks and frontier.
 CONTROL_MARK = " †"
 
 
@@ -122,6 +121,8 @@ def _is_true(value: str) -> bool:
 
 
 def _value(row: dict[str, str], key: str, fmt: str, best: float | None) -> str:
+    if not str(row[key]).strip():
+        return "—"
     value = float(row[key])
     text = fmt.format(value)
     if best is not None and abs(value - best) < 1e-9:
@@ -218,7 +219,7 @@ class AggregateTable(_TableDirective):
         ]
         best = _best_values(rows, columns)
 
-        total = len(rows)
+        ranked_total = sum(not _is_true(row["is_control"]) for row in rows)
         top = self.options.get("top")
         shown = rows[:top] if top else rows
         body = [
@@ -230,9 +231,9 @@ class AggregateTable(_TableDirective):
         ]
         headers = ["Model", *(c.header for c in columns)]
         default = (
-            f"Top {len(shown)} of {total} by mean rank"
-            if top and top < total
-            else f"All {total} encoders, by mean rank"
+            f"Top {len(shown)} of {ranked_total} ranked pathology encoders"
+            if top and top < ranked_total
+            else f"{ranked_total} ranked pathology encoders plus control"
         )
         return self._render(
             _list_table(headers, body, name=self.options.get("caption", default))

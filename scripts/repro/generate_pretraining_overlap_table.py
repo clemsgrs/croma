@@ -67,7 +67,7 @@ def build() -> str:
     caption = (
         r"\caption{\textbf{Median \code{CRoMa} on Tolkach-ESCA and on its TCGA extension.} "
         rf"Median per-sample $\mcode{{CRoMa}}(m{{=}}{int(CROMA_HEADLINE_M)})$ for the "
-        r"\TolkachRankedNModels{} tile-level pathology encoders, computed separately over the "
+        rf"historical {len(ranked)}-encoder pathology subset, computed separately over the "
         r"three original Tolkach-ESCA cohorts and over the held-out TCGA cases. The \emph{boost} "
         r"measures how much further the nearest same-confounder biological distractors sit "
         r"(relative to the nearest cross-confounder biological matches) on the TCGA cases than on "

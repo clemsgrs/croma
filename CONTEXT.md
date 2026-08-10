@@ -291,6 +291,12 @@ _Avoid_: hand-typing a number, a rank, or a superlative that a `metrics.csv` can
 Per-model properties carried in the single-source model metadata (see ADR-0005) and
 used to annotate figures like CRoMa-vs-scale.
 
+**Robustness-targeted fine-tune**:
+A public encoder obtained by fine-tuning a base pathology encoder explicitly for
+invariance to acquisition factors. It remains in the ranked panel, but its parent
+relationship is reported so it is not mistaken for an independent pretraining run.
+_Avoid_: robust model, new foundation model.
+
 **Regime**:
 The pretraining paradigm of a foundation model, reduced to a two-way split for
 figure encoding: **VLFM** (a vision--language model, e.g. CONCH) vs **vision-only**

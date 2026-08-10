@@ -24,7 +24,7 @@ sys.path.insert(0, str(REPO / "scripts" / "bench"))
 CORRELATION_CSV = REPO / "output/studies/apd/apd_correlation.csv"
 JOINED_CSV = REPO / "output/studies/apd/apd_metrics_joined.csv"
 
-# Figures and the correlation table use the three 20-model PathoROB benchmarks.
+# Figures and the correlation table use the three 25-model PathoROB benchmarks.
 # PCaBiop's four-model correlations remain available for supplementary prose.
 FIGURE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
 TARGETS = [("nipd_id", "in-domain"), ("nipd_ood", "out-of-domain")]
