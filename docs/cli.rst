@@ -97,7 +97,7 @@ Searches outward for typed neighbours rather than using a fixed ``k``, so it tak
      - Typed neighbours averaged per type. The headline radius.
    * - ``--alpha``
      - ``0.10``
-     - Tail level for ``q_alpha`` and ``ltm_alpha``.
+     - Tail level for the tail statistics (:ref:`tail-reporting`).
    * - ``--start-k``
      - ``200``
      - Initial neighbour-search radius.

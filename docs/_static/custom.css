@@ -24,6 +24,11 @@
 
 .croma-card h3 {
   margin: 0 0 0.35rem;
+  /* furo indents every heading (padding-left with a matching negative margin); inside a
+     card that padding survives the margin override and shifts the title off the text
+     beneath it. */
+  padding-left: 0;
+  padding-right: 0;
   font-size: 1rem;
   color: var(--color-brand-primary);
 }
@@ -226,4 +231,17 @@ table.croma-results th code {
   margin: 0.5rem 0 0;
   font-size: 0.85rem;
   color: var(--color-foreground-secondary);
+}
+
+/* --------------------------------------------------------------------------
+   Themed figures. The SVG pairs are rendered at a paper column's natural size,
+   which is small on a docs page: let them fill the content column instead.
+   figures.js wraps each in a link to the full-size SVG; the cursor says so.
+   -------------------------------------------------------------------------- */
+
+figure.only-light img,
+figure.only-dark img {
+  width: 100%;
+  height: auto;
+  cursor: zoom-in;
 }

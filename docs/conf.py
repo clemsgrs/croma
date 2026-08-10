@@ -36,6 +36,9 @@ exclude_patterns = [
     "_build",
     "Thumbs.db",
     ".DS_Store",
+    # Editor droppings: stale page copies that shadow real documents and break -W builds.
+    ".ipynb_checkpoints",
+    "**/.ipynb_checkpoints",
     # Internal decision records and working notes. They are Markdown, they are written for
     # contributors rather than users, and they read fine on GitHub -- so they stay out of
     # the published site instead of being converted.
@@ -75,7 +78,7 @@ html_extra_path = ["../results"]
 html_css_files = ["custom.css"]
 # Loaded on every page but inert on all but one: the explorer returns immediately unless
 # the page provides its mount point, and only then does it fetch the 35 KB payload.
-html_js_files = ["explorer.js"]
+html_js_files = ["explorer.js", "figures.js"]
 html_title = f"croma {release}"
 html_show_sourcelink = False
 html_theme_options = {
