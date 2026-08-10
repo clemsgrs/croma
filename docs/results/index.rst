@@ -65,90 +65,24 @@ under three different licences.
 The cohorts
 -----------
 
-Each table below carries one cohort's full column set, sorted by median ``CRoMa``. Columns
-are explained under :ref:`result-columns`; † marks the natural-image control
+Each cohort has its own page: the full column set sorted by median ``CRoMa``, the cohort's
+own median-versus-tail Pareto panel, and what is specific to reading it. Columns are
+explained under :ref:`result-columns`; † marks the natural-image control
 (:ref:`the-control`). Every encoder is evaluated at the cohort's shared operating point —
 the cohort median of the per-model biological ``k*`` — with ``tau`` resolved per model
 (see :ref:`results-provenance`).
 
-.. _camelyon:
+.. toctree::
+   :maxdepth: 1
 
-Camelyon
-~~~~~~~~
+   camelyon
+   tcga-4x4
+   tolkach-esca
 
-20,400 breast lymph-node tiles, labelled tumour or normal, contributed by two medical
-centers (RUMC and UMCU) and scored at ``k`` = :results-value:`k(camelyon)`. Scored entirely
-outside TCGA, so no encoder holds an in-distribution advantage from its pretraining corpus
-— the cleanest of the three cohorts to read, and the most discriminating:
-:results-value:`below_zero(camelyon)` pathology encoders score below zero, meaning their
-typical neighbourhood is closer to a different-biology tile from the *same* center than to
-a same-biology tile from another.
-
-.. results-table:: camelyon
-   :caption: Camelyon, sorted by median ``CRoMa``
-
-Read the support column carefully here. Two biological classes across two centers is a
-sparse neighbourhood: no encoder's support fraction clears
-:results-value:`support_max(camelyon)`, and the floor is
-:results-value:`support_min(camelyon)`. A high ``RI`` over that little evidence is not the
-same claim as one over :ref:`TCGA-4×4 <tcga-4x4>`'s near-total support — the same two
-indices, resting on very different amounts of evidence.
-
-The shape says more than the median. ``Virchow2`` and ``CONCH`` sit within
-:results-value:`gap(camelyon, croma, Virchow2, CONCH)` of each other on median ``CRoMa`` —
-indistinguishable on that column alone — while ``CONCH`` carries
-:results-value:`ratio(camelyon, croma_f0, CONCH, Virchow2)` the confounder-dominant mass
-and :results-value:`ratio(camelyon, croma_ltm10, CONCH, Virchow2)` the tail severity.
-Overlay the two in the :ref:`explorer <explorer>` to see it.
-
-.. _tcga-4x4:
-
-TCGA-4×4
-~~~~~~~~
-
-5,760 tiles spanning four cancer types — breast invasive carcinoma, colon adenocarcinoma,
-and lung adeno- and squamous cell carcinoma — contributed by four TCGA tissue source sites
-(Asterand, Christiana Healthcare, Roswell Park, University of Pittsburgh) and scored at
-``k`` = :results-value:`k(tcga-4x4)`.
-
-**Read this cohort with its pretraining overlap in mind.** TCGA is the most widely used
-pretraining corpus in computational pathology, and many of these encoders have seen it. A
-strong score can reflect an in-distribution advantage rather than robustness, and this page
-cannot tell the two apart — the `paper <https://arxiv.org/abs/2607.25497>`_ quantifies the
-overlap encoder by encoder. ``Midnight-12k``, which tops the cohort by a wide margin, is
-pretrained on TCGA and on nothing else.
-
-.. results-table:: tcga-4x4
-   :caption: TCGA-4×4, sorted by median ``CRoMa``
-
-Only :results-value:`below_zero(tcga-4x4)` encoder falls below zero, and support is
-near-total — every model sits at :results-value:`support_min(tcga-4x4)` or above, so ``RI``
-and ``MaRI`` rest on essentially every tile. In the explorer, every encoder here resolves
-into a single tight mode close to zero, strong and weak alike; on Camelyon the same panel
-spreads across most of the scale. Two cohorts, one roster, very different separability —
-the argument for reporting more than one.
-
-.. _tolkach-esca:
-
-Tolkach-ESCA
-~~~~~~~~~~~~
-
-9,000 tiles of oesophageal tissue across six classes — tumour, regression, adventitia,
-muscularis propria, oesophageal and gastric mucosa — from three centers (UKK, WNS and CHA),
-scored at ``k`` = :results-value:`k(tolkach-esca)`. The TCGA cohort of the original Tolkach
-dataset is held out, following PathoROB, so like Camelyon this is scored outside TCGA.
-
-.. results-table:: tolkach-esca
-   :caption: Tolkach-ESCA, sorted by median ``CRoMa``
-
-The mildest of the three cohorts — :results-value:`below_zero(tolkach-esca)` encoders fall
-below zero — and the one where the count-based indices run out of room:
-:results-value:`count_above(tolkach-esca, ri, 0.9)` of the :results-value:`ranked()` ranked
-encoders score above ``0.90`` on ``RI``, so ``RI`` and ``MaRI`` have largely stopped
-separating models here while ``CRoMa`` still spreads the panel. Several encoders are also
-visibly bimodal in the explorer — one population of neighbourhoods comfortably
-biology-dominant, another close to the line. A median reports where the middle of that
-lands and says nothing about the split, which is the case tail reporting exists for.
+:doc:`Camelyon <camelyon>` is scored entirely outside TCGA and is the most discriminating
+of the three; :doc:`TCGA-4×4 <tcga-4x4>` must be read with pretraining overlap in mind;
+:doc:`Tolkach-ESCA <tolkach-esca>` is the mildest, and the one where the count-based
+indices stop separating models.
 
 .. _result-columns:
 

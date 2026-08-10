@@ -38,19 +38,21 @@ figure in a pale block.
 
 ## Results panels
 
-`rank_pareto` has no `.tex` source: the same script draws it with the tracked benchmark
-plot library and then runs it through the identical conversion, so a plotted figure and a
-schematic are themed by one code path.
+`rank_pareto` and the three per-cohort `pareto_<cohort>` panels have no `.tex` source: the
+same script draws them with the tracked benchmark plot library and then runs them through
+the identical conversion, so a plotted figure and a schematic are themed by one code path.
 
 ```
-results/cross_benchmark.csv  --plotting-->  <name>.pdf  --build_doc_figures.py-->  ../_static/figures/<name>-{light,dark}.svg
+results/*.csv  --plotting-->  <name>.pdf  --build_doc_figures.py-->  ../_static/figures/<name>-{light,dark}.svg
 ```
 
-The Pareto panel is drawn from the committed `results/` export, so the encoders it rings are
-the ones the table's `on_frontier` column marks. It carries no TCGA-exposure daggers, unlike
-the manuscript's version: the exposure flags live in `scripts/bench/model_metadata.csv`, and
-the committed results export does not carry per-benchmark exposure marks. The results page
-carries that caveat in prose instead.
+The Pareto panels are drawn from the committed `results/` export, so the encoders
+`rank_pareto` rings are the ones the table's `on_frontier` column marks, and each
+`pareto_<cohort>` panel plots that cohort's CSV directly (median `CRoMa` against `LTM₁₀`,
+natural-image control excluded). They carry no TCGA-exposure daggers, unlike the
+manuscript's versions: the exposure flags live in `scripts/bench/model_metadata.csv`, and
+the committed results export does not carry per-benchmark exposure marks. The results pages
+carry that caveat in prose instead.
 
 The per-sample CRoMa distributions have no static figure at all: the distribution explorer
 (`docs/_static/explorer.js`) draws them in the browser from the committed

@@ -212,6 +212,38 @@ def _draw_rank_pareto(scratch: Path) -> Path:
     return P._pdf_export_path(out)
 
 
+def _draw_cohort_pareto(slug: str) -> Callable[[Path], Path]:
+    """Median ``CRoMa`` against ``LTM`` for one cohort, from ``results/<slug>.csv``.
+
+    The natural-image control is excluded: the frontier is a pathology-only claim, and a
+    weak representation can hold a positive margin simply by lacking strong structure of
+    either kind (the results page's control caveat). Like ``rank_pareto``, the panel omits
+    the manuscript's TCGA-exposure daggers -- the committed export carries no exposure
+    flags, so the cohort page states that caveat in prose instead.
+    """
+
+    def draw(scratch: Path) -> Path:
+        import pandas as pd  # noqa: PLC0415
+
+        P = _plotting()
+        frame = pd.read_csv(RESULTS / f"{slug}.csv")
+        rows = [
+            {
+                "model": str(r.model),
+                "croma": float(r.croma),
+                "croma_ltm_alpha": float(r.croma_ltm10),
+                "croma_alpha": 0.10,
+            }
+            for r in frame.itertuples()
+            if not bool(r.is_control)
+        ]
+        out = scratch / f"pareto_{slug}.png"
+        P.plot_croma_pareto(rows, out)
+        return P._pdf_export_path(out)
+
+    return draw
+
+
 FIGURES: dict[str, VectorFigure | PlottedFigure | RasterFigure] = {
     # Explanatory schematics (standalone TikZ; sources tracked under docs/figures/src/).
     "concept_metrics": VectorFigure("concept_metrics", PAPER_FIGURES / "concept_metrics.pdf"),
@@ -228,6 +260,12 @@ FIGURES: dict[str, VectorFigure | PlottedFigure | RasterFigure] = {
     "rank_pareto": PlottedFigure(
         "rank_pareto", _draw_rank_pareto, requires=(RESULTS / "cross_benchmark.csv",)
     ),
+    **{
+        f"pareto_{slug}": PlottedFigure(
+            f"pareto_{slug}", _draw_cohort_pareto(slug), requires=(RESULTS / f"{slug}.csv",)
+        )
+        for slug in ("camelyon", "tcga-4x4", "tolkach-esca")
+    },
 }
 
 

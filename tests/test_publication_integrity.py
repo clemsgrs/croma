@@ -84,22 +84,21 @@ def test_public_export_is_exactly_three_cohorts_and_25_plus_control() -> None:
     assert "tcga-2x2" not in provenance["files"]
 
 
-def test_public_results_page_carries_only_the_three_public_cohorts() -> None:
-    """The consolidated results page holds one anchored section per public cohort.
+def test_public_results_section_carries_only_the_three_public_cohorts() -> None:
+    """One page per public cohort, each carrying its table and Pareto panel.
 
-    The cohorts live as sections of one page rather than as toctree entries, so the
-    invariant is the set of section anchors: exactly the three public cohorts, and no
-    supplementary TCGA-2x2 leaking onto the public site.
+    The invariant is the cohort set: exactly the three public cohorts in the results
+    toctree, and no supplementary TCGA-2x2 leaking onto the public site.
     """
-    text = (ROOT / "docs/results/index.rst").read_text()
-
-    assert ".. _camelyon:" in text
-    assert ".. _tcga-4x4:" in text
-    assert ".. _tolkach-esca:" in text
-    assert "results-table:: camelyon" in text
-    assert "results-table:: tcga-4x4" in text
-    assert "results-table:: tolkach-esca" in text
-    assert "tcga-2x2" not in text.lower()
+    index = (ROOT / "docs/results/index.rst").read_text()
+    for slug in ("camelyon", "tcga-4x4", "tolkach-esca"):
+        assert f"\n   {slug}\n" in index
+        page = (ROOT / f"docs/results/{slug}.rst").read_text()
+        assert f".. _{slug}:" in page
+        assert f"results-table:: {slug}" in page
+        assert f"themed-figure:: /_static/figures/pareto_{slug}" in page
+        assert "tcga-2x2" not in page.lower()
+    assert "tcga-2x2" not in index.lower()
 
 
 def test_five_encoder_provenance_is_exact_and_auditable() -> None:
