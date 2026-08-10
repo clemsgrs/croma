@@ -479,6 +479,19 @@ def test_published_restyles_the_rudolfv_names():
     ]
 
 
+def test_the_exporter_and_the_paper_style_layer_agree_on_published_names():
+    """Two deliberately independent implementations (the exporter shares no code with the
+    paper's generators), one rename. The paper side derives its mapping from
+    model_metadata.csv's ``published_name`` column; this pin keeps the exporter's
+    hardcoded copy from drifting away from it."""
+    bench = ROOT / "scripts" / "bench"
+    if str(bench) not in sys.path:
+        sys.path.insert(0, str(bench))
+    from plotting import style
+
+    assert er.PUBLISHED_NAMES == style.PUBLISHED_MODEL_NAMES
+
+
 def test_exposed_models_derives_from_the_domain_tags():
     """A model is exposed iff the domain appears in its corpus or institutional tags --
     the paper's dagger convention, never the legacy ``tcga_exposed`` flag."""

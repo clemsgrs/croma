@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
 )  # noqa: E402  (plotting.style lives with the benchmark plot library)
-from plotting.style import CONTROL_MODEL  # noqa: E402
+from plotting.style import CONTROL_MODEL, published_models  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -76,7 +76,7 @@ def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
     ci_path = metrics_csv.parent / "bootstrap_uncertainty.csv"
     if not ci_path.exists():
         return None
-    ci = pd.read_csv(ci_path).set_index("model")
+    ci = published_models(pd.read_csv(ci_path)).set_index("model")
     return {m: (float(r["croma_lo"]), float(r["croma_hi"])) for m, r in ci.iterrows()}
 
 
@@ -88,9 +88,11 @@ def _load_frac_neg(metrics_csv: Path, headline_m: int) -> dict[str, float]:
     (non-finite) occurrences leave the denominator, as they do before the tail
     statistics.
     """
-    ps = pd.read_csv(
-        metrics_csv.parent / "per_sample_metrics.csv",
-        usecols=["model", f"croma_m{int(headline_m)}"],
+    ps = published_models(
+        pd.read_csv(
+            metrics_csv.parent / "per_sample_metrics.csv",
+            usecols=["model", f"croma_m{int(headline_m)}"],
+        )
     )
     col = f"croma_m{int(headline_m)}"
 
@@ -103,7 +105,8 @@ def _load_frac_neg(metrics_csv: Path, headline_m: int) -> dict[str, float]:
 
 def load_frame(metrics_csv: Path) -> pd.DataFrame:
     """The run's frame with the paper's derived columns, on the canonical margin scale."""
-    df = pd.read_csv(metrics_csv)
+    # The run stores registry identities; the rendered table is a published surface.
+    df = published_models(pd.read_csv(metrics_csv))
     df["croma"] = croma_as_margin(df["croma"])
     df["support"] = (1.0 - df["ri_undefined_frac"]) * 100.0
     df["delta"] = df["mari"].astype(float) - df["ri"].astype(float)
@@ -177,7 +180,7 @@ def _dagger_clause(entry: ResultsTable, exposed: set[str]) -> str:
         return ""
     if entry.exposure_domain == "charite":
         return (
-            rf" $\dagger$ marks the ${len(exposed)}$ RudolfV 2 encoders with possible "
+            rf" $\dagger$ marks the ${len(exposed)}$ RudolfV-2 encoders with possible "
             r"institutional/source-domain overlap: their disclosed training corpus includes "
             r"Charit\'e, and the scored CHA cohort is from Charit\'e. Exact patient or slide "
             r"overlap is unknown; the marker does not establish leakage."

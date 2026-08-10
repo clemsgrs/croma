@@ -22,12 +22,18 @@ Usage: python scripts/repro/generate_uncertainty_supp_table.py
 """
 
 import json
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, scriptsize_ci
 from paper_manifest import by_prefix
+
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
+from plotting.style import published_models  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -44,7 +50,8 @@ def _load(rel_dir: str) -> tuple[dict | None, pd.DataFrame | None]:
     results = ROOT / rel_dir / "results"
     jpath, cpath = results / "bootstrap_uncertainty.json", results / "bootstrap_uncertainty.csv"
     summary = json.loads(jpath.read_text()) if jpath.exists() else None
-    df = pd.read_csv(cpath) if cpath.exists() else None
+    # Per-model CI rows are a published surface; restyle the registry identities.
+    df = published_models(pd.read_csv(cpath)) if cpath.exists() else None
     return summary, df
 
 

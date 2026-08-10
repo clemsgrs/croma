@@ -30,6 +30,11 @@ from _cross_benchmark import PANEL, load as load_cross, short_label  # noqa: E40
 from _paper_tables import CaptionClaimError  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 
+sys.path.insert(
+    0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
+from plotting.style import published_models  # noqa: E402
+
 
 def _tail_rank_matrix(models: pd.Index) -> pd.DataFrame:
     """Per-(model, benchmark) rank by ``LTM_10``, 1 = mildest tail (the largest, least-negative LTM).
@@ -41,11 +46,10 @@ def _tail_rank_matrix(models: pd.Index) -> pd.DataFrame:
     """
     cols = {}
     for benchmark in PANEL:
-        series = (
-            pd.read_csv(REPO / by_benchmark(benchmark).metrics_rel)
-            .set_index("model")["croma_ltm_alpha"]
-        )
-        cols[short_label(benchmark)] = series
+        # Restyled like ``_cross_benchmark.load``, so this matrix reindexes cleanly
+        # against the published median-rank roster.
+        frame = published_models(pd.read_csv(REPO / by_benchmark(benchmark).metrics_rel))
+        cols[short_label(benchmark)] = frame.set_index("model")["croma_ltm_alpha"]
     ltm = pd.DataFrame(cols).reindex(models)
     if ltm.isna().any().any():
         missing = ltm.index[ltm.isna().any(axis=1)].tolist()

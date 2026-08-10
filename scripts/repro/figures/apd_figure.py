@@ -255,7 +255,8 @@ def main(*, normalized: bool = True, focused: bool = False,
         benchmarks = BENCHMARKS
     # The joined table keeps the natural-image control; ranked() drops it, so a panel never
     # annotates a rho no table reports. Same filter, one helper.
-    joined = ranked(read_joined())
+    # The joined study table stores registry identities; the labels are published.
+    joined = plotstyle.published_models(ranked(read_joined()))
     correlations = {dset: training_correlations(dset) for dset, _ in benchmarks}
     for dset, dlabel in benchmarks:
         _render_dataset(dset, dlabel, joined, correlations[dset],

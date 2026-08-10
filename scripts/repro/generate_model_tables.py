@@ -16,12 +16,19 @@ Metadata columns read here (single source of truth):
 Run: python scripts/repro/generate_model_tables.py
 """
 
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_CSV = HERE.parent / "bench" / "model_metadata.csv"
+
+sys.path.insert(
+    0, str(HERE.parent / "bench")
+)  # noqa: E402  (plotting.style lives with the benchmark plot library)
+from plotting.style import published_models  # noqa: E402
+
 TEMPLATE_DIR = HERE / "templates"
 SUMMARY_TMPL = TEMPLATE_DIR / "model_summary.tex.tmpl"
 PAPER_SECTIONS = HERE.parents[1] / "paper" / "sections"
@@ -156,7 +163,10 @@ def build_summary_tex(df: pd.DataFrame, template_path: Path = SUMMARY_TMPL) -> s
 
 
 def main() -> None:
-    df = load_metadata()
+    # The registry keeps the checkpoints' original spellings; the rendered table is a
+    # published surface, so the model and parent-model names are restyled here (the
+    # ``published_name`` column of the same CSV).
+    df = published_models(load_metadata(), columns=("model", "parent_model"))
     tex = build_summary_tex(df)
     out = PAPER_SECTIONS / "model_summary.tex"
     if PAPER_SECTIONS.exists():

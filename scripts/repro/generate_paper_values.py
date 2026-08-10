@@ -38,6 +38,7 @@ from _paper_tables import (
 )
 from paper_manifest import TABLES, by_prefix
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
+from plotting.style import published_models  # noqa: E402
 
 # Which run backs each macro family is the manifest's business, not this script's. It used
 # to be two lists here (a median-k one and a k-star "faithful" one behind a USE_MEDIAN_K
@@ -577,7 +578,8 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
 CROSS_COHORT_BENCHMARKS = ["Camelyon", "Tolkach", "TcgaFourByFour"]
 SLIDE_PANEL_BENCHMARK = "Panda"
 EXPANDED_ENCODERS = frozenset(
-    {"Mascaret", "Phaet", "RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"}
+    # Published spellings: the frames this set is compared against are restyled at load.
+    {"Mascaret", "Phaet", "RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"}
 )
 
 
@@ -694,7 +696,9 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         if not path.exists():
             print(f"warning: missing {path}, skipping {prefix}", file=sys.stderr)
             continue
-        df = pd.read_csv(path)
+        # The runs store registry identities; every macro built from this frame is a
+        # published surface, so the restyle happens at the load.
+        df = published_models(pd.read_csv(path))
         lines, scale = _macros_for(prefix, df, scale_override)
         out.append(f"% {prefix}: {rel} (scale={scale})")
         out.extend(lines)
@@ -733,7 +737,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel
     if ss_path.exists():
-        ss_lines = _ss_shell_macros(ss_prefix, pd.read_csv(ss_path))
+        ss_lines = _ss_shell_macros(ss_prefix, published_models(pd.read_csv(ss_path)))
         out.append(f"% {ss_prefix} SS-shell (concern 6): {ss_rel}")
         out.extend(ss_lines)
         print(f"{ss_prefix + ' SS-shell':16s}        -> {len(ss_lines)} macros", file=sys.stderr)
@@ -746,7 +750,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         import json as _json
 
         summary = _json.loads(json_path.read_text())
-        unc_lines = _uncertainty_macros(unc_prefix, summary, pd.read_csv(csv_path))
+        unc_lines = _uncertainty_macros(unc_prefix, summary, published_models(pd.read_csv(csv_path)))
         out.append(f"% {unc_prefix} uncertainty (concerns 3 & 6): {unc_json}")
         out.extend(unc_lines)
         print(f"{unc_prefix + ' uncertainty':16s}     -> {len(unc_lines)} macros", file=sys.stderr)

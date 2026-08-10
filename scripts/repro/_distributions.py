@@ -36,7 +36,7 @@ sys.path.insert(0, str(HERE.parents[1] / "src"))
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
 )  # noqa: E402  (plotting.style lives with the benchmark plot library)
-from plotting.style import CONTROL_MODEL  # noqa: E402
+from plotting.style import CONTROL_MODEL, published_models  # noqa: E402
 
 #: The Camelyon run backs the main-text tail analysis; its protocol comes from the manifest.
 CAMELYON = by_prefix("Camelyon")
@@ -99,8 +99,10 @@ def load(root: Path | None = None, entry: ResultsTable = CAMELYON) -> Distributi
     freshness fixtures also write.
     """
     root = Path(root) if root is not None else HERE.parents[1]
-    metrics = pd.read_csv(root / entry.metrics_rel)
-    per_sample = pd.read_csv(root / entry.per_sample_rel)
+    # The run stores registry identities; everything downstream of this loader is a
+    # published surface (figures, floats, captions), so the restyle happens here.
+    metrics = published_models(pd.read_csv(root / entry.metrics_rel))
+    per_sample = published_models(pd.read_csv(root / entry.per_sample_rel))
     return build(metrics, per_sample)
 
 
@@ -150,7 +152,8 @@ def assert_control_is_the_control(dist: Distributions) -> Model:
 
 def metadata_exposed_models(entry: ResultsTable, roster: set[str]) -> frozenset[str]:
     """Resolve corpus/institutional exposure from the single model metadata source."""
-    md = pd.read_csv(METADATA)
+    # Rosters reaching this point carry published names; restyle the metadata to match.
+    md = published_models(pd.read_csv(METADATA))
     return exposed_models_for_domain(md, entry.exposure_domain, roster)
 
 

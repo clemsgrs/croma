@@ -13,7 +13,7 @@ control holds no rank and is dropped (``dist.pathology``), as everywhere else.
 
 Every panel labels its Pareto frontier in bold and flags -- with a dagger after the encoder's name
 in the legend -- those whose pretraining overlaps a *scored* cohort of that benchmark:
-CAMELYON-trained on the Camelyon panel, TCGA-exposed on TCGA-4x4, and the RudolfV 2 family with
+CAMELYON-trained on the Camelyon panel, TCGA-exposed on TCGA-4x4, and the RudolfV-2 family with
 possible institutional/source-domain exposure to Tolkach-ESCA's scored CHA cohort. The latter
 does not assert patient- or slide-level leakage. Each set is resolved through
 ``_distributions.exposed_models`` so the figure and the float caption count one set (mirrors the

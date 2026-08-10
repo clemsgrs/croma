@@ -52,7 +52,11 @@ def rows(include_control: bool = True) -> pd.DataFrame:
             f"{PER_SAMPLE} is absent, so nothing can say whether the Tolkach lead survives "
             "dropping its TCGA cohort. Run scripts/studies/pretraining_overlap.py."
         )
-    df = pd.read_csv(PER_SAMPLE, usecols=["model", "confounder", HEADLINE_COL])
+    from plotting.style import published_models
+
+    # Study rows carry registry identities; the macros and table built from this frame
+    # are published surfaces, so the model names are restyled here.
+    df = published_models(pd.read_csv(PER_SAMPLE, usecols=["model", "confounder", HEADLINE_COL]))
     if df[HEADLINE_COL].abs().max() >= 1.0:
         raise ValueError(
             f"{PER_SAMPLE} column {HEADLINE_COL} is out of (-1, 1): it looks like a legacy "

@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 sys.path.insert(
     0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench")
 )  # noqa: E402  (plotting.style lives with the benchmark plot library)
-from plotting.style import CONTROL_MODEL  # noqa: E402
+from plotting.style import CONTROL_MODEL, published_models  # noqa: E402
 
 OUT = Path("paper/sections/supp/pretraining_overlap.tex")
 METADATA = Path(__file__).resolve().parent.parent / "bench" / "model_metadata.csv"
@@ -42,7 +42,7 @@ def build() -> str:
     control = r[r["model"] == CONTROL_MODEL]
     # The TCGA-exposed encoders carry a dagger, exactly as in the two TCGA results tables
     # and the rank-aggregate Pareto -- one source (model_metadata.csv), so the sets never drift.
-    md = pd.read_csv(METADATA)
+    md = published_models(pd.read_csv(METADATA))
     exposed = set(exposed_models_for_domain(md, "tcga", set(ranked["model"])))
 
     def _row(x: pd.Series) -> str:

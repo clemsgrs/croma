@@ -301,22 +301,64 @@ def title_with_subtitle(ax, title: str, subtitle: str) -> None:
     )
 
 
+# ---------------------------------------------------------------------------
+# Published (reader-facing) model names. The registry identity -- embedding files,
+# metrics rows, extraction records, the CLI roster -- keeps the checkpoint's original
+# spelling; every published surface (paper tables, figure labels, results/ exports)
+# prints the restyled form. The mapping lives in model_metadata.csv's
+# ``published_name`` column so the rename is auditable next to the rest of the
+# model's identity, and the accessors below resolve either spelling so a renamed
+# frame keeps its family hue, tone and canonical position.
+# ---------------------------------------------------------------------------
+def _load_published_names(path: Path = _MODEL_METADATA) -> dict[str, str]:
+    names: dict[str, str] = {}
+    with path.open(newline="") as handle:
+        for row in csv.DictReader(handle):
+            published = str(row.get("published_name") or "").strip()
+            if published and published != str(row["model"]):
+                names[str(row["model"])] = published
+    return names
+
+
+PUBLISHED_MODEL_NAMES = _load_published_names()
+_REGISTRY_NAME = {published: registry for registry, published in PUBLISHED_MODEL_NAMES.items()}
+
+
+def published_model_name(model: str) -> str:
+    """The reader-facing spelling of a registry model name (identity when unchanged)."""
+    return PUBLISHED_MODEL_NAMES.get(str(model), str(model))
+
+
+def registry_model_name(model: str) -> str:
+    """The registry spelling behind a published name (identity when unchanged)."""
+    return _REGISTRY_NAME.get(str(model), str(model))
+
+
+def published_models(frame, columns=("model",)):
+    """A copy of ``frame`` with the given name columns restyled for publication."""
+    out = frame.copy()
+    for column in columns:
+        if column in out.columns:
+            out[column] = out[column].replace(PUBLISHED_MODEL_NAMES)
+    return out
+
+
 def family_for_model(model: str) -> str:
-    return str(MODEL_FAMILY_MAP.get(str(model), "other"))
+    return str(MODEL_FAMILY_MAP.get(registry_model_name(model), "other"))
 
 
 def color_for_model(model: str) -> str:
     """Return the canonical colour for a model (family hue + tone)."""
     family = family_for_model(model)
     palette = FAMILY_PALETTE.get(family, FAMILY_PALETTE["other"])
-    tone_idx = int(MODEL_TONE_INDEX.get(str(model), 0)) % len(palette)
+    tone_idx = int(MODEL_TONE_INDEX.get(registry_model_name(model), 0)) % len(palette)
     return str(palette[tone_idx])
 
 
 def model_sort_key(model: str) -> int:
     """Canonical position of a model; unknown models sort to the end."""
     try:
-        return CANONICAL_MODEL_ORDER.index(str(model))
+        return CANONICAL_MODEL_ORDER.index(registry_model_name(model))
     except ValueError:
         return len(CANONICAL_MODEL_ORDER)
 

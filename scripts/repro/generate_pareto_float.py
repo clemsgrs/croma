@@ -42,7 +42,7 @@ def _exposure_sentence(entry, exposed: frozenset[str]) -> str:
         return rf"$\dagger$ marks the {len(exposed)} TCGA-exposed encoders."
     if entry.benchmark == "pathorob-tolkach-esca":
         return (
-            rf"$\dagger$ marks the {len(exposed)} RudolfV 2 encoders with possible "
+            rf"$\dagger$ marks the {len(exposed)} RudolfV-2 encoders with possible "
             r"institutional/source-domain overlap: their disclosed training corpus includes "
             r"Charit\'e, and the scored CHA cohort is from Charit\'e. Exact patient or slide "
             r"overlap is unknown; the marker does not establish leakage."

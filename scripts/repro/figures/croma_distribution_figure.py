@@ -47,7 +47,13 @@ def _rows(entry) -> list[dict]:
         raise FileNotFoundError(
             f"{path} absent -- run scripts/repro/run_benchmarks.sh first."
         )
-    return json.loads(path.read_text(encoding="utf-8"))
+    rows = json.loads(path.read_text(encoding="utf-8"))
+    # The run stores registry identities; the ridgeline's axis labels are published.
+    # Only the display name is restyled -- ``croma_samples_path`` keeps pointing at the
+    # registry-named artifact on disk.
+    for row in rows:
+        row["model"] = plotstyle.published_model_name(row["model"])
+    return rows
 
 
 def main() -> None:
