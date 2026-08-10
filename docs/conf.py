@@ -16,6 +16,15 @@ author = "Clément Grisi"
 copyright = "2026, Clément Grisi"
 release = __version__
 
+# Consumed by the sidebar GitHub card (docs/_templates/sidebar/github.html): the version
+# badge links to the release tag that matches the installed package.
+html_context = {
+    "github_latest_release_tag": release,
+    "github_latest_release_url": (
+        f"https://github.com/clemsgrs/croma/releases/tag/{release}"
+    ),
+}
+
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -81,6 +90,19 @@ html_css_files = ["custom.css"]
 html_js_files = ["explorer.js", "figures.js", "pareto.js"]
 html_title = f"croma {release}"
 html_show_sourcelink = False
+# Furo's default sidebar, with the repository card inserted above the navigation tree.
+html_sidebars = {
+    "**": [
+        "sidebar/brand.html",
+        "sidebar/search.html",
+        "sidebar/scroll-start.html",
+        "sidebar/github.html",
+        "sidebar/navigation.html",
+        "sidebar/ethical-ads.html",
+        "sidebar/scroll-end.html",
+        "sidebar/variant-selector.html",
+    ]
+}
 html_theme_options = {
     "source_repository": "https://github.com/clemsgrs/croma",
     "source_branch": "main",
