@@ -15,6 +15,9 @@ EXT = ROOT / "docs" / "_ext"
 if str(EXT) not in sys.path:
     sys.path.insert(0, str(EXT))
 
+# The extension imports docutils at module level; the test job installs no docs deps.
+pytest.importorskip("docutils")
+
 import resultstable as rt  # noqa: E402
 
 
