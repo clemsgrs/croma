@@ -20,7 +20,7 @@ encoder in the same panel — the same two indices, resting on very different am
 evidence.
 
 .. results-table:: tcga-4x4
-   :caption: TCGA-4×4 — all 21 encoders, by median ``CRoMa``
+   :caption: TCGA-4×4 — all 26 encoders, by median ``CRoMa``
 
 Columns are explained under :ref:`result-columns`; † marks the natural-image control
 (:ref:`the-control`). Every model is evaluated at the shared operating point ``k = 71``,

@@ -525,6 +525,9 @@ def _summary_from_payload(payload: dict) -> dict | None:
         "value",
         "std",
         "undefined_frac",
+        "median_value",
+        "q_alpha",
+        "ltm_alpha",
         "evaluation_design",
         "evaluation_unit",
     )
@@ -537,6 +540,9 @@ def _summary_from_payload(payload: dict) -> dict | None:
             "value": float(payload["value"]),
             "std": float(payload["std"]),
             "undefined_frac": float(payload["undefined_frac"]),
+            "median_value": float(payload["median_value"]),
+            "q_alpha": float(payload["q_alpha"]),
+            "ltm_alpha": float(payload["ltm_alpha"]),
             "ss_dominated_undefined_frac": float(
                 payload.get("ss_dominated_undefined_frac", 0.0)
             ),
@@ -1419,6 +1425,9 @@ def main() -> int:
                         "value": float(ri.value),
                         "std": float(ri.std),
                         "undefined_frac": float(ri.undefined_frac),
+                        "median_value": float(ri.median_value),
+                        "q_alpha": float(ri.q_alpha),
+                        "ltm_alpha": float(ri.ltm_alpha),
                         "ss_dominated_undefined_frac": float(
                             ri.ss_dominated_undefined_frac
                         ),
@@ -1547,6 +1556,9 @@ def main() -> int:
                         "value": float(mari.value),
                         "std": float(mari.std),
                         "undefined_frac": float(mari.undefined_frac),
+                        "median_value": float(mari.median_value),
+                        "q_alpha": float(mari.q_alpha),
+                        "ltm_alpha": float(mari.ltm_alpha),
                         "ss_dominated_undefined_frac": float(
                             mari.ss_dominated_undefined_frac
                         ),

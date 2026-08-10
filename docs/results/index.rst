@@ -3,7 +3,7 @@
 Results
 =======
 
-Twenty-one encoders — twenty pathology foundation models and one natural-image control —
+Twenty-six encoders — twenty-five pathology foundation models and one natural-image control —
 scored on three tile cohorts from the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study.
 Every number on these pages is read from :doc:`committed CSVs <provenance>` written by a
 tracked exporter, never transcribed. The method behind them is described in
@@ -29,9 +29,9 @@ median ``CRoMa``/``LTM₁₀`` on that cohort.
 That aggregate is a reading order, not a score. It sorts the rows; it does not stand in for
 the two columns it averages, both of which stay in view at the precision it was computed
 from — so it can be re-derived, and so the disagreements it smooths over stay visible in the
-same row. ``Midnight-12k`` and ``UNI2-h`` are the case worth looking at: they tie exactly on
-the mean rank, and they are not similar models. ``Midnight-12k`` is 3rd on median margin and
-16th on the tail; ``UNI2-h`` is middling on the margin and comfortably better on the tail.
+same row. ``Midnight-12k`` and ``H-optimus-1`` are the case worth looking at, and they are
+not similar models. ``Midnight-12k`` ranks 4.7 on median margin but 20.7 on the tail;
+``H-optimus-1`` ranks 12.7 on the margin and 6.0 on the tail.
 A model can hold a strong median margin and still be brittle on a subgroup, and no single
 number will tell you that — which is why the mean sorts the rows and the two columns beside
 it carry the finding.
@@ -97,7 +97,7 @@ What these numbers do and do not say
   differently from the other two — which are scored on centres outside TCGA. The
   `paper <https://arxiv.org/abs/2607.25497>`_ quantifies the overlap encoder by encoder;
   these pages do not.
-- **The roster is fixed at 21 across all three cohorts.** Cohorts computed on a different
+- **The roster is fixed at 26 across all three cohorts.** Cohorts computed on a different
   roster — prostate (16 encoders) and a slide-level panel (4) — are deliberately not
   published here, because a table whose roster silently differs from the one beside it
   misleads more than it informs.

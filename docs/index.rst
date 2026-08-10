@@ -22,7 +22,7 @@ introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are descri
 
    pip install croma
 
-Twenty-one encoders, three cohorts
+Twenty-six encoders, three cohorts
 ----------------------------------
 
 .. aggregate-table::

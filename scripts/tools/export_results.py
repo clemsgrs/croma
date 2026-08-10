@@ -398,7 +398,7 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
 # The README's table
 # --------------------------------------------------------------------------------------
 
-#: The README shows the head of the panel rather than all 21. Truncating is a real
+#: The README shows the head of the panel rather than the full roster. Truncating is a real
 #: judgement call -- an encoder at position 9 may well notice -- so the rule is mechanical,
 #: stated in the caption, and the full panel is one link away.
 README_TOP = 8

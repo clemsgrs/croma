@@ -234,12 +234,32 @@ def test_a_cached_summary_that_does_not_name_its_design_is_not_reused() -> None:
         "value": 0.6,
         "std": 0.1,
         "undefined_frac": 0.0,
+        "median_value": 0.5,
+        "q_alpha": -0.2,
+        "ltm_alpha": -0.3,
         "evaluation_unit": "sample",
     }
     assert bm._summary_from_payload(payload) is None
     named = bm._summary_from_payload({**payload, "evaluation_design": "all"})
     assert named is not None
     assert named["evaluation_design"] == "all"
+
+
+def test_a_cached_summary_without_tail_statistics_is_not_reused() -> None:
+    import benchmark as bm
+
+    payload = {
+        "value": 0.6,
+        "std": 0.1,
+        "undefined_frac": 0.0,
+        "median_value": 0.5,
+        "q_alpha": -0.2,
+        "ltm_alpha": -0.3,
+        "evaluation_design": "all",
+        "evaluation_unit": "sample",
+    }
+    missing_tail = {key: value for key, value in payload.items() if key != "ltm_alpha"}
+    assert bm._summary_from_payload(missing_tail) is None
 
 
 def _write_cli_inputs(tmp_path):

@@ -76,7 +76,7 @@ publication artifacts, whereas `scripts/repro/` writes the ignored paper assembl
 ## Consequences
 
 - **The published scope is narrower than the paper's.** `results/` carries the three
-  tile cohorts with a shared 21-model roster. Prostate (16 models) and PANDA
+  tile cohorts with a shared 26-model roster. Prostate (16 models) and PANDA
   (slide-level, n=4) are computed and stay in `output/`, unpublished, because a site
   table with a silently different roster misleads more than it informs.
 - **Two paths can now disagree.** The paper's tables come from `scripts/repro/`, the

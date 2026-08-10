@@ -264,6 +264,9 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
             self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
             self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
+            self.median_value = 0.4321
+            self.q_alpha = -0.1234
+            self.ltm_alpha = -0.2345
             self.evaluation_design = "all"
             self.evaluation_unit = "sample"
 
@@ -360,6 +363,18 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
     bench_env._monkeypatch.setattr(bm_mod.CRoMa, "compute", fake_croma_compute)
 
     assert bench_env.run("toy", "k-star", "--croma-m-max", "2", "--progress", "off") == 0
+
+    metrics_df = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
+    assert metrics_df.loc[0, ["ri_median", "ri_q_alpha", "ri_ltm_alpha"]].tolist() == [
+        0.4321,
+        -0.1234,
+        -0.2345,
+    ]
+    assert metrics_df.loc[0, ["mari_median", "mari_q_alpha", "mari_ltm_alpha"]].tolist() == [
+        0.4321,
+        -0.1234,
+        -0.2345,
+    ]
 
     per_sample_df = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
     assert len(per_sample_df) == len(manifest)
