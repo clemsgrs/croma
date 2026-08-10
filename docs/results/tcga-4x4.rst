@@ -44,6 +44,7 @@ one roster, very different separability — the argument for reporting more than
 The two rankings, on this cohort alone:
 
 .. themed-figure:: /_static/figures/pareto_tcga-4x4
+   :figclass: croma-fig-narrow
    :alt: Median CRoMa against lower-tail mean on TCGA-4×4, one point per encoder,
          frontier ringed.
 

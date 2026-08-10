@@ -266,3 +266,11 @@ figure.only-dark img {
   height: auto;
   cursor: zoom-in;
 }
+
+/* The Pareto panels are portrait; at the full content-column width they tower over the
+   page. Cap and centre them -- the click-through still opens the fluid SVG full-window. */
+figure.croma-fig-narrow {
+  max-width: 24rem;
+  margin-left: auto;
+  margin-right: auto;
+}

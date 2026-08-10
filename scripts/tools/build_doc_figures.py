@@ -278,7 +278,20 @@ def _recolour(svg: str, theme: str) -> str:
     body = _strip_background(svg)
     if theme == "dark":
         body = HEX.sub(lambda m: _to_dark(m.group(0)), body)
-    return _shrink_paths(body)
+    return _fluid_root(_shrink_paths(body))
+
+
+def _fluid_root(svg: str) -> str:
+    """Drop the root ``width``/``height``, leaving the ``viewBox`` to carry the size.
+
+    Last in the pipeline on purpose: :func:`_strip_canvas_path` reads the canvas size
+    from those attributes. Without them the standalone view (the click-through target)
+    scales to the browser window instead of pinning to the render size in points, and
+    the inline ``<img>`` takes its size from the page's CSS either way.
+    """
+    end = svg.index(">") + 1
+    root = re.sub(r'\s+(?:width|height)="[\d.]+"', "", svg[:end])
+    return root + svg[end:]
 
 
 #: Decimals kept in path coordinates. The converter emits six, which on a figure a few

@@ -26,6 +26,7 @@ indices, resting on very different amounts of evidence.
 The two rankings, on this cohort alone:
 
 .. themed-figure:: /_static/figures/pareto_camelyon
+   :figclass: croma-fig-narrow
    :alt: Median CRoMa against lower-tail mean on Camelyon, one point per encoder,
          frontier ringed.
 

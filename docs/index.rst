@@ -36,6 +36,7 @@ TCGA (:ref:`legend <exposure-legend>`).
 :doc:`Full panel, cohort detail and the distribution explorer → <results/index>`
 
 .. themed-figure:: _static/figures/rank_pareto
+   :figclass: croma-fig-narrow
    :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
 
    Median margin against tail severity, aggregated by rank across the three cohorts. Better

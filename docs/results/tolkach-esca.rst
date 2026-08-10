@@ -23,6 +23,7 @@ separating models here while ``CRoMa`` still spreads the panel.
 The two rankings, on this cohort alone:
 
 .. themed-figure:: /_static/figures/pareto_tolkach-esca
+   :figclass: croma-fig-narrow
    :alt: Median CRoMa against lower-tail mean on Tolkach-ESCA, one point per encoder,
          frontier ringed.
 

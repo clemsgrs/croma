@@ -35,6 +35,7 @@ defensible choice; which one you want depends on whether you care more about the
 sample or the worst tenth of them.
 
 .. themed-figure:: /_static/figures/rank_pareto
+   :figclass: croma-fig-narrow
    :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
 
    The same two rankings as axes. Better is up and to the right; ringed points are
