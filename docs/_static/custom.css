@@ -452,12 +452,6 @@ figure.croma-fig-narrow {
   stroke: var(--color-foreground-primary);
 }
 
-.croma-pareto-tag {
-  fill: var(--color-foreground-primary);
-  font-size: 11.5px;
-  font-weight: 700;
-}
-
 .croma-pareto-tip {
   position: absolute;
   display: none;
