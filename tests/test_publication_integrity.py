@@ -103,7 +103,7 @@ def test_public_results_page_carries_only_the_three_public_cohorts() -> None:
 
 
 def test_five_encoder_provenance_is_exact_and_auditable() -> None:
-    provenance = (ROOT / "docs/results/provenance.rst").read_text()
+    provenance = (ROOT / "docs/results/index.rst").read_text()
     normalized = " ".join(provenance.split())
     expected_facts = [
         "e95e7ea15e039e78d74def101415e19d9a67ba80",  # Mascaret
