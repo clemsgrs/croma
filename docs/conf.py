@@ -23,10 +23,12 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
-    # Local: the themed-figure directive (docs/_ext/themedfigure.py) and the directives
-    # that render the committed results/ CSVs (docs/_ext/resultstable.py).
+    # Local: the themed-figure directive (docs/_ext/themedfigure.py), the directives that
+    # render the committed results/ CSVs (docs/_ext/resultstable.py), and the inline role
+    # that computes run-derived numbers from them (docs/_ext/resultsvalue.py).
     "themedfigure",
     "resultstable",
+    "resultsvalue",
 ]
 
 templates_path = ["_templates"]
