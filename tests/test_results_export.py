@@ -467,6 +467,18 @@ def _provenance_metadata(rows) -> pd.DataFrame:
     )
 
 
+def test_published_restyles_the_rudolfv_names():
+    """The registry identity keeps its historical spelling ("RudolfV 2"); every published
+    artifact carries the dashed styling, applied at this one boundary."""
+    frame = pd.DataFrame({"model": ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "UNI"]})
+    assert list(er.published(frame)["model"]) == [
+        "RudolfV-2",
+        "RudolfV-2-B",
+        "RudolfV-2-S",
+        "UNI",
+    ]
+
+
 def test_exposed_models_derives_from_the_domain_tags():
     """A model is exposed iff the domain appears in its corpus or institutional tags --
     the paper's dagger convention, never the legacy ``tcga_exposed`` flag."""
@@ -537,7 +549,7 @@ def test_exposed_models_matches_the_published_roster_and_the_paper_helper():
         sys.path.insert(0, str(repro))
     from _model_provenance import exposed_models_for_domain  # noqa: PLC0415
 
-    metadata = pd.read_csv(er.METADATA)
+    metadata = er.published(pd.read_csv(er.METADATA))
     roster = set(pd.read_csv(RESULTS / "cross_benchmark.csv")["model"])
     exposed_flags = er.exposed_models(metadata, er.TCGA_DOMAIN, roster)
 

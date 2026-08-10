@@ -119,6 +119,21 @@ def test_the_root_size_is_dropped_but_the_viewbox_kept():
     assert "width=" not in root and "height=" not in root
 
 
+def test_published_names_carry_the_registry_plot_identity():
+    """The figure builders read the published CSVs, whose RudolfV names are restyled at
+    the export boundary; the style maps are keyed by registry identity. Without the
+    alias, a renamed model silently fell into the "other" palette -- and the alias must
+    not outlive the draw, because ``style``'s canonical order is shared state that other
+    code pins exactly."""
+    style = bdf._plotting().style
+    with bdf._published_identity(style):
+        assert style.family_for_model("RudolfV-2") == style.family_for_model("RudolfV 2")
+        assert style.color_for_model("RudolfV-2-B") == style.color_for_model("RudolfV 2-B")
+        assert style.model_sort_key("RudolfV-2-S") < len(style.CANONICAL_MODEL_ORDER)
+    assert "RudolfV-2" not in style.MODEL_FAMILY_MAP
+    assert "RudolfV-2" not in style.CANONICAL_MODEL_ORDER
+
+
 def test_only_the_root_size_is_dropped():
     """A sized element inside the figure (an embedded image, a nested svg) keeps its
     dimensions; only the document root goes fluid."""

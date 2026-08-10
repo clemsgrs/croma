@@ -1,8 +1,8 @@
 model,is_control,on_frontier,tcga_exposed,mean_rank,croma_rank,ltm_rank,croma_camelyon,ltm_camelyon,croma_tcga_4x4,ltm_tcga_4x4,croma_tolkach_esca,ltm_tolkach_esca
 Mascaret,False,True,True,1.6665,2.0,1.333,0.285297,-0.016354,0.270097,-0.108882,0.507294,0.009418
-RudolfV 2-S,False,False,False,4.333,2.333,6.333,0.32404,-0.024488,0.192036,-0.162947,0.485488,-0.002917
-RudolfV 2,False,False,False,4.5,4.333,4.667,0.243253,-0.039725,0.168454,-0.124499,0.41209,-0.010655
-RudolfV 2-B,False,False,False,5.5,4.667,6.333,0.235303,-0.046907,0.168734,-0.136771,0.407032,-0.02373
+RudolfV-2-S,False,False,False,4.333,2.333,6.333,0.32404,-0.024488,0.192036,-0.162947,0.485488,-0.002917
+RudolfV-2,False,False,False,4.5,4.333,4.667,0.243253,-0.039725,0.168454,-0.124499,0.41209,-0.010655
+RudolfV-2-B,False,False,False,5.5,4.667,6.333,0.235303,-0.046907,0.168734,-0.136771,0.407032,-0.02373
 CONCHv1.5,False,False,False,7.5,7.333,7.667,0.187014,-0.144638,0.153,-0.130181,0.391815,-0.028501
 GenBio-PathFM,False,False,True,8.5,7.0,10.0,0.191429,-0.068559,0.155303,-0.193056,0.390048,-0.021756
 CONCH,False,False,False,9.1665,6.0,12.333,0.196336,-0.201849,0.146449,-0.152306,0.439051,-0.041023

@@ -36,6 +36,7 @@ import colorsys
 import re
 import sys
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -173,6 +174,35 @@ def _plotting():
     return plotting
 
 
+@contextmanager
+def _published_identity(style):
+    """Alias the published display names into the plot-identity maps, then restore.
+
+    The published CSVs restyle a few registry identities (``export_results.PUBLISHED_NAMES``),
+    but the style maps are keyed by registry name -- without the alias a renamed model
+    silently falls into the "other" palette and sorts to the end. Scoped rather than a
+    module-level mutation because ``style`` is shared state: leaving the aliases in
+    place leaks into anything else inspecting its canonical order.
+    """
+    from export_results import PUBLISHED_NAMES  # noqa: PLC0415
+
+    added: list[str] = []
+    for identity, name in PUBLISHED_NAMES.items():
+        if name in style.MODEL_FAMILY_MAP:
+            continue
+        style.MODEL_FAMILY_MAP[name] = style.MODEL_FAMILY_MAP[identity]
+        style.MODEL_TONE_INDEX[name] = style.MODEL_TONE_INDEX[identity]
+        style.CANONICAL_MODEL_ORDER.insert(style.CANONICAL_MODEL_ORDER.index(identity) + 1, name)
+        added.append(name)
+    try:
+        yield
+    finally:
+        for name in added:
+            del style.MODEL_FAMILY_MAP[name]
+            del style.MODEL_TONE_INDEX[name]
+            style.CANONICAL_MODEL_ORDER.remove(name)
+
+
 def _cohorts():
     """The published cohorts, from the exporter -- the one place they are declared."""
     tools = str(Path(__file__).resolve().parent)
@@ -208,7 +238,8 @@ def _draw_rank_pareto(scratch: Path) -> Path:
         for r in frame.itertuples()
     ]
     out = scratch / "rank_pareto.png"
-    P.plot_rank_pareto(rows, out, n_benchmarks=len(_cohorts()))
+    with _published_identity(P.style):
+        P.plot_rank_pareto(rows, out, n_benchmarks=len(_cohorts()))
     return P._pdf_export_path(out)
 
 
@@ -238,7 +269,8 @@ def _draw_cohort_pareto(slug: str) -> Callable[[Path], Path]:
             if not bool(r.is_control)
         ]
         out = scratch / f"pareto_{slug}.png"
-        P.plot_croma_pareto(rows, out)
+        with _published_identity(P.style):
+            P.plot_croma_pareto(rows, out)
         return P._pdf_export_path(out)
 
     return draw

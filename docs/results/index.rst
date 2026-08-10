@@ -202,7 +202,7 @@ The expanded panel
 ~~~~~~~~~~~~~~~~~~
 
 The panel's two robustness-targeted fine-tunes (Mascaret, of Midnight-12k; Phaet, of
-Phikon-v2) and the three-member RudolfV 2 teacher/student family were extracted under the
+Phikon-v2) and the three-member RudolfV-2 teacher/student family were extracted under the
 contract below, read from the completion sidecars. The full audit — runtimes, dimensions,
 norm checks, digests — is committed in `docs/extraction-records/issue-130.md
 <https://github.com/clemsgrs/croma/blob/main/docs/extraction-records/issue-130.md>`_.
@@ -223,27 +223,27 @@ norm checks, digests — is committed in `docs/extraction-records/issue-130.md
      - ``e0ce6e0ee248470bd8604823e412ca64048a2495``
      - 64
      - ``checkpoint-native:model.encode``
-   * - RudolfV 2
+   * - RudolfV-2
      - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c``
      - 32
      - ``concatenate-cls-and-mean-patches``
-   * - RudolfV 2-B
+   * - RudolfV-2-B
      - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8``
      - 32
      - ``concatenate-cls-and-mean-patches``
-   * - RudolfV 2-S
+   * - RudolfV-2-S
      - ``76abacd512a98c72a6db6192af9fc98313c3bd78``
      - 64
      - ``concatenate-cls-and-mean-patches``
 
 All five used FP32 inference and FP32 ``.npy`` storage. Mascaret and Phaet use a 224 px
 resize and center crop with the checkpoint's ``pixel_mean``/``pixel_std`` contract and
-retain checkpoint-native output normalization. The RudolfV 2 family uses the released
+retain checkpoint-native output normalization. The RudolfV-2 family uses the released
 224×224 bicubic, antialiased preprocessing; its pooling concatenates the CLS token with the
 mean of 784 patch tokens after excluding eight register tokens, retaining native, non-unit
 output norms.
 
-One caveat matters when reading the tables: RudolfV 2's disclosed Charité/LMU institutional
+One caveat matters when reading the tables: RudolfV-2's disclosed Charité/LMU institutional
 corpus creates a possible institutional/source-domain overlap with the CHA component of
 Tolkach-ESCA. Exact patient or slide overlap is unknown, so this does not establish
 leakage.

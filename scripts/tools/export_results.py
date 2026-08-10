@@ -305,6 +305,21 @@ METADATA = ROOT / "scripts" / "bench" / "model_metadata.csv"
 #: The scored domain of the TCGA-4×4 cohort, matched against each model's domain tags.
 TCGA_DOMAIN = "tcga"
 
+#: Published display names. The benchmark registry's identity keys keep their historical
+#: spelling ("RudolfV 2" with a space) because they name embedding files, metrics rows,
+#: and extraction records; every *published* artifact restyles them at this one boundary,
+#: so the site, README, and figures rename together while ``output/`` stays untouched.
+PUBLISHED_NAMES = {
+    "RudolfV 2": "RudolfV-2",
+    "RudolfV 2-B": "RudolfV-2-B",
+    "RudolfV 2-S": "RudolfV-2-S",
+}
+
+
+def published(frame: pd.DataFrame) -> pd.DataFrame:
+    """``frame`` with its ``model`` column restyled to the published names."""
+    return frame.assign(model=frame["model"].replace(PUBLISHED_NAMES))
+
 
 def _domain_tags(cell: object) -> set[str]:
     """Parse one semicolon-separated provenance-domain cell."""
@@ -439,8 +454,8 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
     meta: dict[str, dict] = {}
 
     for cohort in cohorts:
-        metrics = pd.read_csv(cohort.metrics_csv)
-        samples = read_per_sample(cohort)
+        metrics = published(pd.read_csv(cohort.metrics_csv))
+        samples = published(read_per_sample(cohort))
         per_sample[cohort.slug] = samples
         tables[cohort.slug] = build_cohort_table(metrics)
         meta[cohort.slug] = _cohort_provenance(cohort, metrics)
@@ -448,7 +463,7 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
     aggregate = build_aggregate_table(tables)
     aggregate = with_exposure(
         aggregate,
-        exposed_models(pd.read_csv(METADATA), TCGA_DOMAIN, set(aggregate["model"])),
+        exposed_models(published(pd.read_csv(METADATA)), TCGA_DOMAIN, set(aggregate["model"])),
     )
     distributions = build_distributions(per_sample)
 

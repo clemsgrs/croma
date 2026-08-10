@@ -45,9 +45,9 @@ EXPECTED_PANEL = {
     "Phikon-v2",
     "Prost40M",
     "Prov-GigaPath",
-    "RudolfV 2",
-    "RudolfV 2-B",
-    "RudolfV 2-S",
+    "RudolfV-2",
+    "RudolfV-2-B",
+    "RudolfV-2-S",
     "UNI",
     "UNI2-h",
     "Virchow",
@@ -57,9 +57,9 @@ EXPECTED_PANEL = {
 EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
     "Mascaret",
     "Phaet",
-    "RudolfV 2",
-    "RudolfV 2-B",
-    "RudolfV 2-S",
+    "RudolfV-2",
+    "RudolfV-2-B",
+    "RudolfV-2-S",
 }
 
 
@@ -107,15 +107,15 @@ def test_five_encoder_provenance_is_exact_and_auditable() -> None:
     expected_facts = [
         "e95e7ea15e039e78d74def101415e19d9a67ba80",  # Mascaret
         "e0ce6e0ee248470bd8604823e412ca64048a2495",  # Phaet
-        "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",  # RudolfV 2
-        "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",  # RudolfV 2-B
-        "76abacd512a98c72a6db6192af9fc98313c3bd78",  # RudolfV 2-S
+        "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",  # RudolfV-2
+        "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",  # RudolfV-2-B
+        "76abacd512a98c72a6db6192af9fc98313c3bd78",  # RudolfV-2-S
         # Encoder, revision and batch as adjacent cells of the contract table.
         "Mascaret - ``e95e7ea15e039e78d74def101415e19d9a67ba80`` - 32",
         "Phaet - ``e0ce6e0ee248470bd8604823e412ca64048a2495`` - 64",
-        "RudolfV 2 - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c`` - 32",
-        "RudolfV 2-B - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8`` - 32",
-        "RudolfV 2-S - ``76abacd512a98c72a6db6192af9fc98313c3bd78`` - 64",
+        "RudolfV-2 - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c`` - 32",
+        "RudolfV-2-B - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8`` - 32",
+        "RudolfV-2-S - ``76abacd512a98c72a6db6192af9fc98313c3bd78`` - 64",
         "FP32",
         "checkpoint-native:model.encode",
         "concatenate-cls-and-mean-patches",
