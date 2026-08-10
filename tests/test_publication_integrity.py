@@ -84,13 +84,21 @@ def test_public_export_is_exactly_three_cohorts_and_25_plus_control() -> None:
     assert "tcga-2x2" not in provenance["files"]
 
 
-def test_public_result_toctree_names_only_the_three_public_cohorts() -> None:
-    text = (ROOT / "docs/results/index.rst").read_text()
-    toctree = text.split(".. toctree::", 1)[1]
+def test_public_results_page_carries_only_the_three_public_cohorts() -> None:
+    """The consolidated results page holds one anchored section per public cohort.
 
-    assert "   camelyon\n" in toctree
-    assert "   tcga-4x4\n" in toctree
-    assert "   tolkach-esca\n" in toctree
+    The cohorts live as sections of one page rather than as toctree entries, so the
+    invariant is the set of section anchors: exactly the three public cohorts, and no
+    supplementary TCGA-2x2 leaking onto the public site.
+    """
+    text = (ROOT / "docs/results/index.rst").read_text()
+
+    assert ".. _camelyon:" in text
+    assert ".. _tcga-4x4:" in text
+    assert ".. _tolkach-esca:" in text
+    assert "results-table:: camelyon" in text
+    assert "results-table:: tcga-4x4" in text
+    assert "results-table:: tolkach-esca" in text
     assert "tcga-2x2" not in text.lower()
 
 
@@ -103,11 +111,12 @@ def test_five_encoder_provenance_is_exact_and_auditable() -> None:
         "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",  # RudolfV 2
         "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",  # RudolfV 2-B
         "76abacd512a98c72a6db6192af9fc98313c3bd78",  # RudolfV 2-S
-        "Mascaret 32",
-        "Phaet 64",
-        "RudolfV 2 32",
-        "RudolfV 2-B 32",
-        "RudolfV 2-S 64",
+        # Encoder, revision and batch as adjacent cells of the contract table.
+        "Mascaret - ``e95e7ea15e039e78d74def101415e19d9a67ba80`` - 32",
+        "Phaet - ``e0ce6e0ee248470bd8604823e412ca64048a2495`` - 64",
+        "RudolfV 2 - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c`` - 32",
+        "RudolfV 2-B - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8`` - 32",
+        "RudolfV 2-S - ``76abacd512a98c72a6db6192af9fc98313c3bd78`` - 64",
         "FP32",
         "checkpoint-native:model.encode",
         "concatenate-cls-and-mean-patches",

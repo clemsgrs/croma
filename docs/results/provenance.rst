@@ -51,16 +51,51 @@ The expanded panel
 ------------------
 
 The panel's two robustness-targeted fine-tunes (Mascaret, of Midnight-12k; Phaet, of
-Phikon-v2) and the three-member RudolfV 2 teacher/student family were added under a
-recorded extraction contract — checkpoint revisions, preprocessing, pooling, batch sizes,
-dimension and norm checks. The complete audit is committed in
-`docs/extraction-records/issue-130.md
+Phikon-v2) and the three-member RudolfV 2 teacher/student family were extracted under the
+contract below, read from the completion sidecars. The full audit — runtimes, dimensions,
+norm checks, digests — is committed in `docs/extraction-records/issue-130.md
 <https://github.com/clemsgrs/croma/blob/main/docs/extraction-records/issue-130.md>`_.
 
-One provenance caveat from it matters when reading the tables: RudolfV 2's disclosed
-Charité/LMU institutional corpus creates a possible institutional/source-domain overlap
-with the CHA component of Tolkach-ESCA. Exact patient or slide overlap is unknown, so this
-does not establish leakage.
+.. list-table::
+   :header-rows: 1
+   :widths: 17 33 10 40
+
+   * - Encoder
+     - Checkpoint revision
+     - Batch
+     - Pooling
+   * - Mascaret
+     - ``e95e7ea15e039e78d74def101415e19d9a67ba80``
+     - 32
+     - ``checkpoint-native:model.encode``
+   * - Phaet
+     - ``e0ce6e0ee248470bd8604823e412ca64048a2495``
+     - 64
+     - ``checkpoint-native:model.encode``
+   * - RudolfV 2
+     - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c``
+     - 32
+     - ``concatenate-cls-and-mean-patches``
+   * - RudolfV 2-B
+     - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8``
+     - 32
+     - ``concatenate-cls-and-mean-patches``
+   * - RudolfV 2-S
+     - ``76abacd512a98c72a6db6192af9fc98313c3bd78``
+     - 64
+     - ``concatenate-cls-and-mean-patches``
+
+All five used FP32 inference and FP32 ``.npy`` storage. Mascaret and Phaet use a 224 px
+resize and center crop with the checkpoint's ``pixel_mean``/``pixel_std`` contract and
+retain checkpoint-native output normalization. The RudolfV 2 family uses the released
+224×224 bicubic, antialiased preprocessing; its pooling concatenates the CLS token with the
+mean of 784 patch tokens after excluding eight register tokens, retaining native, non-unit
+output norms.
+
+One caveat matters when reading the tables: RudolfV 2's disclosed Charité/LMU institutional
+corpus creates a possible institutional/source-domain overlap with the CHA component of
+Tolkach-ESCA. Exact patient or slide overlap is unknown, so this does not establish
+leakage.
 
 Public cohort boundary
 ----------------------
