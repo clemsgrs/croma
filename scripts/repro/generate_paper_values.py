@@ -581,18 +581,10 @@ EXPANDED_ENCODERS = frozenset(
 )
 
 
-def _rank_frontier_change_macros() -> list[str]:
-    """Guard the Discussion's expanded-panel frontier interpretation.
+def _historical_rank_pareto(current: "RankPareto") -> "RankPareto":
+    """Re-rank the current panel after removing exactly the five issue #133 additions."""
+    from _rank_pareto import RankPareto
 
-    Reconstruct the historical 20-encoder comparison by dropping exactly the five issue
-    #133 additions and re-ranking the surviving rows within each cohort. The same
-    ``RankPareto.frontier`` property that rings the generated figure then computes both
-    sets. If membership no longer changes, generation fails instead of leaving the prose
-    attached to an obsolete result.
-    """
-    from _rank_pareto import RankPareto, load as load_rank_pareto
-
-    current = load_rank_pareto()
     missing = EXPANDED_ENCODERS - set(current.models)
     if missing:
         raise CaptionClaimError(
@@ -600,7 +592,7 @@ def _rank_frontier_change_macros() -> list[str]:
         )
 
     prior_models = [model for model in current.models if model not in EXPANDED_ENCODERS]
-    prior = RankPareto(
+    return RankPareto(
         medians=current.medians.loc[prior_models],
         median_ranks=current.median_ranks.loc[prior_models]
         .rank(ascending=True, method="first")
@@ -611,8 +603,19 @@ def _rank_frontier_change_macros() -> list[str]:
         exposed=frozenset(current.exposed & set(prior_models)),
         adversarial=current.adversarial,
     )
+
+
+def _rank_frontier_change_macros(
+    historical: "RankPareto", current: "RankPareto"
+) -> list[str]:
+    """Guard the Discussion claim from two explicit rank-Pareto inputs.
+
+    This comparison is deliberately I/O-free so committed tests can exercise the exact
+    claim without the git-ignored benchmark tree. Both inputs use ``RankPareto.frontier``,
+    the same property that rings the generated figure.
+    """
     current_frontier = frozenset(current.frontier)
-    prior_frontier = frozenset(prior.frontier)
+    prior_frontier = frozenset(historical.frontier)
     if not current_frontier or not prior_frontier:
         raise CaptionClaimError("Discussion frontier guard produced an empty frontier.")
     if current_frontier == prior_frontier:
@@ -626,6 +629,14 @@ def _rank_frontier_change_macros() -> list[str]:
         rf"\newcommand{{\TileRankFrontierNModels}}{{{len(current_frontier)}}}",
         rf"\newcommand{{\TileRankFrontierModels}}{{{', '.join(sorted(current_frontier))}}}",
     ]
+
+
+def _load_rank_frontier_change_macros() -> list[str]:
+    """Load live benchmark ranks for the canonical local paper build."""
+    from _rank_pareto import load as load_rank_pareto
+
+    current = load_rank_pareto()
+    return _rank_frontier_change_macros(_historical_rank_pareto(current), current)
 
 
 def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
@@ -717,7 +728,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
 
     out.extend(_cross_cohort_macros(croma_by_prefix, panel_sizes))
     out.append("% Expanded-panel frontier guard (Discussion)")
-    out.extend(_rank_frontier_change_macros())
+    out.extend(_load_rank_frontier_change_macros())
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel

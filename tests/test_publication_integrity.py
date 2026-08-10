@@ -23,6 +23,7 @@ for path in (REPRO, BENCH):
 import generate_paper_values as paper_values  # noqa: E402
 import generate_pretraining_overlap_table as overlap_table  # noqa: E402
 import generate_supp_rank_table as typed_table  # noqa: E402
+from _rank_pareto import RankPareto  # noqa: E402
 
 EXPECTED_PUBLIC_COHORTS = {"camelyon", "tcga-4x4", "tolkach-esca"}
 EXPECTED_PANEL = {
@@ -281,9 +282,58 @@ def test_active_discussion_does_not_repeat_the_disproved_genbio_frontier_claim()
     assert r"\TileRankFrontierNModels" in discussion
 
 
-def test_expanded_frontier_change_is_guarded_by_current_artifacts() -> None:
-    macros = paper_values._rank_frontier_change_macros()
+def _explicit_rank_pareto(
+    models: list[str], median_ranks: list[int], tail_ranks: list[int]
+) -> RankPareto:
+    index = pd.Index(models, name="model")
+    return RankPareto(
+        medians=pd.DataFrame({"cohort": [0.0] * len(models)}, index=index),
+        median_ranks=pd.DataFrame({"cohort": median_ranks}, index=index),
+        tail_ranks=pd.DataFrame({"cohort": tail_ranks}, index=index),
+        exposed=frozenset(),
+        adversarial="cohort",
+    )
+
+
+def _explicit_frontier_panels() -> tuple[RankPareto, RankPareto]:
+    historical = _explicit_rank_pareto(
+        ["H1", "H2", "H3", "H4"],
+        [1, 2, 3, 4],
+        [4, 3, 2, 1],
+    )
+    current = _explicit_rank_pareto(
+        [
+            "Mascaret",
+            "H1",
+            "H2",
+            "H3",
+            "H4",
+            "Phaet",
+            "RudolfV 2",
+            "RudolfV 2-B",
+            "RudolfV 2-S",
+        ],
+        [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        [1, 5, 4, 3, 2, 6, 7, 8, 9],
+    )
+    return historical, current
+
+
+def test_expanded_frontier_change_is_guarded_by_explicit_rank_inputs() -> None:
+    historical, current = _explicit_frontier_panels()
+    macros = paper_values._rank_frontier_change_macros(historical, current)
 
     assert r"\newcommand{\TilePriorRankFrontierNModels}{4}" in macros
     assert r"\newcommand{\TileRankFrontierNModels}{1}" in macros
     assert r"\newcommand{\TileRankFrontierModels}{Mascaret}" in macros
+
+
+def test_frontier_guard_is_offline_at_the_generator_seam(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert not Path("output").exists()
+    historical, current = _explicit_frontier_panels()
+
+    macros = paper_values._rank_frontier_change_macros(historical, current)
+
+    assert r"\newcommand{\TilePriorRankFrontierNModels}{4}" in macros
+    assert r"\newcommand{\TileRankFrontierNModels}{1}" in macros
