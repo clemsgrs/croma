@@ -18,24 +18,26 @@ if str(EXT) not in sys.path:
 import resultstable as rt  # noqa: E402
 
 
-def test_exposure_row_classes_tints_two_of_the_three_states():
-    """Exposed and undisclosed rows are tinted; disclosed-clean is the unmarked default.
-
-    Colour alone carries no text, so each tinted class pairs with a screen-reader label.
-    """
-    exposure = {"A": "exposed", "B": "disclosed-clean", "C": "undisclosed"}
-    assert rt.exposure_row_classes(["A", "B", "C"], exposure) == [
-        "croma-exposure-exposed",
-        None,
-        "croma-exposure-undisclosed",
-    ]
-    assert set(rt.EXPOSURE_LABELS) == {"croma-exposure-exposed", "croma-exposure-undisclosed"}
+def test_exposure_row_classes_tints_exposed_rows_only():
+    """The tint is binary, matching the paper's dagger: exposed rows are marked, the
+    rest are the unmarked default. Colour alone carries no text, so the tinted class
+    pairs with a screen-reader label."""
+    exposure = {"A": True, "B": False}
+    assert rt.exposure_row_classes(["A", "B"], exposure) == ["croma-exposure-exposed", None]
+    assert rt.EXPOSURE_LABELS == {"croma-exposure-exposed": " (TCGA-exposed pretraining)"}
 
 
 def test_exposure_row_classes_raises_on_a_model_without_a_state():
     """A cohort row missing from the model-level export is an inconsistency, not a blank."""
     with pytest.raises(KeyError):
-        rt.exposure_row_classes(["A", "unknown"], {"A": "exposed"})
+        rt.exposure_row_classes(["A", "unknown"], {"A": True})
+
+
+def test_exposure_map_raises_on_a_value_that_is_not_a_boolean():
+    """A corrupted ``tcga_exposed`` cell must fail the ``-W`` build, not silently
+    render as unmarked."""
+    with pytest.raises(ValueError):
+        rt._parse_exposed("maybe")
 
 
 def test_the_published_export_covers_every_cohort_table_row():

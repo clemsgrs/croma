@@ -70,16 +70,11 @@ table.croma-results th code {
   padding: 0;
 }
 
-/* TCGA-exposure tint (aggregate + TCGA-4×4 tables). Translucent, so one declaration
-   reads on both themes with no data-theme block. Exposed reuses the compare hue;
-   undisclosed is a neutral grey; disclosed-clean is the unmarked default. The legend
-   lives on the TCGA-4×4 page. */
+/* TCGA-exposure tint (aggregate + TCGA-4×4 tables), the paper's dagger convention as a
+   row shade. Translucent, so one declaration reads on both themes with no data-theme
+   block; reuses the compare hue. The legend lives on the TCGA-4×4 page. */
 table.croma-results tr.croma-exposure-exposed {
   background: rgba(208, 101, 63, 0.16);
-}
-
-table.croma-results tr.croma-exposure-undisclosed {
-  background: rgba(128, 128, 128, 0.13);
 }
 
 /* Visually hidden, present for screen readers, print, and copy-paste: the tint's text

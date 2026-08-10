@@ -467,12 +467,9 @@ def _provenance_metadata(rows) -> pd.DataFrame:
     )
 
 
-def test_exposure_states_derives_three_states_from_domain_tags():
-    """Exposed comes from a domain tag; the other two split on corpus disclosure.
-
-    The third state is the point: an undisclosed corpus cannot be published as clean, so
-    a missing domain tag must not collapse into the disclosed-clean state.
-    """
+def test_exposed_models_derives_from_the_domain_tags():
+    """A model is exposed iff the domain appears in its corpus or institutional tags --
+    the paper's dagger convention, never the legacy ``tcga_exposed`` flag."""
     metadata = _provenance_metadata(
         [
             ("A", "tile", "yes", "tcga;camelyon", ""),
@@ -480,16 +477,19 @@ def test_exposure_states_derives_three_states_from_domain_tags():
             ("C", "tile", "no", "", ""),
         ]
     )
-    states = er.exposure_states(metadata, "tcga", roster={"A", "B", "C"})
-    assert states == {"A": "exposed", "B": "disclosed-clean", "C": "undisclosed"}
+    assert er.exposed_models(metadata, "tcga", roster={"A", "B", "C"}) == {
+        "A": True,
+        "B": False,
+        "C": False,
+    }
+    assert er.exposed_models(metadata, "charite", roster={"A", "B", "C"}) == {
+        "A": False,
+        "B": True,
+        "C": False,
+    }
 
 
-def test_exposure_states_marks_institutional_domain_overlap_as_exposed():
-    metadata = _provenance_metadata([("B", "tile", "yes", "", "charite")])
-    assert er.exposure_states(metadata, "charite", roster={"B"}) == {"B": "exposed"}
-
-
-def test_exposure_states_reads_only_the_tile_panel():
+def test_exposed_models_reads_only_the_tile_panel():
     """``model`` is not a unique key: Prov-GigaPath has a tile row and a slide row.
 
     A slide row with conflicting facts must neither shadow the tile row nor add a
@@ -502,39 +502,35 @@ def test_exposure_states_reads_only_the_tile_panel():
             ("slide-only", "slide", "yes", "tcga", ""),
         ]
     )
-    states = er.exposure_states(metadata, "tcga", roster={"A"})
-    assert states == {"A": "undisclosed"}
+    assert er.exposed_models(metadata, "tcga", roster={"A"}) == {"A": False}
 
 
-def test_exposure_states_raises_on_a_roster_member_without_metadata():
+def test_exposed_models_raises_on_a_roster_member_without_metadata():
     metadata = _provenance_metadata([("A", "tile", "yes", "tcga", "")])
     with pytest.raises(KeyError):
-        er.exposure_states(metadata, "tcga", roster={"A", "unknown"})
+        er.exposed_models(metadata, "tcga", roster={"A", "unknown"})
 
 
 def test_with_exposure_inserts_the_column_after_on_frontier():
     aggregate = er.build_aggregate_table({"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
-    out = er.with_exposure(aggregate, {"A": "exposed", "B": "undisclosed"})
-    assert list(out.columns[:4]) == ["model", "is_control", "on_frontier", "tcga_exposure"]
-    assert out.set_index("model")["tcga_exposure"].to_dict() == {
-        "A": "exposed",
-        "B": "undisclosed",
-    }
+    out = er.with_exposure(aggregate, {"A": True, "B": False})
+    assert list(out.columns[:4]) == ["model", "is_control", "on_frontier", "tcga_exposed"]
+    assert out.set_index("model")["tcga_exposed"].to_dict() == {"A": True, "B": False}
 
 
 def test_with_exposure_raises_rather_than_publishing_a_blank_state():
     aggregate = er.build_aggregate_table({"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
     with pytest.raises(KeyError):
-        er.with_exposure(aggregate, {"A": "exposed"})
+        er.with_exposure(aggregate, {"A": True})
 
 
-def test_exposure_states_matches_the_published_roster_and_the_paper_helper():
+def test_exposed_models_matches_the_published_roster_and_the_paper_helper():
     """Pin the public reimplementation and the paper's helper to one answer.
 
     The exporter deliberately shares no code with ``scripts/repro/`` (see its module
     docstring), so the two derivations are pinned to each other here -- and to the
-    published 11 / 6 / 9 split, so a metadata edit that moves a model between states is a
-    reviewed diff, not a silent reclassification.
+    published 11-model exposed set, so a metadata edit that moves a model is a reviewed
+    diff, not a silent reclassification.
     """
     repro = ROOT / "scripts" / "repro"
     if str(repro) not in sys.path:
@@ -543,9 +539,10 @@ def test_exposure_states_matches_the_published_roster_and_the_paper_helper():
 
     metadata = pd.read_csv(er.METADATA)
     roster = set(pd.read_csv(RESULTS / "cross_benchmark.csv")["model"])
-    states = er.exposure_states(metadata, er.TCGA_DOMAIN, roster)
+    exposed_flags = er.exposed_models(metadata, er.TCGA_DOMAIN, roster)
 
-    exposed = {m for m, s in states.items() if s == "exposed"}
+    assert set(exposed_flags) == roster
+    exposed = {m for m, flag in exposed_flags.items() if flag}
     assert exposed == set(exposed_models_for_domain(metadata, er.TCGA_DOMAIN, roster))
     assert exposed == {
         "H0-mini",
@@ -559,23 +556,4 @@ def test_exposure_states_matches_the_published_roster_and_the_paper_helper():
         "GenBio-PathFM",
         "Mascaret",
         "Phaet",
-    }
-    assert {m for m, s in states.items() if s == "disclosed-clean"} == {
-        "CONCH",
-        "CONCHv1.5",
-        "RudolfV 2",
-        "RudolfV 2-B",
-        "RudolfV 2-S",
-        "DINOv2-B",
-    }
-    assert {m for m, s in states.items() if s == "undisclosed"} == {
-        "Virchow",
-        "Virchow2",
-        "UNI",
-        "UNI2-h",
-        "H-optimus-0",
-        "H-optimus-1",
-        "Prov-GigaPath",
-        "Hibou-B",
-        "Hibou-L",
     }

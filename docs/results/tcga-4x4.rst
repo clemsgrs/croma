@@ -22,16 +22,15 @@ pretrained on TCGA and on nothing else.
 
 .. _exposure-legend:
 
-The row tint is that overlap, made visible, in three states rather than two because a
-missing disclosure is not a clean bill:
+The row tint is that overlap, made visible — the same convention as the paper's dagger:
 
 - **Orange — TCGA-exposed.** TCGA appears in the encoder's disclosed pretraining corpus
   or institutional provenance. Discount an advantage here.
-- **Grey — undisclosed.** A proprietary corpus that cannot be verified TCGA-free. Not an
-  accusation; an absence of evidence.
-- **Untinted — disclosed-clean.** A disclosed corpus without TCGA.
+- **Untinted — no disclosed overlap.** No TCGA in the encoder's disclosed corpus. For
+  the proprietary corpora this reflects the paper's description, not an independent
+  audit.
 
-The states are derived from the tracked model registry's domain tags and published in
+The flag is derived from the tracked model registry's domain tags and published in
 ``results/cross_benchmark.csv``, so the tint here and the shading on the
 :doc:`aggregate table <index>` come from one committed fact per model.
 

@@ -305,12 +305,6 @@ METADATA = ROOT / "scripts" / "bench" / "model_metadata.csv"
 #: The scored domain of the TCGA-4×4 cohort, matched against each model's domain tags.
 TCGA_DOMAIN = "tcga"
 
-#: Exposure is three states, not a boolean, because absence of a domain tag means two
-#: different things: a disclosed corpus without the domain is clean, an undisclosed one
-#: cannot be published as clean. Collapsing the two would silently assert nine
-#: proprietary-corpus encoders are TCGA-free.
-EXPOSED, DISCLOSED_CLEAN, UNDISCLOSED = "exposed", "disclosed-clean", "undisclosed"
-
 
 def _domain_tags(cell: object) -> set[str]:
     """Parse one semicolon-separated provenance-domain cell."""
@@ -319,17 +313,19 @@ def _domain_tags(cell: object) -> set[str]:
     return {token.strip() for token in cell.split(";") if token.strip()}
 
 
-def exposure_states(metadata: pd.DataFrame, domain: str, roster: set[str]) -> dict[str, str]:
-    """Each roster model's exposure state for ``domain``, derived from its domain tags.
+def exposed_models(metadata: pd.DataFrame, domain: str, roster: set[str]) -> dict[str, bool]:
+    """Whether each roster model's pretraining overlaps ``domain``, from its domain tags.
 
-    Derived from ``corpus_domains`` / ``institutional_domains`` intersected with the
-    domain, never from the legacy ``tcga_exposed`` flag (ADR-0005); the paper's
-    ``exposed_models_for_domain`` is the reference derivation, and a test pins the two to
-    the same answer without this public artifact importing the private one. Raises
-    ``KeyError`` on a roster member with no tile-panel metadata row rather than letting a
-    missing state fall through as a blank.
+    Binary on purpose, matching the paper's dagger convention: a model is exposed iff the
+    domain appears in its ``corpus_domains`` or ``institutional_domains`` tags -- never
+    the legacy ``tcga_exposed`` flag (ADR-0005). ``False`` means *no disclosed overlap*,
+    not an audited absence: several corpora are proprietary, and the docs legend carries
+    that caveat rather than a third state here. The paper's ``exposed_models_for_domain``
+    is the reference derivation, and a test pins the two to the same answer without this
+    public artifact importing the private one. Raises ``KeyError`` on a roster member
+    with no tile-panel metadata row rather than letting a missing state fall through.
     """
-    states: dict[str, str] = {}
+    flags: dict[str, bool] = {}
     for _, row in metadata[metadata["panel"] == "tile"].iterrows():
         model = str(row["model"])
         if model not in roster:
@@ -337,33 +333,28 @@ def exposure_states(metadata: pd.DataFrame, domain: str, roster: set[str]) -> di
         tags = _domain_tags(row.get("corpus_domains")) | _domain_tags(
             row.get("institutional_domains")
         )
-        if domain in tags:
-            states[model] = EXPOSED
-        elif str(row.get("disclosed", "")).strip().lower() == "yes":
-            states[model] = DISCLOSED_CLEAN
-        else:
-            states[model] = UNDISCLOSED
-    missing = sorted(roster - states.keys())
+        flags[model] = domain in tags
+    missing = sorted(roster - flags.keys())
     if missing:
         raise KeyError(f"no tile-panel metadata row for roster model(s): {', '.join(missing)}")
-    return states
+    return flags
 
 
-def with_exposure(aggregate: pd.DataFrame, states: dict[str, str]) -> pd.DataFrame:
-    """The aggregate with a ``tcga_exposure`` column inserted after ``on_frontier``.
+def with_exposure(aggregate: pd.DataFrame, exposed: dict[str, bool]) -> pd.DataFrame:
+    """The aggregate with a boolean ``tcga_exposed`` column inserted after ``on_frontier``.
 
     Joined after the rank build on purpose: exposure is provenance, not measurement, and
     keeping it out of ``build_aggregate_table`` keeps the two concerns separately
     testable. A model without a state raises rather than publishing a blank cell.
     """
-    missing = sorted(set(aggregate["model"]) - states.keys())
+    missing = sorted(set(aggregate["model"]) - exposed.keys())
     if missing:
         raise KeyError(f"no exposure state for aggregate model(s): {', '.join(missing)}")
     out = aggregate.copy()
     out.insert(
         out.columns.get_loc("on_frontier") + 1,
-        "tcga_exposure",
-        [states[m] for m in out["model"]],
+        "tcga_exposed",
+        [exposed[m] for m in out["model"]],
     )
     return out
 
@@ -457,7 +448,7 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
     aggregate = build_aggregate_table(tables)
     aggregate = with_exposure(
         aggregate,
-        exposure_states(pd.read_csv(METADATA), TCGA_DOMAIN, set(aggregate["model"])),
+        exposed_models(pd.read_csv(METADATA), TCGA_DOMAIN, set(aggregate["model"])),
     )
     distributions = build_distributions(per_sample)
 

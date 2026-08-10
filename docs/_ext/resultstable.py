@@ -105,44 +105,41 @@ AGGREGATE_RANKS: tuple[Column, ...] = (
 )
 
 
-#: Row class per exposure state. Disclosed-clean is deliberately absent: it is the
-#: unmarked default, so the tint marks only what a reader must discount (exposed) or
-#: cannot verify (undisclosed) -- and colour alone carries no text, so each tinted class
-#: pairs with a visually-hidden label for screen readers, print, and copy-paste.
-EXPOSURE_CLASSES = {
-    "exposed": "croma-exposure-exposed",
-    "disclosed-clean": None,
-    "undisclosed": "croma-exposure-undisclosed",
-}
+#: The tint is binary, matching the paper's dagger convention: exposed rows are marked,
+#: everything else is the unmarked default -- and colour alone carries no text, so the
+#: tinted class pairs with a visually-hidden label for screen readers, print, and
+#: copy-paste. Untinted means *no disclosed overlap*, not an audited absence; the legend
+#: beside the TCGA-4×4 table carries that caveat.
+EXPOSED_CLASS = "croma-exposure-exposed"
 
-EXPOSURE_LABELS = {
-    "croma-exposure-exposed": " (TCGA-exposed pretraining)",
-    "croma-exposure-undisclosed": " (pretraining corpus undisclosed)",
-}
+EXPOSURE_LABELS = {EXPOSED_CLASS: " (TCGA-exposed pretraining)"}
 
 
-def _exposure_map() -> dict[str, str]:
-    """Model -> exposure state, from the model-level export."""
-    return {row["model"]: row["tcga_exposure"] for row in _read("cross_benchmark.csv")}
+def _parse_exposed(value: str) -> bool:
+    """Strict boolean parse: a corrupted cell must fail the build, not render unmarked."""
+    if value not in ("True", "False"):
+        raise ValueError(f"tcga_exposed must be True or False, got {value!r}")
+    return value == "True"
 
 
-def exposure_row_classes(models: list[str], exposure: dict[str, str]) -> list[str | None]:
+def _exposure_map() -> dict[str, bool]:
+    """Model -> exposed flag, from the model-level export."""
+    return {
+        row["model"]: _parse_exposed(row["tcga_exposed"]) for row in _read("cross_benchmark.csv")
+    }
+
+
+def exposure_row_classes(models: list[str], exposure: dict[str, bool]) -> list[str | None]:
     """The row class (or ``None``) for each model, in table order.
 
-    Raises on a model without a state or with an unknown state: either means the cohort
-    CSV and the model-level export disagree, which should fail the ``-W`` build rather
-    than publish an unmarked row.
+    Raises on a model without a state: it means the cohort CSV and the model-level
+    export disagree, which should fail the ``-W`` build rather than publish an
+    unmarked row.
     """
-    classes = []
-    for model in models:
-        state = exposure[model]
-        if state not in EXPOSURE_CLASSES:
-            raise KeyError(f"unknown exposure state {state!r} for {model!r}")
-        classes.append(EXPOSURE_CLASSES[state])
-    return classes
+    return [EXPOSED_CLASS if exposure[model] else None for model in models]
 
 
-def _tint_rows(rendered: list[nodes.Node], models: list[str], exposure: dict[str, str]) -> None:
+def _tint_rows(rendered: list[nodes.Node], models: list[str], exposure: dict[str, bool]) -> None:
     """Apply the exposure classes and screen-reader labels to a rendered table's body."""
     tables = [n for node in rendered for n in node.findall(nodes.table)]
     if len(tables) != 1:

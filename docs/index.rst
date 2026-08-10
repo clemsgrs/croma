@@ -31,8 +31,8 @@ The panel at a glance
 **Bold** marks the Pareto frontier — the encoder(s) no other pathology encoder beats on both
 rankings at once. The two ranks are kept apart on
 purpose: a strong median margin can hide a brittle tail, so each cohort cell shows both,
-median ``CRoMa``/LTM₁₀. Tinted rows carry a TCGA pretraining-overlap caveat: orange for
-exposed, grey for undisclosed (:ref:`legend <exposure-legend>`).
+median ``CRoMa``/LTM₁₀. Orange rows mark encoders whose disclosed pretraining overlaps
+TCGA (:ref:`legend <exposure-legend>`).
 :doc:`Full panel, cohort detail and the distribution explorer → <results/index>`
 
 .. themed-figure:: _static/figures/rank_pareto
