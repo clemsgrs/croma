@@ -66,8 +66,8 @@ model-dependent subset.
 **Confounder probe**:
 The balanced accuracy with which a $k$-NN probe recovers the confounder from the frozen
 representation (`confounder_knn_bacc`). Not a robustness metric, but the null model every
-robustness metric must beat: across the 20 pathology encoders it rank-predicts every
-_pooled_ score — RI, MaRI, the CRoMa median, $F(0)$ — at $|\rho|$ of 0.74–0.95. It cannot
+robustness metric must beat: across the 25 pathology encoders it rank-predicts every
+_pooled_ score — RI, MaRI, the CRoMa median, $F(0)$ — at $|\rho|$ of 0.82–0.97. It cannot
 replace them, because it saturates (Hibou-B and Hibou-L differ by 0.0003 in probe accuracy
 and by 0.35 in CRoMa), has no zero to be signed about, has a chance level that moves with
 the number of confounder classes, and — being a scalar — admits no tail.
@@ -98,15 +98,14 @@ representation that encodes little. Never read it as "beats 8 pathology FMs".
 _Avoid_: baseline (it is not a competitor), ImageNet control (the corpus is LVD-142M).
 
 **Ranked panel**:
-The 20 pathology encoders — the full tile panel minus the natural-image control. Every
+The 25 pathology encoders — the full tile panel minus the natural-image control. Every
 statistic that *compares* models is computed over the ranked panel: the cross-model
 correlations, the support range, and the rank-agreement $\rho$ (`\<Bench>RankedNModels`,
 `SupportRange`, `CromaVsRiRho`, …). Whole-panel *descriptive* statistics keep the control,
-because they describe the spread rather than rank within it (`NModels` = 21, `CromaSpan`,
-`BioBaccRange`, `ConfBaccRange`). The split is not cosmetic: the control ranks 9/21 on
-Camelyon but 20/21 on TCGA, so admitting it drags cross-dataset rank consistency from
-$\rho=0.92$ down to $0.89$, and it holds 68% RI/MaRI support against a ranked panel of
-10--46%. Both would blunt the claims they appear in.
+because they describe the spread rather than rank within it (`NModels` = 26, `CromaSpan`,
+`BioBaccRange`, `ConfBaccRange`). The split is not cosmetic: the control's weak biological
+structure can flatter its robustness scores and distort cross-model associations, so it
+cannot supply evidence about relative pathology-encoder performance.
 _Avoid_: "all models", "the panel" (say which one).
 
 ### Tail vocabulary
@@ -219,7 +218,7 @@ _Avoid_: run (a run is a benchmark evaluated at one protocol).
 **Protocol**:
 The k operating point a metrics run was computed at — `k-star` (each model at its own
 kNN-optimal k) or `median-k` (the shared median of per-model k*). It scopes the
-metrics tree: `output/metrics/<protocol>/<benchmark>/`. The tile panel (21 models) reports
+metrics tree: `output/metrics/<protocol>/<benchmark>/`. The tile panel (26 models) reports
 `median-k`; the **slide panel reports `k-star`**, because with four models the shared median
 collapses to a tiny k and starves RI/MaRI of support (27% at k=3 versus 37% at per-model
 k*). The median is the *lower* median — an order statistic, so the shared k is always some
