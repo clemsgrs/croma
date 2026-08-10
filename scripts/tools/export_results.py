@@ -1,8 +1,8 @@
 """Export the published benchmark results from ``output/`` into the tracked ``results/`` tree.
 
 The documentation site publishes numbers. It builds with ``sphinx -W`` on a clean CI
-checkout, which can see neither ``output/`` (git-ignored) nor ``scripts/repro/``
-(git-ignored, ADR-0012), so every number the site shows must already be committed. This
+checkout, which cannot see ``output/`` (git-ignored), so every number the site shows must
+already be committed. This
 script is the only way numbers get there: it reads each published cohort's run and writes
 a small set of CSVs, a binned distribution payload for the explorer, and a provenance
 sidecar naming the run and checksumming every file it wrote. See ADR-0016.
@@ -16,10 +16,10 @@ Run from the repository root::
 was never republished fails a test rather than leaving the public site asserting numbers
 no run produced.
 
-This deliberately does *not* share code with the paper's table generators. They live in
-the git-ignored ``scripts/repro/`` tree, and importing across that boundary would make a
-public artifact depend on a private one. The two paths render overlapping numbers and are
-not unified; ADR-0016 records the trade.
+This deliberately does *not* share code with the paper's table generators under
+``scripts/repro/``: they serve the manuscript, this serves the public site, and importing
+across that boundary would couple a public artifact to the paper pipeline's churn. The two
+paths render overlapping numbers and are not unified; ADR-0016 records the trade.
 """
 
 from __future__ import annotations
@@ -268,9 +268,7 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
     # Negated: the primitive prefers larger on both axes, and a smaller mean rank is better.
     frontier = set(
-        _pareto_frontier_max_max(
-            [(m, -float(croma_rank[m]), -float(ltm_rank[m])) for m in ranked]
-        )
+        _pareto_frontier_max_max([(m, -float(croma_rank[m]), -float(ltm_rank[m])) for m in ranked])
     )
 
     out = pd.DataFrame(
@@ -293,6 +291,81 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
         .reset_index(drop=True)
         .round(VALUE_PRECISION)
     )
+
+
+# --------------------------------------------------------------------------------------
+# TCGA exposure: a model-level provenance fact, published beside the ranks
+# --------------------------------------------------------------------------------------
+
+#: The provenance registry the exposure states are read from. Note ``model`` is not a
+#: unique key there -- Prov-GigaPath has a tile row and a slide row -- so derivation is
+#: restricted to the tile panel, which is the published roster's.
+METADATA = ROOT / "scripts" / "bench" / "model_metadata.csv"
+
+#: The scored domain of the TCGA-4×4 cohort, matched against each model's domain tags.
+TCGA_DOMAIN = "tcga"
+
+#: Exposure is three states, not a boolean, because absence of a domain tag means two
+#: different things: a disclosed corpus without the domain is clean, an undisclosed one
+#: cannot be published as clean. Collapsing the two would silently assert nine
+#: proprietary-corpus encoders are TCGA-free.
+EXPOSED, DISCLOSED_CLEAN, UNDISCLOSED = "exposed", "disclosed-clean", "undisclosed"
+
+
+def _domain_tags(cell: object) -> set[str]:
+    """Parse one semicolon-separated provenance-domain cell."""
+    if not isinstance(cell, str) or not cell.strip():
+        return set()
+    return {token.strip() for token in cell.split(";") if token.strip()}
+
+
+def exposure_states(metadata: pd.DataFrame, domain: str, roster: set[str]) -> dict[str, str]:
+    """Each roster model's exposure state for ``domain``, derived from its domain tags.
+
+    Derived from ``corpus_domains`` / ``institutional_domains`` intersected with the
+    domain, never from the legacy ``tcga_exposed`` flag (ADR-0005); the paper's
+    ``exposed_models_for_domain`` is the reference derivation, and a test pins the two to
+    the same answer without this public artifact importing the private one. Raises
+    ``KeyError`` on a roster member with no tile-panel metadata row rather than letting a
+    missing state fall through as a blank.
+    """
+    states: dict[str, str] = {}
+    for _, row in metadata[metadata["panel"] == "tile"].iterrows():
+        model = str(row["model"])
+        if model not in roster:
+            continue
+        tags = _domain_tags(row.get("corpus_domains")) | _domain_tags(
+            row.get("institutional_domains")
+        )
+        if domain in tags:
+            states[model] = EXPOSED
+        elif str(row.get("disclosed", "")).strip().lower() == "yes":
+            states[model] = DISCLOSED_CLEAN
+        else:
+            states[model] = UNDISCLOSED
+    missing = sorted(roster - states.keys())
+    if missing:
+        raise KeyError(f"no tile-panel metadata row for roster model(s): {', '.join(missing)}")
+    return states
+
+
+def with_exposure(aggregate: pd.DataFrame, states: dict[str, str]) -> pd.DataFrame:
+    """The aggregate with a ``tcga_exposure`` column inserted after ``on_frontier``.
+
+    Joined after the rank build on purpose: exposure is provenance, not measurement, and
+    keeping it out of ``build_aggregate_table`` keeps the two concerns separately
+    testable. A model without a state raises rather than publishing a blank cell.
+    """
+    missing = sorted(set(aggregate["model"]) - states.keys())
+    if missing:
+        raise KeyError(f"no exposure state for aggregate model(s): {', '.join(missing)}")
+    out = aggregate.copy()
+    out.insert(
+        out.columns.get_loc("on_frontier") + 1,
+        "tcga_exposure",
+        [states[m] for m in out["model"]],
+    )
+    return out
 
 
 def bin_distribution(values, lo: float, hi: float, n_bins: int = N_BINS) -> list[int]:
@@ -382,6 +455,10 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
         meta[cohort.slug] = _cohort_provenance(cohort, metrics)
 
     aggregate = build_aggregate_table(tables)
+    aggregate = with_exposure(
+        aggregate,
+        exposure_states(pd.read_csv(METADATA), TCGA_DOMAIN, set(aggregate["model"])),
+    )
     distributions = build_distributions(per_sample)
 
     rendered = {f"results/{slug}.csv": _to_csv(df) for slug, df in tables.items()}
@@ -451,8 +528,7 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
             f"{row['ltm_rank']:.1f}",
         ]
         cells += [
-            f"{row[c]:.2f}/{row[_ltm_column(c.removeprefix('croma_'))]:.2f}"
-            for c in cohort_columns
+            f"{row[c]:.2f}/{row[_ltm_column(c.removeprefix('croma_'))]:.2f}" for c in cohort_columns
         ]
         lines.append("| " + " | ".join(cells) + " |")
 
