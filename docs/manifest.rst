@@ -1,5 +1,5 @@
-Inputs
-======
+Manifest
+========
 
 Every metric takes the same two inputs: a **manifest** describing the samples, and an
 **embedding matrix** holding one feature vector per manifest row.
@@ -105,7 +105,7 @@ the one the paper reports.
      - ignored
      - required
    * - Neighbourhood scope
-     - the whole retained dataset
+     - the whole retained cohort
      - within each subset
    * - Evaluated once per
      - sample
@@ -114,7 +114,7 @@ the one the paper reports.
      - ``"sample"``
      - ``"occurrence"``
 
-That last row is the one that surprises people. Under ``paired_2x2`` a sample may belong to
+The last row carries a real consequence. Under ``paired_2x2`` a sample may belong to
 several subsets and contributes one *occurrence* to each, so the score averages over
 occurrences, not samples. ``result.n_pairs`` therefore counts occurrences in one design and
 samples in the other, and **the two designs are not directly comparable**.
@@ -168,7 +168,7 @@ How big must it be?
 -------------------
 
 Both rules below are about the **neighbourhood scope** -- the subset under ``paired_2x2``,
-the whole retained dataset under ``all``.
+the whole retained cohort under ``all``.
 
 **RI and MaRI.** Every candidate ``k`` must be strictly less than the number of rows in the
 scope; candidates that are not are dropped, and if none survive the call raises
@@ -190,22 +190,7 @@ Deduplicated embeddings
 -----------------------
 
 Because ``paired_2x2`` repeats rows across subsets, the same image is often embedded more
-than once. Embed each unique image once, then expand back to manifest-row order:
-
-.. code-block:: bash
-
-   croma build-embedding-manifest \
-     --manifest manifest.csv \
-     --confounder-column center \
-     --out embedding_manifest.csv
-
-   # ... embed the rows of embedding_manifest.csv into deduped.npy ...
-
-   croma expand-embeddings \
-     --manifest manifest.csv \
-     --confounder-column center \
-     --embedding-manifest embedding_manifest.csv \
-     --embeddings deduped.npy \
-     --out embeddings.npy
-
-The equivalent Python entry point is :func:`croma.expand_features_to_manifest`.
+than once. Embed each unique image once, then expand back to manifest-row order —
+``croma build-embedding-manifest`` followed by ``croma expand-embeddings``, shown in full
+under :doc:`cli`. The equivalent Python entry point is
+:func:`croma.expand_features_to_manifest`.

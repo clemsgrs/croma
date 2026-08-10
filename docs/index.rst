@@ -22,17 +22,17 @@ introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are descri
 
    pip install croma
 
-Twenty-five ranked pathology encoders plus control
---------------------------------------------------
+The panel at a glance
+---------------------
 
 .. aggregate-table::
    :top: 8
 
 **Bold** marks the Pareto frontier — the encoders no other pathology encoder beats on both
-rankings at once. † is an unranked natural-image control. The two ranks are kept apart on purpose: a strong median
-margin can hide a brittle tail, and one combined number would conceal exactly what the tail
-column is for — which is why each cohort cell shows both, median ``CRoMa``/``LTM₁₀``.
-:doc:`Full panel and per-cohort detail → <results/index>`
+rankings at once; † is the unranked natural-image control. The two ranks are kept apart on
+purpose: a strong median margin can hide a brittle tail, so each cohort cell shows both,
+median ``CRoMa``/LTM₁₀.
+:doc:`Full panel, cohort detail and the distribution explorer → <results/index>`
 
 .. themed-figure:: _static/figures/rank_pareto
    :alt: Mean CRoMa rank against mean tail rank, one point per encoder, frontier ringed.
@@ -52,12 +52,12 @@ column is for — which is why each cohort cell shows both, median ``CRoMa``/``L
        <p>What RI, MaRI, and CRoMa measure, and when they disagree.</p>
      </a>
      <a class="croma-card" href="manifest.html">
-       <h3>Inputs</h3>
+       <h3>Manifest</h3>
        <p>The manifest and embedding contracts, and the two evaluation designs.</p>
      </a>
      <a class="croma-card" href="results/index.html">
        <h3>Results</h3>
-       <p>Every cohort, every column, and the distributions behind them.</p>
+       <p>Every cohort, every column, and the distribution explorer behind them.</p>
      </a>
    </div>
 

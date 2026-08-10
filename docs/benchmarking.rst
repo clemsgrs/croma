@@ -18,69 +18,10 @@ repositories and so cannot be pinned in the package metadata:
 
 Scoring embeddings that already exist needs none of them.
 
-Mascaret and Phaet
-------------------
+The pipeline
+------------
 
-The pinned Waiv checkpoints use a Transformers 5 remote-code runtime. Reproduce their
-public embedding contracts in a dedicated environment so that this constraint does not
-change the runtime used by the other encoders:
-
-.. code-block:: bash
-
-   python -m venv .venv-waiv
-   .venv-waiv/bin/pip install -e ".[dev]" \
-     -r scripts/bench/requirements-waiv.txt
-   .venv-waiv/bin/python scripts/bench/extract_embeddings.py \
-     --tileset pathorob-camelyon \
-     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
-     --models Mascaret,Phaet
-
-``requirements-waiv.txt`` constrains Transformers to ``>=5.14,<6`` and directly lists
-only the image/model runtime. It deliberately has no dependency on slide2vec. The models
-are loaded from ``wearewaiv/mascaret`` and ``wearewaiv/phaet`` at the immutable revisions
-recorded in the model registry; both use FP32 inference and their checkpoint configuration's
-``pixel_mean`` and ``pixel_std``.
-
-An opt-in real-weight smoke test verifies repeatable finite outputs and unit L2 norms for
-both checkpoints. It can download gated weights and is therefore excluded from the default,
-offline test run:
-
-.. code-block:: bash
-
-   CROMA_RUN_WAIV_SMOKE=1 .venv-waiv/bin/python -m pytest \
-     tests/test_waiv_smoke.py -q
-
-RudolfV 2
-----------
-
-The pinned RudolfV 2 family also uses a Transformers 5 remote-code runtime. Its published
-implementation requires timm, so reproduce it in a dedicated environment without
-slide2vec:
-
-.. code-block:: bash
-
-   python -m venv .venv-rudolfv2
-   .venv-rudolfv2/bin/pip install -e ".[dev]" \
-     -r scripts/bench/requirements-rudolfv2.txt
-   .venv-rudolfv2/bin/python scripts/bench/extract_embeddings.py \
-     --tileset pathorob-camelyon \
-     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
-     --models "RudolfV 2,RudolfV 2-B,RudolfV 2-S"
-
-``requirements-rudolfv2.txt`` constrains Transformers to ``>=5.14,<6`` and includes the
-remote code's timm dependency. The three immutable revisions live in the model registry;
-all use FP32 inference and the released 224 px preprocessing contract.
-
-An opt-in gated-weight smoke test verifies exact published pooling, deterministic repeated
-inference, and the three output dimensions. The default offline suite skips it:
-
-.. code-block:: bash
-
-   CROMA_RUN_RUDOLFV2_SMOKE=1 .venv-rudolfv2/bin/python -m pytest \
-     tests/test_rudolfv2_smoke.py -q
-
-Three commands, split along the seams of what is expensive
-----------------------------------------------------------
+Three commands, split along the seams of what is expensive:
 
 .. code-block:: bash
 
@@ -131,3 +72,55 @@ neighbour distance of *its own* embedding at the operating ``k``. This matches t
 default and is the only setting under which MaRI is comparable across models. Passing
 ``--tau <float>`` pins one temperature for every model; the run then prints which models it
 is off-scale for. See :ref:`choosing-tau`.
+
+Encoder-specific environments
+-----------------------------
+
+Two checkpoint families use a Transformers 5 remote-code runtime whose pins conflict with
+the shared encoder environment. Each is reproduced in a dedicated venv so its constraints
+never change the runtime used by the other encoders; the exact pins live in the
+requirements files named below, and the immutable checkpoint revisions in the model
+registry.
+
+**Mascaret and Phaet** (the Waiv checkpoints):
+
+.. code-block:: bash
+
+   python -m venv .venv-waiv
+   .venv-waiv/bin/pip install -e ".[dev]" \
+     -r scripts/bench/requirements-waiv.txt
+   .venv-waiv/bin/python scripts/bench/extract_embeddings.py \
+     --tileset pathorob-camelyon \
+     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
+     --models Mascaret,Phaet
+
+Both use FP32 inference and their checkpoint configuration's ``pixel_mean`` and
+``pixel_std``. An opt-in real-weight smoke test verifies repeatable finite outputs and unit
+L2 norms; it can download gated weights, so the default offline suite skips it:
+
+.. code-block:: bash
+
+   CROMA_RUN_WAIV_SMOKE=1 .venv-waiv/bin/python -m pytest \
+     tests/test_waiv_smoke.py -q
+
+**RudolfV 2, RudolfV 2-B and RudolfV 2-S**, whose published implementation additionally
+requires timm:
+
+.. code-block:: bash
+
+   python -m venv .venv-rudolfv2
+   .venv-rudolfv2/bin/pip install -e ".[dev]" \
+     -r scripts/bench/requirements-rudolfv2.txt
+   .venv-rudolfv2/bin/python scripts/bench/extract_embeddings.py \
+     --tileset pathorob-camelyon \
+     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
+     --models "RudolfV 2,RudolfV 2-B,RudolfV 2-S"
+
+All three use FP32 inference and the released 224 px preprocessing contract. Their opt-in
+gated-weight smoke test verifies exact published pooling, deterministic repeated inference,
+and the three output dimensions:
+
+.. code-block:: bash
+
+   CROMA_RUN_RUDOLFV2_SMOKE=1 .venv-rudolfv2/bin/python -m pytest \
+     tests/test_rudolfv2_smoke.py -q

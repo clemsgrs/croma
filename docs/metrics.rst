@@ -61,7 +61,7 @@ neighbours and scores the biological share of that typed evidence,
 :math:`n_{SO} / (n_{SO} + n_{OS})`. Every neighbour counts the same, whether adjacent to
 the sample or at the edge of the neighbourhood.
 
-``result.value`` pools this across the dataset -- total ``SO`` evidence over total typed
+``result.value`` pools this across all samples -- total ``SO`` evidence over total typed
 evidence -- so it lies in :math:`[0, 1]`: above ``0.5`` biology dominates, below it the
 confounder does. Pooling means samples with richer typed neighbourhoods contribute more;
 the median of the per-sample scores is reported separately as ``result.median_value``.
@@ -131,7 +131,7 @@ This is not circular: ``k`` is selected by biological kNN balanced accuracy, whi
 consults the weighting, so ``k`` is fixed before ``tau`` is chosen.
 
 You can still pin ``tau`` -- to reproduce a published number, say. ``croma`` warns if the
-pinned value sits more than a factor of 4 from the dataset's typed-distance median; silence
+pinned value sits more than a factor of 4 from the data's typed-distance median; silence
 that with ``warn_tau=False``. To inspect the recommendation without scoring, call
 :meth:`~croma.MaRI.recommend_tau`.
 
@@ -179,7 +179,7 @@ Choosing ``m``
 ~~~~~~~~~~~~~~
 
 ``m`` is the number of typed neighbours averaged per type. The default ``m=5`` is the
-headline operating point: ``m=1`` is maximally sensitive to a single outlier neighbour,
+headline radius: ``m=1`` is maximally sensitive to a single outlier neighbour,
 while ``m=5`` is the smallest window in which no one neighbour exceeds 20% of the estimate,
 without leaving the local typed shell.
 
@@ -235,5 +235,4 @@ zero; ``undefined_frac`` reports them separately, over *all* units. If nothing i
 
 Read ``f0`` as "how much of this model's evidence is on the fragile side", where ``value``
 says where the middle of the distribution sits and ``ltm_alpha`` how bad the worst decile
-gets. Consumers should read the value CRoMa stores rather than recomputing it from a
-per-sample artifact, which is how a boundary or a denominator quietly drifts.
+gets.
