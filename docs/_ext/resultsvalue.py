@@ -105,6 +105,14 @@ def support_max(slug: str) -> str:
     return "{:.0%}".format(max(float(r["support"]) for r in _ranked(_read_cohort(slug))))
 
 
+def count_above(slug: str, key: str, threshold: str) -> str:
+    """Ranked encoders strictly above ``threshold`` on one column."""
+    if key not in FORMATS:
+        raise ValueError(f"unknown column {key!r}; one of {sorted(FORMATS)}")
+    limit = float(threshold)
+    return str(sum(float(r[key]) > limit for r in _ranked(_read_cohort(slug))))
+
+
 def value(slug: str, model: str, key: str) -> str:
     """One cell, formatted as the tables format it."""
     return FORMATS[key].format(_column(_read_cohort(slug), key, model))
@@ -133,7 +141,18 @@ def ratio(slug: str, key: str, a: str, b: str) -> str:
 
 FUNCTIONS = {
     fn.__name__: fn
-    for fn in (roster, ranked, k, below_zero, support_min, support_max, value, gap, ratio)
+    for fn in (
+        roster,
+        ranked,
+        k,
+        below_zero,
+        support_min,
+        support_max,
+        count_above,
+        value,
+        gap,
+        ratio,
+    )
 }
 
 

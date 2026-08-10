@@ -5,9 +5,9 @@ Every number on these pages is read at build time from
 `results/ <https://github.com/clemsgrs/croma/tree/main/results>`_ — a small set of CSVs
 committed to the repository. Nothing is transcribed, and nothing is fetched.
 
-That indirection exists for a reason. The benchmark runs live under ``output/``, which is
-git-ignored and regenerable; the site builds from a clean checkout and cannot see it. So a
-published number has to become a committed artifact first, and
+The benchmark runs live under ``output/``, which is git-ignored and regenerable; the site
+builds from a clean checkout and cannot see it. So a published number has to become a
+committed artifact first, and
 `scripts/tools/export_results.py <https://github.com/clemsgrs/croma/blob/main/scripts/tools/export_results.py>`_
 is the only thing that writes one. The decision is recorded in
 `ADR-0016 <https://github.com/clemsgrs/croma/blob/main/docs/adr/0016-results-is-a-committed-publication-artifact.md>`_.
@@ -47,59 +47,20 @@ embedding at that ``k``, which is the only setting under which ``MaRI`` is compa
 models (see :ref:`choosing-tau`). ``CRoMa`` is reported at its headline averaging radius,
 ``m = 5``, and LTM₁₀ at ``α = 0.10``.
 
-Five-encoder extraction contract
---------------------------------
+The expanded panel
+------------------
 
-The expanded panel adds two robustness-targeted fine-tunes and the three-member
-RudolfV 2 teacher/student family. The values below are read from the completion sidecars
-under ``output/embeddings/<tileset>/<model>.npy.json``; the complete extraction audit,
-including source-manifest and access-map digests, per-tileset runtimes, dimensions, norm
-checks and compatible-resume evidence, is committed in
-``docs/extraction-records/issue-130.md``.
+The panel's two robustness-targeted fine-tunes (Mascaret, of Midnight-12k; Phaet, of
+Phikon-v2) and the three-member RudolfV 2 teacher/student family were added under a
+recorded extraction contract — checkpoint revisions, preprocessing, pooling, batch sizes,
+dimension and norm checks. The complete audit is committed in
+`docs/extraction-records/issue-130.md
+<https://github.com/clemsgrs/croma/blob/main/docs/extraction-records/issue-130.md>`_.
 
-.. list-table::
-   :header-rows: 1
-   :widths: 17 33 10 40
-
-   * - Encoder
-     - Checkpoint revision
-     - Selected batch
-     - Pooling
-   * - Mascaret
-     - ``e95e7ea15e039e78d74def101415e19d9a67ba80``
-     - 32
-     - ``checkpoint-native:model.encode``
-   * - Phaet
-     - ``e0ce6e0ee248470bd8604823e412ca64048a2495``
-     - 64
-     - ``checkpoint-native:model.encode``
-   * - RudolfV 2
-     - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c``
-     - 32
-     - ``concatenate-cls-and-mean-patches``
-   * - RudolfV 2-B
-     - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8``
-     - 32
-     - ``concatenate-cls-and-mean-patches``
-   * - RudolfV 2-S
-     - ``76abacd512a98c72a6db6192af9fc98313c3bd78``
-     - 64
-     - ``concatenate-cls-and-mean-patches``
-
-Selected batches were Mascaret 32, Phaet 64, RudolfV 2 32, RudolfV 2-B 32 and RudolfV 2-S
-64. All five used FP32 inference and FP32 ``.npy`` storage. Mascaret and Phaet use a 224 px
-resize and centre crop followed by the checkpoint's ``pixel_mean``/``pixel_std`` contract;
-their checkpoint-native output normalization is retained. The RudolfV 2 family uses the
-released 224×224 bicubic, antialiased preprocessing and RGB mean ``(0.7072, 0.5787,
-0.7036)`` / standard deviation ``(0.2119, 0.2301, 0.1775)``. Its pooling concatenates the
-CLS token with the mean of 784 patch tokens after excluding eight register tokens; native,
-non-unit output norms are retained.
-
-Mascaret is a robustness-targeted fine-tune of Midnight-12k, and Phaet of Phikon-v2.
-RudolfV 2 is the teacher; RudolfV 2-B and RudolfV 2-S are distilled students from the same
-disclosed training run. RudolfV 2's disclosed Charité/LMU institutional corpus creates a
-possible institutional/source-domain overlap with the CHA component of Tolkach-ESCA. Exact
-patient or slide overlap is unknown, so this caveat does not establish leakage.
+One provenance caveat from it matters when reading the tables: RudolfV 2's disclosed
+Charité/LMU institutional corpus creates a possible institutional/source-domain overlap
+with the CHA component of Tolkach-ESCA. Exact patient or slide overlap is unknown, so this
+does not establish leakage.
 
 Public cohort boundary
 ----------------------
@@ -109,8 +70,8 @@ Tolkach-ESCA. TCGA-2×2 was recomputed with the same 26-model roster and is avai
 local metric tree and manuscript supplement, but is not a fourth public results page or
 committed CSV. Prostate-shift and the whole-slide panels are outside this expansion.
 
-Staying honest
---------------
+Freshness
+---------
 
 Re-running a benchmark does not update this site. Someone has to run the exporter and commit
 the diff — deliberately, because that diff is the review surface for changing a public claim.

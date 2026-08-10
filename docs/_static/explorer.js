@@ -70,25 +70,30 @@
 
   /* ------------------------------------------------------------------ ordering */
 
-  /* Encoders in the result tables' order: by the mean of the histogram, descending --
-     the binned estimate of pooled CRoMa. The payload is keyed by name with no ordering. */
+  /* Encoders in the result tables' order: by median CRoMa, descending -- the tables sort
+     by the median, so the overview must agree with the page it sits on. The binned median
+     is read off the histogram's CDF. The payload is keyed by name with no ordering. */
   function rankedModels(cohort) {
     var nBins = state.data.n_bins;
     return Object.keys(cohort.models).sort(function (a, b) {
-      return histogramMean(cohort, cohort.models[b], nBins) -
-        histogramMean(cohort, cohort.models[a], nBins);
+      return (
+        histogramMedian(cohort, cohort.models[b], nBins) -
+          histogramMedian(cohort, cohort.models[a], nBins) ||
+        a.localeCompare(b)
+      );
     });
   }
 
-  function histogramMean(cohort, counts, nBins) {
+  function histogramMedian(cohort, counts, nBins) {
     var width = (cohort.hi - cohort.lo) / nBins;
     var total = 0;
-    var sum = 0;
-    for (var i = 0; i < counts.length; i++) {
-      total += counts[i];
-      sum += counts[i] * (cohort.lo + (i + 0.5) * width);
+    for (var i = 0; i < counts.length; i++) total += counts[i];
+    var seen = 0;
+    for (var j = 0; j < counts.length; j++) {
+      seen += counts[j];
+      if (seen >= total / 2) return cohort.lo + (j + 0.5) * width;
     }
-    return total ? sum / total : 0;
+    return 0;
   }
 
   /* ---------------------------------------------------------------- rendering */

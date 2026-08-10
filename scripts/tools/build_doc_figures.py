@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import argparse
 import colorsys
-import json
 import re
 import sys
 import tempfile
@@ -213,38 +212,6 @@ def _draw_rank_pareto(scratch: Path) -> Path:
     return P._pdf_export_path(out)
 
 
-def _draw_distribution(slug: str):
-    """Build the drawing function for one cohort's per-sample CRoMa ridgeline.
-
-    This one reads the *run* rather than ``results/``: the ridgeline needs every sample's
-    CRoMa, and the committed export carries the 200-bin summary of that, not the samples
-    themselves. It is the same input the export reads, on the same machine, so the two
-    cannot describe different runs -- but it does mean this figure, like the schematics,
-    can only be rebuilt where ``output/`` exists.
-    """
-
-    def draw(scratch: Path) -> Path:
-        P = _plotting()
-        cohort = next(c for c in _cohorts() if c.slug == slug)
-        rows = json.loads((cohort.run_dir / "results" / "metrics.json").read_text())
-        out = scratch / f"distribution-{slug}.png"
-        P.plot_croma_sample_distributions(rows, out)
-        return P._pdf_export_path(out)
-
-    return draw
-
-
-def _distribution_figures() -> dict[str, PlottedFigure]:
-    return {
-        f"distribution-{c.slug}": PlottedFigure(
-            f"distribution-{c.slug}",
-            _draw_distribution(c.slug),
-            requires=(c.run_dir / "results" / "metrics.json",),
-        )
-        for c in _cohorts()
-    }
-
-
 FIGURES: dict[str, VectorFigure | PlottedFigure | RasterFigure] = {
     # Explanatory schematics (standalone TikZ; sources tracked under docs/figures/src/).
     "concept_metrics": VectorFigure("concept_metrics", PAPER_FIGURES / "concept_metrics.pdf"),
@@ -262,7 +229,6 @@ FIGURES: dict[str, VectorFigure | PlottedFigure | RasterFigure] = {
         "rank_pareto", _draw_rank_pareto, requires=(RESULTS / "cross_benchmark.csv",)
     ),
 }
-FIGURES.update(_distribution_figures())
 
 
 def _recolour(svg: str, theme: str) -> str:
@@ -279,8 +245,8 @@ def _recolour(svg: str, theme: str) -> str:
 
 #: Decimals kept in path coordinates. The converter emits six, which on a figure a few
 #: hundred points wide resolves a ten-thousandth of a point -- three orders of magnitude
-#: below a rendered pixel, and most of the file. The ridgelines trace 512-point density
-#: curves per model, so this is the difference between a 360 KB page asset and a 190 KB one.
+#: below a rendered pixel, and most of the file. On the densest plotted figures this
+#: halved the page asset.
 COORD_DECIMALS = 2
 
 _PATH_D = re.compile(r'(\sd=")([^"]*)(")')
