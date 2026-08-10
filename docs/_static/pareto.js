@@ -200,12 +200,47 @@
       g.appendChild(title);
       attachHover(g, container, p, rank);
     });
+    // Bold frontier tags. Near the right edge a tag flips to the left of its point, and
+    // each tag dodges the ones already placed: frontier points crowd the same corner
+    // (that is what makes them the frontier), so the naive above-the-point spot collides.
+    var placedTags = [];
+    function tagRect(cx, cy, anchorEnd, width) {
+      return {
+        x0: anchorEnd ? cx - width : cx,
+        x1: anchorEnd ? cx : cx + width,
+        y0: cy - 11,
+        y1: cy + 3,
+      };
+    }
+    function collides(rect) {
+      return placedTags.some(function (r) {
+        return rect.x0 < r.x1 && r.x0 < rect.x1 && rect.y0 < r.y1 && r.y0 < rect.y1;
+      });
+    }
     frontier.forEach(function (p) {
-      // Clamp the bold tag inside the frame; near the right edge it flips to the left.
       var left = sx(p.x) > W - m.r - 80;
+      var x = sx(p.x) + (left ? -12 : 12);
+      var width = 6.7 * p.model.length; // ~11.5px bold sans
+      var candidates = [
+        Math.max(sy(p.y) - 10, m.t + 10), // above the point
+        Math.min(sy(p.y) + 20, H - m.b - 6), // below the point
+        Math.max(sy(p.y) - 26, m.t + 10), // further above
+        Math.min(sy(p.y) + 36, H - m.b - 6), // further below
+      ];
+      var y = candidates[0];
+      var rect = tagRect(x, y, left, width);
+      for (var i = 0; i < candidates.length; i++) {
+        var candidate = tagRect(x, candidates[i], left, width);
+        if (!collides(candidate)) {
+          y = candidates[i];
+          rect = candidate;
+          break;
+        }
+      }
+      placedTags.push(rect);
       var t = el("text", {
-        x: sx(p.x) + (left ? -12 : 12),
-        y: Math.max(sy(p.y) - 10, m.t + 10),
+        x: x,
+        y: y,
         class: "croma-pareto-tag",
         "text-anchor": left ? "end" : "start",
       }, svg);
