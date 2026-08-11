@@ -125,15 +125,10 @@ Reading the columns
        index over a thin support is not a strong result — see :ref:`undefined
        neighbourhoods <undefined-neighbourhoods>`.
 
-.. _cohort-caveats:
-
-What these numbers do and do not say
-------------------------------------
-
 .. _the-control:
 
 The natural-image control
-~~~~~~~~~~~~~~~~~~~~~~~~~
+-------------------------
 
 ``DINOv2-B``, the natural-image control, is pretrained on natural images and has never seen
 a whole-slide image. Its measurements are shown with the panel, but it is excluded from the
@@ -145,14 +140,29 @@ can score positively simply by having no strong confounder structure either. Tha
 precisely what makes it useful — it calibrates what a positive margin is worth on a poor
 representation.
 
+.. _cohort-caveats:
+
 Scope
-~~~~~
+-----
 
 The roster is fixed across all three cohorts; cohorts computed on a
 different roster — a prostate panel and a slide-level panel — are deliberately not
 published here, because a table whose roster silently differs from the one beside it
 misleads more than it informs. And ranks are within this panel: they say which of these
 encoders is more robust on these cohorts, not how any of them would behave on yours.
+
+The operating point
+-------------------
+
+All three cohorts are reported under the **median-k** protocol: one shared ``k`` per cohort,
+the cohort median of the per-model biological ``k*``. A single operating point is what makes
+a rank across encoders meaningful — comparing a model evaluated at ``k = 5`` against one at
+``k = 91`` compares two different questions.
+
+``tau`` is never pinned. Each encoder gets the median typed-neighbour distance of its own
+embedding at that ``k``, which is the only setting under which ``MaRI`` is comparable across
+models (see :ref:`choosing-tau`). ``CRoMa`` is reported at its headline averaging radius,
+``m = 5``, and LTM₁₀ at ``α = 0.10``.
 
 .. _results-provenance:
 
@@ -188,21 +198,8 @@ is the only thing that writes one. The decision is recorded in
      - Protocol, per-cohort ``k``, ``tau`` policy, roster size, ``croma`` version, the
        source run for each cohort, and a sha256 of every file above.
 
-The operating point
-~~~~~~~~~~~~~~~~~~~
-
-All three cohorts are reported under the **median-k** protocol: one shared ``k`` per cohort,
-the cohort median of the per-model biological ``k*``. A single operating point is what makes
-a rank across encoders meaningful — comparing a model evaluated at ``k = 5`` against one at
-``k = 91`` compares two different questions.
-
-``tau`` is never pinned. Each encoder gets the median typed-neighbour distance of its own
-embedding at that ``k``, which is the only setting under which ``MaRI`` is comparable across
-models (see :ref:`choosing-tau`). ``CRoMa`` is reported at its headline averaging radius,
-``m = 5``, and LTM₁₀ at ``α = 0.10``.
-
 The expanded panel
-~~~~~~~~~~~~~~~~~~
+------------------
 
 The panel's two robustness-targeted fine-tunes (Mascaret, of Midnight-12k; Phaet, of
 Phikon-v2) and the three-member RudolfV-2 teacher/student family were extracted under the
@@ -252,7 +249,7 @@ Tolkach-ESCA. Exact patient or slide overlap is unknown, so this does not establ
 leakage.
 
 Public cohort boundary
-~~~~~~~~~~~~~~~~~~~~~~
+----------------------
 
 The committed web export deliberately contains three cohorts: Camelyon, TCGA-4×4 and
 Tolkach-ESCA. TCGA-2×2 was recomputed with the same 26-model roster and is available in the
@@ -260,7 +257,7 @@ local metric tree and manuscript supplement, but is not a fourth public cohort o
 CSV. Prostate-shift and the whole-slide panels are outside this expansion.
 
 Freshness
-~~~~~~~~~
+---------
 
 Re-running a benchmark does not update this site. Someone has to run the exporter and commit
 the diff — deliberately, because that diff is the review surface for changing a public claim.

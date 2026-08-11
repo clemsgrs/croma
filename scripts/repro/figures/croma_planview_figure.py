@@ -74,7 +74,7 @@ K_GROWTH = 2.0
 
 #: Bottom-left to top-right, i.e. increasing typed-distance magnitude. Fixes the
 #: draw order so overplotting is deterministic across renders.
-MODELS = ("Prov-GigaPath", "TITAN", "PRISM", "MOOZY")
+MODELS = ("Prov-GigaPath", "TITAN", "PRISM", "PRISM2", "MOOZY")
 
 #: Direct-label offsets (points), hand-placed: the clouds are dense and unevenly
 #: shaped, so automatic placement collides with either the diagonal or a neighbour.
@@ -82,12 +82,14 @@ LABEL_OFFSETS = {
     "Prov-GigaPath": (11, -12),
     "TITAN": (12, -10),
     "PRISM": (-12, 12),
+    "PRISM2": (12, 12),
     "MOOZY": (-11, 12),
 }
 LABEL_ALIGN = {
     "Prov-GigaPath": "left",
     "TITAN": "left",
     "PRISM": "right",
+    "PRISM2": "left",
     "MOOZY": "right",
 }
 
@@ -122,7 +124,7 @@ def typed_distance_frame(
     rows = bench["sample_id"].map(row_of).to_numpy(dtype=int)
     labels = pd.factorize(bench["label"])[0].astype(int)
     centers = pd.factorize(bench["data_provider"])[0].astype(int)
-    slide_ids = bench["slide_id"].astype(str).to_numpy()
+    group_ids = bench["group_id"].astype(str).to_numpy()
 
     frames = []
     for model in models:
@@ -133,7 +135,7 @@ def typed_distance_frame(
             features=features,
             labels=labels,
             centers=centers,
-            slide_ids=slide_ids,
+            group_ids=group_ids,
             m=int(m),
             start_k=START_K,
             k_growth_factor=K_GROWTH,

@@ -4,40 +4,6 @@ Manifest
 Every metric takes the same two inputs: a **manifest** describing the samples, and an
 **embedding matrix** holding one feature vector per manifest row.
 
-.. _embedding-contract:
-
-Embedding contract
-------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 24 76
-
-   * - Property
-     - Requirement
-   * - Type
-     - ``numpy.ndarray``. The CLI loads it with :func:`numpy.load`, so the file must be a
-       ``.npy`` holding a plain array -- not an ``.npz`` archive and not a pickled object.
-   * - Shape
-     - Exactly 2-D, ``(N, D)``. A 1-D or 3-D array is rejected.
-   * - ``N``
-     - Must equal ``len(manifest)``. Row ``i`` is the embedding of manifest row ``i``.
-       Nothing else aligns them -- not ``sample_id``, not ``image_path``.
-   * - ``D``
-     - Any positive width. Models with different ``D`` are never compared within one call.
-   * - dtype
-     - Any floating dtype. ``float32`` is the sensible default and what the benchmark
-       pipeline writes.
-   * - Normalization
-     - **Do not normalize.** ``croma`` L2-normalizes internally and compares neighbours by
-       cosine distance. Pre-normalizing is harmless but redundant.
-   * - Missing values
-     - Not supported, and not silently tolerated: a ``NaN`` or ``inf`` anywhere raises
-       ``ValueError`` from the neighbour search.
-
-Row order is the whole contract. If you produced embeddings by deduplicating repeated
-images, expand them back to manifest-row order first -- see :ref:`deduplicated-embeddings`.
-
 Manifest contract
 -----------------
 
@@ -79,12 +45,47 @@ Manifest contract
      - no
      - Free-text name echoed back on the result. Defaults to ``"dataset"``.
 
+.. _embedding-contract:
+
+Embedding contract
+------------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 76
+
+   * - Property
+     - Requirement
+   * - Type
+     - ``numpy.ndarray``. The benchmark pipeline loads it with :func:`numpy.load`, so a
+       file on disk must be a ``.npy`` holding a plain array -- not an ``.npz`` archive
+       and not a pickled object.
+   * - Shape
+     - Exactly 2-D, ``(N, D)``. A 1-D or 3-D array is rejected.
+   * - ``N``
+     - Must equal ``len(manifest)``. Row ``i`` is the embedding of manifest row ``i``.
+       Nothing else aligns them -- not ``sample_id``, not ``image_path``.
+   * - ``D``
+     - Any positive width. Models with different ``D`` are never compared within one call.
+   * - dtype
+     - Any floating dtype. ``float32`` is the sensible default and what the benchmark
+       pipeline writes.
+   * - Normalization
+     - **Do not normalize.** ``croma`` L2-normalizes internally and compares neighbours by
+       cosine distance. Pre-normalizing is harmless but redundant.
+   * - Missing values
+     - Not supported, and not silently tolerated: a ``NaN`` or ``inf`` anywhere raises
+       ``ValueError`` from the neighbour search.
+
+Row order is the whole contract. If you produced embeddings by deduplicating repeated
+images, expand them back to manifest-row order first -- see :ref:`deduplicated-embeddings`.
+
 .. _evaluation-designs:
 
 Evaluation designs
 ------------------
 
-``all`` is the default, in the library and on the CLI: every supplied manifest row is
+``all`` is the default everywhere in the library: every supplied manifest row is
 scored together, as one evaluation scope, for a single number over the whole cohort. It
 accepts that label and confounder may be unevenly mixed, needs no ``subset`` column, and is
 the right first thing to run on a new dataset.
@@ -190,7 +191,6 @@ Deduplicated embeddings
 -----------------------
 
 Because ``paired_2x2`` repeats rows across subsets, the same image is often embedded more
-than once. Embed each unique image once, then expand back to manifest-row order —
-``croma build-embedding-manifest`` followed by ``croma expand-embeddings``, shown in full
-under :doc:`cli`. The equivalent Python entry point is
-:func:`croma.expand_features_to_manifest`.
+than once. Embed each unique image once, then expand back to manifest-row order with
+:func:`croma.expand_features_to_manifest`, which takes the deduplicated embeddings
+together with the embedding manifest they were computed from.

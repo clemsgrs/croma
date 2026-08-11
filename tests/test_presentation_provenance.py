@@ -202,11 +202,11 @@ def test_metadata_identity_loader_reads_family_tone_and_order(tmp_path: Path) ->
 def test_machine_readable_families_give_new_models_stable_styles_and_insertion_order() -> None:
     metadata = model_tables.load_metadata().set_index("model")
     expected_identity = {
-        "RudolfV 2": ("rudolfv2", 0, 23),
-        "RudolfV 2-B": ("rudolfv2", 1, 24),
-        "RudolfV 2-S": ("rudolfv2", 2, 25),
-        "Mascaret": ("waiv", 0, 26),
-        "Phaet": ("waiv", 1, 27),
+        "RudolfV 2": ("rudolfv2", 0, 24),
+        "RudolfV 2-B": ("rudolfv2", 1, 25),
+        "RudolfV 2-S": ("rudolfv2", 2, 26),
+        "Mascaret": ("waiv", 0, 27),
+        "Phaet": ("waiv", 1, 28),
     }
     actual_identity = {
         model: (
@@ -222,6 +222,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "Virchow2",
         "Virchow",
         "PRISM",
+        "PRISM2",
         "UNI2-h",
         "UNI",
         "CONCHv1.5",

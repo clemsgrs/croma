@@ -64,12 +64,12 @@ def build_table(apd: Apd) -> str:
         r"groups and additionally reflects distribution shift. Each benchmark contains "
         r"\ApdNModels{} ranked tile encoders. The final two rows "
         r"repeat the \code{CRoMa} analysis using PathoROB's original \code{APD} for continuity. "
-        # PCaBiop is excluded from the correlation entirely -- four whole-slide encoders is too
+        # PCaBiop is excluded from the correlation entirely -- five whole-slide encoders is too
         # few for a rank correlation to mean anything. This states the exclusion and stops
         # there: quoting its rho descriptively would report the very number the exclusion says
         # not to trust. The \Nipd*Pcabiop and \Pcabiop* macros stay in generated_values.tex,
         # unused by the manuscript, as the record of what was left out.
-        r"PCaBiop contains only four whole-slide encoders, so we excluded it from the "
+        r"PCaBiop contains only five whole-slide encoders, so we excluded it from the "
         r"correlation table.}"
     )
     return "\n".join(
@@ -144,7 +144,7 @@ def _figure_blocks(apd: Apd, datasets: list[str], *, supplementary: bool) -> str
 
 
 def build_pcabiop_figure() -> str:
-    """Render the float for the descriptive four-encoder slide-level composite."""
+    """Render the float for the descriptive five-encoder slide-level composite."""
     return "\n".join(
         [
             _HEADER,
@@ -158,11 +158,11 @@ def build_pcabiop_figure() -> str:
                 r"cohort (right). \textbf{Top row:} normalized performance change $g(V)$ "
                 r"relative to the above-chance performance at $V=0$ as the training-set "
                 r"confounder--biology correlation increases to $V=1$; curves denote the "
-                r"four whole-slide encoders and error bars are 95\% $t$-intervals over "
+                r"five whole-slide encoders and error bars are 95\% $t$-intervals over "
                 r"repeated training runs. \textbf{Bottom row:} pooled "
                 r"\code{CRoMa}$(m{=}5)$ versus \code{nIPD}, one point per encoder. Dashed "
                 r"lines mark $g(V)=0$, $\mcode{CRoMa}=0$ and $\mcode{nIPD}=0$. Spearman "
-                r"coefficients are descriptive because the panel contains only $n=4$ "
+                r"coefficients are descriptive because the panel contains only $n=5$ "
                 r"encoders.}"
             ),
             r"\label{fig:croma-nipd-pcabiop}",

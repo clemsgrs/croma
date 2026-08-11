@@ -46,10 +46,11 @@ PANDA_ID_MANIFEST = REPO / "data/benchmarks/panda.csv"          # 1,000 balanced
 PANDA_TILESET = "panda-wsi"                                      # holds the ID embeddings
 PAR_LABELS = WSI / "par-labels.csv"
 
-MODELS = ["PRISM", "TITAN", "Prov-GigaPath", "MOOZY"]
+MODELS = ["PRISM", "PRISM2", "TITAN", "Prov-GigaPath", "MOOZY"]
 # Each slide FM's PAR slide_embeddings live under a hash-named slide2vec run dir.
 PAR_FEATURE_DIR = {
     "PRISM": "552fd85i",
+    "PRISM2": "1evxzd6h",
     "TITAN": "n02n1k2t",
     "Prov-GigaPath": "aetsexkb",
     "MOOZY": "nchyscec",

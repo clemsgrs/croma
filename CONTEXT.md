@@ -164,8 +164,8 @@ never owns embeddings. Camelyon's tileset is 22,402 tiles; the `pathorob-camelyo
 benchmark is the 20,400-tile RI view of it.
 
 **Evaluation design** (`all` | `paired_2x2`):
-What a benchmark's neighbourhood scope is. `all` — the default everywhere, in the
-library and on the CLI — scores every supplied manifest row together, as one scope, at
+What a benchmark's neighbourhood scope is. `all` — the default everywhere in the
+library — scores every supplied manifest row together, as one scope, at
 sample level. `paired_2x2` scores only the manifest's explicitly declared 2x2 subsets,
 at occurrence level, and has to be asked for. There are no other values.
 _Avoid_: `dataset_wide` (the retired name for `all`; it is rejected, not aliased).
@@ -219,10 +219,10 @@ _Avoid_: run (a run is a benchmark evaluated at one protocol).
 The k operating point a metrics run was computed at — `k-star` (each model at its own
 kNN-optimal k) or `median-k` (the shared median of per-model k*). It scopes the
 metrics tree: `output/metrics/<protocol>/<benchmark>/`. The tile panel (26 models) reports
-`median-k`; the **slide panel reports `k-star`**, because with four models the shared median
-collapses to a tiny k and starves RI/MaRI of support (27% at k=3 versus 37% at per-model
-k*). The median is the *lower* median — an order statistic, so the shared k is always some
-model's own k* and therefore on the swept grid.
+`median-k`; the **slide panel reports `k-star`**, because with only five models the shared
+median is dominated by panel composition (adding PRISM2 moved the would-be shared median
+from k=3 to k=9 on PCaBiop). The median is the *lower* median — an order statistic, so the
+shared k is always some model's own k* and therefore on the swept grid.
 _Avoid_: mode, setting.
 
 **Run**:

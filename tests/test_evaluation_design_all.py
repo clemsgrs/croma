@@ -5,8 +5,6 @@ former ``dataset_wide`` outright -- there is no alias and no migration shim -- a
 what every public entry point selects when the caller says nothing.
 """
 
-import json
-
 import numpy as np
 import pandas as pd
 import pytest
@@ -262,61 +260,3 @@ def test_a_cached_summary_without_tail_statistics_is_not_reused() -> None:
     assert bm._summary_from_payload(payload) is not None
     missing_tail = {key: value for key, value in payload.items() if key != "ltm_alpha"}
     assert bm._summary_from_payload(missing_tail) is None
-
-
-def _write_cli_inputs(tmp_path):
-    manifest_path = tmp_path / "manifest.csv"
-    _manifest().to_csv(manifest_path, index=False)
-    embeddings_path = tmp_path / "features.npy"
-    np.save(embeddings_path, _features())
-    return manifest_path, embeddings_path
-
-
-@pytest.mark.parametrize("command", ["ri", "mari", "croma"])
-def test_cli_defaults_to_all(tmp_path, monkeypatch, capsys, command: str) -> None:
-    from croma import cli
-
-    manifest_path, embeddings_path = _write_cli_inputs(tmp_path)
-    argv = [
-        "croma",
-        command,
-        "--manifest",
-        str(manifest_path),
-        "--embeddings",
-        str(embeddings_path),
-        "--confounder-column",
-        "scanner_vendor",
-    ]
-    if command in ("ri", "mari"):
-        argv += ["--k-candidates", "1"]
-    else:
-        argv += ["--m", "1"]
-    monkeypatch.setattr("sys.argv", argv)
-
-    cli.main()
-
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["evaluation_design"] == "all"
-
-
-def test_cli_rejects_dataset_wide(tmp_path, monkeypatch) -> None:
-    from croma import cli
-
-    manifest_path, embeddings_path = _write_cli_inputs(tmp_path)
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "croma",
-            "ri",
-            "--manifest",
-            str(manifest_path),
-            "--embeddings",
-            str(embeddings_path),
-            "--confounder-column",
-            "scanner_vendor",
-            "--evaluation-design",
-            "dataset_wide",
-        ],
-    )
-    with pytest.raises(SystemExit):
-        cli.main()
