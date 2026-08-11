@@ -7,6 +7,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-11
+
+Expands the published robustness panel from 21 to 26 encoders and rebuilds the documentation
+site around the per-sample `CRoMa` distribution. Five new tile-encoder families were extracted
+across PathoROB and republished with auditable provenance, a fifth whole-slide encoder joined
+the slide panel, and the `croma` console script is gone.
+
+### Removed
+
+- **BREAKING: the `croma` console script.** `croma 0.1.0` installed a `croma` command with
+  the subcommands `ri`, `mari`, `croma`, `build-embedding-manifest` and `expand-embeddings`;
+  it is gone, along with `src/croma/cli.py`, its documentation page and its entry point in
+  `pyproject.toml`. The library is used through its Python API, and the CLI was a thin
+  argparse wrapper over exactly that API — nothing internal depended on it, and keeping it
+  meant maintaining a second public front door that had to be kept in step with the first.
+  Every command has a direct replacement: `croma ri`, `croma mari` and `croma croma` are
+  `RI.compute`, `MaRI.compute` and `CRoMa.compute` (each takes the `features` array and the
+  manifest that the CLI loaded for you with `numpy.load` and
+  `croma.metrics.pairs.load_manifest`); `expand-embeddings` is
+  `croma.expand_features_to_manifest`; and the deduplicated embedding manifest it consumed
+  comes from `croma.alignment.build_embedding_source_manifest`. No metric, default or
+  numerical behaviour changed.
+
+### Added
+
+- **Mascaret and Phaet** as tile encoders, served through one shared Waiv backend at immutable
+  checkpoint revisions with the released 224 px preprocessing and checkpoint-native output
+  normalization.
+- **The RudolfV 2 family** — the teacher plus its two distilled students — at immutable
+  revisions, with a shared native-square backend that pools the CLS token with the mean of the
+  patch tokens after excluding all eight register tokens.
+- **PRISM2**, a fifth whole-slide encoder. It tops both slide benchmarks, making the two
+  PRISM-family encoders the only biology-dominant slide models, and shows essentially no
+  downstream degradation. With five encoders the shared median-*k* no longer collapses, so the
+  slide panel's *k*\* exception now rests on composition sensitivity rather than on *n* = 4.
+- **`--image-path-map`** for extraction: an access-only mapping that preserves canonical
+  manifest identity and resolves a mirror only when embeddings actually need computing.
+- **A `:results-value:` documentation role.** Run-derived numbers in prose are computed from
+  the committed `results/` at build time, and an unknown function, model or column fails the
+  warnings-as-errors build. It immediately caught three drifted hand-typed numbers.
+
+### Changed
+
+- **The public panel is 25 pathology encoders plus the DINOv2-B control**, recomputed end to
+  end on Camelyon, TCGA-4×4 and Tolkach-ESCA under the sparse shared-median-*k* protocol. For
+  the original 21 models every comparable numeric field moved exactly zero. TCGA-2×2 remains
+  local and supplementary rather than a fourth public cohort.
+- **Downstream nIPD validation covers the five new encoders**, under the unchanged 20-repeat
+  protocol and frozen splits. All 36 expanded-panel tile correlations stay positive and
+  significant; no sign or significance-threshold changed.
+- **Each cohort cell in the aggregate table reads `CRoMa`/LTM₁₀** rather than the margin
+  alone, so the table shows both axes it ranks on. Every published value is unchanged — the
+  CSV only gains columns.
+- **The documentation site is consolidated around the distribution explorer**, redesigned as
+  master–detail: an always-visible overview of all 26 encoders above a detail view with a
+  range brush and a compare-with overlay. The three cohort pages fold into one results page
+  with stable anchors, and the static ridgeline figures are retired.
+- **Model tables, exposure markers and family styling are driven from machine-readable
+  provenance**, including parent/fine-tune and teacher/student relationships and a
+  conservative Charité/CHA exposure caveat.
+- **Embedding publication is crash-safe and identity-checked.** Matrices and provenance
+  sidecars form one artifact contract; resume validates checkpoint revision, extraction
+  contract, precision, manifest, batch size, dtype and shape; and provenance is folded into
+  the embedding fingerprint, so a metric cache cannot reuse a stale matrix. An interrupted
+  extraction can no longer be mistaken for a complete one.
+
+### Fixed
+
+- **RI and MaRI tail statistics reached the aggregate CSV as `NaN`.** The benchmark computed
+  finite per-sample `median_value`, `q_alpha` and `ltm_alpha` but dropped them when
+  serializing summaries and when reading cached payloads.
+- **The distribution explorer's range brush never worked.** `pointerdown` triggered a full
+  re-render, destroying the SVG that held the pointer capture, so every drag collapsed to a
+  single-bin click.
+- **A package-only release no longer fails CI.** A test required the committed results
+  provenance to name the currently installed version, which compares historical producer
+  metadata against the current runtime. The artifact-list and checksum guarantees are
+  unchanged.
+
+## [0.2.0] - 2026-08-05
+
 ### Added
 
 - **`CRoMaResult.f0` — the confounder-dominant fraction `F(0)`, computed by CRoMa itself.**
@@ -86,20 +167,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently leaving stale numbers on a public site. It skips where `output/` is absent.
 
 ### Removed
-
-- **BREAKING: the `croma` console script.** `croma 0.1.0` installed a `croma` command with
-  the subcommands `ri`, `mari`, `croma`, `build-embedding-manifest` and `expand-embeddings`;
-  it is gone, along with `src/croma/cli.py`, its documentation page and its entry point in
-  `pyproject.toml`. The library is used through its Python API, and the CLI was a thin
-  argparse wrapper over exactly that API — nothing internal depended on it, and keeping it
-  meant maintaining a second public front door that had to be kept in step with the first.
-  Every command has a direct replacement: `croma ri`, `croma mari` and `croma croma` are
-  `RI.compute`, `MaRI.compute` and `CRoMa.compute` (each takes the `features` array and the
-  manifest that the CLI loaded for you with `numpy.load` and
-  `croma.metrics.pairs.load_manifest`); `expand-embeddings` is
-  `croma.expand_features_to_manifest`; and the deduplicated embedding manifest it consumed
-  comes from `croma.alignment.build_embedding_source_manifest`. No metric, default or
-  numerical behaviour changed.
 
 - **`croma.napd`**, the equal-weight average of chance-normalized degradation over sampled
   splits. It is replaced by `croma.nipd`, whose trapezoidal integral targets a uniform
@@ -287,4 +354,6 @@ differently.
   faithful benchmarks, and **every Tolkach number moves once the sweep is re-run**. The
   committed Tolkach matrices predate the fix and are not regenerated here. See #105.
 
-[0.1.0]: https://github.com/clemsgrs/croma/releases/tag/v0.1.0
+[0.3.0]: https://github.com/clemsgrs/croma/releases/tag/0.3.0
+[0.2.0]: https://github.com/clemsgrs/croma/releases/tag/0.2.0
+[0.1.0]: https://github.com/clemsgrs/croma/releases/tag/0.1.0
