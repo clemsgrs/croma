@@ -211,8 +211,9 @@ def test_rudolfv2_metadata_describes_one_teacher_student_training_run() -> None:
 
 #: Methods that denote a vision--language model however the cell names them. The ``method``
 #: column records the architecture where the source paper does (TITAN is a CoCa, i.e. a
-#: contrastive captioner), so the regime cannot be read off a single literal.
-VL_METHODS = {"vision--language", "CoCa"}
+#: contrastive captioner; the PRISM family is a Perceiver aggregator trained against
+#: clinical report text), so the regime cannot be read off a single literal.
+VL_METHODS = {"vision--language", "CoCa", "Perceiver"}
 
 
 def test_regime_rule_matches_method() -> None:

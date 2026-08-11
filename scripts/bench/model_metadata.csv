@@ -25,7 +25,7 @@ RudolfV 2-S,tile,23,DINOv2,$22$M,${>}300$k,n/d,card,$768$,vision-only,Charit\'e 
 Mascaret,tile,24,DINOv2 (var.),$1.1$B,$12$k,$384$M,card,$1536$,vision-only,\textbf{TCGA (public)},True,yes,TCGA only,,tcga,Mascaret,24,,,filiot2026robustifying,Midnight-12k,robustness-finetune,acquisition-robustness,waiv,0,27,,,,
 Phaet,tile,25,DINOv2,$307$M,${\sim}58$k,${\sim}456$M,card,$1024$,vision-only,\textbf{PanCancer-XL (incl.\ TCGA)},True,yes,"TCGA, CPTAC, GTEx",,tcga,Phaet,25,,,filiot2026robustifying,Phikon-v2,robustness-finetune,acquisition-robustness,waiv,1,28,,,,
 DINOv2-B,tile,26,DINOv2,$86$M,n/a,n/a,card,$768$,vision-only,LVD-142M (natural images),False,yes,"LVD-142M: ImageNet-22k/1k, Google Landmarks $+$ web-crawl retrieval",,,DINOv2-B,13,,,oquab2024,,,,dinov2,0,29,,,,
-PRISM,slide,1,Perceiver,$99$M$^{\ast}$,$587$k,n/d,card,$1280$,vision-only,Paige (prop.),False,no,Paige,,,PRISM,19,,,prism,,,,paige,1,3,,,,
+PRISM,slide,1,Perceiver,$99$M$^{\ast}$,$587$k,n/d,card,$1280$,VLFM,Paige (prop.),False,no,Paige,,,PRISM,19,,,prism,,,,paige,1,3,,,,
 PRISM2,slide,2,Perceiver,$620$M$^{\S}$,$2.3$M,n/d,card,$2560$,VLFM,MSKCC (prop.),False,no,MSKCC,,,PRISM2,19,,,prism2,,,,paige,2,4,,,,
 TITAN,slide,3,CoCa,$48.5$M,$336$k,n/d,card,$768$,VLFM,MGB (prop.),False,no,Mass General Brigham,,,TITAN,20,,,titan,,,,conch,1,9,,,,
 Prov-GigaPath,slide,4,LongNet,$86.3$M$^{\ast}$,$171$k,$1.3$B,card,$768$,vision-only,Providence (prop.),False,no,Providence,,,Prov-GigaPath,17,,,Xu2024-gj,,,,gigapath,0,15,,,,

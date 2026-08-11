@@ -40,7 +40,8 @@ Camelyon, TCGA-4×4 and Tolkach-ESCA come from the
 `PathoROB <https://arxiv.org/abs/2507.17845>`_ study. PCaBiop is a collection of prostate
 biopsies sourced from `PANDA <https://www.kaggle.com/c/prostate-cancer-grade-assessment>`_;
 it backs the paper's slide-level analyses and is evaluated on a smaller model panel, which
-is why it has no page under :doc:`Results <results/index>` (see :ref:`cohort-caveats`).
+is why it has no page under :doc:`Results <results/index>` (see :ref:`the published roster
+<cohort-caveats>`).
 
 What the confounder looks like
 ------------------------------
