@@ -74,7 +74,7 @@ K_GROWTH = 2.0
 
 #: Bottom-left to top-right, i.e. increasing typed-distance magnitude. Fixes the
 #: draw order so overplotting is deterministic across renders.
-MODELS = ("Prov-GigaPath", "TITAN", "PRISM", "MOOZY")
+MODELS = ("Prov-GigaPath", "TITAN", "PRISM", "PRISM2", "MOOZY")
 
 #: Direct-label offsets (points), hand-placed: the clouds are dense and unevenly
 #: shaped, so automatic placement collides with either the diagonal or a neighbour.
@@ -82,12 +82,14 @@ LABEL_OFFSETS = {
     "Prov-GigaPath": (11, -12),
     "TITAN": (12, -10),
     "PRISM": (-12, 12),
+    "PRISM2": (12, 12),
     "MOOZY": (-11, 12),
 }
 LABEL_ALIGN = {
     "Prov-GigaPath": "left",
     "TITAN": "left",
     "PRISM": "right",
+    "PRISM2": "left",
     "MOOZY": "right",
 }
 

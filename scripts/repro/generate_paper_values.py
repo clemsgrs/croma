@@ -536,7 +536,7 @@ def _apd_macros(df: pd.DataFrame) -> list[str]:
 def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     """Model-level PCaBiop/PAR values cited in the external-validation paragraph."""
     rows = df[df["dataset"] == "pcabiop"].set_index("model")
-    required = {"MOOZY", "PRISM", "Prov-GigaPath", "TITAN"}
+    required = {"MOOZY", "PRISM", "PRISM2", "Prov-GigaPath", "TITAN"}
     if set(rows.index) != required:
         raise CaptionClaimError(
             f"PCaBiop nIPD paragraph expects {sorted(required)}, got {sorted(rows.index)}"
@@ -545,6 +545,7 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     model_suffix = {
         "MOOZY": "Moozy",
         "PRISM": "Prism",
+        "PRISM2": "PrismTwo",
         "Prov-GigaPath": "ProvGigaPath",
         "TITAN": "Titan",
     }

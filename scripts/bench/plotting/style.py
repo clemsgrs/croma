@@ -115,7 +115,7 @@ MODEL_FAMILY_MAP, MODEL_TONE_INDEX, CANONICAL_MODEL_ORDER = _load_model_identity
 # (colour-only; no marker/dash backup).
 # Per-family tones ordered light -> dark. Saturated for a lively, readable look.
 FAMILY_PALETTE: dict[str, list[str]] = {
-    "paige": ["#fb9a3c", "#e2660c"],  # orange
+    "paige": ["#fb9a3c", "#e2660c", "#a94708"],  # orange (3 tones)
     "uni": ["#4cc183", "#1f9d55"],  # green
     "conch": ["#ee4d5a", "#c2222f"],  # red (cooler, away from orange)
     "phikon": ["#9b80e6", "#5b3fc4"],  # violet
