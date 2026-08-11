@@ -47,11 +47,10 @@ PANDA_TILESET = "panda-wsi"                                      # holds the ID 
 PAR_LABELS = WSI / "par-labels.csv"
 
 MODELS = ["PRISM", "PRISM2", "TITAN", "Prov-GigaPath", "MOOZY"]
-# Each slide FM's PAR slide_embeddings live under a hash-named slide2vec run dir
-# (PRISM2's run dir is named explicitly rather than hash-generated).
+# Each slide FM's PAR slide_embeddings live under a hash-named slide2vec run dir.
 PAR_FEATURE_DIR = {
     "PRISM": "552fd85i",
-    "PRISM2": "prism2-par",
+    "PRISM2": "1evxzd6h",
     "TITAN": "n02n1k2t",
     "Prov-GigaPath": "aetsexkb",
     "MOOZY": "nchyscec",

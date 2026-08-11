@@ -30,7 +30,7 @@ primitives come from the benchmark plotting library.
 
 Normalized trajectories are the canonical publication mode. ``--raw-accuracy`` retains
 the absolute probe-accuracy view under an explicit non-canonical filename. PCaBiop is
-rendered separately with ``--pcabiop``; with only four whole-slide encoders, its scatter
+rendered separately with ``--pcabiop``; with only five whole-slide encoders, its scatter
 panels report descriptive rank associations and omit the least-squares guide line.
 """
 import argparse
