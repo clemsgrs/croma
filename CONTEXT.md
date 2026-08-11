@@ -164,8 +164,8 @@ never owns embeddings. Camelyon's tileset is 22,402 tiles; the `pathorob-camelyo
 benchmark is the 20,400-tile RI view of it.
 
 **Evaluation design** (`all` | `paired_2x2`):
-What a benchmark's neighbourhood scope is. `all` — the default everywhere, in the
-library and on the CLI — scores every supplied manifest row together, as one scope, at
+What a benchmark's neighbourhood scope is. `all` — the default everywhere in the
+library — scores every supplied manifest row together, as one scope, at
 sample level. `paired_2x2` scores only the manifest's explicitly declared 2x2 subsets,
 at occurrence level, and has to be asked for. There are no other values.
 _Avoid_: `dataset_wide` (the retired name for `all`; it is rejected, not aliased).

@@ -94,9 +94,6 @@ docs = [
 # only gets such a project past the *build*. They now live in
 # `scripts/bench/requirements-encoders.txt`, which is where the script that needs them is.
 
-[project.scripts]
-croma = "croma.cli:main"
-
 [tool.hatch.build.targets.wheel]
 packages = ["src/croma"]
 

@@ -91,7 +91,6 @@ theirs, and the three cohorts scored under :doc:`Results <results/index>` are th
    getting-started
    metrics
    manifest
-   cli
    api
 
 .. toctree::

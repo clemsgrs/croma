@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manifest sample contributes once; under `paired_2x2` each defined subset occurrence does,
   so a sample scored in two subsets contributes twice. With nothing defined it is `nan`, and
   `undefined_frac` remains the separate measure of missing support over all units. The value
-  is surfaced as `f0` in the `croma croma` CLI payload and as `croma_f0` in the benchmark's
+  is surfaced as `croma_f0` in the benchmark's
   metrics rows, m-sweep rows and cache payloads; a cached m-sweep entry written before this
   column existed is no longer treated as a hit. `scripts/tools/export_results.py` now
   publishes the stored value instead of recomputing it from the per-sample artifact (where
@@ -30,9 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The name was verbose and assumed the supplied evaluation set is naturally called a
   dataset; the design simply scores every supplied manifest row together, as one
   evaluation scope. `all` and `paired_2x2` are now the only accepted public values, and
-  `all` is what every public Python entry point and every CLI metric command selects when
-  the caller says nothing — `--evaluation-design` is optional, and `paired_2x2` is the one
-  that has to be asked for. This flips the previous library default, which was
+  `all` is what every public Python entry point selects when the caller says nothing, and
+  `paired_2x2` is the one that has to be asked for. This flips the previous library
+  default, which was
   `paired_2x2`: a call that omitted `evaluation_design` and relied on it must now pass
   `evaluation_design="paired_2x2"` explicitly. There is no alias, no warning and no
   migration shim: passing `dataset_wide` raises, naming only `all` and `paired_2x2`.
@@ -59,8 +59,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the manifest fingerprint and the embedding-alignment key, so changing a row's value
   invalidates score-dependent cached artifacts. The embedding matrices themselves stay
   reusable — a benchmark maps its rows onto a tileset by tile identity, `(sample_id,
-  image_path)`, which this change does not touch — but a `build-embedding-manifest`
-  sidecar written before the rename no longer matches its manifest and must be re-emitted.
+  image_path)`, which this change does not touch — but a deduplicated embedding manifest
+  written before the rename no longer matches its manifest and must be re-emitted.
   Per-sample benchmark artifacts now carry a `group_id` column, and
   `scripts/studies/bootstrap_uncertainty.py` reports `n_groups` where it reported
   `n_slides`.
@@ -86,6 +86,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silently leaving stale numbers on a public site. It skips where `output/` is absent.
 
 ### Removed
+
+- **BREAKING: the `croma` console script.** `croma 0.1.0` installed a `croma` command with
+  the subcommands `ri`, `mari`, `croma`, `build-embedding-manifest` and `expand-embeddings`;
+  it is gone, along with `src/croma/cli.py`, its documentation page and its entry point in
+  `pyproject.toml`. The library is used through its Python API, and the CLI was a thin
+  argparse wrapper over exactly that API — nothing internal depended on it, and keeping it
+  meant maintaining a second public front door that had to be kept in step with the first.
+  Every command has a direct replacement: `croma ri`, `croma mari` and `croma croma` are
+  `RI.compute`, `MaRI.compute` and `CRoMa.compute` (each takes the `features` array and the
+  manifest that the CLI loaded for you with `numpy.load` and
+  `croma.metrics.pairs.load_manifest`); `expand-embeddings` is
+  `croma.expand_features_to_manifest`; and the deduplicated embedding manifest it consumed
+  comes from `croma.alignment.build_embedding_source_manifest`. No metric, default or
+  numerical behaviour changed.
 
 - **`croma.napd`**, the equal-weight average of chance-normalized degradation over sampled
   splits. It is replaced by `croma.nipd`, whose trapezoidal integral targets a uniform

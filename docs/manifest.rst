@@ -57,8 +57,9 @@ Embedding contract
    * - Property
      - Requirement
    * - Type
-     - ``numpy.ndarray``. The CLI loads it with :func:`numpy.load`, so the file must be a
-       ``.npy`` holding a plain array -- not an ``.npz`` archive and not a pickled object.
+     - ``numpy.ndarray``. The benchmark pipeline loads it with :func:`numpy.load`, so a
+       file on disk must be a ``.npy`` holding a plain array -- not an ``.npz`` archive
+       and not a pickled object.
    * - Shape
      - Exactly 2-D, ``(N, D)``. A 1-D or 3-D array is rejected.
    * - ``N``
@@ -84,7 +85,7 @@ images, expand them back to manifest-row order first -- see :ref:`deduplicated-e
 Evaluation designs
 ------------------
 
-``all`` is the default, in the library and on the CLI: every supplied manifest row is
+``all`` is the default everywhere in the library: every supplied manifest row is
 scored together, as one evaluation scope, for a single number over the whole cohort. It
 accepts that label and confounder may be unevenly mixed, needs no ``subset`` column, and is
 the right first thing to run on a new dataset.
@@ -190,7 +191,6 @@ Deduplicated embeddings
 -----------------------
 
 Because ``paired_2x2`` repeats rows across subsets, the same image is often embedded more
-than once. Embed each unique image once, then expand back to manifest-row order —
-``croma build-embedding-manifest`` followed by ``croma expand-embeddings``, shown in full
-under :doc:`cli`. The equivalent Python entry point is
-:func:`croma.expand_features_to_manifest`.
+than once. Embed each unique image once, then expand back to manifest-row order with
+:func:`croma.expand_features_to_manifest`, which takes the deduplicated embeddings
+together with the embedding manifest they were computed from.
