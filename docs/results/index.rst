@@ -7,9 +7,9 @@ Results
 and one natural-image control — scored on three tile cohorts from the
 `PathoROB <https://arxiv.org/abs/2507.17845>`_ study, plus a separate
 :results-value:`models(pcabiop)`-encoder slide-level cohort, :doc:`PCaBiop <pcabiop>`,
-published on its own page. Every number on this page, prose
-included, is read at build time from :ref:`committed CSVs <results-provenance>` written by a
-tracked exporter, never transcribed. The method is described in `Beyond counts: A
+published on its own page. Every number on this page is read at build time from
+:ref:`committed CSVs <results-provenance>`, never transcribed. The method is described in
+`Beyond counts: A
 distributional robustness margin for pathology foundation models
 <https://arxiv.org/abs/2607.25497>`_.
 
@@ -65,10 +65,7 @@ the large histogram to count the samples in any range, and pick a second encoder
    </div>
 
 The histograms are 200 bins of the per-sample ``CRoMa`` at the headline radius ``m = 5``,
-read from the same committed export as the tables. Sample identifiers and tile thumbnails
-are deliberately absent: identifiers cost megabytes per cohort for a lookup nobody can act
-on without the cohort in hand, and thumbnails would mean redistributing three datasets
-under three different licences.
+read from the same committed export as the tables.
 
 The cohorts
 -----------
@@ -161,13 +158,10 @@ Scope
 -----
 
 The tile roster is fixed across the three tile cohorts, and the ranks above are computed
-on it alone. The slide-level cohort :doc:`PCaBiop <pcabiop>` is published on a separate
-page precisely because its roster differs: it never shares a table, a rank, or an
-explorer dropdown with the tile panel, because a table whose roster silently differs from
-the one beside it misleads more than it informs. A prostate tile cohort computed on yet
-another roster stays unpublished for the same reason. And ranks are within a panel: they
-say which of these encoders is more robust on these cohorts, not how any of them would
-behave on yours.
+on it alone. The slide-level cohort :doc:`PCaBiop <pcabiop>` is a different roster, so it
+never shares a table, a rank, or an explorer dropdown with the tile panel. And ranks are
+within a panel: they say which of these encoders is more robust on these cohorts, not how
+any of them would behave on yours.
 
 The operating point
 -------------------
@@ -191,26 +185,8 @@ at its own kNN-optimal ``k`` — and says so on its page.
 Where the numbers come from
 ---------------------------
 
-Every number on this page — prose included — is read at build time from
-`results/ <https://github.com/clemsgrs/croma/tree/main/results>`_, a small set of CSVs
-committed to the repository and exported from the benchmark runs. Nothing is transcribed
-by hand, so the files below are the citable data behind every table and figure here.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 34 66
-
-   * - File
-     - Contents
-   * - ``results/<cohort>.csv``
-     - One row per encoder, holding exactly the columns the cohort tables render.
-   * - ``results/cross_benchmark.csv``
-     - The two pathology-only mean ranks and their average, the pathology frontier flag,
-       and the median ``CRoMa`` and ``LTM₁₀`` behind them on each of the three cohorts.
-       The DINOv2-B control keeps its measurements but has blank rank fields.
-   * - ``results/distributions.json``
-     - 200-bin histograms of per-sample ``CRoMa``, per encoder and cohort. What the
-       explorer reads.
-   * - ``results/PROVENANCE.json``
-     - Protocol, per-cohort ``k``, ``tau`` policy, roster size, ``croma`` version, the
-       source run for each cohort, and a sha256 of every file above.
+Every number on this page — prose included — is read at build time from the committed
+CSVs in `results/ <https://github.com/clemsgrs/croma/tree/main/results>`_; nothing is
+transcribed by hand. That directory is the citable data behind every table and figure
+here, and ``results/PROVENANCE.json`` records the protocol, operating points, ``tau``
+policy and source run behind each cohort.
