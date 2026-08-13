@@ -14,6 +14,11 @@ outside TCGA.
              :ref:`result-columns`; † marks the natural-image control
              (:ref:`the-control`).
 
+One provenance caveat: the ``RudolfV-2`` family's disclosed Charité/LMU institutional
+corpus creates a possible institutional/source-domain overlap with this cohort's CHA
+center. Exact patient or slide overlap is unknown, so this does not establish leakage —
+but read the family's scores here with it in mind.
+
 The mildest of the three cohorts — :results-value:`below_zero(tolkach-esca)` encoders fall
 below zero — and the one where the count-based indices run out of room:
 :results-value:`count_above(tolkach-esca, ri, 0.9)` of the :results-value:`ranked()` ranked

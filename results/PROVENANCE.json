@@ -1,6 +1,6 @@
 {
-  "croma_version": "0.2.0",
-  "exported": "2026-08-10",
+  "croma_version": "0.3.0",
+  "exported": "2026-08-13",
   "protocol": "median-k",
   "croma_m": 5,
   "tail_alpha": 0.1,
@@ -10,6 +10,8 @@
     "camelyon": {
       "benchmark": "pathorob-camelyon",
       "label": "Camelyon",
+      "panel": "tile",
+      "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-camelyon",
       "k": 11,
       "n_models": 26,
@@ -19,6 +21,8 @@
     "tcga-4x4": {
       "benchmark": "pathorob-tcga-4x4",
       "label": "TCGA-4\u00d74",
+      "panel": "tile",
+      "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tcga-4x4",
       "k": 71,
       "n_models": 26,
@@ -28,17 +32,37 @@
     "tolkach-esca": {
       "benchmark": "pathorob-tolkach-esca",
       "label": "Tolkach-ESCA",
+      "panel": "tile",
+      "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tolkach-esca",
       "k": 61,
       "n_models": 26,
       "confounder": "Medical Center",
+      "evaluation_design": "all"
+    },
+    "pcabiop": {
+      "benchmark": "panda",
+      "label": "PCaBiop",
+      "panel": "slide",
+      "protocol": "k-star",
+      "run": "output/metrics/k-star/panda",
+      "k": {
+        "MOOZY": 9,
+        "PRISM": 3,
+        "PRISM2": 7,
+        "Prov-GigaPath": 13,
+        "TITAN": 9
+      },
+      "n_models": 5,
+      "confounder": "Data Provider",
       "evaluation_design": "all"
     }
   },
   "files": {
     "results/camelyon.csv": "bb0a0dd0e62db64cd6d240fc98cfc4ae06794d46b06d5eae80e9bd3b6535d4d7",
     "results/cross_benchmark.csv": "a1c3574667ef7d2e6a125e6ca7c57f16598697b023b80db977a43021c7aaa16f",
-    "results/distributions.json": "e5228fbfd842552afa27dfb59876404eac5ceb35d25d24656b089fe40c199ba6",
+    "results/distributions.json": "8edddfa380a0846f05f2912dcccd0e6f7d9f6bee6096337ca1f04149a4773c52",
+    "results/pcabiop.csv": "e757939d10a339d3afac300fea0851759cc82ddccabaad4c937ffe2c2d3d82eb",
     "results/tcga-4x4.csv": "d30c1ae9305a83fe5bd0a9e4afa90cfbf7b09663cb41e66571b1abb18eaa231b",
     "results/tolkach-esca.csv": "43fb47f602c35a3a12cd473b3ef08336739763972dd42e8fd0b8778a89b4cd3a"
   }

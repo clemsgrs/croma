@@ -49,9 +49,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from croma import __version__ as CROMA_VERSION  # noqa: E402
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 
-#: The protocol every published cohort is reported at. All three share one operating point
-#: per cohort (the dataset median of the per-model biological k*), which is what makes a
-#: cross-cohort rank meaningful.
+#: The protocol the published tile cohorts are reported at. All three share one operating
+#: point per cohort (the dataset median of the per-model biological k*), which is what
+#: makes a cross-cohort rank meaningful. The slide cohort is the exception: see
+#: ``SLIDE_COHORTS``.
 PROTOCOL = "median-k"
 
 #: Resolution of the committed distribution payload. 200 bins resolves the lower decile
@@ -78,15 +79,23 @@ MEAN_RANK_PRECISION = RANK_PRECISION + 1
 
 @dataclass(frozen=True)
 class Cohort:
-    """One published cohort: where its run lives and what the site calls it."""
+    """One published cohort: where its run lives and what the site calls it.
+
+    ``panel`` names the roster the cohort was scored on -- ``tile`` or ``slide``. The two
+    rosters share no comparable rank, so the panel travels with every published artifact
+    (the distribution payload keys the explorer's cohort list on it) and the aggregate is
+    built from the tile panel only.
+    """
 
     slug: str
     benchmark: str
     label: str
+    protocol: str = PROTOCOL
+    panel: str = "tile"
 
     @property
     def run_dir(self) -> Path:
-        return ROOT / "output" / "metrics" / PROTOCOL / self.benchmark
+        return ROOT / "output" / "metrics" / self.protocol / self.benchmark
 
     @property
     def metrics_csv(self) -> Path:
@@ -97,16 +106,30 @@ class Cohort:
         return self.run_dir / "results" / "per_sample_metrics.csv"
 
 
-#: The three published cohorts. Prostate (16-model roster) and PANDA (slide-level, n=4)
-#: are computed and stay in ``output/``: a site table whose roster silently differs from
-#: the one beside it misleads more than it informs. TCGA-2x2 is excluded for the same
-#: reason its results table is a supplement -- it is the same corpus as TCGA-4x4 at a
-#: coarser confounder split, and two near-duplicate cohorts crowd the aggregate.
+#: The three published tile cohorts -- the panel the aggregate ranks and the README table
+#: are built from. Prostate (16-model roster) is computed and stays in ``output/``: a site
+#: table whose roster silently differs from the one beside it misleads more than it
+#: informs. TCGA-2x2 is excluded for the same reason its results table is a supplement --
+#: it is the same corpus as TCGA-4x4 at a coarser confounder split, and two near-duplicate
+#: cohorts crowd the aggregate.
 COHORTS: tuple[Cohort, ...] = (
     Cohort("camelyon", "pathorob-camelyon", "Camelyon"),
     Cohort("tcga-4x4", "pathorob-tcga-4x4", "TCGA-4×4"),
     Cohort("tolkach-esca", "pathorob-tolkach-esca", "Tolkach-ESCA"),
 )
+
+#: The slide-level cohort: PCaBiop, five whole-slide encoders over 1,000 PANDA biopsy
+#: slides. Published as its own page, never in the aggregate: a five-encoder rank next to
+#: a 25-encoder rank would read as comparable when it is not. It is reported at ``k-star``
+#: (each encoder at its own kNN-optimal k) because with five models the shared median is
+#: dominated by panel composition -- adding one encoder moved the would-be shared k from
+#: 3 to 9.
+SLIDE_COHORTS: tuple[Cohort, ...] = (
+    Cohort("pcabiop", "panda", "PCaBiop", protocol="k-star", panel="slide"),
+)
+
+#: Everything the exporter publishes a cohort table and distributions for.
+ALL_COHORTS: tuple[Cohort, ...] = COHORTS + SLIDE_COHORTS
 
 #: Published columns, in order, for a per-cohort table. Matches the manuscript's results
 #: table: two retrieval diagnostics, the two pooled counts and their difference, then the
@@ -392,15 +415,21 @@ def bin_distribution(values, lo: float, hi: float, n_bins: int = N_BINS) -> list
     return idx.value_counts().reindex(range(n_bins), fill_value=0).sort_index().tolist()
 
 
-def build_distributions(per_sample: dict[str, pd.DataFrame]) -> dict:
+def build_distributions(
+    per_sample: dict[str, pd.DataFrame], cohorts: tuple[Cohort, ...] = ALL_COHORTS
+) -> dict:
     """The explorer payload: per-cohort, per-model binned CRoMa at the headline radius.
 
     Each cohort gets its own bin grid, spanning that cohort's observed range rounded
     outward to two decimals. A shared grid across cohorts would spend most of its
     resolution on empty space, and the lower decile is the part that has to stay readable.
+
+    Each cohort carries its ``panel``: the explorer mounts filter on it, so the tile
+    explorer never offers the slide cohort in its dropdown and vice versa -- the roster
+    separation the results pages promise, enforced in the payload rather than in prose.
     """
     payload = {"m": int(CROMA_HEADLINE_M), "n_bins": N_BINS, "cohorts": {}}
-    for cohort in COHORTS:
+    for cohort in cohorts:
         frame = per_sample[cohort.slug]
         column = f"croma_m{int(CROMA_HEADLINE_M)}"
         lo = float(pd.Series(frame[column]).min())
@@ -408,6 +437,7 @@ def build_distributions(per_sample: dict[str, pd.DataFrame]) -> dict:
         lo, hi = _round_outward(lo, hi)
         payload["cohorts"][cohort.slug] = {
             "label": cohort.label,
+            "panel": cohort.panel,
             "lo": lo,
             "hi": hi,
             "models": {
@@ -443,7 +473,7 @@ def read_per_sample(cohort: Cohort) -> pd.DataFrame:
     return pd.read_csv(cohort.per_sample_csv, usecols=["model", f"croma_m{int(CROMA_HEADLINE_M)}"])
 
 
-def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
+def export(cohorts: tuple[Cohort, ...] = ALL_COHORTS) -> dict[str, str]:
     """Render every published artifact in memory. Returns path -> file content.
 
     Nothing is written here, so ``--check`` and the freshness test compare exactly what a
@@ -460,12 +490,15 @@ def export(cohorts: tuple[Cohort, ...] = COHORTS) -> dict[str, str]:
         tables[cohort.slug] = build_cohort_table(metrics)
         meta[cohort.slug] = _cohort_provenance(cohort, metrics)
 
-    aggregate = build_aggregate_table(tables)
+    # The aggregate ranks are a tile-panel claim: the slide cohort's five-encoder roster
+    # shares no comparable rank with the 26-model panel, so it never enters here.
+    tile_slugs = [c.slug for c in cohorts if c.panel == "tile"]
+    aggregate = build_aggregate_table({slug: tables[slug] for slug in tile_slugs})
     aggregate = with_exposure(
         aggregate,
         exposed_models(published(pd.read_csv(METADATA)), TCGA_DOMAIN, set(aggregate["model"])),
     )
-    distributions = build_distributions(per_sample)
+    distributions = build_distributions(per_sample, cohorts)
 
     rendered = {f"results/{slug}.csv": _to_csv(df) for slug, df in tables.items()}
     rendered["results/cross_benchmark.csv"] = _to_csv(aggregate)
@@ -558,17 +591,29 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
 
 
 def _cohort_provenance(cohort: Cohort, metrics: pd.DataFrame) -> dict:
-    ks = sorted({int(k) for k in metrics["k"]})
-    if len(ks) != 1:
-        raise ValueError(
-            f"{cohort.slug}: {PROTOCOL} promises one shared operating point, run has k={ks}. "
-            f"A cross-cohort rank over per-model k is not the statistic the site describes."
-        )
+    """One cohort's sidecar entry. ``k`` is the shared operating point for a ``median-k``
+    cohort and a per-model mapping for a ``k-star`` one -- the protocol says which claim
+    the run makes, so it is recorded beside the k it shapes."""
+    if cohort.protocol == "k-star":
+        k: int | dict[str, int] = {
+            str(model): int(value) for model, value in zip(metrics["model"], metrics["k"])
+        }
+    else:
+        ks = sorted({int(v) for v in metrics["k"]})
+        if len(ks) != 1:
+            raise ValueError(
+                f"{cohort.slug}: {cohort.protocol} promises one shared operating point, run "
+                f"has k={ks}. A cross-cohort rank over per-model k is not the statistic the "
+                f"site describes."
+            )
+        k = ks[0]
     return {
         "benchmark": cohort.benchmark,
         "label": cohort.label,
+        "panel": cohort.panel,
+        "protocol": cohort.protocol,
         "run": str(cohort.run_dir.relative_to(ROOT)),
-        "k": ks[0],
+        "k": k,
         "n_models": int(len(metrics)),
         "confounder": str(metrics["confounder_display_name"].iloc[0]),
         "evaluation_design": str(metrics["evaluation_design"].iloc[0]),
@@ -580,6 +625,8 @@ def _provenance(meta: dict[str, dict], rendered: dict[str, str], aggregate: pd.D
     return {
         "croma_version": CROMA_VERSION,
         "exported": dt.date.today().isoformat(),
+        # The tile cohorts' shared protocol; each cohort entry also records its own,
+        # because the slide cohort is reported at k-star.
         "protocol": PROTOCOL,
         "croma_m": int(CROMA_HEADLINE_M),
         "tail_alpha": 0.1,
@@ -634,7 +681,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    missing = [c.metrics_csv for c in COHORTS if not c.metrics_csv.exists()]
+    missing = [c.metrics_csv for c in ALL_COHORTS if not c.metrics_csv.exists()]
     if missing:
         for path in missing:
             print(f"missing run: {path}", file=sys.stderr)

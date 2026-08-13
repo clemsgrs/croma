@@ -85,9 +85,28 @@ def ranked() -> str:
     return str(len(_ranked(_read_cohort("cross_benchmark"))))
 
 
+def models(slug: str) -> str:
+    """How many encoders the cohort's table holds, control included."""
+    return str(len(_read_cohort(slug)))
+
+
 def k(slug: str) -> str:
     """The cohort's shared ``median-k`` operating point, from ``PROVENANCE.json``."""
-    return str(_provenance()["cohorts"][slug]["k"])
+    value = _provenance()["cohorts"][slug]["k"]
+    if isinstance(value, dict):
+        raise ValueError(
+            f"{slug!r} is a k-star cohort with per-model k; use k_range({slug}) instead"
+        )
+    return str(value)
+
+
+def k_range(slug: str) -> str:
+    """A ``k-star`` cohort's span of per-model operating points, as ``3–13``."""
+    value = _provenance()["cohorts"][slug]["k"]
+    if not isinstance(value, dict):
+        raise ValueError(f"{slug!r} has one shared k; use k({slug}) instead")
+    ks = sorted(int(v) for v in value.values())
+    return f"{ks[0]}–{ks[-1]}"
 
 
 def below_zero(slug: str) -> str:
@@ -144,7 +163,9 @@ FUNCTIONS = {
     for fn in (
         roster,
         ranked,
+        models,
         k,
+        k_range,
         below_zero,
         support_min,
         support_max,

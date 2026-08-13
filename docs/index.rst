@@ -82,7 +82,8 @@ Citing
    }
 
 Please cite the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study alongside it: RI is
-theirs, and the three cohorts scored under :doc:`Results <results/index>` are theirs too.
+theirs, and the three tile cohorts scored under :doc:`Results <results/index>` are theirs
+too.
 
 .. toctree::
    :maxdepth: 1

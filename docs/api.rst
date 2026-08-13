@@ -101,7 +101,7 @@ PathoROB's schedules
 
 These two, and ``croma.downstream.IN_DOMAIN`` -- the key the sweep's own held-out matrix
 comes back under -- are reachable under ``croma.downstream`` but are not promoted to the
-top level, so they carry no stability promise: minimal-first, per ADR-0002.
+top level, so they carry no stability promise.
 
 Downstream reductions
 ---------------------
