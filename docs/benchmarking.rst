@@ -76,51 +76,10 @@ is off-scale for. See :ref:`choosing-tau`.
 Encoder-specific environments
 -----------------------------
 
-Two checkpoint families use a Transformers 5 remote-code runtime whose pins conflict with
-the shared encoder environment. Each is reproduced in a dedicated venv so its constraints
-never change the runtime used by the other encoders; the exact pins live in the
-requirements files named below, and the immutable checkpoint revisions in the model
-registry.
-
-**Mascaret and Phaet** (the Waiv checkpoints):
-
-.. code-block:: bash
-
-   python -m venv .venv-waiv
-   .venv-waiv/bin/pip install -e ".[dev]" \
-     -r scripts/bench/requirements-waiv.txt
-   .venv-waiv/bin/python scripts/bench/extract_embeddings.py \
-     --tileset pathorob-camelyon \
-     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
-     --models Mascaret,Phaet
-
-Both use FP32 inference and their checkpoint configuration's ``pixel_mean`` and
-``pixel_std``. An opt-in real-weight smoke test verifies repeatable finite outputs and unit
-L2 norms; it can download gated weights, so the default offline suite skips it:
-
-.. code-block:: bash
-
-   CROMA_RUN_WAIV_SMOKE=1 .venv-waiv/bin/python -m pytest \
-     tests/test_waiv_smoke.py -q
-
-**RudolfV 2, RudolfV 2-B and RudolfV 2-S**, whose published implementation additionally
-requires timm:
-
-.. code-block:: bash
-
-   python -m venv .venv-rudolfv2
-   .venv-rudolfv2/bin/pip install -e ".[dev]" \
-     -r scripts/bench/requirements-rudolfv2.txt
-   .venv-rudolfv2/bin/python scripts/bench/extract_embeddings.py \
-     --tileset pathorob-camelyon \
-     --manifest data/pathorob/manifests/pathorob-camelyon.csv \
-     --models "RudolfV 2,RudolfV 2-B,RudolfV 2-S"
-
-All three use FP32 inference and the released 224 px preprocessing contract. Their opt-in
-gated-weight smoke test verifies exact published pooling, deterministic repeated inference,
-and the three output dimensions:
-
-.. code-block:: bash
-
-   CROMA_RUN_RUDOLFV2_SMOKE=1 .venv-rudolfv2/bin/python -m pytest \
-     tests/test_rudolfv2_smoke.py -q
+Two checkpoint families (Mascaret and Phaet, and the RudolfV 2 family) use remote-code
+runtimes whose pins conflict with the shared encoder environment, so each is embedded from
+a dedicated venv built from its own requirements file under ``scripts/bench/``
+(``requirements-waiv.txt``, ``requirements-rudolfv2.txt``). Each family also has an opt-in
+gated-weight smoke test (``CROMA_RUN_WAIV_SMOKE=1`` / ``CROMA_RUN_RUDOLFV2_SMOKE=1``) that
+the default offline suite skips. Exact preprocessing contracts and immutable checkpoint
+revisions live in the model registry.
