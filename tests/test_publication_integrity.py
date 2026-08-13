@@ -25,7 +25,9 @@ import generate_pretraining_overlap_table as overlap_table  # noqa: E402
 import generate_supp_rank_table as typed_table  # noqa: E402
 from _rank_pareto import RankPareto  # noqa: E402
 
-EXPECTED_PUBLIC_COHORTS = {"camelyon", "tcga-4x4", "tolkach-esca"}
+EXPECTED_PUBLIC_COHORTS = {"camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"}
+EXPECTED_TILE_COHORTS = {"camelyon", "tcga-4x4", "tolkach-esca"}
+EXPECTED_SLIDE_PANEL = {"MOOZY", "PRISM", "PRISM2", "Prov-GigaPath", "TITAN"}
 EXPECTED_PANEL = {
     "CONCH",
     "CONCHv1.5",
@@ -63,12 +65,26 @@ EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
 }
 
 
-def test_public_export_is_exactly_three_cohorts_and_25_plus_control() -> None:
+def test_public_export_is_three_tile_cohorts_plus_the_slide_cohort() -> None:
+    """The tile aggregate stays 25 ranked encoders plus the control over exactly the
+    three tile cohorts; the slide cohort is published beside them -- five whole-slide
+    encoders at k-star -- and never contributes a rank."""
     provenance = json.loads((ROOT / "results/PROVENANCE.json").read_text())
     aggregate = pd.read_csv(ROOT / "results/cross_benchmark.csv")
 
     assert set(provenance["cohorts"]) == EXPECTED_PUBLIC_COHORTS
+    assert {
+        slug for slug, meta in provenance["cohorts"].items() if meta["panel"] == "tile"
+    } == EXPECTED_TILE_COHORTS
     assert provenance["roster"] == 26
+
+    pcabiop = provenance["cohorts"]["pcabiop"]
+    assert pcabiop["panel"] == "slide"
+    assert pcabiop["protocol"] == "k-star"
+    assert pcabiop["n_models"] == 5
+    slide = pd.read_csv(ROOT / "results/pcabiop.csv")
+    assert set(slide["model"]) == EXPECTED_SLIDE_PANEL
+    assert not slide["is_control"].any()
     assert set(aggregate["model"]) == EXPECTED_PANEL
     assert aggregate.loc[aggregate["is_control"], "model"].tolist() == ["DINOv2-B"]
     assert len(aggregate.loc[~aggregate["is_control"]]) == 25
@@ -84,14 +100,14 @@ def test_public_export_is_exactly_three_cohorts_and_25_plus_control() -> None:
     assert "tcga-2x2" not in provenance["files"]
 
 
-def test_public_results_section_carries_only_the_three_public_cohorts() -> None:
+def test_public_results_section_carries_only_the_public_cohorts() -> None:
     """One page per public cohort, each carrying its table and Pareto panel.
 
-    The invariant is the cohort set: exactly the three public cohorts in the results
+    The invariant is the cohort set: exactly the public cohorts in the results
     toctree, and no supplementary TCGA-2x2 leaking onto the public site.
     """
     index = (ROOT / "docs/results/index.rst").read_text()
-    for slug in ("camelyon", "tcga-4x4", "tolkach-esca"):
+    for slug in ("camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"):
         assert f"\n   {slug}\n" in index
         page = (ROOT / f"docs/results/{slug}.rst").read_text()
         assert f".. _{slug}:" in page
@@ -102,29 +118,32 @@ def test_public_results_section_carries_only_the_three_public_cohorts() -> None:
 
 
 def test_five_encoder_provenance_is_exact_and_auditable() -> None:
-    provenance = (ROOT / "docs/results/index.rst").read_text()
-    normalized = " ".join(provenance.split())
-    expected_facts = [
-        "e95e7ea15e039e78d74def101415e19d9a67ba80",  # Mascaret
-        "e0ce6e0ee248470bd8604823e412ca64048a2495",  # Phaet
-        "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",  # RudolfV-2
-        "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",  # RudolfV-2-B
-        "76abacd512a98c72a6db6192af9fc98313c3bd78",  # RudolfV-2-S
-        # Encoder, revision and batch as adjacent cells of the contract table.
-        "Mascaret - ``e95e7ea15e039e78d74def101415e19d9a67ba80`` - 32",
-        "Phaet - ``e0ce6e0ee248470bd8604823e412ca64048a2495`` - 64",
-        "RudolfV-2 - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c`` - 32",
-        "RudolfV-2-B - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8`` - 32",
-        "RudolfV-2-S - ``76abacd512a98c72a6db6192af9fc98313c3bd78`` - 64",
-        "FP32",
-        "checkpoint-native:model.encode",
-        "concatenate-cls-and-mean-patches",
-        "possible institutional/source-domain overlap",
-        "does not establish leakage",
-    ]
+    """The docs site no longer republishes the extraction-contract table (trimmed to
+    reader-facing content), so the contract's homes are held to instead: the exact
+    checkpoint revisions stay pinned in the tracked model registry the extraction reads,
+    the full audit stays in the committed extraction record, and the one reader-facing
+    caveat -- the RudolfV-2/CHA institutional overlap -- stays published on the cohort
+    page it concerns."""
+    from model_registry import _build_model_registry  # noqa: PLC0415
 
-    for fact in expected_facts:
-        assert fact in normalized
+    registry = _build_model_registry()
+    expected_revisions = {
+        "Mascaret": "e95e7ea15e039e78d74def101415e19d9a67ba80",
+        "Phaet": "e0ce6e0ee248470bd8604823e412ca64048a2495",
+        "RudolfV 2": "482d9519c6a10fc22fbe5bcd6a87d5daf056643c",
+        "RudolfV 2-B": "b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8",
+        "RudolfV 2-S": "76abacd512a98c72a6db6192af9fc98313c3bd78",
+    }
+    for model, revision in expected_revisions.items():
+        assert registry[model].checkpoint_revision == revision
+
+    record = " ".join((ROOT / "docs/extraction-records/issue-130.md").read_text().split())
+    for model in ("Mascaret", "Phaet", "RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"):
+        assert model in record
+
+    tolkach = " ".join((ROOT / "docs/results/tolkach-esca.rst").read_text().split())
+    assert "possible institutional/source-domain overlap" in tolkach
+    assert "does not establish leakage" in tolkach
 
 
 def test_final_report_covers_the_publication_decisions() -> None:
