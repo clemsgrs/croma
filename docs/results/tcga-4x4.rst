@@ -30,10 +30,6 @@ The row tint is that overlap, made visible — the same convention as the paper'
   the proprietary corpora this reflects the paper's description, not an independent
   audit.
 
-The flag is derived from the tracked model registry's domain tags and published in
-``results/cross_benchmark.csv``, so the tint here and the shading on the
-:doc:`aggregate table <index>` come from one committed fact per model.
-
 Only :results-value:`below_zero(tcga-4x4)` encoder falls below zero, and support is
 near-total — every model sits at :results-value:`support_min(tcga-4x4)` or above, so ``RI``
 and ``MaRI`` rest on essentially every tile. In the :ref:`explorer <explorer>`, every

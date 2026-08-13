@@ -7,9 +7,9 @@ Results
 and one natural-image control — scored on three tile cohorts from the
 `PathoROB <https://arxiv.org/abs/2507.17845>`_ study, plus a separate
 :results-value:`models(pcabiop)`-encoder slide-level cohort, :doc:`PCaBiop <pcabiop>`,
-published on its own page. Every number on this page is read at build time from
-:ref:`committed CSVs <results-provenance>`, never transcribed. The method is described in
-`Beyond counts: A
+published on its own page. Every number on this page is read at build time from the
+`committed CSVs <https://github.com/clemsgrs/croma/tree/main/results>`_, never
+transcribed. The method is described in `Beyond counts: A
 distributional robustness margin for pathology foundation models
 <https://arxiv.org/abs/2607.25497>`_.
 
@@ -75,7 +75,7 @@ own median-versus-tail Pareto panel, and what is specific to reading it. Columns
 explained under :ref:`result-columns`; † marks the natural-image control
 (:ref:`the-control`). Every encoder is evaluated at the cohort's shared operating point —
 the cohort median of the per-model biological ``k*`` — with ``tau`` resolved per model
-(see :ref:`results-provenance`).
+(see :ref:`choosing-tau`).
 
 .. toctree::
    :maxdepth: 1
@@ -179,14 +179,3 @@ models (see :ref:`choosing-tau`). ``CRoMa`` is reported at its headline averagin
 The slide-level cohort is the exception: with five encoders a shared median ``k`` is
 dominated by panel composition, so :doc:`PCaBiop <pcabiop>` reports **k\*** — each encoder
 at its own kNN-optimal ``k`` — and says so on its page.
-
-.. _results-provenance:
-
-Where the numbers come from
----------------------------
-
-Every number on this page — prose included — is read at build time from the committed
-CSVs in `results/ <https://github.com/clemsgrs/croma/tree/main/results>`_; nothing is
-transcribed by hand. That directory is the citable data behind every table and figure
-here, and ``results/PROVENANCE.json`` records the protocol, operating points, ``tau``
-policy and source run behind each cohort.
