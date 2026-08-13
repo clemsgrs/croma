@@ -5,7 +5,9 @@ Results
 
 :results-value:`roster()` encoders — :results-value:`ranked()` pathology foundation models
 and one natural-image control — scored on three tile cohorts from the
-`PathoROB <https://arxiv.org/abs/2507.17845>`_ study. Every number on this page, prose
+`PathoROB <https://arxiv.org/abs/2507.17845>`_ study, plus a separate
+:results-value:`models(pcabiop)`-encoder slide-level cohort, :doc:`PCaBiop <pcabiop>`,
+published on its own page. Every number on this page, prose
 included, is read at build time from :ref:`committed CSVs <results-provenance>` written by a
 tracked exporter, never transcribed. The method is described in `Beyond counts: A
 distributional robustness margin for pathology foundation models
@@ -58,7 +60,7 @@ the large histogram to count the samples in any range, and pick a second encoder
 
 .. raw:: html
 
-   <div id="croma-explorer" class="croma-explorer">
+   <div id="croma-explorer" class="croma-explorer" data-panel="tile">
      <noscript>The distribution explorer needs JavaScript.</noscript>
    </div>
 
@@ -89,6 +91,19 @@ the cohort median of the per-model biological ``k*`` — with ``tau`` resolved p
 of the three; :doc:`TCGA-4×4 <tcga-4x4>` must be read with pretraining overlap in mind;
 :doc:`Tolkach-ESCA <tolkach-esca>` is the mildest, and the one where the count-based
 indices stop separating models.
+
+The slide-level cohort
+----------------------
+
+:doc:`PCaBiop <pcabiop>` evaluates five *whole-slide* encoders — one embedding per slide —
+on 1,000 PANDA prostate biopsies. It is a different roster on a different evaluation unit,
+so it has its own page, its own distribution explorer, and no part in the aggregate ranks
+above (see :ref:`cohort-caveats`).
+
+.. toctree::
+   :maxdepth: 1
+
+   pcabiop
 
 .. _result-columns:
 
@@ -145,16 +160,19 @@ representation.
 Scope
 -----
 
-The roster is fixed across all three cohorts; cohorts computed on a
-different roster — a prostate panel and a slide-level panel — are deliberately not
-published here, because a table whose roster silently differs from the one beside it
-misleads more than it informs. And ranks are within this panel: they say which of these
-encoders is more robust on these cohorts, not how any of them would behave on yours.
+The tile roster is fixed across the three tile cohorts, and the ranks above are computed
+on it alone. The slide-level cohort :doc:`PCaBiop <pcabiop>` is published on a separate
+page precisely because its roster differs: it never shares a table, a rank, or an
+explorer dropdown with the tile panel, because a table whose roster silently differs from
+the one beside it misleads more than it informs. A prostate tile cohort computed on yet
+another roster stays unpublished for the same reason. And ranks are within a panel: they
+say which of these encoders is more robust on these cohorts, not how any of them would
+behave on yours.
 
 The operating point
 -------------------
 
-All three cohorts are reported under the **median-k** protocol: one shared ``k`` per cohort,
+The three tile cohorts are reported under the **median-k** protocol: one shared ``k`` per cohort,
 the cohort median of the per-model biological ``k*``. A single operating point is what makes
 a rank across encoders meaningful — comparing a model evaluated at ``k = 5`` against one at
 ``k = 91`` compares two different questions.
@@ -164,20 +182,19 @@ embedding at that ``k``, which is the only setting under which ``MaRI`` is compa
 models (see :ref:`choosing-tau`). ``CRoMa`` is reported at its headline averaging radius,
 ``m = 5``, and LTM₁₀ at ``α = 0.10``.
 
+The slide-level cohort is the exception: with five encoders a shared median ``k`` is
+dominated by panel composition, so :doc:`PCaBiop <pcabiop>` reports **k\*** — each encoder
+at its own kNN-optimal ``k`` — and says so on its page.
+
 .. _results-provenance:
 
 Where the numbers come from
 ---------------------------
 
-Every number on this page is read at build time from
-`results/ <https://github.com/clemsgrs/croma/tree/main/results>`_ — a small set of CSVs
-committed to the repository. Nothing is transcribed, and nothing is fetched. The benchmark
-runs themselves live under ``output/``, which is git-ignored and regenerable; the site
-builds from a clean checkout and cannot see it. So a published number has to become a
-committed artifact first, and
-`scripts/tools/export_results.py <https://github.com/clemsgrs/croma/blob/main/scripts/tools/export_results.py>`_
-is the only thing that writes one. The decision is recorded in
-`ADR-0016 <https://github.com/clemsgrs/croma/blob/main/docs/adr/0016-results-is-a-committed-publication-artifact.md>`_.
+Every number on this page — prose included — is read at build time from
+`results/ <https://github.com/clemsgrs/croma/tree/main/results>`_, a small set of CSVs
+committed to the repository and exported from the benchmark runs. Nothing is transcribed
+by hand, so the files below are the citable data behind every table and figure here.
 
 .. list-table::
    :header-rows: 1
@@ -197,79 +214,3 @@ is the only thing that writes one. The decision is recorded in
    * - ``results/PROVENANCE.json``
      - Protocol, per-cohort ``k``, ``tau`` policy, roster size, ``croma`` version, the
        source run for each cohort, and a sha256 of every file above.
-
-The expanded panel
-------------------
-
-The panel's two robustness-targeted fine-tunes (Mascaret, of Midnight-12k; Phaet, of
-Phikon-v2) and the three-member RudolfV-2 teacher/student family were extracted under the
-contract below, read from the completion sidecars. The full audit — runtimes, dimensions,
-norm checks, digests — is committed in `docs/extraction-records/issue-130.md
-<https://github.com/clemsgrs/croma/blob/main/docs/extraction-records/issue-130.md>`_.
-
-.. list-table::
-   :header-rows: 1
-   :widths: 17 33 10 40
-
-   * - Encoder
-     - Checkpoint revision
-     - Batch
-     - Pooling
-   * - Mascaret
-     - ``e95e7ea15e039e78d74def101415e19d9a67ba80``
-     - 32
-     - ``checkpoint-native:model.encode``
-   * - Phaet
-     - ``e0ce6e0ee248470bd8604823e412ca64048a2495``
-     - 64
-     - ``checkpoint-native:model.encode``
-   * - RudolfV-2
-     - ``482d9519c6a10fc22fbe5bcd6a87d5daf056643c``
-     - 32
-     - ``concatenate-cls-and-mean-patches``
-   * - RudolfV-2-B
-     - ``b2cb55c8fff8aaaf9cc16fda6d09bfb21dfc6db8``
-     - 32
-     - ``concatenate-cls-and-mean-patches``
-   * - RudolfV-2-S
-     - ``76abacd512a98c72a6db6192af9fc98313c3bd78``
-     - 64
-     - ``concatenate-cls-and-mean-patches``
-
-All five used FP32 inference and FP32 ``.npy`` storage. Mascaret and Phaet use a 224 px
-resize and center crop with the checkpoint's ``pixel_mean``/``pixel_std`` contract and
-retain checkpoint-native output normalization. The RudolfV-2 family uses the released
-224×224 bicubic, antialiased preprocessing; its pooling concatenates the CLS token with the
-mean of 784 patch tokens after excluding eight register tokens, retaining native, non-unit
-output norms.
-
-One caveat matters when reading the tables: RudolfV-2's disclosed Charité/LMU institutional
-corpus creates a possible institutional/source-domain overlap with the CHA component of
-Tolkach-ESCA. Exact patient or slide overlap is unknown, so this does not establish
-leakage.
-
-Public cohort boundary
-----------------------
-
-The committed web export deliberately contains three cohorts: Camelyon, TCGA-4×4 and
-Tolkach-ESCA. TCGA-2×2 was recomputed with the same 26-model roster and is available in the
-local metric tree and manuscript supplement, but is not a fourth public cohort or committed
-CSV. Prostate-shift and the whole-slide panels are outside this expansion.
-
-Freshness
----------
-
-Re-running a benchmark does not update this site. Someone has to run the exporter and commit
-the diff — deliberately, because that diff is the review surface for changing a public claim.
-
-A test guards the gap: it regenerates ``results/`` from ``output/`` and fails on any
-difference, so a run that was never republished is caught rather than silently leaving stale
-numbers here. It skips where ``output/`` is absent, which is every machine but the one
-holding the runs.
-
-The manuscript remains a local-only build tree
-(`ADR-0012 <https://github.com/clemsgrs/croma/blob/main/docs/adr/0012-paper-tooling-stays-local.md>`_),
-but its tables, macros, captions and guarded prose are regenerated from the same live runs by
-``scripts/repro/build_paper.py``. The local ``tests/test_paper_artifacts.py`` freshness gate
-compares generator output with the ignored manuscript tree; it cannot run in a clean CI
-checkout, so it is an explicit pre-publication gate rather than a hosted guarantee.

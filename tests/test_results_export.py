@@ -417,12 +417,44 @@ def test_provenance_does_not_checksum_the_readme():
 
 
 def test_every_published_cohort_has_a_committed_table():
-    for cohort in er.COHORTS:
+    for cohort in er.ALL_COHORTS:
         assert (RESULTS / f"{cohort.slug}.csv").exists()
 
 
+def test_the_payload_names_each_cohort_s_panel():
+    """The explorer mounts filter their cohort dropdowns on this field: the tile and
+    slide rosters are never offered in one list, which is the roster separation the
+    results pages promise."""
+    payload = json.loads((RESULTS / "distributions.json").read_text())
+    panels = {slug: cohort["panel"] for slug, cohort in payload["cohorts"].items()}
+    assert set(panels.values()) <= {"tile", "slide"}
+    assert panels["pcabiop"] == "slide"
+    assert all(panels[c.slug] == c.panel for c in er.ALL_COHORTS)
+
+
+def test_the_slide_cohort_never_enters_the_aggregate():
+    """The aggregate ranks are a tile-panel claim; a five-encoder cohort contributing a
+    rank column would read as comparable with the 26-model panel when it is not."""
+    header = (RESULTS / "cross_benchmark.csv").read_text().splitlines()[0].split(",")
+    slide_slugs = {c.slug for c in er.SLIDE_COHORTS}
+    assert not any(col.removeprefix("croma_").replace("_", "-") in slide_slugs for col in header)
+    assert not any(col.removeprefix("ltm_").replace("_", "-") in slide_slugs for col in header)
+
+
+def test_k_star_provenance_records_the_per_model_operating_points():
+    """A ``k-star`` run has no shared k to record, so the sidecar carries the per-model
+    mapping instead -- and a ``median-k`` cohort still refuses a run with more than one."""
+    metrics = _metrics(
+        model=["A", "B"], k=[3, 13], confounder_display_name="c", evaluation_design="all"
+    )
+    star = er.Cohort("s", "bench", "S", protocol="k-star", panel="slide")
+    assert er._cohort_provenance(star, metrics)["k"] == {"A": 3, "B": 13}
+    with pytest.raises(ValueError, match="one shared operating point"):
+        er._cohort_provenance(er.Cohort("m", "bench", "M"), metrics)
+
+
 @pytest.mark.skipif(
-    not all(c.metrics_csv.exists() for c in er.COHORTS),
+    not all(c.metrics_csv.exists() for c in er.ALL_COHORTS),
     reason="output/ is git-ignored; the runs are absent on this machine",
 )
 def test_committed_results_match_a_fresh_export():
@@ -433,7 +465,9 @@ def test_committed_results_match_a_fresh_export():
     # nothing to compare against: the tree is unreproducible until the benchmarks are
     # re-run. Say that, rather than failing as though the committed tree were wrong.
     stale_runs = [
-        c.slug for c in er.COHORTS if "croma_f0" not in pd.read_csv(c.metrics_csv, nrows=0).columns
+        c.slug
+        for c in er.ALL_COHORTS
+        if "croma_f0" not in pd.read_csv(c.metrics_csv, nrows=0).columns
     ]
     if stale_runs:
         pytest.skip(f"runs predate croma_f0 ({', '.join(stale_runs)}); re-run and republish")
