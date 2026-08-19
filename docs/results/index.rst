@@ -9,9 +9,8 @@ and one natural-image control — scored on three tile cohorts from the
 :results-value:`models(pcabiop)`-encoder slide-level cohort, :doc:`PCaBiop <pcabiop>`,
 published on its own page. Every number on this page is read at build time from the
 `committed CSVs <https://github.com/clemsgrs/croma/tree/main/results>`_, never
-transcribed. The method is described in `Beyond counts: A
-distributional robustness margin for pathology foundation models
-<https://arxiv.org/abs/2607.25497>`_.
+transcribed. The method is described in `A distributional robustness margin
+for pathology foundation models <https://arxiv.org/abs/2607.25497>`_.
 
 .. _aggregate-table:
 
@@ -55,7 +54,7 @@ The distribution explorer
 The per-sample ``CRoMa`` distribution is the object every number above is read from, so it
 is shown whole. The list is every encoder on the cohort, in the tables' order; the
 highlighted row is drawn in full beneath it. Click a row to move the detail, drag across
-the large histogram to count the samples in any range, and pick a second encoder under
+the detail curve to count the samples in any range, and pick a second encoder under
 *Compare with* to overlay its shape on the same axes — the readout then counts both.
 
 .. raw:: html
@@ -64,14 +63,17 @@ the large histogram to count the samples in any range, and pick a second encoder
      <noscript>The distribution explorer needs JavaScript.</noscript>
    </div>
 
-The histograms are 200 bins of the per-sample ``CRoMa`` at the headline radius ``m = 5``,
-read from the same committed export as the tables.
+The curves are the per-sample ``CRoMa`` at the headline radius ``m = 5`` — the same
+committed 200-bin export the tables read — smoothed for display with the manuscript
+figures' kernel (Gaussian, at Scott's bandwidth). The drag readout counts the raw bins,
+never the smoothed curve.
 
 The cohorts
 -----------
 
 Each cohort has its own page: the full column set sorted by median ``CRoMa``, the cohort's
-own median-versus-tail Pareto panel, and what is specific to reading it. Columns are
+own median-versus-tail Pareto panel and pinned distribution explorer, and what is specific
+to reading it. Columns are
 explained under :ref:`result-columns`; † marks the natural-image control
 (:ref:`the-control`). Every encoder is evaluated at the cohort's shared operating point —
 the cohort median of the per-model biological ``k*`` — with ``tau`` resolved per model

@@ -15,7 +15,7 @@ It implements three complementary neighbourhood metrics:
 RI was introduced in the `PathoROB <https://arxiv.org/abs/2507.17845>`_ study. ``croma``
 provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and
 introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in
-`Beyond counts: A distributional robustness margin for pathology foundation models
+`A distributional robustness margin for pathology foundation models
 <https://arxiv.org/abs/2607.25497>`_.
 
 .. code-block:: bash
@@ -72,8 +72,8 @@ Citing
 
 .. code-block:: bibtex
 
-   @article{grisi2026beyond,
-     title   = {Beyond counts: A distributional robustness margin for pathology foundation models},
+   @article{grisi2026distributional,
+     title   = {A distributional robustness margin for pathology foundation models},
      author  = {Grisi, Cl{\'e}ment and van der Laak, Jeroen and Litjens, Geert},
      journal = {arXiv preprint arXiv:2607.25497},
      year    = {2026},

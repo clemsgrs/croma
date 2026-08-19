@@ -37,9 +37,22 @@ right; ringed points are undominated on both axes and named, and the shaded regi
 dominated on both. Hover or tab to any point to name it with its two values. The
 natural-image control is excluded — the frontier is a pathology-only claim.
 
+The distribution explorer
+-------------------------
+
+The same explorer as the :ref:`aggregate page's <explorer>`, pinned to Camelyon. Click a
+row to move the detail, drag across the detail curve to count the samples in any range,
+and pick a second encoder under *Compare with* to overlay its shape.
+
+.. raw:: html
+
+   <div class="croma-explorer" data-cohort="camelyon">
+     <noscript>The distribution explorer needs JavaScript.</noscript>
+   </div>
+
 The shape says more than the median. ``Virchow2`` and ``CONCH`` sit within
 :results-value:`gap(camelyon, croma, Virchow2, CONCH)` of each other on median ``CRoMa`` —
 indistinguishable on that column alone — while ``CONCH`` carries
 :results-value:`ratio(camelyon, croma_f0, CONCH, Virchow2)` the confounder-dominant mass
 and :results-value:`ratio(camelyon, croma_ltm10, CONCH, Virchow2)` the tail severity.
-Overlay the two in the :ref:`explorer <explorer>` to see it.
+Overlay the two above to see it.

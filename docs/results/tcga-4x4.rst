@@ -32,7 +32,7 @@ The row tint is that overlap, made visible — the same convention as the paper'
 
 Only :results-value:`below_zero(tcga-4x4)` encoder falls below zero, and support is
 near-total — every model sits at :results-value:`support_min(tcga-4x4)` or above, so ``RI``
-and ``MaRI`` rest on essentially every tile. In the :ref:`explorer <explorer>`, every
+and ``MaRI`` rest on essentially every tile. In the explorer below, every
 encoder here resolves into a single tight mode close to zero, strong and weak alike; on
 :ref:`Camelyon <camelyon>` the same panel spreads across most of the scale. Two cohorts,
 one roster, very different separability — the argument for reporting more than one.
@@ -51,3 +51,16 @@ ringed points are undominated on both axes and named, and the shaded region is d
 on both. Hover or tab to any point to name it with its two values. The natural-image
 control is excluded, and pretraining exposure is not marked — the caveat above applies to
 every point.
+
+The distribution explorer
+-------------------------
+
+The same explorer as the :ref:`aggregate page's <explorer>`, pinned to TCGA-4×4. Click a
+row to move the detail, drag across the detail curve to count the samples in any range,
+and pick a second encoder under *Compare with* to overlay its shape.
+
+.. raw:: html
+
+   <div class="croma-explorer" data-cohort="tcga-4x4">
+     <noscript>The distribution explorer needs JavaScript.</noscript>
+   </div>

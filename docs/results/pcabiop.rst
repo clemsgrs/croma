@@ -46,7 +46,7 @@ The distribution explorer
 -------------------------
 
 The same explorer as the :ref:`tile panel's <explorer>`, restricted to the slide roster.
-Click a row to move the detail, drag across the large histogram to count the slides in
+Click a row to move the detail, drag across the detail curve to count the slides in
 any range, and pick a second encoder under *Compare with* to overlay its shape.
 
 .. raw:: html
