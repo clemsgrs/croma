@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The paper dropped the "Beyond counts:" prefix from its title in the arXiv v2 revision;
+  it is now *A distributional robustness margin for pathology foundation models*. The
+  README, the documentation site and the `preferred-citation` in `CITATION.cff` cite the
+  new title, and the suggested BibTeX key follows it (`grisi2026beyond` →
+  `grisi2026distributional`).
+- `CITATION.cff` records the released package version again (it still said 0.1.0; the
+  package is 0.3.0).
+- The distribution explorer draws smooth density curves instead of raw histograms: the
+  committed 200-bin counts convolved with the manuscript figures' kernel (Gaussian, at
+  Scott's bandwidth), so the site's distributions and the paper's ridgelines read as the
+  same object. The drag readout still counts the raw bins. In a comparison both curves
+  are filled — translucent fills whose overlap reads as the blend of the two hues, with
+  the strokes keeping each boundary — and each encoder's name takes its distribution's
+  hue. The detail plot gained a `CRoMa` axis title in place of the "samples" corner
+  annotation. Every cohort page now mounts
+  the explorer pinned to its cohort (`data-cohort`), alongside the aggregate page's
+  cross-cohort mount.
+
+### Added
+
+- Link-preview metadata (Open Graph) on every documentation page, via
+  `sphinxext-opengraph` in the `docs` extra: sharing a docs URL now renders a title, a
+  per-page description and the dataset-montage image instead of a bare link.
+
 ## [0.3.0] - 2026-08-11
 
 Expands the published robustness panel from 21 to 26 encoders and rebuilds the documentation
@@ -354,6 +380,7 @@ differently.
   faithful benchmarks, and **every Tolkach number moves once the sweep is re-run**. The
   committed Tolkach matrices predate the fix and are not regenerated here. See #105.
 
+[Unreleased]: https://github.com/clemsgrs/croma/compare/0.3.0...HEAD
 [0.3.0]: https://github.com/clemsgrs/croma/releases/tag/0.3.0
 [0.2.0]: https://github.com/clemsgrs/croma/releases/tag/0.2.0
 [0.1.0]: https://github.com/clemsgrs/croma/releases/tag/0.1.0

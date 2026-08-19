@@ -86,6 +86,7 @@ docs = [
   "furo",
   "sphinx-copybutton",
   "sphinx-autodoc-typehints",
+  "sphinxext-opengraph",
 ]
 
 # There is deliberately no `encoders` extra. The four encoder sources it used to pin are

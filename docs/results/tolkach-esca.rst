@@ -39,7 +39,19 @@ right; ringed points are undominated on both axes and named, and the shaded regi
 dominated on both. Hover or tab to any point to name it with its two values. The
 natural-image control is excluded — the frontier is a pathology-only claim.
 
-Several encoders are also visibly bimodal in the :ref:`explorer <explorer>` — one
-population of neighbourhoods comfortably biology-dominant, another close to the line. A
-median reports where the middle of that lands and says nothing about the split, which is
-the case tail reporting exists for.
+The distribution explorer
+-------------------------
+
+The same explorer as the :ref:`aggregate page's <explorer>`, pinned to Tolkach-ESCA.
+Click a row to move the detail, drag across the detail curve to count the samples in any
+range, and pick a second encoder under *Compare with* to overlay its shape.
+
+.. raw:: html
+
+   <div class="croma-explorer" data-cohort="tolkach-esca">
+     <noscript>The distribution explorer needs JavaScript.</noscript>
+   </div>
+
+Several encoders are visibly bimodal — one population of neighbourhoods comfortably
+biology-dominant, another close to the line. A median reports where the middle of that
+lands and says nothing about the split, which is the case tail reporting exists for.

@@ -10,12 +10,16 @@
  *
  * The data is `results/distributions.json` -- 200-bin histograms per encoder and cohort,
  * committed alongside the tables, and copied to the site root by `html_extra_path`. It is
- * loaded on demand, so pages without the widget pay nothing but this file.
+ * loaded on demand, so pages without the widget pay nothing but this file. The curves are
+ * those bins smoothed with the manuscript figures' kernel (Gaussian, Scott's bandwidth);
+ * the brush readout counts the raw bins, never the smoothed curve.
  *
  * Every element with class `croma-explorer` becomes an independent instance. Each mount
  * may carry `data-panel="tile"` or `data-panel="slide"` to restrict its cohort list to
  * one roster -- the tile and slide panels are scored on different encoder rosters, and
  * the pages promise never to blend them, so the filter lives here rather than in prose.
+ * A mount may instead carry `data-cohort="<slug>"` to pin itself to a single cohort --
+ * the cohort pages' mounts -- which, being one-cohort, also gets no cohort dropdown.
  *
  * Per-sample identifiers and tile thumbnails are deliberately absent. Identifiers would add
  * megabytes per cohort for a lookup nobody can act on without the cohort in hand, and
@@ -29,11 +33,14 @@
      the elements it mounts on do not exist yet either. */
   var SCRIPT_SRC = document.currentScript && document.currentScript.src;
 
-  var PAD = { top: 8, right: 8, bottom: 26, left: 44 };
+  var PAD = { top: 8, right: 8, bottom: 40, left: 44 };
   var WIDTH = 640;
-  var HEIGHT = 220;
+  var HEIGHT = 234;
   var ROW_WIDTH = 480;
   var ROW_HEIGHT = 26;
+
+  /* Distinguishes the clipPath ids of coexisting plots (two mounts, re-renders). */
+  var uid = 0;
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);
@@ -67,7 +74,9 @@
      build (the tile panel's and the slide panel's) never share state. */
   function mount(container, data) {
     var panel = container.dataset.panel || null;
+    var only = container.dataset.cohort || null;
     var slugs = Object.keys(data.cohorts).filter(function (slug) {
+      if (only) return slug === only;
       /* Cohorts without a panel field predate the slide panel and are tile-roster. */
       return !panel || (data.cohorts[slug].panel || "tile") === panel;
     });
@@ -121,7 +130,6 @@
         counts: counts,
         compareCounts: compareCounts,
         nBins: data.n_bins,
-        bars: [],
       };
       container.appendChild(detailHeading());
       var svg = histogram(cohort, counts, compareCounts, data.n_bins, view);
@@ -132,17 +140,21 @@
 
       /* Repaint the selection on the DOM that is already there. A full render() inside the
          drag would destroy the SVG holding the pointer capture -- the bug that reduced the
-         brush to single-bin clicks. */
+         brush to single-bin clicks. The selection is a clip window over a full-colour copy
+         of the curve, revealed above the dimmed base copy. */
       state.applySelection = function () {
         var selection = selectedBins(view.nBins);
-        view.bars.forEach(function (rect, i) {
-          if (!rect) return;
-          var inRange = selection && i >= selection.lo && i <= selection.hi;
-          rect.setAttribute(
-            "class",
-            "croma-explorer-bar" + (selection ? (inRange ? " is-selected" : " is-dimmed") : "")
-          );
-        });
+        var binWidth = view.plotWidth / view.nBins;
+        view.base.setAttribute(
+          "class",
+          "croma-explorer-area" + (selection ? " is-dimmed" : "")
+        );
+        if (selection) {
+          view.clipRect.setAttribute("x", PAD.left + selection.lo * binWidth);
+          view.clipRect.setAttribute("width", (selection.hi - selection.lo + 1) * binWidth);
+        } else {
+          view.clipRect.setAttribute("width", 0);
+        }
         view.reset.disabled = selection === null;
         writeReadout(view);
       };
@@ -260,21 +272,14 @@
         );
       }
 
-      var peak = Math.max.apply(null, counts) || 1;
-      var binWidth = ROW_WIDTH / nBins;
-      for (var i = 0; i < nBins; i++) {
-        if (!counts[i]) continue;
-        var height = (counts[i] / peak) * ROW_HEIGHT;
-        svg.appendChild(
-          svgEl("rect", {
-            x: i * binWidth,
-            y: ROW_HEIGHT - height,
-            width: Math.max(binWidth, 0.6),
-            height: height,
-            class: "croma-explorer-bar",
-          })
-        );
-      }
+      var smooth = smoothedCounts(counts);
+      var peak = Math.max.apply(null, smooth) || 1;
+      svg.appendChild(
+        svgEl("path", {
+          d: areaPath(smooth, nBins, peak, ROW_WIDTH, ROW_HEIGHT, 0, 0),
+          class: "croma-explorer-area",
+        })
+      );
 
       if (cohort.lo < 0 && cohort.hi > 0) {
         svg.appendChild(
@@ -292,7 +297,9 @@
 
     function detailHeading() {
       var heading = el("p", "croma-explorer-detail-heading");
-      var name = el("strong");
+      /* In a comparison each name takes its distribution's hue -- the detailed encoder the
+         bars' brand colour, the overlay the compare colour. Solo, the name stays plain. */
+      var name = el("strong", state.compare ? "croma-explorer-model-name" : null);
       name.textContent = state.model;
       heading.appendChild(name);
       if (state.compare) {
@@ -307,15 +314,18 @@
     function histogram(cohort, counts, compareCounts, nBins, view) {
       var plotWidth = WIDTH - PAD.left - PAD.right;
       var plotHeight = HEIGHT - PAD.top - PAD.bottom;
-      /* One count scale for both encoders, so the shapes are comparable. */
-      var peak = Math.max.apply(null, compareCounts ? counts.concat(compareCounts) : counts) || 1;
+      var smooth = smoothedCounts(counts);
+      var compareSmooth = compareCounts ? smoothedCounts(compareCounts) : null;
+      /* One density scale for both encoders, so the shapes are comparable. */
+      var peak =
+        Math.max.apply(null, compareSmooth ? smooth.concat(compareSmooth) : smooth) || 1;
 
       var svg = svgEl("svg", {
         viewBox: "0 0 " + WIDTH + " " + HEIGHT,
         class: "croma-explorer-plot",
         role: "img",
         "aria-label":
-          "Per-sample CRoMa histogram for " +
+          "Per-sample CRoMa distribution for " +
           state.model +
           (state.compare ? " compared with " + state.compare : "") +
           " on " +
@@ -337,26 +347,34 @@
         );
       }
 
-      var binWidth = plotWidth / nBins;
-      for (var i = 0; i < nBins; i++) {
-        if (!counts[i]) continue;
-        var height = (counts[i] / peak) * plotHeight;
-        var rect = svgEl("rect", {
-          x: PAD.left + i * binWidth,
-          y: PAD.top + plotHeight - height,
-          width: Math.max(binWidth, 0.6),
-          height: height,
-          class: "croma-explorer-bar",
-        });
-        view.bars[i] = rect;
-        svg.appendChild(rect);
-      }
+      var shape = areaPath(smooth, nBins, peak, plotWidth, plotHeight, PAD.left, PAD.top);
+      var base = svgEl("path", { d: shape, class: "croma-explorer-area" });
+      svg.appendChild(base);
 
-      if (compareCounts) {
+      /* The selection: a clip window revealing a full-colour copy of the curve (over a
+         background-coloured mask, so the dimmed base copy does not blend through the
+         translucent fill) while the base copy is dimmed. Width 0 hides it. */
+      var clipId = "croma-explorer-clip-" + ++uid;
+      var clip = svgEl("clipPath", { id: clipId });
+      var clipRect = svgEl("rect", { x: PAD.left, y: 0, width: 0, height: HEIGHT });
+      clip.appendChild(clipRect);
+      svg.appendChild(clip);
+      var selected = svgEl("g", { "clip-path": "url(#" + clipId + ")" });
+      selected.appendChild(svgEl("path", { d: shape, class: "croma-explorer-area-mask" }));
+      selected.appendChild(svgEl("path", { d: shape, class: "croma-explorer-area" }));
+      svg.appendChild(selected);
+
+      view.plotWidth = plotWidth;
+      view.base = base;
+      view.clipRect = clipRect;
+
+      /* Drawn above the selection layer, so its translucent fill tints the highlight
+         rather than vanishing under the highlight's background mask. */
+      if (compareSmooth) {
         svg.appendChild(
           svgEl("path", {
-            d: outlinePath(compareCounts, nBins, peak, plotWidth, plotHeight),
-            class: "croma-explorer-compare-outline",
+            d: areaPath(compareSmooth, nBins, peak, plotWidth, plotHeight, PAD.left, PAD.top),
+            class: "croma-explorer-area is-compare",
           })
         );
       }
@@ -386,7 +404,7 @@
       tickValues(cohort).forEach(function (value) {
         var tick = svgEl("text", {
           x: x(value),
-          y: HEIGHT - 8,
+          y: PAD.top + plotHeight + 16,
           class: "croma-explorer-tick",
           "text-anchor": "middle",
         });
@@ -394,13 +412,14 @@
         svg.appendChild(tick);
       });
 
-      var axisLabel = svgEl("text", {
-        x: PAD.left,
-        y: PAD.top + 10,
-        class: "croma-explorer-tick",
+      var axisTitle = svgEl("text", {
+        x: PAD.left + plotWidth / 2,
+        y: HEIGHT - 6,
+        class: "croma-explorer-axis-title",
+        "text-anchor": "middle",
       });
-      axisLabel.textContent = "samples";
-      svg.appendChild(axisLabel);
+      axisTitle.textContent = "CRoMa";
+      svg.appendChild(axisTitle);
 
       attachBrush(svg, plotWidth, nBins);
       return svg;
@@ -452,7 +471,7 @@
       if (!selection) {
         view.readout.textContent =
           sum(view.counts).toLocaleString() +
-          " samples. Drag across the histogram to count a range.";
+          " samples. Drag across the distribution to count a range.";
         return;
       }
 
@@ -466,30 +485,89 @@
         "</strong> and <strong>" +
         hi.toFixed(2) +
         "</strong>: " +
-        rangeCount(state.model, view.counts, selection);
+        rangeCount(
+          state.model,
+          view.counts,
+          selection,
+          view.compareCounts ? "croma-explorer-model-name" : null
+        );
       if (view.compareCounts) {
         html +=
-          " &middot; " + rangeCount(state.compare, view.compareCounts, selection);
+          " &middot; " +
+          rangeCount(
+            state.compare,
+            view.compareCounts,
+            selection,
+            "croma-explorer-compare-name"
+          );
       }
       view.readout.innerHTML = html;
     }
   }
 
-  /* The comparison encoder as a step outline over the same bins: the shapes stay
-     distinguishable where translucent fills would blend. */
-  function outlinePath(counts, nBins, peak, plotWidth, plotHeight) {
-    var binWidth = plotWidth / nBins;
-    var baseline = PAD.top + plotHeight;
-    var parts = ["M" + PAD.left + " " + baseline];
-    for (var i = 0; i < nBins; i++) {
-      var y = baseline - (counts[i] / peak) * plotHeight;
-      parts.push("H" + (PAD.left + i * binWidth));
-      parts.push("V" + y);
-      parts.push("H" + (PAD.left + (i + 1) * binWidth));
+  /* The manuscript's ridgelines are Gaussian KDEs at Scott's bandwidth on the raw
+     samples. The payload carries 200-bin counts instead of samples, but a KDE is the
+     histogram convolved with its kernel, and Scott's bandwidth needs only n and the
+     standard deviation -- both recoverable from the bins. Display-only: the brush
+     readout keeps counting the raw bins. */
+  function smoothedCounts(counts) {
+    var n = sum(counts);
+    if (!n) return counts.slice();
+    var mean = 0;
+    for (var i = 0; i < counts.length; i++) mean += counts[i] * (i + 0.5);
+    mean /= n;
+    var variance = 0;
+    for (i = 0; i < counts.length; i++) {
+      variance += counts[i] * (i + 0.5 - mean) * (i + 0.5 - mean);
     }
-    parts.push("V" + baseline);
-    return parts.join(" ");
+    /* Scott's rule for one dimension, sigma * n^(-1/5), already in bin units. */
+    var sigma = Math.sqrt(variance / n) * Math.pow(n, -0.2);
+    if (sigma < 0.5) return counts.slice();
+    var radius = Math.ceil(3 * sigma);
+    var kernel = [];
+    var mass = 0;
+    for (var k = -radius; k <= radius; k++) {
+      var weight = Math.exp(-(k * k) / (2 * sigma * sigma));
+      kernel.push(weight);
+      mass += weight;
+    }
+    var out = [];
+    for (var j = 0; j < counts.length; j++) {
+      var acc = 0;
+      for (var m = -radius; m <= radius; m++) {
+        var index = j + m;
+        if (index >= 0 && index < counts.length) acc += counts[index] * kernel[m + radius];
+      }
+      out.push(acc / mass);
+    }
+    return out;
   }
+
+  function curvePoints(counts, nBins, peak, width, height, left, top) {
+    var binWidth = width / nBins;
+    var baseline = top + height;
+    var points = [];
+    for (var i = 0; i < nBins; i++) {
+      points.push(
+        (left + (i + 0.5) * binWidth).toFixed(2) +
+          " " +
+          (baseline - (counts[i] / peak) * height).toFixed(2)
+      );
+    }
+    return points;
+  }
+
+  /* The encoder's curve closed to the baseline, for the filled detail and mini shapes. */
+  function areaPath(counts, nBins, peak, width, height, left, top) {
+    var baseline = (top + height).toFixed(2);
+    return (
+      "M" + left + " " + baseline +
+      " L" + curvePoints(counts, nBins, peak, width, height, left, top).join(" L") +
+      " L" + (left + width) + " " + baseline +
+      " Z"
+    );
+  }
+
 
   function histogramMedian(cohort, counts, nBins) {
     var width = (cohort.hi - cohort.lo) / nBins;
@@ -517,12 +595,13 @@
     return ticks;
   }
 
-  function rangeCount(name, counts, selection) {
+  /* `colorClass`, when given, ties the name to its distribution's hue in a comparison. */
+  function rangeCount(name, counts, selection, colorClass) {
     var total = sum(counts);
     var inRange = 0;
     for (var i = selection.lo; i <= selection.hi; i++) inRange += counts[i];
     return (
-      name +
+      (colorClass ? '<span class="' + colorClass + '">' + name + "</span>" : name) +
       " <strong>" +
       inRange.toLocaleString() +
       "</strong> of " +

@@ -296,14 +296,22 @@ table.croma-results tr.croma-exposure-exposed {
   --croma-compare: #d0653f;
 }
 
+/* In a comparison, each encoder's name takes its distribution's hue: the detailed
+   encoder the bars' brand colour, the overlay the compare colour. */
+.croma-explorer-model-name {
+  color: var(--color-brand-primary);
+}
+
 .croma-explorer-compare-name {
   color: var(--croma-compare);
 }
 
-.croma-explorer-compare-outline {
-  fill: none;
+/* The comparison encoder's curve: same construction as the detailed encoder's, in its
+   own hue. Both fills are translucent, so where the two distributions overlap the fill
+   reads as their blend; the solid strokes keep each boundary legible. */
+.croma-explorer-area.is-compare {
+  fill: var(--croma-compare);
   stroke: var(--croma-compare);
-  stroke-width: 1.4;
 }
 
 .croma-explorer-plot {
@@ -315,12 +323,25 @@ table.croma-results tr.croma-exposure-exposed {
   cursor: crosshair;
 }
 
-.croma-explorer-bar {
+/* The distribution as a filled density curve -- the manuscript's ridgeline look. */
+.croma-explorer-area {
   fill: var(--color-brand-primary);
+  fill-opacity: 0.22;
+  stroke: var(--color-brand-primary);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
 }
 
-.croma-explorer-bar.is-dimmed {
+.croma-explorer-area.is-dimmed {
   fill: var(--color-foreground-border);
+  stroke: var(--color-foreground-border);
+}
+
+/* Sits under the brush selection's full-colour copy so the dimmed base curve does not
+   blend through its translucent fill. */
+.croma-explorer-area-mask {
+  fill: var(--color-background-primary);
+  stroke: none;
 }
 
 /* The confounder-dominant half. */
@@ -343,6 +364,11 @@ table.croma-results tr.croma-exposure-exposed {
 .croma-explorer-tick {
   fill: var(--color-foreground-secondary);
   font-size: 10px;
+}
+
+.croma-explorer-axis-title {
+  fill: var(--color-foreground-secondary);
+  font-size: 11px;
 }
 
 .croma-explorer-readout {

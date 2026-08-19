@@ -16,7 +16,7 @@
 | `MaRI` | Margin-aware Robustness Index | Weights that same evidence by feature distance |
 | `CRoMa` | Cross-confounder Robustness Margin | A signed margin, with tail-aware reporting |
 
-RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in [_Beyond counts: A distributional robustness margin for pathology foundation models_](https://arxiv.org/abs/2607.25497).
+RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `croma` provides a clean re-implementation of it, adds MaRI as its margin-aware extension, and introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in [_A distributional robustness margin for pathology foundation models_](https://arxiv.org/abs/2607.25497).
 
 For downstream shortcut-susceptibility experiments, `croma` also provides the
 confounder-biased probe protocol, PathoROB's APD reduction, and normalized integrated
@@ -100,8 +100,8 @@ If you use MaRI or CRoMa, please cite the paper — and the
 these build on.
 
 ```bibtex
-@article{grisi2026beyond,
-  title   = {Beyond counts: A distributional robustness margin for pathology foundation models},
+@article{grisi2026distributional,
+  title   = {A distributional robustness margin for pathology foundation models},
   author  = {Grisi, Cl{\'e}ment and van der Laak, Jeroen and Litjens, Geert},
   journal = {arXiv preprint arXiv:2607.25497},
   year    = {2026},

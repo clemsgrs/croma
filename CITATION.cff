@@ -18,7 +18,7 @@ authors:
   - family-names: Litjens
     given-names: Geert
     affiliation: "Department of Pathology, Radboud University Medical Center, Nijmegen, The Netherlands"
-version: 0.1.0
+version: 0.3.0
 license: Apache-2.0
 repository-code: "https://github.com/clemsgrs/croma"
 url: "https://clemsgrs.github.io/croma/"
@@ -35,7 +35,7 @@ keywords:
 # top-level `identifiers:` block.
 preferred-citation:
   type: article
-  title: "Beyond counts: A distributional robustness margin for pathology foundation models"
+  title: "A distributional robustness margin for pathology foundation models"
   authors:
     - family-names: Grisi
       given-names: Clément

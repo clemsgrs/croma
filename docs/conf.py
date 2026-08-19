@@ -32,6 +32,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx_copybutton",
     "sphinx_autodoc_typehints",
+    "sphinxext.opengraph",
     # Local: the themed-figure directive (docs/_ext/themedfigure.py), the directives that
     # render the committed results/ CSVs (docs/_ext/resultstable.py), and the inline role
     # that computes run-derived numbers from them (docs/_ext/resultsvalue.py).
@@ -77,6 +78,17 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable", None),
     "pandas": ("https://pandas.pydata.org/docs", None),
 }
+
+# Link-preview metadata (LinkedIn, Slack, X). The per-page description is derived from
+# the page's opening prose; the shared image is the dataset montage, the most legible
+# single image of what the metrics measure.
+ogp_site_url = "https://clemsgrs.github.io/croma/"
+ogp_image = "_static/figures/dataset_montage.jpg"
+ogp_image_alt = (
+    "Pathology tiles arranged by biological class and medical center: the same class, "
+    "rendered differently by different centers."
+)
+ogp_enable_meta_description = True
 
 html_theme = "furo"
 html_static_path = ["_static"]
