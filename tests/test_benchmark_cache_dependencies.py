@@ -74,6 +74,18 @@ def _setup(bench_env, *, name: str = "toy", k_max: int = 3) -> None:
     )
 
 
+def _spy_on_croma_compute(bench_env) -> dict[str, int]:
+    calls = {"croma": 0}
+    original_croma_compute = bm.CRoMa.compute
+
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
+
+    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+    return calls
+
+
 def test_tau_change_recomputes_only_mari(bench_env) -> None:
     _setup(bench_env)
 
@@ -214,40 +226,19 @@ def test_partial_croma_cache_is_rejected_and_recomputed(bench_env) -> None:
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
 
     cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
-    payload_path = next((cache_artifacts / "croma_m_sweep" / "M1").glob("*.json"))
-    payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    payload["by_m"]["1"].update(
-        {
-            "croma": 99.0,
-            "croma_undefined_frac": 0.25,
-            "croma_q_alpha": 99.0,
-            "croma_ltm_alpha": 99.0,
-        }
-    )
-    payload_path.write_text(json.dumps(payload), encoding="utf-8")
-
-    headline_path = next((cache_artifacts / "croma_headline_samples" / "M1").glob("*.npy"))
-    np.save(headline_path, np.load(headline_path)[:-1])
     aligned_path = next((cache_artifacts / "croma_samples_aligned_by_m" / "M1").glob("*.npy"))
     aligned = np.load(aligned_path)
     aligned[0, 0] = np.nan
     np.save(aligned_path, aligned)
 
-    calls = {"croma": 0}
-    original_croma_compute = bm.CRoMa.compute
-
-    def wrapped_croma_compute(*args, **kwargs):
-        calls["croma"] += 1
-        return original_croma_compute(*args, **kwargs)
-
-    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+    calls = _spy_on_croma_compute(bench_env)
 
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
     assert calls["croma"] == 1
 
     metrics = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
     assert metrics.loc[0, "croma"] == 0.9657262993950306
-    assert metrics.loc[0, "croma_undefined_frac"] == 0.0
+    assert "croma_undefined_frac" not in metrics.columns
     per_sample = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
     np.testing.assert_allclose(
         per_sample["croma_m1"],
@@ -264,6 +255,36 @@ def test_partial_croma_cache_is_rejected_and_recomputed(bench_env) -> None:
         rtol=0.0,
         atol=1e-15,
     )
+
+
+def test_truncated_croma_headline_cache_is_rejected_and_recomputed(bench_env) -> None:
+    _setup(bench_env)
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    headline_path = next((cache_artifacts / "croma_headline_samples" / "M1").glob("*.npy"))
+    np.save(headline_path, np.load(headline_path)[:-1])
+
+    calls = _spy_on_croma_compute(bench_env)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+    assert calls["croma"] == 1
+
+
+def test_legacy_croma_coverage_payload_is_not_a_cache_hit(bench_env) -> None:
+    _setup(bench_env)
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    payload_path = next((cache_artifacts / "croma_m_sweep" / "M1").glob("*.json"))
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload["by_m"]["1"]["croma_undefined_frac"] = 0.0
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    calls = _spy_on_croma_compute(bench_env)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+    assert calls["croma"] == 1
 
 
 def test_k_values_change_recomputes_knn_ri_mari_not_croma(bench_env) -> None:
@@ -479,3 +500,45 @@ def test_cold_cache_uses_one_shared_scoring_pass_per_metric(bench_env) -> None:
 
     assert calls["ri"] == 1
     assert calls["mari"] == 1
+
+
+def test_metric_summary_caches_store_positive_support(bench_env) -> None:
+    """New RI/MaRI summaries identify the supported share without complementation."""
+    _setup(bench_env)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    for artifact_name in ("ri_summary", "mari_summary"):
+        payload_path = next((cache_artifacts / artifact_name / "M1").glob("*.json"))
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        assert payload["support"] == 0.25
+
+
+def test_legacy_summary_without_support_is_not_a_cache_hit(bench_env) -> None:
+    """A pre-positive-schema RI summary is recomputed instead of silently upgraded."""
+    _setup(bench_env)
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    payload_path = next((cache_artifacts / "ri_summary" / "M1").glob("*.json"))
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload.pop("support")
+    payload["value"] = 99.0
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    calls = {"ri": 0}
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
+
+    def wrapped_ri_artifacts(*args, **kwargs):
+        calls["ri"] += 1
+        return original_ri_artifacts(*args, **kwargs)
+
+    bench_env._monkeypatch.setattr(
+        bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts
+    )
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+    assert calls["ri"] == 1
+    metrics = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
+    assert metrics.loc[0, "ri"] == 1.0
