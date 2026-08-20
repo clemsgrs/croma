@@ -40,10 +40,16 @@ class BenchmarkView:
     rows: np.ndarray
     #: Models embedded for this benchmark's tileset.
     models: tuple[str, ...]
+    #: Root containing tileset embedding directories.
+    embeddings_root: Path | None = None
 
     def features(self, model: str) -> np.ndarray:
         """Embeddings for this benchmark, one row per eval-manifest row."""
-        path = layout.embedding_path(self.spec.tileset, model)
+        path = (
+            layout.embedding_path(self.spec.tileset, model)
+            if self.embeddings_root is None
+            else self.embeddings_root / self.spec.tileset / f"{model}.npy"
+        )
         if not path.exists():
             raise FileNotFoundError(
                 f"no embeddings for {model!r} in tileset {self.spec.tileset!r}: {path}"
@@ -61,17 +67,45 @@ class BenchmarkView:
         return layout.metrics_dir(protocol, self.spec.name) / "studies"
 
 
-def load_view(benchmark: str) -> BenchmarkView:
+def load_view(
+    benchmark: str,
+    *,
+    embeddings_root: Path | None = None,
+    eval_manifest_path: Path | None = None,
+) -> BenchmarkView:
+    """Load a benchmark view, optionally from explicit artifact roots.
+
+    Explicit roots let isolated studies reuse this single row-selection contract
+    without rebinding the canonical layout module.
+    """
+
     spec = benchmarks.get(benchmark)
-    tileset_manifest_path = layout.tileset_manifest(spec.tileset)
+    root = None if embeddings_root is None else Path(embeddings_root).resolve()
+    tileset_manifest_path = (
+        layout.tileset_manifest(spec.tileset)
+        if root is None
+        else root / spec.tileset / layout.TILESET_MANIFEST_NAME
+    )
     if not tileset_manifest_path.exists():
         raise FileNotFoundError(
             f"tileset {spec.tileset!r} is not embedded: missing {tileset_manifest_path}"
         )
     tileset_manifest = pd.read_csv(tileset_manifest_path)
+    manifest_path = (
+        layout.REPO / spec.manifest
+        if eval_manifest_path is None
+        else Path(eval_manifest_path).resolve()
+    )
     eval_manifest = load_manifest(
-        str(layout.REPO / spec.manifest), confounder_column=spec.confounder_column
+        str(manifest_path), confounder_column=spec.confounder_column
     ).reset_index(drop=True)
     rows = build_view_row_index(eval_manifest, tileset_manifest)
-    models = tuple(sorted(p.stem for p in layout.embeddings_dir(spec.tileset).glob("*.npy")))
-    return BenchmarkView(spec=spec, eval_manifest=eval_manifest, rows=rows, models=models)
+    embeddings_dir = layout.embeddings_dir(spec.tileset) if root is None else root / spec.tileset
+    models = tuple(sorted(p.stem for p in embeddings_dir.glob("*.npy")))
+    return BenchmarkView(
+        spec=spec,
+        eval_manifest=eval_manifest,
+        rows=rows,
+        models=models,
+        embeddings_root=root,
+    )

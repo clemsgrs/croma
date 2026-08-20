@@ -288,6 +288,53 @@ def test_waiv_artifact_contract_records_preprocessing_and_pooling(
     }
 
 
+def test_mascaret_alternative_contract_records_representation_and_3072_width(
+    tmp_path: Path, extraction_module
+) -> None:
+    ee = extraction_module
+
+    contract = ee.build_embedding_artifact_contract(
+        manifest_path=_write_manifest(tmp_path / "manifest.csv"),
+        spec=mr._build_model_registry()["Mascaret"],
+        batch_size=32,
+        device_arg="cpu",
+        pooling="cls-mean-patch",
+    )
+
+    assert contract.output_shape == (2, 3072)
+    assert contract.extraction_contract["pooling"] == {
+        "representation_id": "cls-mean-patch",
+        "method": "concatenate-raw-cls-and-mean-patches",
+        "patch_tokens": 256,
+        "output_normalization": "none",
+    }
+
+
+def test_cpu_artifact_contract_does_not_require_torch_but_extraction_does(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, extraction_module
+) -> None:
+    monkeypatch.setattr(extraction_module, "torch", None)
+
+    contract = extraction_module.build_embedding_artifact_contract(
+        manifest_path=_write_manifest(tmp_path / "manifest.csv"),
+        spec=mr._build_model_registry()["Mascaret"],
+        batch_size=32,
+        device_arg="cpu",
+    )
+
+    assert contract.precision == "float32"
+    with pytest.raises(RuntimeError, match="PyTorch is required for embedding extraction"):
+        extraction_module.embed_manifest(
+            manifest_path=tmp_path / "manifest.csv",
+            output_path=tmp_path / "Mascaret.npy",
+            spec=mr._build_model_registry()["Mascaret"],
+            batch_size=32,
+            num_workers=0,
+            device_arg="cpu",
+            artifact_contract=contract,
+        )
+
+
 @pytest.mark.parametrize("name", ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"])
 def test_rudolfv2_artifact_contract_records_preprocessing_and_pooling(
     name: str, tmp_path: Path, extraction_module
@@ -314,6 +361,27 @@ def test_rudolfv2_artifact_contract_records_preprocessing_and_pooling(
         "method": "concatenate-cls-and-mean-patches",
         "register_tokens_excluded": 8,
         "patch_tokens": 784,
+    }
+
+
+def test_rudolfv2_cls_only_contract_records_raw_cls_and_half_width(
+    tmp_path: Path, extraction_module
+) -> None:
+    contract = extraction_module.build_embedding_artifact_contract(
+        manifest_path=_write_manifest(tmp_path / "manifest.csv"),
+        spec=mr._build_model_registry()["RudolfV 2-S"],
+        batch_size=32,
+        device_arg="cpu",
+        pooling="cls-only",
+    )
+
+    assert contract.output_shape == (2, 384)
+    assert contract.extraction_contract["pooling"] == {
+        "representation_id": "cls-only",
+        "method": "raw-cls",
+        "register_tokens_excluded": 8,
+        "patch_tokens": 784,
+        "output_normalization": "none",
     }
 
 
