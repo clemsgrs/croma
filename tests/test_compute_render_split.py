@@ -163,6 +163,14 @@ def test_compute_metrics_match_golden(bench_env) -> None:
     _assert_rows_match(rows, golden)
 
 
+def test_compute_golden_support_complements_temporary_legacy_undefined_fraction() -> None:
+    golden = json.loads(GOLDEN_PATH.read_text())
+
+    for row in golden:
+        assert row["support"] == pytest.approx(1.0 - row["ri_undefined_frac"])
+        assert row["support"] == pytest.approx(1.0 - row["mari_undefined_frac"])
+
+
 def test_compute_is_deterministic(bench_env) -> None:
     run_dir = run_compute(bench_env)
     rows_a = _stable_rows(run_dir)

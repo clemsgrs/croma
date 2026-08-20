@@ -247,7 +247,7 @@ def test_partial_croma_cache_is_rejected_and_recomputed(bench_env) -> None:
 
     metrics = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
     assert metrics.loc[0, "croma"] == 0.9657262993950306
-    assert metrics.loc[0, "croma_undefined_frac"] == 0.0
+    assert "croma_undefined_frac" not in metrics.columns
     per_sample = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
     np.testing.assert_allclose(
         per_sample["croma_m1"],
@@ -479,3 +479,45 @@ def test_cold_cache_uses_one_shared_scoring_pass_per_metric(bench_env) -> None:
 
     assert calls["ri"] == 1
     assert calls["mari"] == 1
+
+
+def test_metric_summary_caches_store_positive_support(bench_env) -> None:
+    """New RI/MaRI summaries identify the supported share without complementation."""
+    _setup(bench_env)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    for artifact_name in ("ri_summary", "mari_summary"):
+        payload_path = next((cache_artifacts / artifact_name / "M1").glob("*.json"))
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        assert payload["support"] == 0.25
+
+
+def test_legacy_summary_without_support_is_not_a_cache_hit(bench_env) -> None:
+    """A pre-positive-schema RI summary is recomputed instead of silently upgraded."""
+    _setup(bench_env)
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    payload_path = next((cache_artifacts / "ri_summary" / "M1").glob("*.json"))
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload.pop("support")
+    payload["value"] = 99.0
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    calls = {"ri": 0}
+    original_ri_artifacts = bm.RI._compute_artifacts_from_prepared_all_rows
+
+    def wrapped_ri_artifacts(*args, **kwargs):
+        calls["ri"] += 1
+        return original_ri_artifacts(*args, **kwargs)
+
+    bench_env._monkeypatch.setattr(
+        bm.RI, "_compute_artifacts_from_prepared_all_rows", wrapped_ri_artifacts
+    )
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+    assert calls["ri"] == 1
+    metrics = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
+    assert metrics.loc[0, "ri"] == 1.0

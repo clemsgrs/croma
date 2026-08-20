@@ -224,6 +224,40 @@ def test_benchmark_all_rows_outputs_sample_level_rows(bench_env) -> None:
     assert not (dataset_dir / "plots").exists()
 
 
+def test_benchmark_rows_use_shared_support_schema_with_temporary_legacy_columns(
+    bench_env,
+) -> None:
+    _setup(bench_env, models=["M1"])
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    results_dir = bench_env.results_dir("toy")
+    metrics_df = pd.read_csv(results_dir / "metrics.csv")
+    m_sweep_df = pd.read_csv(results_dir / "croma_m_sweep_metrics.csv")
+    row = metrics_df.iloc[0]
+
+    assert row[
+        [
+            "support",
+            "ss_dominated_undefined_frac",
+            "oo_dominated_undefined_frac",
+            "mixed_undefined_frac",
+        ]
+    ].tolist() == [0.25, 0.75, 0.0, 0.0]
+    assert {
+        "ri_undefined_frac",
+        "ri_ss_dominated_undefined_frac",
+        "ri_oo_dominated_undefined_frac",
+        "ri_mixed_undefined_frac",
+        "mari_undefined_frac",
+        "mari_ss_dominated_undefined_frac",
+        "mari_oo_dominated_undefined_frac",
+        "mari_mixed_undefined_frac",
+    }.issubset(metrics_df.columns)
+    assert "croma_undefined_frac" not in metrics_df.columns
+    assert "croma_undefined_frac" not in m_sweep_df.columns
+
+
 def test_benchmark_paired_outputs_occurrence_level_rows(bench_env) -> None:
     manifest = _toy_manifest()
     _setup(bench_env, models=["M1"], design="paired_2x2")
@@ -261,6 +295,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.sample_values_aligned = aligned
             self.sample_undefined_types = np.asarray(undef_types, dtype=int)
             self.undefined_frac = float((~informative).mean())
+            self.support = float(informative.mean())
             self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
             self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
             self.mixed_undefined_frac = float(np.mean(self.sample_undefined_types == 3))
@@ -282,6 +317,7 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.pair_values = np.asarray([1.1], dtype=float)
             self.sample_values = aligned[informative]
             self.sample_values_aligned = aligned
+            self.occurrence_defined_mask = informative
             self.undefined_frac = float((~informative).mean())
             self.evaluation_design = "all"
             self.evaluation_unit = "sample"
@@ -600,6 +636,40 @@ def test_cached_payload_keys_are_exactly_what_a_run_writes() -> None:
     )
 
     assert set(bm._croma_result_to_payload(result, m=5)) == bm._CROMA_PAYLOAD_KEYS
+
+
+def test_shared_support_rejects_ri_mari_mismatch() -> None:
+    causes = {
+        "ss_dominated_undefined_frac": 0.5,
+        "oo_dominated_undefined_frac": 0.0,
+        "mixed_undefined_frac": 0.0,
+    }
+
+    with pytest.raises(RuntimeError, match="RI and MaRI support must match"):
+        bm._shared_support_fields(
+            {"support": 0.5, **causes},
+            {"support": 0.25, **causes},
+        )
+
+
+def test_invalid_croma_result_fails_before_serialization() -> None:
+    from croma.types import CRoMaResult
+
+    result = CRoMaResult(
+        dataset="toy",
+        m=1,
+        value=0.1,
+        std=0.0,
+        n_pairs=1,
+        pair_values=np.asarray([0.1]),
+        sample_values=np.asarray([0.1]),
+        sample_values_aligned=np.asarray([0.1, np.nan]),
+        occurrence_defined_mask=np.asarray([True, False]),
+        undefined_frac=0.5,
+    )
+
+    with pytest.raises(RuntimeError, match="Cannot serialize CRoMa"):
+        bm._croma_result_to_payload(result, m=1)
 
 
 def test_run_writes_a_replayable_run_config(bench_env) -> None:

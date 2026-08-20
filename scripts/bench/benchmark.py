@@ -524,6 +524,7 @@ def _summary_from_payload(payload: dict) -> dict | None:
         "k",
         "value",
         "std",
+        "support",
         "undefined_frac",
         "median_value",
         "q_alpha",
@@ -539,6 +540,7 @@ def _summary_from_payload(payload: dict) -> dict | None:
             "k": int(payload["k"]),
             "value": float(payload["value"]),
             "std": float(payload["std"]),
+            "support": float(payload["support"]),
             "undefined_frac": float(payload["undefined_frac"]),
             "median_value": float(payload["median_value"]),
             "q_alpha": float(payload["q_alpha"]),
@@ -556,6 +558,27 @@ def _summary_from_payload(payload: dict) -> dict | None:
         return result
     except Exception:  # noqa: BLE001
         return None
+
+
+def _shared_support_fields(ri_summary: dict, mari_summary: dict) -> dict[str, float]:
+    """Validate the RI/MaRI support invariant and return its shared row fields."""
+    shared_keys = (
+        "support",
+        "ss_dominated_undefined_frac",
+        "oo_dominated_undefined_frac",
+        "mixed_undefined_frac",
+    )
+    fields: dict[str, float] = {}
+    for key in shared_keys:
+        ri_value = float(ri_summary[key])
+        mari_value = float(mari_summary[key])
+        if ri_value != mari_value:
+            raise RuntimeError(
+                f"RI and MaRI {key} must match before writing the shared support schema "
+                f"(RI={ri_value}, MaRI={mari_value})"
+            )
+        fields[key] = ri_value
+    return fields
 
 
 def _tau_assessment_to_payload(assessment: TauAssessment) -> dict:
@@ -602,11 +625,25 @@ def _tau_assessment_from_payload(payload: dict | None) -> TauAssessment | None:
 
 
 def _croma_result_to_payload(result: CRoMaResult, m: int) -> dict:
+    if float(result.undefined_frac) != 0.0:
+        raise RuntimeError(
+            f"Cannot serialize CRoMa m={int(m)} with incomplete support "
+            f"(undefined_frac={float(result.undefined_frac)})"
+        )
+    if not bool(np.all(np.asarray(result.occurrence_defined_mask, dtype=bool))):
+        raise RuntimeError(
+            f"Cannot serialize CRoMa m={int(m)} with undefined evaluation units"
+        )
+    if not bool(
+        np.all(np.isfinite(np.asarray(result.sample_values_aligned, dtype=float)))
+    ):
+        raise RuntimeError(
+            f"Cannot serialize CRoMa m={int(m)} with non-finite samples"
+        )
     return {
         "m": int(m),
         "croma": float(result.value),
         "croma_std": float(result.std),
-        "croma_undefined_frac": float(result.undefined_frac),
         "croma_k_start": int(result.k_start),
         "croma_k_final": int(result.k_final),
         "croma_retries": int(result.retries),
@@ -626,7 +663,6 @@ _CROMA_PAYLOAD_KEYS = frozenset(
         "m",
         "croma",
         "croma_std",
-        "croma_undefined_frac",
         "croma_k_start",
         "croma_k_final",
         "croma_retries",
@@ -662,11 +698,6 @@ def _croma_payload_to_by_m(
     if set(by_m) != {int(m) for m in expected_m_values}:
         return None
     if any(not _CROMA_PAYLOAD_KEYS.issubset(entry) for entry in by_m.values()):
-        return None
-    try:
-        if any(float(entry["croma_undefined_frac"]) != 0.0 for entry in by_m.values()):
-            return None
-    except (TypeError, ValueError):
         return None
     return by_m
 
@@ -1438,6 +1469,7 @@ def main() -> int:
                         "k": int(ri.k),
                         "value": float(ri.value),
                         "std": float(ri.std),
+                        "support": float(ri.support),
                         "undefined_frac": float(ri.undefined_frac),
                         "median_value": float(ri.median_value),
                         "q_alpha": float(ri.q_alpha),
@@ -1569,6 +1601,7 @@ def main() -> int:
                         "k": int(mari.k),
                         "value": float(mari.value),
                         "std": float(mari.std),
+                        "support": float(mari.support),
                         "undefined_frac": float(mari.undefined_frac),
                         "median_value": float(mari.median_value),
                         "q_alpha": float(mari.q_alpha),
@@ -1671,6 +1704,7 @@ def main() -> int:
                 ticker.done("CRoMa", cached=croma_was_cached)
 
                 evaluation_unit = str(ri_summary["evaluation_unit"])
+                shared_support = _shared_support_fields(ri_summary, mari_summary)
                 croma_m_rows_for_model: list[dict] = []
                 for m in croma_m_values:
                     payload = croma_by_m[int(m)]
@@ -1689,9 +1723,6 @@ def main() -> int:
                             "m": int(payload["m"]),
                             "croma": float(payload["croma"]),
                             "croma_std": float(payload["croma_std"]),
-                            "croma_undefined_frac": float(
-                                payload["croma_undefined_frac"]
-                            ),
                             "croma_k_start": int(payload["croma_k_start"]),
                             "croma_k_final": int(payload["croma_k_final"]),
                             "croma_retries": int(payload["croma_retries"]),
@@ -1799,6 +1830,9 @@ def main() -> int:
                     "mari_median": float(mari_summary.get("median_value", float("nan"))),
                     "mari_q_alpha": float(mari_summary.get("q_alpha", float("nan"))),
                     "mari_ltm_alpha": float(mari_summary.get("ltm_alpha", float("nan"))),
+                    **shared_support,
+                    # Temporary compatibility aliases. Issue #160 migrates downstream
+                    # consumers to the shared positive schema and removes these columns.
                     "ri_undefined_frac": float(ri_summary["undefined_frac"]),
                     "ri_ss_dominated_undefined_frac": ri_ss_frac,
                     "ri_oo_dominated_undefined_frac": ri_oo_frac,
@@ -1812,7 +1846,6 @@ def main() -> int:
                     "croma": float(croma_result["croma"]),
                     "croma_std": float(croma_result["croma_std"]),
                     "croma_m": int(croma_result["m"]),
-                    "croma_undefined_frac": float(croma_result["croma_undefined_frac"]),
                     "croma_k_start": int(croma_result["croma_k_start"]),
                     "croma_k_final": int(croma_result["croma_k_final"]),
                     "croma_retries": int(croma_result["croma_retries"]),
@@ -1904,8 +1937,6 @@ def main() -> int:
                     undef_parts.append(f"RI={100*row['ri_undefined_frac']:.1f}%")
                 if row["mari_undefined_frac"] > 0.0:
                     undef_parts.append(f"MaRI={100*row['mari_undefined_frac']:.1f}%")
-                if row["croma_undefined_frac"] > 0.0:
-                    undef_parts.append(f"CRoMa={100*row['croma_undefined_frac']:.1f}%")
                 if undef_parts:
                     ticker.log(
                         f"[benchmark] undefined samples: {', '.join(undef_parts)}"
