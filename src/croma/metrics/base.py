@@ -581,20 +581,20 @@ class BaseRobustnessIndex(ABC):
         return _select_k_from_balanced_accuracy(k_values=all_k, scores=averaged)
 
     @classmethod
-    def _warn_undefined_occurrences(
+    def _warn_support_and_undefined_causes(
         cls,
         *,
         dataset_name: str,
         evaluation_unit: str,
-        undefined_frac: float,
+        support: float,
         ss_dominated_undefined_frac: float,
         oo_dominated_undefined_frac: float,
         mixed_undefined_frac: float,
     ) -> None:
         unit_label = "subset occurrences" if str(evaluation_unit) == "occurrence" else "samples"
-        if undefined_frac > 0.0:
+        if support < 1.0:
             warnings.warn(
-                f"{dataset_name}: RI/MaRI undefined coverage is {undefined_frac * 100.0:.1f}% across {unit_label}.",
+                f"{dataset_name}: RI/MaRI support is {support * 100.0:.1f}% across {unit_label}.",
                 RuntimeWarning,
                 stacklevel=2,
             )
@@ -823,10 +823,10 @@ class BaseRobustnessIndex(ABC):
                 ltm_alpha=tail.ltm_alpha,
             )
             if warn_selected_result:
-                cls._warn_undefined_occurrences(
+                cls._warn_support_and_undefined_causes(
                     dataset_name=dataset_name,
                     evaluation_unit=evaluation_unit,
-                    undefined_frac=result.undefined_frac,
+                    support=result.support,
                     ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
                     oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
                     mixed_undefined_frac=result.mixed_undefined_frac,
@@ -1382,10 +1382,10 @@ class BaseRobustnessIndex(ABC):
                 scored_entry=by_k[int(selected_k)],
             )
             if warn_selected_result:
-                cls._warn_undefined_occurrences(
+                cls._warn_support_and_undefined_causes(
                     dataset_name=dataset_name,
                     evaluation_unit="sample",
-                    undefined_frac=result.undefined_frac,
+                    support=result.support,
                     ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
                     oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
                     mixed_undefined_frac=result.mixed_undefined_frac,
@@ -1447,10 +1447,10 @@ class BaseRobustnessIndex(ABC):
                 ltm_alpha=tail.ltm_alpha,
             )
             if warn_selected_result:
-                cls._warn_undefined_occurrences(
+                cls._warn_support_and_undefined_causes(
                     dataset_name=dataset_name,
                     evaluation_unit="occurrence",
-                    undefined_frac=result.undefined_frac,
+                    support=result.support,
                     ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
                     oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
                     mixed_undefined_frac=result.mixed_undefined_frac,
@@ -1512,10 +1512,10 @@ class BaseRobustnessIndex(ABC):
                 ltm_alpha=tail.ltm_alpha,
             )
             if warn_selected_result:
-                cls._warn_undefined_occurrences(
+                cls._warn_support_and_undefined_causes(
                     dataset_name=dataset_name,
                     evaluation_unit="sample",
-                    undefined_frac=result.undefined_frac,
+                    support=result.support,
                     ss_dominated_undefined_frac=result.ss_dominated_undefined_frac,
                     oo_dominated_undefined_frac=result.oo_dominated_undefined_frac,
                     mixed_undefined_frac=result.mixed_undefined_frac,

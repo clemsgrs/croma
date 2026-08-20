@@ -126,8 +126,8 @@ def test_mari_compute_no_tau_warning_for_principled_tau() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
         # tau exactly at the recommended scale must not trigger the tau check
-        # (other RuntimeWarnings, e.g. undefined coverage, are unrelated and filtered out)
-        warnings.filterwarnings("ignore", message=".*undefined coverage.*")
+        # (other RuntimeWarnings, e.g. low support, are unrelated and filtered out)
+        warnings.filterwarnings("ignore", message=".*RI/MaRI support.*")
         MaRI.compute(**_mari_kwargs(features, manifest), tau=float(rec), warn_tau=True)
 
 
@@ -183,7 +183,7 @@ def test_auto_tau_never_warns_off_scale() -> None:
     features, manifest = _toy_dataset()
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
-        warnings.filterwarnings("ignore", message=".*undefined coverage.*")
+        warnings.filterwarnings("ignore", message=".*RI/MaRI support.*")
         MaRI.compute(**_mari_kwargs(features, manifest), warn_tau=True)
 
 
@@ -234,7 +234,7 @@ def test_auto_tau_falls_back_when_no_typed_neighbour_exists() -> None:
             evaluation_design="all",
         )
     assert result.tau == pytest.approx(TAU_FALLBACK)
-    assert result.undefined_frac == pytest.approx(1.0)
+    assert result.support == pytest.approx(0.0)
 
 
 def test_auto_tau_fallback_on_a_collapsed_embedding_names_the_collapse() -> None:
@@ -272,7 +272,7 @@ def test_auto_tau_fallback_on_a_collapsed_embedding_names_the_collapse() -> None
 
     assert result.tau == pytest.approx(TAU_FALLBACK)
     assert np.isfinite(result.value)
-    assert result.undefined_frac == pytest.approx(0.0)
+    assert result.support == pytest.approx(1.0)
 
 
 @pytest.mark.parametrize("bad_tau", [0.0, -1.0])

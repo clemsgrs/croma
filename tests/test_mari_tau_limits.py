@@ -136,7 +136,7 @@ def test_sharp_tau_collapses_onto_the_nearest_typed_neighbour(case: str) -> None
             warn_tau=False,
         )
 
-    assert result.undefined_frac == 0.0
+    assert result.support == 1.0
     assert result.sample_values == pytest.approx(expected, abs=WINNER_TAKE_ALL_TOLERANCE)
 
 
@@ -166,8 +166,8 @@ def test_extreme_tau_preserves_mari_ratio_and_support(evaluation_design: str) ->
     np.testing.assert_array_equal(ri.occurrence_defined_mask, expected_support)
     np.testing.assert_array_equal(mari.occurrence_defined_mask, expected_support)
     np.testing.assert_array_equal(mari.sample_values_aligned, expected_values)
-    assert ri.undefined_frac == 0.0
-    assert mari.undefined_frac == 0.0
+    assert ri.support == 1.0
+    assert mari.support == 1.0
     assert mari.value == 1.0
 
 

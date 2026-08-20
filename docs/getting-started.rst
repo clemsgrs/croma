@@ -45,8 +45,8 @@ Score a model
    mari = MaRI.compute(features, manifest, k_candidates=[5, 11, 21], **common)
    croma = CRoMa.compute(features, manifest, **common)
 
-   print(f"RI    {ri.value:.3f}  (k={ri.k}, undefined {ri.undefined_frac:.1%})")
-   print(f"MaRI  {mari.value:.3f}  (tau={mari.tau:.4f})")
+   print(f"RI    {ri.value:.3f}  (k={ri.k}, support {ri.support:.1%})")
+   print(f"MaRI  {mari.value:.3f}  (tau={mari.tau:.4f}, support {mari.support:.1%})")
    print(f"CRoMa {croma.value:+.3f}  (lower-tail mean {croma.ltm_alpha:+.3f})")
 
 RI and MaRI live in :math:`[0, 1]`, favouring biology above ``0.5``. CRoMa lives in
@@ -55,10 +55,10 @@ RI and MaRI live in :math:`[0, 1]`, favouring biology above ``0.5``. CRoMa lives
 Before you trust a number
 -------------------------
 
-- Read the support beside RI and MaRI: both pool only over the samples with typed
-  evidence inside ``k``, so a high score resting on a thin support fraction
-  (``1 - undefined_frac``) is not a strong result (:ref:`undefined neighbourhoods
-  <undefined-neighbourhoods>`).
+- Read ``support`` beside RI and MaRI: both pool only over evaluation units with typed
+  evidence inside ``k``, so a high score resting on thin support is not a strong result.
+  An evaluation unit is a manifest sample under ``all`` or a subset occurrence under
+  ``paired_2x2`` (:ref:`undefined neighbourhoods <undefined-neighbourhoods>`).
 - Leave ``tau`` at its default. A fixed ``tau`` shared across models distorts exactly what
   MaRI exists to measure (:ref:`choosing-tau`).
 - Read the tail. ``ltm_alpha`` is the mean of the worst 10% of samples; pooled scores hide
