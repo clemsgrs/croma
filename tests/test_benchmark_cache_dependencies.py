@@ -74,6 +74,18 @@ def _setup(bench_env, *, name: str = "toy", k_max: int = 3) -> None:
     )
 
 
+def _spy_on_croma_compute(bench_env) -> dict[str, int]:
+    calls = {"croma": 0}
+    original_croma_compute = bm.CRoMa.compute
+
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
+
+    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+    return calls
+
+
 def test_tau_change_recomputes_only_mari(bench_env) -> None:
     _setup(bench_env)
 
@@ -219,14 +231,7 @@ def test_partial_croma_cache_is_rejected_and_recomputed(bench_env) -> None:
     aligned[0, 0] = np.nan
     np.save(aligned_path, aligned)
 
-    calls = {"croma": 0}
-    original_croma_compute = bm.CRoMa.compute
-
-    def wrapped_croma_compute(*args, **kwargs):
-        calls["croma"] += 1
-        return original_croma_compute(*args, **kwargs)
-
-    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+    calls = _spy_on_croma_compute(bench_env)
 
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
     assert calls["croma"] == 1
@@ -260,14 +265,7 @@ def test_truncated_croma_headline_cache_is_rejected_and_recomputed(bench_env) ->
     headline_path = next((cache_artifacts / "croma_headline_samples" / "M1").glob("*.npy"))
     np.save(headline_path, np.load(headline_path)[:-1])
 
-    calls = {"croma": 0}
-    original_croma_compute = bm.CRoMa.compute
-
-    def wrapped_croma_compute(*args, **kwargs):
-        calls["croma"] += 1
-        return original_croma_compute(*args, **kwargs)
-
-    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+    calls = _spy_on_croma_compute(bench_env)
 
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
     assert calls["croma"] == 1
@@ -283,14 +281,7 @@ def test_legacy_croma_coverage_payload_is_not_a_cache_hit(bench_env) -> None:
     payload["by_m"]["1"]["croma_undefined_frac"] = 0.0
     payload_path.write_text(json.dumps(payload), encoding="utf-8")
 
-    calls = {"croma": 0}
-    original_croma_compute = bm.CRoMa.compute
-
-    def wrapped_croma_compute(*args, **kwargs):
-        calls["croma"] += 1
-        return original_croma_compute(*args, **kwargs)
-
-    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+    calls = _spy_on_croma_compute(bench_env)
 
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
     assert calls["croma"] == 1
