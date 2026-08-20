@@ -87,6 +87,108 @@ def _spy_on_croma_compute(bench_env) -> dict[str, int]:
     return calls
 
 
+def test_median_k_roster_change_rekeys_only_operating_point_artifacts(bench_env) -> None:
+    """A changed panel median must not reuse retained models' old-k artifacts."""
+    tileset = _tileset_manifest()
+    base = _toy_features()[: len(tileset)]
+    bench_env.write_tileset(
+        TOY_TILESET,
+        tileset,
+        {
+            "M1": base,
+            "M2": base[:, [1, 0, 2, 3]],
+            "M3": np.column_stack([base, np.full(len(base), 2.0)]),
+        },
+    )
+    bench_env.register(
+        "toy",
+        tileset=TOY_TILESET,
+        manifest=_toy_manifest(),
+        design="all",
+        k_max=3,
+        confounder_column="scanner_vendor",
+    )
+
+    biological_labels = np.array([0, 0, 1, 1, 0, 0, 1, 1], dtype=int)
+
+    def fake_knn_balanced_accuracy_by_k(
+        *,
+        features: np.ndarray,
+        labels: np.ndarray,
+        group_ids: np.ndarray,
+        k_values: list[int],
+        warn_context: str,
+    ) -> dict[int, float]:
+        del group_ids, warn_context
+        if not np.array_equal(labels, biological_labels):
+            return {1: 0.55, 2: 0.65, 3: 0.75}
+        marker = int(np.argmax(features[0]))
+        if marker == 0:  # M1: k*=1
+            return {1: 0.90, 2: 0.70, 3: 0.60}
+        return {1: 0.60, 2: 0.70, 3: 0.90}  # M2/M3: k*=3
+
+    bench_env._monkeypatch.setattr(
+        bm, "_knn_balanced_accuracy_by_k", fake_knn_balanced_accuracy_by_k
+    )
+
+    assert bench_env.run("toy", "median-k", "--models", "M1,M2,M3", "--progress", "off") == 0
+    results_dir = bench_env.results_dir("toy", "median-k")
+    first_metrics = pd.read_csv(results_dir / "metrics.csv")
+    assert set(first_metrics["k"]) == {3}
+
+    artifacts = results_dir / "cache" / "artifacts"
+    operating_artifacts = {
+        "ri_summary",
+        "ri_samples",
+        "ri_samples_aligned",
+        "ri_undefined_types",
+        "mari_summary",
+        "mari_samples",
+        "mari_samples_aligned",
+        "mari_undefined_types",
+        "tau_assessment",
+        "mari_curve",
+    }
+    operating_before = {
+        (artifact, model): set((artifacts / artifact / model).glob("*"))
+        for artifact in operating_artifacts
+        for model in ("M1", "M2")
+    }
+    assert all(len(paths) == 1 for paths in operating_before.values())
+    unaffected_artifacts = {
+        "knn_bio_curve",
+        "knn_confounder_curve",
+        "ri_curve",
+        "croma_m_sweep",
+        "croma_headline_samples",
+        "croma_samples_aligned_by_m",
+    }
+    unaffected_before = {
+        (artifact, model): {
+            path: (path.stat().st_ino, path.stat().st_mtime_ns)
+            for path in (artifacts / artifact / model).glob("*")
+        }
+        for artifact in unaffected_artifacts
+        for model in ("M1", "M2")
+    }
+    assert all(len(files) == 1 for files in unaffected_before.values())
+
+    assert bench_env.run("toy", "median-k", "--models", "M1,M2", "--progress", "off") == 0
+
+    second_metrics = pd.read_csv(results_dir / "metrics.csv")
+    assert set(second_metrics["k"]) == {1}
+    for (artifact, model), old_paths in operating_before.items():
+        new_paths = set((artifacts / artifact / model).glob("*"))
+        assert len(new_paths) == 2
+        assert len(new_paths - old_paths) == 1, f"{artifact}/{model} was not re-keyed"
+    for (artifact, model), old_files in unaffected_before.items():
+        new_files = {
+            path: (path.stat().st_ino, path.stat().st_mtime_ns)
+            for path in (artifacts / artifact / model).glob("*")
+        }
+        assert new_files == old_files, f"{artifact}/{model} was recomputed"
+
+
 def test_tau_change_recomputes_only_mari(bench_env) -> None:
     _setup(bench_env)
 

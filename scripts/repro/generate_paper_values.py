@@ -83,8 +83,8 @@ APD_SCOPE_MACRO = {
 }
 APD_RANGE_BENCHMARKS = list(APD_SCOPE_MACRO)
 
-# Confounder-probe collapse. `confounder_knn_bacc` is a k-free scalar the pipeline already
-# computes: how decodable the confounder is from the frozen representation. Its rank
+# Confounder-probe collapse. `confounder_knn_bacc` is an operating-point scalar the pipeline
+# already computes: how decodable the confounder is from the frozen representation. Its rank
 # correlation with each reported statistic establishes that every *pooled* robustness score
 # -- RI, MaRI, the CRoMa median, and F(0) -- is a near-monotone transform of confounder
 # decodability, while LTM escapes wherever the tail decouples from the median. Computed on
@@ -174,8 +174,9 @@ def benchmark_macros(
         specs.append(("CromaLtmMax", _num(float(ltm.max()))))  # best (least-negative) tail
 
     # Confounder-/biology-kNN balanced-accuracy range: prose cites how near-perfectly decodable
-    # each signal is for *every* model (e.g. Camelyon confounder "[0.92, 1.00]"), a k-free
-    # diagnostic. Computed over the ranked panel, like every other cross-model statistic here:
+    # each signal is for *every* model (e.g. Camelyon confounder "[0.92, 1.00]"), an
+    # operating-point diagnostic. Computed over the ranked panel, like every other cross-model
+    # statistic here:
     # the natural-image control is the bio-kNN floor on all four tile benchmarks (and the
     # confounder floor on Camelyon/Tolkach), so including it would report the control's number
     # as the panel minimum for prose that reads "across all encoders". It is a reported floor,
