@@ -13,6 +13,7 @@ if str(SCRIPTS) not in sys.path:
 
 import benchmark as bm
 import run_config
+from croma.types import CRoMaResult
 
 
 def _toy_manifest() -> pd.DataFrame:
@@ -620,8 +621,6 @@ def test_cached_payload_keys_are_exactly_what_a_run_writes() -> None:
     set does not know about, a stale entry is read back missing it and the run raises on
     the key. This is what keeps the duplication honest.
     """
-    from croma.types import CRoMaResult
-
     result = CRoMaResult(
         dataset="toy",
         m=5,
@@ -652,10 +651,13 @@ def test_shared_support_rejects_ri_mari_mismatch() -> None:
         )
 
 
-def test_invalid_croma_result_fails_before_serialization() -> None:
-    from croma.types import CRoMaResult
-
-    result = CRoMaResult(
+def _croma_result_for_serialization(
+    *,
+    sample_values_aligned: np.ndarray,
+    occurrence_defined_mask: np.ndarray,
+    undefined_frac: float,
+) -> CRoMaResult:
+    return CRoMaResult(
         dataset="toy",
         m=1,
         value=0.1,
@@ -663,12 +665,42 @@ def test_invalid_croma_result_fails_before_serialization() -> None:
         n_pairs=1,
         pair_values=np.asarray([0.1]),
         sample_values=np.asarray([0.1]),
-        sample_values_aligned=np.asarray([0.1, np.nan]),
-        occurrence_defined_mask=np.asarray([True, False]),
+        sample_values_aligned=sample_values_aligned,
+        occurrence_defined_mask=occurrence_defined_mask,
+        undefined_frac=undefined_frac,
+    )
+
+
+def test_croma_result_with_nonzero_undefined_fraction_fails_before_serialization() -> None:
+    result = _croma_result_for_serialization(
+        sample_values_aligned=np.asarray([0.1]),
+        occurrence_defined_mask=np.asarray([True]),
         undefined_frac=0.5,
     )
 
-    with pytest.raises(RuntimeError, match="Cannot serialize CRoMa"):
+    with pytest.raises(RuntimeError, match="incomplete support"):
+        bm._croma_result_to_payload(result, m=1)
+
+
+def test_croma_result_with_undefined_unit_fails_before_serialization() -> None:
+    result = _croma_result_for_serialization(
+        sample_values_aligned=np.asarray([0.1]),
+        occurrence_defined_mask=np.asarray([False]),
+        undefined_frac=0.0,
+    )
+
+    with pytest.raises(RuntimeError, match="undefined evaluation units"):
+        bm._croma_result_to_payload(result, m=1)
+
+
+def test_croma_result_with_nonfinite_sample_fails_before_serialization() -> None:
+    result = _croma_result_for_serialization(
+        sample_values_aligned=np.asarray([np.nan]),
+        occurrence_defined_mask=np.asarray([True]),
+        undefined_frac=0.0,
+    )
+
+    with pytest.raises(RuntimeError, match="non-finite samples"):
         bm._croma_result_to_payload(result, m=1)
 
 
