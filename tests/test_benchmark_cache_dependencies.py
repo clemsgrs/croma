@@ -273,6 +273,29 @@ def test_truncated_croma_headline_cache_is_rejected_and_recomputed(bench_env) ->
     assert calls["croma"] == 1
 
 
+def test_legacy_croma_coverage_payload_is_not_a_cache_hit(bench_env) -> None:
+    _setup(bench_env)
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    payload_path = next((cache_artifacts / "croma_m_sweep" / "M1").glob("*.json"))
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload["by_m"]["1"]["croma_undefined_frac"] = 0.0
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    calls = {"croma": 0}
+    original_croma_compute = bm.CRoMa.compute
+
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
+
+    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+    assert calls["croma"] == 1
+
+
 def test_k_values_change_recomputes_knn_ri_mari_not_croma(bench_env) -> None:
     _setup(bench_env)
 

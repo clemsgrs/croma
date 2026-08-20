@@ -697,7 +697,7 @@ def _croma_payload_to_by_m(
         return None
     if set(by_m) != {int(m) for m in expected_m_values}:
         return None
-    if any(not _CROMA_PAYLOAD_KEYS.issubset(entry) for entry in by_m.values()):
+    if any(set(entry) != _CROMA_PAYLOAD_KEYS for entry in by_m.values()):
         return None
     return by_m
 
