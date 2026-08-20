@@ -6,20 +6,16 @@ count-based RI, and as ``tau`` shrinks they collapse onto the single nearest typ
 Both are tested here as equalities against RI and against ``{0, 1}``, not as the inequality
 ``sharp > flat`` that any monotone function would satisfy.
 
-**The sharp limit is reachable, but it has a floor.** For the count-matched pair, whose typed
+**The sharp limit has no numerical support floor.** For the count-matched pair, whose typed
 neighbours sit at exactly 0.05 and 0.30, winner-take-all is exact for every ``tau`` below
-``6.87e-3`` -- and it survives only down to ``4.03e-4``, where ``exp(-0.30 / tau)`` underflows
-to zero and the samples whose only typed evidence is a far neighbour go undefined; below
-``6.71e-5`` even the near neighbour underflows and *every* sample is undefined, so MaRI
-reports total undefined coverage and falls back to its neutral 0.5 rather than to a
-single-neighbour vote. Both ends of that window are asserted below. The docstring's claim
-therefore holds over four decades of ``tau`` and fails only beneath the float64 underflow
-floor, which is why ``tau.py`` is left as it stands.
+``6.87e-3``. At extreme positive temperatures the raw exponentials underflow, but the stable
+log-domain ratio preserves both that mathematical limit and the same defined anchors as RI.
 """
 
 import warnings
 
 import numpy as np
+import pandas as pd
 import pytest
 from metric_harness import (
     COUNT_MATCHED_RI,
@@ -39,11 +35,12 @@ FLAT_TOLERANCE = 1e-9
 
 #: A ``tau`` inside the count-matched pair's winner-take-all window (see the module
 #: docstring): sharp enough that the second-nearest typed neighbour contributes ~1e-109 of the
-#: nearest one's weight, flat enough that no weight has underflowed to zero yet.
+#: nearest one's weight.
 SHARP_TAU = 1e-3
 
-#: A ``tau`` beneath the pair's underflow floor, where every ``exp(-d / tau)`` is exactly 0.
-UNDERFLOW_TAU = 1e-6
+#: The smallest positive float64 ``tau``: raw weights underflow and even ``d / tau``
+#: overflows in float64, exercising the full valid positive-temperature range.
+UNDERFLOW_TAU = float(np.nextafter(0.0, 1.0))
 
 #: Winner-take-all is attained exactly from above (the sum snaps to the nearest weight) but
 #: only approached from below, where the ratio bottoms out near 1e-109 rather than at 0.
@@ -102,8 +99,7 @@ def test_the_flat_limit_is_not_vacuous() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The sharp limit: tau -> 0 collapses onto the single nearest typed neighbour, until the
-# weights underflow.
+# The sharp limit: tau -> 0 collapses onto the single nearest typed neighbour.
 # ---------------------------------------------------------------------------
 def _sharp_limit_cases() -> dict[str, tuple[np.ndarray, "object", np.ndarray]]:
     """The pair, each half with the winner-take-all value its geometry dictates.
@@ -144,29 +140,70 @@ def test_sharp_tau_collapses_onto_the_nearest_typed_neighbour(case: str) -> None
     assert result.sample_values == pytest.approx(expected, abs=WINNER_TAKE_ALL_TOLERANCE)
 
 
-@pytest.mark.parametrize("case", sorted(SHARP_CASES), ids=sorted(SHARP_CASES))
-def test_sharp_tau_below_the_underflow_floor_leaves_mari_undefined(case: str) -> None:
-    """The floor of the sharp limit: past it MaRI is undefined, not winner-take-all.
-
-    ``exp(-d / tau)`` underflows to exactly 0 for every neighbour, so both sides of the
-    SO/OS ratio vanish and no sample carries typed evidence any more. This is the boundary of
-    the regime the test above confirms -- and MaRI does say so, via its undefined coverage,
-    rather than silently returning a single-neighbour vote.
-    """
-    features, manifest, _expected = SHARP_CASES[case]
-    with pytest.warns(RuntimeWarning, match="undefined coverage"):
-        result = MaRI.compute(
-            features,
-            manifest,
-            confounder_column="scanner_vendor",
-            k_candidates=[PINNED_K],
-            evaluation_design="all",
+@pytest.mark.parametrize("evaluation_design", ["all", "paired_2x2"])
+def test_extreme_tau_preserves_mari_ratio_and_support(evaluation_design: str) -> None:
+    """Distance weighting never changes support, even when raw weights underflow."""
+    features, manifest, expected_values = SHARP_CASES["so_near"]
+    if evaluation_design == "paired_2x2":
+        manifest = manifest.assign(subset="pair")
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        shared = {
+            "features": features,
+            "manifest": manifest,
+            "confounder_column": "scanner_vendor",
+            "k_candidates": [PINNED_K],
+            "evaluation_design": evaluation_design,
+        }
+        ri = RI.compute(**shared)
+        mari = MaRI.compute(
+            **shared,
             tau=UNDERFLOW_TAU,
             warn_tau=False,
         )
 
-    assert result.undefined_frac == pytest.approx(1.0)
-    assert result.sample_values.size == 0
+    expected_support = np.ones(len(manifest), dtype=bool)
+    np.testing.assert_array_equal(ri.occurrence_defined_mask, expected_support)
+    np.testing.assert_array_equal(mari.occurrence_defined_mask, expected_support)
+    np.testing.assert_array_equal(mari.sample_values_aligned, expected_values)
+    assert ri.undefined_frac == 0.0
+    assert mari.undefined_frac == 0.0
+    assert mari.value == 1.0
+
+
+def test_subnormal_weights_preserve_the_mathematical_mari_ratio() -> None:
+    features = np.array(
+        [
+            [1.0, 0.0],
+            [0.256, np.sqrt(1.0 - 0.256**2)],  # SO distance from query: 0.744
+            [0.255, -np.sqrt(1.0 - 0.255**2)],  # OS distance from query: 0.745
+            [0.0, 1.0],
+        ],
+        dtype=float,
+    )
+    manifest = pd.DataFrame(
+        {
+            "sample_id": ["query", "so", "os", "far"],
+            "image_path": ["/query", "/so", "/os", "/far"],
+            "label": ["A", "A", "B", "B"],
+            "scanner_vendor": ["V1", "V2", "V1", "V2"],
+            "group_id": ["g0", "g1", "g2", "g3"],
+            "dataset": ["toy"] * 4,
+        }
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        result = MaRI.compute(
+            features,
+            manifest,
+            confounder_column="scanner_vendor",
+            k_candidates=[2],
+            tau=0.001,
+            warn_tau=False,
+        )
+
+    assert result.sample_values_aligned[0] == pytest.approx(0.7310585786300049, abs=1e-15)
 
 
 # ---------------------------------------------------------------------------

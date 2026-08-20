@@ -49,8 +49,9 @@ at.
    model-dependent: two models' scores on the same cohort can summarize different sets of
    samples, which undermines a direct comparison between them. Always read the support
    fraction (``1 - result.undefined_frac``) alongside the score; a high RI resting on a
-   thin support is not a strong result. CRoMa scores every sample instead, by searching
-   outward until it finds typed neighbours.
+   thin support is not a strong result. RI and MaRI always use the same support: distance
+   weighting changes MaRI's score, never whether an anchor contributes. CRoMa scores every
+   sample instead, by searching outward until it finds typed neighbours.
 
 Robustness Index
 ----------------
