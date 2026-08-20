@@ -1932,14 +1932,13 @@ def main() -> int:
                 ticker.log(
                     f"[benchmark] RI={row['ri']:.4f} MaRI={row['mari']:.4f} CRoMa={row['croma']:.4f}"
                 )
-                undef_parts = []
-                if row["ri_undefined_frac"] > 0.0:
-                    undef_parts.append(f"RI={100*row['ri_undefined_frac']:.1f}%")
-                if row["mari_undefined_frac"] > 0.0:
-                    undef_parts.append(f"MaRI={100*row['mari_undefined_frac']:.1f}%")
-                if undef_parts:
+                if row["support"] < 1.0:
                     ticker.log(
-                        f"[benchmark] undefined samples: {', '.join(undef_parts)}"
+                        f"[benchmark] RI/MaRI support={100*row['support']:.1f}%; "
+                        "undefined causes: "
+                        f"SS={100*row['ss_dominated_undefined_frac']:.1f}%, "
+                        f"OO={100*row['oo_dominated_undefined_frac']:.1f}%, "
+                        f"mixed={100*row['mixed_undefined_frac']:.1f}%"
                     )
                 if not all_cache_hit:
                     # On a recompute the neighbours are already in hand; assess whether the

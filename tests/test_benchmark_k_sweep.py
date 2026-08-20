@@ -259,6 +259,18 @@ def test_benchmark_rows_use_shared_support_schema_with_temporary_legacy_columns(
     assert "croma_undefined_frac" not in m_sweep_df.columns
 
 
+def test_benchmark_progress_reports_shared_support_and_undefined_causes(bench_env, capsys) -> None:
+    _setup(bench_env, models=["M1"])
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    output = capsys.readouterr().out
+    assert (
+        "[benchmark] RI/MaRI support=25.0%; undefined causes: " "SS=75.0%, OO=0.0%, mixed=0.0%"
+    ) in output
+    assert "undefined samples:" not in output
+
+
 def test_benchmark_paired_outputs_occurrence_level_rows(bench_env) -> None:
     manifest = _toy_manifest()
     _setup(bench_env, models=["M1"], design="paired_2x2")

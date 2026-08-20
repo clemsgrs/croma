@@ -39,8 +39,8 @@ def _clamp_fraction(value: float) -> float:
     return float(min(1.0, max(0.0, float(value))))
 
 
-def _support_status(defined_frac: float) -> str:
-    frac = _clamp_fraction(defined_frac)
+def _support_status(support: float) -> str:
+    frac = _clamp_fraction(support)
     if frac < 0.25:
         return "critical"
     if frac < 0.50:
@@ -56,24 +56,14 @@ def _support_plot_rows(rows: list[dict]) -> list[dict]:
         if not model:
             continue
 
-        undefined_values: list[float] = []
-        for key in ("ri_undefined_frac", "mari_undefined_frac"):
-            if key not in raw_row:
-                continue
-            try:
-                undefined_frac = float(raw_row[key])
-            except Exception:  # noqa: BLE001
-                continue
-            if not np.isfinite(undefined_frac):
-                continue
-            undefined_values.append(_clamp_fraction(undefined_frac))
-
-        if not undefined_values:
+        try:
+            support = float(raw_row["support"])
+        except (KeyError, TypeError, ValueError):
             continue
-
-        undefined_frac = float(max(undefined_values))
-        defined_frac = float(1.0 - undefined_frac)
-        status = _support_status(defined_frac)
+        if not np.isfinite(support):
+            continue
+        support = _clamp_fraction(support)
+        status = _support_status(support)
         fill_color, track_color = _SUPPORT_STATUS_COLORS[status]
         kstar_raw = raw_row.get("k", raw_row.get("selected_k"))
         try:
@@ -88,16 +78,15 @@ def _support_plot_rows(rows: list[dict]) -> list[dict]:
             {
                 "model": model,
                 "kstar": kstar,
-                "undefined_frac": undefined_frac,
-                "defined_frac": defined_frac,
+                "support": support,
                 "status": status,
                 "fill_color": fill_color,
                 "track_color": track_color,
-                "label": f"{int(round(defined_frac * 100.0))}%",
+                "label": f"{int(round(support * 100.0))}%",
             }
         )
 
-    return sorted(support_rows, key=lambda row: (row["defined_frac"], row["model"]))
+    return sorted(support_rows, key=lambda row: (row["support"], row["model"]))
 
 
 def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
@@ -128,13 +117,12 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     ax.set_facecolor(PANEL_FACE_COLOR)
     ax.grid(axis="x", color=GRID_COLOR, linewidth=plotstyle.LW_GRID, alpha=plotstyle.GRID_ALPHA, zorder=0)
 
-    # Single neutral colour scheme: a light track behind a solid "defined" fill.
+    # Single neutral colour scheme: a light track behind a solid support fill.
     track_color = "#e7ecf0"
     fill_color = "#5f7d92"
 
     for idx, row in enumerate(support_rows):
-        defined_frac = float(row["defined_frac"])
-        undefined_frac = float(row["undefined_frac"])
+        support = float(row["support"])
 
         ax.barh(
             y[idx],
@@ -146,7 +134,7 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
         )
         ax.barh(
             y[idx],
-            defined_frac,
+            support,
             color=fill_color,
             edgecolor="none",
             height=0.58,
@@ -154,7 +142,7 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
         )
 
         ax.text(
-            defined_frac / 2.0,
+            support / 2.0,
             y[idx],
             str(row["label"]),
             va="center",
@@ -172,7 +160,6 @@ def plot_ri_mari_support(rows: list[dict], out_path: Path) -> None:
     ax.set_yticklabels(labels, fontsize=plotstyle.FS_TICK)
     _set_panel_title(ax, "Support coverage")
     ax.set_ylim(float(len(support_rows) - 0.35), -0.65)
-    ax.invert_yaxis()
     for spine in ax.spines.values():
         spine.set_visible(False)
     ax.tick_params(axis="y", length=0)

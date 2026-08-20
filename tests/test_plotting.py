@@ -130,24 +130,20 @@ def _sample_support_rows() -> list[dict]:
         {
             "model": "Virchow2",
             "k": 3,
-            "ri_undefined_frac": 0.12,
-            "mari_undefined_frac": 0.12,
+            "support": 0.88,
         },
         {
             "model": "UNI",
             "k": 6,
-            "ri_undefined_frac": 0.35,
-            "mari_undefined_frac": 0.35,
+            "support": 0.65,
         },
         {
             "model": "CONCH",
-            "ri_undefined_frac": 0.58,
-            "mari_undefined_frac": 0.58,
+            "support": 0.42,
         },
         {
             "model": "Phikon",
-            "ri_undefined_frac": 0.80,
-            "mari_undefined_frac": 0.80,
+            "support": 0.20,
         },
     ]
 
@@ -311,9 +307,7 @@ def test_multi_panel_plot_uses_single_figure_level_legend(monkeypatch, tmp_path:
     assert int(legend_kwargs.get("ncol", 0)) == 6
 
 
-def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_worst_first_order() -> (
-    None
-):
+def test_support_plot_rows_use_positive_thresholds_and_worst_first_order() -> None:
     rows = _support_plot_rows(_sample_support_rows())
 
     assert [row["model"] for row in rows] == [
@@ -324,13 +318,13 @@ def test_support_plot_rows_use_one_row_per_model_defined_share_thresholds_and_wo
     ]
 
     indexed = {row["model"]: row for row in rows}
-    assert indexed["Virchow2"]["defined_frac"] == pytest.approx(0.88)
+    assert indexed["Virchow2"]["support"] == pytest.approx(0.88)
     assert indexed["Virchow2"]["status"] == "good"
-    assert indexed["UNI"]["defined_frac"] == pytest.approx(0.65)
+    assert indexed["UNI"]["support"] == pytest.approx(0.65)
     assert indexed["UNI"]["status"] == "good"
-    assert indexed["CONCH"]["defined_frac"] == pytest.approx(0.42)
+    assert indexed["CONCH"]["support"] == pytest.approx(0.42)
     assert indexed["CONCH"]["status"] == "warning"
-    assert indexed["Phikon"]["defined_frac"] == pytest.approx(0.20)
+    assert indexed["Phikon"]["support"] == pytest.approx(0.20)
     assert indexed["Phikon"]["status"] == "critical"
     assert indexed["UNI"]["label"] == "65%"
     assert indexed["Virchow2"]["kstar"] == 3
@@ -366,6 +360,24 @@ def test_support_plot_uses_single_colour_without_threshold_legend(
     assert "Defined <25%" not in legend_labels
     assert "Defined <50%" not in legend_labels
     assert "Defined >=50%" not in legend_labels
+
+
+def test_support_plot_renders_lowest_support_at_the_top(monkeypatch, tmp_path: Path) -> None:
+    import matplotlib.figure
+
+    saved_y_limits: list[tuple[float, float]] = []
+    original_savefig = matplotlib.figure.Figure.savefig
+
+    def spy_savefig(self, *args, **kwargs):
+        saved_y_limits.append(tuple(float(v) for v in self.axes[0].get_ylim()))
+        return original_savefig(self, *args, **kwargs)
+
+    monkeypatch.setattr(matplotlib.figure.Figure, "savefig", spy_savefig)
+
+    plot_ri_mari_support(rows=_sample_support_rows(), out_path=tmp_path / "ri_mari_support.png")
+
+    assert saved_y_limits
+    assert all(top > bottom for top, bottom in saved_y_limits)
 
 
 def test_plot_croma_ltm_scatter_filters_invalid_rows_and_uses_threshold_line(

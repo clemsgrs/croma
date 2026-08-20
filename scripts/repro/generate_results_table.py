@@ -108,7 +108,7 @@ def load_frame(metrics_csv: Path) -> pd.DataFrame:
     # The run stores registry identities; the rendered table is a published surface.
     df = published_models(pd.read_csv(metrics_csv))
     df["croma"] = croma_as_margin(df["croma"])
-    df["support"] = (1.0 - df["ri_undefined_frac"]) * 100.0
+    df["support"] = df["support"].astype(float) * 100.0
     df["delta"] = df["mari"].astype(float) - df["ri"].astype(float)
     df["croma_frac_neg"] = df["model"].map(_load_frac_neg(metrics_csv, CROMA_HEADLINE_M))
     return df

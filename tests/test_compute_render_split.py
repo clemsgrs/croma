@@ -52,7 +52,6 @@ _PATH_COLUMNS = (
     "mari_samples_path",
     "croma_samples_path",
 )
-
 # The full figure set render.py emits for a run.
 _BASE_FIGURE_NAMES = (
     "knn_bio_k_sweep",
@@ -163,19 +162,20 @@ def test_compute_metrics_match_golden(bench_env) -> None:
     _assert_rows_match(rows, golden)
 
 
-def test_compute_golden_support_complements_temporary_legacy_undefined_fraction() -> None:
+def test_compute_golden_uses_shared_support_and_undefined_causes() -> None:
     golden = json.loads(GOLDEN_PATH.read_text())
     expected = {
-        "MA": (0.3125, 0.6875, 0.6875),
-        "MB": (0.4375, 0.5625, 0.5625),
-        "MC": (0.46875, 0.53125, 0.53125),
+        "MA": (0.3125, 0.6875, 0.0, 0.0),
+        "MB": (0.4375, 0.5625, 0.0, 0.0),
+        "MC": (0.46875, 0.53125, 0.0, 0.0),
     }
 
     for row in golden:
         assert (
             row["support"],
-            row["ri_undefined_frac"],
-            row["mari_undefined_frac"],
+            row["ss_dominated_undefined_frac"],
+            row["oo_dominated_undefined_frac"],
+            row["mixed_undefined_frac"],
         ) == expected[row["model"]]
 
 

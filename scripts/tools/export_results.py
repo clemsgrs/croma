@@ -230,9 +230,8 @@ def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
             "croma": croma_as_margin(metrics["croma"]),
             "croma_f0": metrics["croma_f0"].astype(float),
             "croma_ltm10": metrics["croma_ltm_alpha"].astype(float),
-            # Support is the fraction of samples that actually contribute to the counts.
-            # RI and MaRI share a neighbourhood, so they share an undefined set.
-            "support": 1.0 - metrics["ri_undefined_frac"].astype(float),
+            # Support is benchmark-owned: publish its one shared column directly.
+            "support": metrics["support"].astype(float),
         }
     )
     out["delta"] = out["mari"] - out["ri"]

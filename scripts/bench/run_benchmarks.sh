@@ -54,9 +54,8 @@ for B in "${BENCHMARKS[@]}"; do
     python -c "
 import pandas as pd
 d = pd.read_csv('$M')
-d['support'] = (1 - d['ri_undefined_frac']) * 100
 print('  OK  k (unique):', sorted(d['k'].unique()),
-      '| mean support=%.1f%%' % d['support'].mean(),
+      '| mean support=%.1f%%' % (100 * d['support'].mean()),
       '| n_models=%d' % len(d))
 "
     python scripts/bench/render.py "$OUT_ROOT/metrics/$PROTOCOL/$B"

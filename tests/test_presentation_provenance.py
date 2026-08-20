@@ -32,6 +32,28 @@ def _tolkach_distributions() -> distributions.Distributions:
     return distributions.Distributions(tuple(models))
 
 
+def test_results_table_loads_shared_support_without_deriving_a_complement(
+    tmp_path: Path,
+) -> None:
+    metrics = tmp_path / "metrics.csv"
+    pd.DataFrame(
+        {
+            "model": ["UNI"],
+            "croma": [0.2],
+            "ri": [0.3],
+            "mari": [0.4],
+            "support": [0.23],
+        }
+    ).to_csv(metrics, index=False)
+    pd.DataFrame({"model": ["UNI"], "croma_m5": [-0.1]}).to_csv(
+        tmp_path / "per_sample_metrics.csv", index=False
+    )
+
+    frame = results_table.load_frame(metrics)
+
+    assert frame.loc[0, "support"] == 23.0
+
+
 def test_tolkach_presentation_marks_possible_institutional_overlap_conservatively() -> None:
     entry = by_prefix("Tolkach")
     dist = _tolkach_distributions()

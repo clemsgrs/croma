@@ -58,7 +58,7 @@ def _load_metrics(output_dir: Path) -> pd.DataFrame:
 
 
 def _join(df_a: pd.DataFrame, df_b: pd.DataFrame, *, label_b: str) -> pd.DataFrame:
-    cols = _JOIN_KEYS + ["ri", "ri_undefined_frac", "mari", "mari_undefined_frac"]
+    cols = _JOIN_KEYS + ["ri", "mari", "support"]
     available_keys = [k for k in _JOIN_KEYS if k in df_a.columns and k in df_b.columns]
     a = df_a[[c for c in cols if c in df_a.columns]].copy()
     b = df_b[[c for c in cols if c in df_b.columns]].copy()
@@ -82,8 +82,8 @@ def _build_table(df: pd.DataFrame, *, label_a: str, label_b: str) -> pd.DataFram
                 f"mari ({label_a})": round(float(r["mari"]), 4),
                 f"mari ({label_b})": round(float(r[f"mari{sfx}"]), 4),
                 "Δmari": round(delta_mari, 4),
-                f"undef% ({label_a})": round(float(r["ri_undefined_frac"]) * 100, 1),
-                f"undef% ({label_b})": round(float(r[f"ri_undefined_frac{sfx}"]) * 100, 1),
+                f"support% ({label_a})": round(float(r["support"]) * 100, 1),
+                f"support% ({label_b})": round(float(r[f"support{sfx}"]) * 100, 1),
             }
         )
     table = pd.DataFrame(rows)
@@ -319,6 +319,10 @@ def main() -> int:
 
     out_dir = args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    comparison_path = out_dir / "comparison.csv"
+    table.to_csv(comparison_path, index=False)
+    print(f"\n  saved {comparison_path}")
 
     corr_path = out_dir / "correlations.csv"
     corr.to_csv(corr_path, index=False)

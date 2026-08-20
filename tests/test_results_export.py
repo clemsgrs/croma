@@ -49,7 +49,7 @@ def _metrics(**columns) -> pd.DataFrame:
         "croma": [0.1] * n,
         "croma_ltm_alpha": [-0.2] * n,
         "croma_f0": [0.3] * n,
-        "ri_undefined_frac": [0.25] * n,
+        "support": [0.75] * n,
     }
     frame.update(columns)
     return pd.DataFrame(frame)
@@ -99,11 +99,11 @@ def test_cohort_table_sorts_by_croma_descending():
     assert table["model"].tolist() == ["high", "mid", "low"]
 
 
-def test_cohort_table_derives_delta_and_support():
-    metrics = _metrics(model=["A"], ri=[0.40], mari=[0.55], ri_undefined_frac=[0.30])
+def test_cohort_table_derives_delta_and_preserves_shared_support():
+    metrics = _metrics(model=["A"], ri=[0.40], mari=[0.55], support=[0.30])
     row = er.build_cohort_table(metrics).iloc[0]
     assert row["delta"] == pytest.approx(0.15)
-    assert row["support"] == pytest.approx(0.70)
+    assert row["support"] == pytest.approx(0.30)
 
 
 def test_cohort_table_flags_the_control_but_ranks_it_inline():
