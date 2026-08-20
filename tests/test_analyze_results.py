@@ -1082,24 +1082,24 @@ def test_main_writes_model_specific_croma_subgroup_outputs(
     assert "Broad Subgroup Weakness" in markdown
 
 
-def test_model_action_flags_use_only_lower_coverage_risk_threshold() -> None:
+def test_model_action_flags_use_positive_support_floor_for_coverage_risk() -> None:
     df_model = pd.DataFrame(
         {
-            "model": ["M1", "M2"],
-            "ri": [0.80, 0.82],
-            "mari": [0.78, 0.81],
-            "croma": [1.10, 1.12],
-            "ri_undefined_frac": [0.26, 0.05],
-            "mari_undefined_frac": [0.24, 0.31],
+            "model": ["below", "above", "boundary"],
+            "ri": [0.80, 0.82, 0.81],
+            "mari": [0.78, 0.81, 0.80],
+            "croma": [1.10, 1.12, 1.11],
+            "support": [0.74, 0.76, 0.75],
         }
     )
 
     flags = ar._model_action_flags(df_model=df_model)
 
     assert set(flags["flag"]) == {"coverage_risk"}
-    assert set(flags["model"]) == {"M1", "M2"}
-    assert all(float(v) == pytest.approx(0.25) for v in flags["threshold"])
-    assert set(round(float(v), 3) for v in flags["value"]) == {0.26, 0.31}
+    assert set(flags["model"]) == {"below", "boundary"}
+    assert all(float(v) == pytest.approx(0.75) for v in flags["threshold"])
+    assert set(round(float(v), 3) for v in flags["value"]) == {0.74, 0.75}
+    assert "RI/MaRI support is low (support=0.740)." in set(flags["detail"])
 
 
 def test_model_action_flags_keep_only_coverage_embedding_and_ltm_tail_flags() -> None:
@@ -1111,12 +1111,10 @@ def test_model_action_flags_keep_only_coverage_embedding_and_ltm_tail_flags() ->
             "croma": [1.10],
             "croma_q_alpha": [0.90],
             "croma_ltm_alpha": [0.70],
-            "ri_undefined_frac": [0.30],
-            "mari_undefined_frac": [0.28],
-            "ri_ss_dominated_undefined_frac": [0.24],
-            "mari_ss_dominated_undefined_frac": [0.26],
-            "ri_oo_dominated_undefined_frac": [0.12],
-            "mari_oo_dominated_undefined_frac": [0.11],
+            "support": [0.70],
+            "ss_dominated_undefined_frac": [0.26],
+            "oo_dominated_undefined_frac": [0.12],
+            "mixed_undefined_frac": [0.02],
         }
     )
 
@@ -1132,5 +1130,5 @@ def test_model_action_flags_keep_only_coverage_embedding_and_ltm_tail_flags() ->
     assert not any(str(flag).startswith("ss_dominated_undefined_") for flag in flags["flag"])
     coverage_flag = flags[flags["flag"] == "coverage_risk"].iloc[0]
     poor_embedding_flag = flags[flags["flag"] == "poor_embedding"].iloc[0]
-    assert float(coverage_flag["value"]) == pytest.approx(0.30)
+    assert float(coverage_flag["value"]) == pytest.approx(0.70)
     assert float(poor_embedding_flag["value"]) == pytest.approx(0.12)

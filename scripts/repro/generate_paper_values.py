@@ -139,7 +139,10 @@ def _span(lo: float, hi: float, decimals: int = 2) -> str:
     return rf"$[{_apd_bare(lo, decimals)}, {_apd_bare(hi, decimals)}]$"
 
 
-def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[list[str], str]:
+def benchmark_macros(
+    prefix: str, df: pd.DataFrame, scale_override: str
+) -> tuple[list[str], str]:
+    """Render the macro bundle for one persisted benchmark metrics frame."""
     raw = df["croma"].astype(float)
     scale = scale_override if scale_override != "auto" else _detect_scale(raw)
     croma = _to_margin(raw, scale)
@@ -209,9 +212,11 @@ def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[lis
         # consistency: it has by far the thinnest structure of either kind, so few of its
         # anchors are SS-dominated and its support is an outlier (Camelyon 68% against a
         # pathology panel of 10--46%). Including it would blunt the very point the range makes.
-        if "ri_undefined_frac" in ranked.columns:
-            support = 1.0 - ranked["ri_undefined_frac"].astype(float)
-            specs.append(("SupportRange", rf"$[{support.min() * 100:.0f}, {support.max() * 100:.0f}]\%$"))
+        if "support" in ranked.columns:
+            support = ranked["support"].astype(float)
+            specs.append(
+                ("SupportRange", rf"$[{support.min() * 100:.0f}, {support.max() * 100:.0f}]\%$")
+            )
 
     # Leader bundle: the model with the highest (least-negative) CRoMa. Lets prose cite the
     # leader's own scalars (name, CRoMa, biological k-NN accuracy, support) without drift.
@@ -220,8 +225,8 @@ def _macros_for(prefix: str, df: pd.DataFrame, scale_override: str) -> tuple[lis
     specs.append(("BestCroma", _num(hi)))  # == CromaMax, named for prose readability
     if "bio_knn_bacc" in df:
         specs.append(("BestBioBacc", _num(float(leader["bio_knn_bacc"]), decimals=3)))
-    if "ri_undefined_frac" in df:
-        support = 1.0 - float(leader["ri_undefined_frac"])
+    if "support" in df:
+        support = float(leader["support"])
         specs.append(("BestSupport", rf"{support * 100:.1f}\%"))
 
     lines = [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
@@ -273,7 +278,7 @@ def _uncertainty_macros(prefix: str, summary: dict, df: pd.DataFrame) -> list[st
     top_tie_n = int((df["rank_lo"] == 1).sum())
     adj = summary.get("adjacent_pair_win", [])
     closest = min(adj, key=lambda d: abs(d["p_higher_beats_lower"] - 0.5)) if adj else None
-    # The rho point estimates live in _macros_for, which reads the always-present metrics.csv;
+    # The rho point estimates live in benchmark_macros, which reads the always-present metrics.csv;
     # emitting them here too would be a duplicate \newcommand whenever this block does run.
     specs = [
         ("CromaVsRiCi", _ci(float(corr["croma_vs_ri"]["lo"]), float(corr["croma_vs_ri"]["hi"]))),
@@ -700,7 +705,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         # The runs store registry identities; every macro built from this frame is a
         # published surface, so the restyle happens at the load.
         df = published_models(pd.read_csv(path))
-        lines, scale = _macros_for(prefix, df, scale_override)
+        lines, scale = benchmark_macros(prefix, df, scale_override)
         out.append(f"% {prefix}: {rel} (scale={scale})")
         out.extend(lines)
         print(f"{prefix:16s} scale={scale:6s} -> {len(lines)} macros", file=sys.stderr)

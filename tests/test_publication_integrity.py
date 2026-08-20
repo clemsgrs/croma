@@ -65,6 +65,26 @@ EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
 }
 
 
+def test_paper_value_macros_read_positive_shared_support_directly() -> None:
+    frame = pd.DataFrame(
+        {
+            "model": ["leader", "runner-up", "DINOv2-B"],
+            "croma": [0.9, 0.5, 0.1],
+            "croma_ltm_alpha": [0.2, 0.1, 0.0],
+            "ri": [0.8, 0.4, 0.2],
+            "mari": [0.7, 0.3, 0.1],
+            "bio_knn_bacc": [0.9, 0.8, 0.5],
+            "confounder_knn_bacc": [0.4, 0.5, 0.3],
+            "support": [0.2, 0.8, 0.4],
+        }
+    )
+
+    lines, _ = paper_values.benchmark_macros("Example", frame, "margin")
+
+    assert r"\newcommand{\ExampleSupportRange}{$[20, 80]\%$}" in lines
+    assert r"\newcommand{\ExampleBestSupport}{20.0\%}" in lines
+
+
 def test_public_export_is_three_tile_cohorts_plus_the_slide_cohort() -> None:
     """The tile aggregate stays 25 ranked encoders plus the control over exactly the
     three tile cohorts; the slide cohort is published beside them -- five whole-slide

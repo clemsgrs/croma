@@ -58,7 +58,7 @@ _Avoid_: `slide_id` (the pre-rename name; slide is one possible unit, not the co
 cluster (that word belongs to the bootstrap, which resamples these same groups).
 
 **Support fraction**:
-The fraction of anchors on which RI/MaRI are defined (`1 - ri_undefined_frac`).
+The fraction of anchors on which RI/MaRI are defined (the shared `support` field).
 Always reported alongside RI/MaRI because those metrics are undefined on
 SS-dominated anchors and their pooled values are otherwise computed on a silent,
 model-dependent subset.

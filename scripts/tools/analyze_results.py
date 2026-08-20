@@ -47,7 +47,7 @@ except ModuleNotFoundError:
     from croma.metrics.tail import compute_tail_metrics
 
 
-_THRESH_UNDEFINED_COVERAGE_RISK = 0.25
+_THRESH_SUPPORT_RISK_FLOOR = 0.75
 _THRESH_OO_DOMINATED_HIGH = 0.10
 _THRESH_TAIL_GAP_LTM = 0.20
 _THRESH_SUBGROUP_TAIL_PREVALENCE_RATIO = 2.0
@@ -1066,45 +1066,31 @@ def _model_action_flags(*, df_model: pd.DataFrame) -> pd.DataFrame:
     """
     rows: list[dict] = []
 
-    # Coverage risks: RI/MaRI undefined coverage is shared in this benchmark path,
-    # so emit one model-level flag using the max available undefined fraction.
-    coverage_cols = [
-        c
-        for c in ("ri_undefined_frac", "mari_undefined_frac", "croma_undefined_frac")
-        if c in df_model.columns
-    ]
-    if coverage_cols:
+    # RI/MaRI support is shared in this benchmark path. Low support means the pooled
+    # scores rest on too small a share of the evaluation units.
+    if "support" in df_model.columns:
         for _, row in df_model.iterrows():
-            coverage_values = [
-                float(row[c]) for c in coverage_cols if np.isfinite(row[c])
-            ]
-            if not coverage_values:
+            support = float(row["support"])
+            if not np.isfinite(support):
                 continue
-            coverage_value = float(max(coverage_values))
-            if coverage_value >= _THRESH_UNDEFINED_COVERAGE_RISK:
+            if support <= _THRESH_SUPPORT_RISK_FLOOR:
                 rows.append(
                     {
                         "model": str(row["model"]),
                         "flag": "coverage_risk",
                         "severity": "high",
-                        "value": coverage_value,
-                        "threshold": _THRESH_UNDEFINED_COVERAGE_RISK,
-                        "detail": f"Undefined coverage is high (max undefined fraction={coverage_value:.3f}).",
+                        "value": support,
+                        "threshold": _THRESH_SUPPORT_RISK_FLOOR,
+                        "detail": f"RI/MaRI support is low (support={support:.3f}).",
                     }
                 )
 
     # Undefined breakdown flags: retain one OO-dominated poor-embedding warning.
-    oo_cols = [
-        c
-        for c in ("ri_oo_dominated_undefined_frac", "mari_oo_dominated_undefined_frac")
-        if c in df_model.columns
-    ]
-    if oo_cols:
+    if "oo_dominated_undefined_frac" in df_model.columns:
         for _, row in df_model.iterrows():
-            oo_values = [float(row[c]) for c in oo_cols if np.isfinite(row[c])]
-            if not oo_values:
+            oo_value = float(row["oo_dominated_undefined_frac"])
+            if not np.isfinite(oo_value):
                 continue
-            oo_value = float(max(oo_values))
             if oo_value >= _THRESH_OO_DOMINATED_HIGH:
                 rows.append(
                     {
@@ -1113,7 +1099,7 @@ def _model_action_flags(*, df_model: pd.DataFrame) -> pd.DataFrame:
                         "severity": "high",
                         "value": oo_value,
                         "threshold": _THRESH_OO_DOMINATED_HIGH,
-                        "detail": f"Significant undefined mass is OO-dominated (max OO fraction={oo_value:.3f}).",
+                        "detail": f"Significant undefined mass is OO-dominated (OO fraction={oo_value:.3f}).",
                     }
                 )
 

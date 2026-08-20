@@ -50,11 +50,11 @@ def _to_margin(s: pd.Series) -> pd.Series:
 
 def _load_metrics(rel: str) -> pd.DataFrame:
     m = pd.read_csv(REPO / rel / "results/metrics.csv")
-    m = m[["model", "croma", "ri", "mari", "ri_undefined_frac", "bio_knn_bacc",
+    m = m[["model", "croma", "ri", "mari", "support", "bio_knn_bacc",
            "confounder_knn_bacc"]].copy()
     m["croma"] = _to_margin(m["croma"].astype(float))
-    m["support"] = 1.0 - m["ri_undefined_frac"].astype(float)
-    return m.drop(columns="ri_undefined_frac")
+    m["support"] = m["support"].astype(float)
+    return m
 
 
 def per_model_table() -> pd.DataFrame:
