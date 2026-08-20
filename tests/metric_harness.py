@@ -55,11 +55,9 @@ PINNED_K = 3
 #: the configuration the paper reports; every named embedding is sized to define it.
 DEFAULT_M = CROMA_HEADLINE_M
 
-#: Rows per label-confounder cell in every named embedding. One more than ``DEFAULT_M``, not
-#: exactly ``DEFAULT_M``: the neighbour search caps its fetch at ``n_samples - 1`` *including
-#: the sample itself*, so the farthest candidate is never visible. With cells exactly ``m``
-#: deep that costs some samples their ``m``-th typed neighbour and CRoMa goes undefined on
-#: them; one spare row per cell keeps every sample defined.
+#: Rows per label-confounder cell in every named embedding. One spare row beyond
+#: ``DEFAULT_M`` keeps the property fixtures comfortably inside the total-support contract
+#: instead of coupling them to the exact adaptive-search cap.
 CELL_DEPTH = DEFAULT_M + 1
 
 #: The metrics a shared property parametrizes over. Adding a fourth metric means adding it
@@ -321,14 +319,13 @@ def constant_embedding(
 
     The degenerate embedding: an encoder that has collapsed. Distances carry no information,
     which is a different thing from carrying neutral information, and the metrics part ways
-    here. CRoMa's ``(d_OS - d_SO) / (d_OS + d_SO)`` has a zero denominator and is undefined;
-    RI and MaRI still count neighbours (MaRI's weights are ``exp(-0 / tau) = 1``) and so
-    degrade to a count ratio over an arbitrary tie-break rather than to nothing.
+    here. CRoMa's ``(d_OS - d_SO) / (d_OS + d_SO)`` has a zero denominator and rejects the
+    evaluation; RI and MaRI still count neighbours (MaRI's weights are
+    ``exp(-0 / tau) = 1``) and so degrade to a count ratio over an arbitrary tie-break.
 
     Deliberately **not** in :data:`NAMED_EMBEDDINGS`: the shared properties there compare
-    scores with ``pytest.approx``, under which NaN is unequal to NaN, so a metric that is
-    undefined everywhere would turn a rotation-invariance failure into a NaN-comparison
-    artifact. Tests that want this embedding ask for it by name.
+    scores with ``pytest.approx``, while CRoMa rejects the embedding before producing a
+    score. Tests that want this embedding ask for it by name.
     """
     labels, confounders = _cycled_cells(n_per_cell)
     features = np.ones((len(labels), int(dim)), dtype=float)

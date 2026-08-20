@@ -199,7 +199,20 @@ class _BenchEnv:
     def run(self, benchmark: str, protocol: str = "k-star", *extra: str) -> int:
         import benchmark as bm
 
-        argv = ["benchmark.py", "--benchmark", benchmark, "--protocol", protocol, *extra]
+        # Synthetic benchmark fixtures are intentionally tiny. Pin their default CRoMa
+        # sweep to a radius every occurrence can support; individual tests append a wider
+        # ``--croma-m-max`` when that sweep is the behavior under test (argparse uses the
+        # last occurrence).
+        argv = [
+            "benchmark.py",
+            "--benchmark",
+            benchmark,
+            "--protocol",
+            protocol,
+            "--croma-m-max",
+            "1",
+            *extra,
+        ]
         self._monkeypatch.setattr(sys, "argv", argv)
         return bm.main()
 

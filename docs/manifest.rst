@@ -179,11 +179,12 @@ under the scope size is not a meaningful neighbourhood anyway.
 
 **CRoMa.** A sample resolves only if ``m`` ``SO`` *and* ``m`` ``OS`` neighbours can be found
 for it. With the default ``m=5``, each of the four ``(label, confounder)`` cells wants at
-least 5 samples, in distinct ``group_id`` groups. Unresolved samples are counted in
-``result.undefined_frac`` rather than dropped, and a run that resolves none returns ``nan``.
+least 5 samples, in distinct ``group_id`` groups. If any requested sample or subset
+occurrence remains unscoreable after adaptive search, CRoMa raises a descriptive error;
+it never pools the occurrences that happened to resolve.
 
-Neither rule can produce a *wrong* number -- RI raises, CRoMa reports what it could not
-resolve -- but an undersized manifest wastes a run.
+Neither rule can produce a *wrong* number -- both reject an undersized evaluation rather
+than reporting a partial result.
 
 .. _deduplicated-embeddings:
 

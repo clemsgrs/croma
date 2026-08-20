@@ -1,4 +1,3 @@
-import logging
 import math
 from dataclasses import dataclass
 
@@ -26,8 +25,6 @@ from croma.metrics.pairs import (
 from croma.metrics.tail import compute_tail_metrics
 from croma.types import CRoMaResult
 
-logger = logging.getLogger("croma")
-
 # Headline per-type averaging radius. ``m=1`` is the single-neighbour estimate and
 # is maximally sensitive to one outlier neighbour; ``m=5`` is the smallest window
 # that removes single-neighbour dominance (no neighbour exceeds 20% of the estimate)
@@ -52,8 +49,8 @@ class _SampleCRoMa:
     A NaN in ``values`` has two possible causes, and the output cannot tell them apart:
     the search never found ``m`` neighbors of both types (``unresolved``), or it found
     them all at distance zero so the margin has no denominator (``zero_distance``). The
-    two masks are disjoint and their union is exactly the NaN set, so a report built from
-    them accounts for every undefined sample and attributes none of them by inference.
+    two masks are disjoint and their union is exactly the NaN set, so total-support
+    validation accounts for every unscoreable sample and attributes none by inference.
     """
 
     values: np.ndarray
@@ -105,10 +102,10 @@ def _confounder_dominant_fraction(sample_values: np.ndarray) -> float:
     contested unit (``CRoMa_i == 0``, the impostor and the biological match equidistant)
     counts as confounder-dominant, because nothing about it says biology won.
 
-    The denominator is the defined units only, exactly as for ``q_alpha`` and
-    ``ltm_alpha``: undefined units carry no margin to place on either side of zero, and
-    ``undefined_frac`` reports them separately over all units. With no defined unit at all
-    there is no distribution to evaluate, and the result is ``nan`` rather than 0.
+    Non-finite values are ignored defensively. Public CRoMa computation validates total
+    support before calling this helper, so every unit in a successful result contributes to
+    the denominator. With no finite unit there is no distribution to evaluate, and the
+    helper returns ``nan`` rather than 0.
     """
     arr = np.asarray(sample_values, dtype=float)
     finite = arr[np.isfinite(arr)]
@@ -123,6 +120,41 @@ def _compute_sample_croma(
 ) -> np.ndarray:
     """Per-sample CRoMa alone; see :func:`_sample_croma_with_causes` for the definition."""
     return _sample_croma_with_causes(so_dists, os_dists).values
+
+
+def _require_total_support(
+    scored: _SampleCRoMa,
+    *,
+    dataset_name: str,
+    evaluation_design: str,
+    subset_id: str,
+    evaluation_unit: str,
+    m: int,
+    n_units: int,
+    k_final: int,
+) -> None:
+    causes: list[str] = []
+    n_unresolved = int(scored.unresolved.sum())
+    if n_unresolved > 0:
+        causes.append(
+            f"{n_unresolved}/{n_units} {evaluation_unit}(s) could not find {m} SO and {m} "
+            f"OS neighbour(s) after adaptive neighbour search reached k={k_final}"
+        )
+
+    n_zero_distance = int(scored.zero_distance.sum())
+    if n_zero_distance > 0:
+        causes.append(
+            f"{n_zero_distance}/{n_units} {evaluation_unit}(s) have a zero margin denominator "
+            f"(d_OS + d_SO = 0) despite complete typed-neighbour support, as produced by a "
+            f"collapsed embedding or duplicated rows"
+        )
+
+    if causes:
+        raise RuntimeError(
+            f"[CRoMa] dataset '{dataset_name}' ({evaluation_design}), subset '{subset_id}', "
+            f"m={m}: {'; '.join(causes)}; CRoMa requires every requested "
+            f"{evaluation_unit} to be scoreable, so no pooled or tail statistics were computed"
+        )
 
 
 def _scan_typed_neighbors_for_query_rows(
@@ -213,8 +245,12 @@ def _iterative_typed_neighbor_search(
                 ),
             )
 
-        fetch_neighbors = _initial_n_neighbors(
-            kmax=int(k_current), group_ids=group_ids, n_samples=n_samples
+        # ``kneighbors`` receives explicit query rows, so its result includes each query
+        # sample itself. Fetch one row beyond the desired non-self radius; at the cap this
+        # is all ``n_samples`` rows, ensuring adaptive search really exhausts the subset.
+        fetch_neighbors = min(
+            n_samples,
+            _initial_n_neighbors(kmax=int(k_current), group_ids=group_ids, n_samples=n_samples) + 1,
         )
         distances, raw_neighbors = model.kneighbors(
             features[query_indices], n_neighbors=fetch_neighbors
@@ -281,11 +317,16 @@ class CrossConfounderRobustnessMargin:
         start_k: int = 200,
         k_growth_factor: float = 2.0,
     ) -> CRoMaResult | dict[int, CRoMaResult]:
-        """Compute the cross-confounder robustness margin.
+        """Compute the cross-confounder robustness margin with total support.
 
         Args:
             evaluation_design: ``"all"`` (the default) or ``"paired_2x2"``; see the
                 constants in :mod:`croma.metrics.base` for what each scope scores.
+
+        Raises:
+            RuntimeError: If any requested sample or subset occurrence does not have both
+                required typed-neighbour sets after adaptive search, or has a zero margin
+                denominator. No pooled or tail statistics are returned in that case.
         """
         evaluation_design = _normalize_evaluation_design(evaluation_design)
 
@@ -341,13 +382,6 @@ class CrossConfounderRobustnessMargin:
         occurrence_sources_by_m: dict[int, list[np.ndarray]] = {
             int(mm): [] for mm in unique_m_values
         }
-        occurrence_total = 0
-        total_undefined: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
-        # The undefined count, split by the cause each sample actually had. Kept apart from
-        # ``total_undefined`` so the warning names a cause instead of inferring one.
-        total_unresolved: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
-        total_zero_distance: dict[int, int] = {int(mm): 0 for mm in unique_m_values}
-
         k_start_values: list[int] = []
         k_final_values: list[int] = []
         retries_values: list[int] = []
@@ -355,9 +389,6 @@ class CrossConfounderRobustnessMargin:
 
         for subset in subsets:
             sub = subset.rows
-            if len(sub) <= 1:
-                continue
-
             idx = sub["source_sample_index"].to_numpy(dtype=int)
             subset_features = features[idx]
             subset_features = subset_features / (
@@ -379,20 +410,23 @@ class CrossConfounderRobustnessMargin:
             )
 
             n_sub = len(sub)
-            occurrence_total += n_sub
             k_start_values.append(int(search_meta.k_start))
             k_final_values.append(int(search_meta.k_final))
             retries_values.append(int(search_meta.retries))
 
             for mm in unique_m_values:
                 scored = _sample_croma_with_causes(so_dists[:, : int(mm)], os_dists[:, : int(mm)])
+                _require_total_support(
+                    scored,
+                    dataset_name=dataset_name,
+                    evaluation_design=evaluation_design,
+                    subset_id=str(subset.subset_id),
+                    evaluation_unit=evaluation_unit,
+                    m=int(mm),
+                    n_units=n_sub,
+                    k_final=int(search_meta.k_final),
+                )
                 sample_croma = scored.values
-                informative = np.isfinite(sample_croma)
-                n_informative = int(informative.sum())
-                n_undefined = int(n_sub - n_informative)
-                total_undefined[int(mm)] += n_undefined
-                total_unresolved[int(mm)] += int(scored.unresolved.sum())
-                total_zero_distance[int(mm)] += int(scored.zero_distance.sum())
 
                 occurrence_values_by_m[int(mm)].append(np.asarray(sample_croma, dtype=float))
                 occurrence_subsets_by_m[int(mm)].append(
@@ -400,10 +434,7 @@ class CrossConfounderRobustnessMargin:
                 )
                 occurrence_sources_by_m[int(mm)].append(idx.astype(int))
 
-                if n_informative > 0:
-                    pair_medians[int(mm)].append(float(np.median(sample_croma[informative])))
-                else:
-                    pair_medians[int(mm)].append(float("nan"))
+                pair_medians[int(mm)].append(float(np.median(sample_croma)))
 
         k_start_value = int(min(k_start_values)) if k_start_values else 0
         k_final_value = int(max(k_final_values)) if k_final_values else 0
@@ -435,31 +466,8 @@ class CrossConfounderRobustnessMargin:
                 if occurrence_sources_by_m[int(mm)]
                 else np.empty((0,), dtype=int)
             )
-            occurrence_defined_mask = np.isfinite(occurrence_values)
-            sample_values = occurrence_values[np.isfinite(occurrence_values)].astype(float)
-            undefined_frac = (
-                float(total_undefined[int(mm)] / occurrence_total) if occurrence_total > 0 else 0.0
-            )
-
-            if total_undefined[int(mm)] > 0:
-                causes: list[str] = []
-                if total_unresolved[int(mm)] > 0:
-                    causes.append(
-                        f"{total_unresolved[int(mm)]} where the neighbour search could not "
-                        f"find {mm} SO and {mm} OS neighbor(s) before reaching its radius cap"
-                    )
-                if total_zero_distance[int(mm)] > 0:
-                    causes.append(
-                        f"{total_zero_distance[int(mm)]} where the search did find them, all "
-                        f"at distance 0, so the margin's denominator d_OS + d_SO is 0 -- what "
-                        f"a collapsed embedding, or a manifest that duplicates rows, produces"
-                    )
-                logger.warning(
-                    f"[CRoMa] dataset '{dataset_name}' ({evaluation_design}) leaves "
-                    f"{total_undefined[int(mm)]}/{occurrence_total} samples "
-                    f"({undefined_frac * 100.0:.1f}%) undefined at m={mm}: "
-                    f"{'; '.join(causes)}."
-                )
+            occurrence_defined_mask = np.ones(occurrence_values.shape, dtype=bool)
+            sample_values = occurrence_values
 
             tail = compute_tail_metrics(sample_values, alpha=alpha)
             by_m[int(mm)] = CRoMaResult(
@@ -472,7 +480,7 @@ class CrossConfounderRobustnessMargin:
                 sample_values=sample_values,
                 sample_values_aligned=occurrence_values,
                 occurrence_defined_mask=occurrence_defined_mask,
-                undefined_frac=undefined_frac,
+                undefined_frac=0.0,
                 evaluation_design=str(evaluation_design),
                 evaluation_unit=str(evaluation_unit),
                 occurrence_subsets=occurrence_subsets,
