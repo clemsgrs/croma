@@ -99,7 +99,6 @@ class _PreparedNeighborSubset:
 
 @dataclass(frozen=True)
 class _UndefinedBreakdown:
-    total_frac: float
     ss_frac: float
     oo_frac: float
     mixed_frac: float
@@ -143,6 +142,21 @@ class _EvidenceTotals:
 class _RobustnessArtifacts:
     curve: dict[int, float]
     result: RobustnessResult | None = None
+
+
+_ScoredByKEntry = tuple[
+    float,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    float,
+    float,
+    float,
+]
 
 
 class BaseRobustnessIndex(ABC):
@@ -617,12 +631,10 @@ class BaseRobustnessIndex(ABC):
         mixed_undefined: int,
     ) -> _UndefinedBreakdown:
         if occurrence_total <= 0:
-            return _UndefinedBreakdown(total_frac=0.0, ss_frac=0.0, oo_frac=0.0, mixed_frac=0.0)
+            return _UndefinedBreakdown(ss_frac=0.0, oo_frac=0.0, mixed_frac=0.0)
 
-        total_undefined = ss_undefined + oo_undefined + mixed_undefined
         denominator = float(occurrence_total)
         return _UndefinedBreakdown(
-            total_frac=float(total_undefined / denominator),
             ss_frac=float(ss_undefined / denominator),
             oo_frac=float(oo_undefined / denominator),
             mixed_frac=float(mixed_undefined / denominator),
@@ -684,20 +696,7 @@ class BaseRobustnessIndex(ABC):
         evaluation_design: str,
         evaluation_unit: str,
         k: int,
-        scored_entry: tuple[
-            float,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            float,
-            float,
-            float,
-            float,
-        ],
+        scored_entry: _ScoredByKEntry,
     ) -> RobustnessResult:
         (
             pooled,
@@ -708,7 +707,6 @@ class BaseRobustnessIndex(ABC):
             undefined_types,
             occurrence_subsets,
             occurrence_source_indices,
-            undefined_frac,
             ss_dominated_undefined_frac,
             oo_dominated_undefined_frac,
             mixed_undefined_frac,
@@ -727,7 +725,6 @@ class BaseRobustnessIndex(ABC):
             occurrence_subsets=occurrence_subsets,
             occurrence_source_indices=occurrence_source_indices,
             support=float(np.mean(occurrence_defined_mask)),
-            undefined_frac=undefined_frac,
             ss_dominated_undefined_frac=ss_dominated_undefined_frac,
             oo_dominated_undefined_frac=oo_dominated_undefined_frac,
             mixed_undefined_frac=mixed_undefined_frac,
@@ -1058,23 +1055,7 @@ class BaseRobustnessIndex(ABC):
         k_values: list[int] | tuple[int, ...],
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[
-        int,
-        tuple[
-            float,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            float,
-            float,
-            float,
-            float,
-        ],
-    ]:
+    ) -> dict[int, _ScoredByKEntry]:
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
         neigh_idx, neigh_dist, valid_counts = _prepare_neighbors(
@@ -1107,23 +1088,7 @@ class BaseRobustnessIndex(ABC):
         k_values: list[int] | tuple[int, ...],
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[
-        int,
-        tuple[
-            float,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            float,
-            float,
-            float,
-            float,
-        ],
-    ]:
+    ) -> dict[int, _ScoredByKEntry]:
         candidates = _normalize_k_values(k_values)
         all_k_results = cls._score_all_k_from_neighbors(
             labels=prepared_neighbors.labels,
@@ -1134,23 +1099,7 @@ class BaseRobustnessIndex(ABC):
             k_values=candidates,
             **kwargs,
         )
-        out: dict[
-            int,
-            tuple[
-                float,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                float,
-                float,
-                float,
-                float,
-            ],
-        ] = {}
+        out: dict[int, _ScoredByKEntry] = {}
         occurrence_subsets = np.full(
             len(prepared_neighbors.source_indices),
             prepared_neighbors.subset_id,
@@ -1185,7 +1134,6 @@ class BaseRobustnessIndex(ABC):
                 np.asarray(undefined_type, dtype=int),
                 occurrence_subsets,
                 occurrence_sources,
-                undefined_breakdown.total_frac,
                 undefined_breakdown.ss_frac,
                 undefined_breakdown.oo_frac,
                 undefined_breakdown.mixed_frac,
@@ -1216,23 +1164,7 @@ class BaseRobustnessIndex(ABC):
         k_values: list[int] | tuple[int, ...],
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[
-        int,
-        tuple[
-            float,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            float,
-            float,
-            float,
-            float,
-        ],
-    ]:
+    ) -> dict[int, _ScoredByKEntry]:
         candidates = _normalize_k_values(k_values)
 
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
@@ -1286,23 +1218,7 @@ class BaseRobustnessIndex(ABC):
         if not any(per_k_pair_values[int(k)] for k in candidates):
             raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets")
 
-        out: dict[
-            int,
-            tuple[
-                float,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                float,
-                float,
-                float,
-                float,
-            ],
-        ] = {}
+        out: dict[int, _ScoredByKEntry] = {}
         for k in candidates:
             pair_values = per_k_pair_values[int(k)]
             if not pair_values:
@@ -1332,7 +1248,6 @@ class BaseRobustnessIndex(ABC):
                 undef_type_arr,
                 occurrence_subsets,
                 occurrence_source_indices,
-                undefined_breakdown.total_frac,
                 undefined_breakdown.ss_frac,
                 undefined_breakdown.oo_frac,
                 undefined_breakdown.mixed_frac,
@@ -1531,23 +1446,7 @@ class BaseRobustnessIndex(ABC):
         k_values: list[int] | tuple[int, ...],
         dataset_name: str,
         **kwargs: float,
-    ) -> dict[
-        int,
-        tuple[
-            float,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            np.ndarray,
-            float,
-            float,
-            float,
-            float,
-        ],
-    ]:
+    ) -> dict[int, _ScoredByKEntry]:
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
 
@@ -1611,23 +1510,7 @@ class BaseRobustnessIndex(ABC):
         if not any(per_k_pair_values[int(k)] for k in candidates):
             raise RuntimeError(f"{dataset_name}: RI/MaRI failed on all manifest-defined subsets")
 
-        out: dict[
-            int,
-            tuple[
-                float,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                np.ndarray,
-                float,
-                float,
-                float,
-                float,
-            ],
-        ] = {}
+        out: dict[int, _ScoredByKEntry] = {}
         for k in candidates:
             pair_values = per_k_pair_values[int(k)]
             if not pair_values:
@@ -1657,7 +1540,6 @@ class BaseRobustnessIndex(ABC):
                 undef_type_arr,
                 occurrence_subsets,
                 occurrence_source_indices,
-                undefined_breakdown.total_frac,
                 undefined_breakdown.ss_frac,
                 undefined_breakdown.oo_frac,
                 undefined_breakdown.mixed_frac,

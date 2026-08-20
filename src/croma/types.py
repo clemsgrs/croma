@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import KW_ONLY, dataclass
 
 import numpy as np
 
@@ -24,9 +24,8 @@ class RobustnessResult:
     sample_undefined_types: np.ndarray
     occurrence_subsets: np.ndarray
     occurrence_source_indices: np.ndarray
-    # Deprecated compatibility field for the staged support migration. New callers use
-    # ``support``; this complement remains temporarily for consumers of the old contract.
-    undefined_frac: float = 0.0
+    _: KW_ONLY
+    support: float
     ss_dominated_undefined_frac: float = 0.0
     oo_dominated_undefined_frac: float = 0.0
     mixed_undefined_frac: float = 0.0
@@ -39,9 +38,6 @@ class RobustnessResult:
     # The temperature MaRI actually scored with, whether the caller pinned it or it was
     # resolved automatically. ``nan`` on RI, which carries no temperature.
     tau: float = float("nan")
-    # Appended with a compatibility default so existing result constructors keep their
-    # positional layout during the expansion step.
-    support: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -51,8 +47,7 @@ class CRoMaResult:
     ``f0`` is the confounder-dominant fraction :math:`F(0)` -- the empirical CDF of the
     per-sample margin at zero, i.e. the fraction of evaluation units whose margin is
     ``<= 0``. Exact zero counts as confounder-dominant. CRoMa requires total support, so a
-    result exists only when every requested sample or subset occurrence is scoreable;
-    ``occurrence_defined_mask`` is therefore all true and ``undefined_frac`` is ``0.0``.
+    result exists only when every requested sample or subset occurrence is scoreable.
     """
 
     dataset: str
@@ -63,8 +58,7 @@ class CRoMaResult:
     pair_values: np.ndarray
     sample_values: np.ndarray
     sample_values_aligned: np.ndarray
-    occurrence_defined_mask: np.ndarray
-    undefined_frac: float
+    _: KW_ONLY
     evaluation_design: str = "all"
     evaluation_unit: str = "sample"
     occurrence_subsets: np.ndarray | None = None

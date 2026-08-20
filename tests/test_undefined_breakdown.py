@@ -1,8 +1,12 @@
+import inspect
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from croma import MaRI, RI
+from croma.types import RobustnessResult
+from support_schema import RETIRED_AGGREGATE_FIELD
 
 
 def _paired_manifest() -> pd.DataFrame:
@@ -90,6 +94,49 @@ def test_sample_support_is_the_defined_sample_fraction(metric) -> None:
     )
 
     assert result.occurrence_defined_mask.tolist() == [False, True, True, False]
+    assert result.support == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("metric", [RI, MaRI])
+def test_result_exposes_support_without_retired_aggregate(metric) -> None:
+    result = metric.compute(
+        features=_partial_support_features(),
+        manifest=_partial_support_manifest(),
+        confounder_column="scanner_vendor",
+        evaluation_design="all",
+        k_candidates=[1],
+    )
+
+    assert result.support == pytest.approx(0.5)
+    assert not hasattr(result, RETIRED_AGGREGATE_FIELD)
+
+
+def test_result_construction_requires_support() -> None:
+    assert (
+        inspect.signature(RobustnessResult).parameters["support"].default is inspect.Parameter.empty
+    )
+
+
+def test_result_construction_rejects_legacy_positional_coverage() -> None:
+    positional = (
+        "toy",
+        1,
+        0.5,
+        0.0,
+        1,
+        np.asarray([0.5]),
+        np.asarray([0.5]),
+        np.asarray([0.5]),
+        np.asarray([True]),
+        np.asarray([0]),
+        np.asarray(["dataset"]),
+        np.asarray([0]),
+    )
+
+    with pytest.raises(TypeError):
+        RobustnessResult(*positional, 0.5)
+
+    result = RobustnessResult(*positional, support=0.5)
     assert result.support == pytest.approx(0.5)
 
 

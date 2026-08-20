@@ -466,7 +466,6 @@ class CrossConfounderRobustnessMargin:
                 if occurrence_sources_by_m[int(mm)]
                 else np.empty((0,), dtype=int)
             )
-            occurrence_defined_mask = np.ones(occurrence_values.shape, dtype=bool)
             sample_values = occurrence_values
 
             tail = compute_tail_metrics(sample_values, alpha=alpha)
@@ -479,8 +478,6 @@ class CrossConfounderRobustnessMargin:
                 pair_values=finite_pair,
                 sample_values=sample_values,
                 sample_values_aligned=occurrence_values,
-                occurrence_defined_mask=occurrence_defined_mask,
-                undefined_frac=0.0,
                 evaluation_design=str(evaluation_design),
                 evaluation_unit=str(evaluation_unit),
                 occurrence_subsets=occurrence_subsets,

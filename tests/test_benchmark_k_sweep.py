@@ -14,6 +14,11 @@ if str(SCRIPTS) not in sys.path:
 import benchmark as bm
 import run_config
 from croma.types import CRoMaResult
+from support_schema import (
+    RETIRED_FLAGSHIP_AGGREGATE_FIELD,
+    RETIRED_FLAGSHIP_SUPPORT_FIELD,
+    retired_metric_prefixed_fields,
+)
 
 
 def _toy_manifest() -> pd.DataFrame:
@@ -225,9 +230,7 @@ def test_benchmark_all_rows_outputs_sample_level_rows(bench_env) -> None:
     assert not (dataset_dir / "plots").exists()
 
 
-def test_benchmark_rows_use_shared_support_schema_with_temporary_legacy_columns(
-    bench_env,
-) -> None:
+def test_benchmark_rows_use_only_the_shared_support_schema(bench_env) -> None:
     _setup(bench_env, models=["M1"])
 
     assert bench_env.run("toy", "k-star", "--progress", "off") == 0
@@ -245,18 +248,11 @@ def test_benchmark_rows_use_shared_support_schema_with_temporary_legacy_columns(
             "mixed_undefined_frac",
         ]
     ].tolist() == [0.25, 0.75, 0.0, 0.0]
-    assert {
-        "ri_undefined_frac",
-        "ri_ss_dominated_undefined_frac",
-        "ri_oo_dominated_undefined_frac",
-        "ri_mixed_undefined_frac",
-        "mari_undefined_frac",
-        "mari_ss_dominated_undefined_frac",
-        "mari_oo_dominated_undefined_frac",
-        "mari_mixed_undefined_frac",
-    }.issubset(metrics_df.columns)
-    assert "croma_undefined_frac" not in metrics_df.columns
-    assert "croma_undefined_frac" not in m_sweep_df.columns
+    assert retired_metric_prefixed_fields().isdisjoint(metrics_df.columns)
+    assert RETIRED_FLAGSHIP_AGGREGATE_FIELD not in metrics_df.columns
+    assert RETIRED_FLAGSHIP_AGGREGATE_FIELD not in m_sweep_df.columns
+    assert RETIRED_FLAGSHIP_SUPPORT_FIELD not in metrics_df.columns
+    assert RETIRED_FLAGSHIP_SUPPORT_FIELD not in m_sweep_df.columns
 
 
 def test_benchmark_progress_reports_shared_support_and_undefined_causes(bench_env, capsys) -> None:
@@ -307,7 +303,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.sample_values = aligned[informative]
             self.sample_values_aligned = aligned
             self.sample_undefined_types = np.asarray(undef_types, dtype=int)
-            self.undefined_frac = float((~informative).mean())
             self.support = float(informative.mean())
             self.ss_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 1))
             self.oo_dominated_undefined_frac = float(np.mean(self.sample_undefined_types == 2))
@@ -330,8 +325,6 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
             self.pair_values = np.asarray([1.1], dtype=float)
             self.sample_values = aligned[informative]
             self.sample_values_aligned = aligned
-            self.occurrence_defined_mask = informative
-            self.undefined_frac = float((~informative).mean())
             self.evaluation_design = "all"
             self.evaluation_unit = "sample"
             self.k_start = 200
@@ -642,8 +635,6 @@ def test_cached_payload_keys_are_exactly_what_a_run_writes() -> None:
         pair_values=np.asarray([0.1]),
         sample_values=np.asarray([0.1]),
         sample_values_aligned=np.asarray([0.1]),
-        occurrence_defined_mask=np.asarray([True]),
-        undefined_frac=0.0,
     )
 
     assert set(bm._croma_result_to_payload(result, m=5)) == bm._CROMA_PAYLOAD_KEYS
@@ -666,8 +657,6 @@ def test_shared_support_rejects_ri_mari_mismatch() -> None:
 def _croma_result_for_serialization(
     *,
     sample_values_aligned: np.ndarray,
-    occurrence_defined_mask: np.ndarray,
-    undefined_frac: float,
 ) -> CRoMaResult:
     return CRoMaResult(
         dataset="toy",
@@ -678,38 +667,12 @@ def _croma_result_for_serialization(
         pair_values=np.asarray([0.1]),
         sample_values=np.asarray([0.1]),
         sample_values_aligned=sample_values_aligned,
-        occurrence_defined_mask=occurrence_defined_mask,
-        undefined_frac=undefined_frac,
     )
-
-
-def test_croma_result_with_nonzero_undefined_fraction_fails_before_serialization() -> None:
-    result = _croma_result_for_serialization(
-        sample_values_aligned=np.asarray([0.1]),
-        occurrence_defined_mask=np.asarray([True]),
-        undefined_frac=0.5,
-    )
-
-    with pytest.raises(RuntimeError, match="incomplete support"):
-        bm._croma_result_to_payload(result, m=1)
-
-
-def test_croma_result_with_undefined_unit_fails_before_serialization() -> None:
-    result = _croma_result_for_serialization(
-        sample_values_aligned=np.asarray([0.1]),
-        occurrence_defined_mask=np.asarray([False]),
-        undefined_frac=0.0,
-    )
-
-    with pytest.raises(RuntimeError, match="undefined evaluation units"):
-        bm._croma_result_to_payload(result, m=1)
 
 
 def test_croma_result_with_nonfinite_sample_fails_before_serialization() -> None:
     result = _croma_result_for_serialization(
         sample_values_aligned=np.asarray([np.nan]),
-        occurrence_defined_mask=np.asarray([True]),
-        undefined_frac=0.0,
     )
 
     with pytest.raises(RuntimeError, match="non-finite samples"):

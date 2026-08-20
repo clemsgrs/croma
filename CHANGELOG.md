@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sphinxext-opengraph` in the `docs` extra: sharing a docs URL now renders a title, a
   per-page description and the dataset-montage image instead of a bare link.
 
+### Removed
+
+- **BREAKING: RI/MaRI results and benchmark artifacts now use only the positive shared
+  support contract.** `RobustnessResult.support` is required; the complementary aggregate
+  `undefined_frac` field and the temporary RI-/MaRI-prefixed support and cause columns are
+  removed. The benchmark writes one shared `support` plus the three shared cause fractions.
+  CRoMa results, caches and raw rows carry no support or aggregate coverage fields because CRoMa
+  requires every requested evaluation unit to be scoreable. Caches written with any retired
+  schema are stale and recomputed; no compatibility conversion or silent full-support
+  default remains.
+
 ## [0.3.0] - 2026-08-11
 
 Expands the published robustness panel from 21 to 26 encoders and rebuilds the documentation

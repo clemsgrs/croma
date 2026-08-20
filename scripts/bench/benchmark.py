@@ -525,33 +525,29 @@ def _summary_from_payload(payload: dict) -> dict | None:
         "value",
         "std",
         "support",
-        "undefined_frac",
+        "ss_dominated_undefined_frac",
+        "oo_dominated_undefined_frac",
+        "mixed_undefined_frac",
         "median_value",
         "q_alpha",
         "ltm_alpha",
         "evaluation_design",
         "evaluation_unit",
     )
-    for key in required:
-        if key not in payload:
-            return None
+    if set(payload) != set(required):
+        return None
     try:
         result = {
             "k": int(payload["k"]),
             "value": float(payload["value"]),
             "std": float(payload["std"]),
             "support": float(payload["support"]),
-            "undefined_frac": float(payload["undefined_frac"]),
             "median_value": float(payload["median_value"]),
             "q_alpha": float(payload["q_alpha"]),
             "ltm_alpha": float(payload["ltm_alpha"]),
-            "ss_dominated_undefined_frac": float(
-                payload.get("ss_dominated_undefined_frac", 0.0)
-            ),
-            "oo_dominated_undefined_frac": float(
-                payload.get("oo_dominated_undefined_frac", 0.0)
-            ),
-            "mixed_undefined_frac": float(payload.get("mixed_undefined_frac", 0.0)),
+            "ss_dominated_undefined_frac": float(payload["ss_dominated_undefined_frac"]),
+            "oo_dominated_undefined_frac": float(payload["oo_dominated_undefined_frac"]),
+            "mixed_undefined_frac": float(payload["mixed_undefined_frac"]),
             "evaluation_design": str(payload["evaluation_design"]),
             "evaluation_unit": str(payload["evaluation_unit"]),
         }
@@ -625,15 +621,6 @@ def _tau_assessment_from_payload(payload: dict | None) -> TauAssessment | None:
 
 
 def _croma_result_to_payload(result: CRoMaResult, m: int) -> dict:
-    if float(result.undefined_frac) != 0.0:
-        raise RuntimeError(
-            f"Cannot serialize CRoMa m={int(m)} with incomplete support "
-            f"(undefined_frac={float(result.undefined_frac)})"
-        )
-    if not bool(np.all(np.asarray(result.occurrence_defined_mask, dtype=bool))):
-        raise RuntimeError(
-            f"Cannot serialize CRoMa m={int(m)} with undefined evaluation units"
-        )
     if not bool(
         np.all(np.isfinite(np.asarray(result.sample_values_aligned, dtype=float)))
     ):
@@ -1470,7 +1457,6 @@ def main() -> int:
                         "value": float(ri.value),
                         "std": float(ri.std),
                         "support": float(ri.support),
-                        "undefined_frac": float(ri.undefined_frac),
                         "median_value": float(ri.median_value),
                         "q_alpha": float(ri.q_alpha),
                         "ltm_alpha": float(ri.ltm_alpha),
@@ -1602,7 +1588,6 @@ def main() -> int:
                         "value": float(mari.value),
                         "std": float(mari.std),
                         "support": float(mari.support),
-                        "undefined_frac": float(mari.undefined_frac),
                         "median_value": float(mari.median_value),
                         "q_alpha": float(mari.q_alpha),
                         "ltm_alpha": float(mari.ltm_alpha),
@@ -1758,16 +1743,6 @@ def main() -> int:
                 mari_undefined_n = int(
                     np.count_nonzero(~np.isfinite(mari_samples_aligned))
                 )
-                ri_ss_frac = float(ri_summary.get("ss_dominated_undefined_frac", 0.0))
-                ri_oo_frac = float(ri_summary.get("oo_dominated_undefined_frac", 0.0))
-                ri_mixed_frac = float(ri_summary.get("mixed_undefined_frac", 0.0))
-                mari_ss_frac = float(
-                    mari_summary.get("ss_dominated_undefined_frac", 0.0)
-                )
-                mari_oo_frac = float(
-                    mari_summary.get("oo_dominated_undefined_frac", 0.0)
-                )
-                mari_mixed_frac = float(mari_summary.get("mixed_undefined_frac", 0.0))
                 saved_dist_path = _save_mari_sample_distribution(
                     results_dir=results_dir,
                     model=model,
@@ -1831,16 +1806,6 @@ def main() -> int:
                     "mari_q_alpha": float(mari_summary.get("q_alpha", float("nan"))),
                     "mari_ltm_alpha": float(mari_summary.get("ltm_alpha", float("nan"))),
                     **shared_support,
-                    # Temporary compatibility aliases. Issue #160 migrates downstream
-                    # consumers to the shared positive schema and removes these columns.
-                    "ri_undefined_frac": float(ri_summary["undefined_frac"]),
-                    "ri_ss_dominated_undefined_frac": ri_ss_frac,
-                    "ri_oo_dominated_undefined_frac": ri_oo_frac,
-                    "ri_mixed_undefined_frac": ri_mixed_frac,
-                    "mari_undefined_frac": float(mari_summary["undefined_frac"]),
-                    "mari_ss_dominated_undefined_frac": mari_ss_frac,
-                    "mari_oo_dominated_undefined_frac": mari_oo_frac,
-                    "mari_mixed_undefined_frac": mari_mixed_frac,
                     "ri_samples_path": str(saved_ri_dist_path),
                     "mari_samples_path": str(saved_dist_path),
                     "croma": float(croma_result["croma"]),
