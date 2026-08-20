@@ -343,8 +343,8 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
     ) -> dict[int, _FakeCRoMaResult]:
         assert evaluation_design == "all"
         return {
-            1: _FakeCRoMaResult(1, [1.1, 0.9, np.nan, 1.3, 1.4, np.nan, 0.8, 1.0]),
-            2: _FakeCRoMaResult(2, [1.2, 1.0, np.nan, 1.35, 1.45, np.nan, 0.85, 1.05]),
+            1: _FakeCRoMaResult(1, [1.1, 0.9, 1.2, 1.3, 1.4, 1.25, 0.8, 1.0]),
+            2: _FakeCRoMaResult(2, [1.2, 1.0, 1.1, 1.35, 1.45, 1.25, 0.85, 1.05]),
         }
 
     _setup(bench_env, models=[model])
@@ -403,8 +403,8 @@ def test_benchmark_writes_per_sample_artifact_with_undefined_rows(bench_env) -> 
     assert per_sample_df["mari_undefined_type"].tolist() == [0, 3, 0, 1, 0, 0, 2, 0]
     assert np.isnan(per_sample_df.loc[1, "ri"])
     assert np.isnan(per_sample_df.loc[3, "mari"])
-    assert np.isnan(per_sample_df.loc[2, "croma_m1"])
-    assert np.isnan(per_sample_df.loc[5, "croma_m2"])
+    assert per_sample_df.loc[2, "croma_m1"] == 1.2
+    assert per_sample_df.loc[5, "croma_m2"] == 1.25
 
 
 def test_benchmark_k_max_uses_full_range(bench_env) -> None:

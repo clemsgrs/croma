@@ -37,10 +37,10 @@ class CRoMaResult:
     """One CRoMa evaluation: the pooled margin, its distribution, and its tail.
 
     ``f0`` is the confounder-dominant fraction :math:`F(0)` -- the empirical CDF of the
-    per-sample margin at zero, i.e. the fraction of *defined* evaluation units whose
-    margin is ``<= 0``. Exact zero counts as confounder-dominant; undefined units are
-    excluded from the denominator, as they are for ``q_alpha`` and ``ltm_alpha``, and are
-    reported separately by ``undefined_frac``. It is ``nan`` when nothing is defined.
+    per-sample margin at zero, i.e. the fraction of evaluation units whose margin is
+    ``<= 0``. Exact zero counts as confounder-dominant. CRoMa requires total support, so a
+    result exists only when every requested sample or subset occurrence is scoreable;
+    ``occurrence_defined_mask`` is therefore all true and ``undefined_frac`` is ``0.0``.
     """
 
     dataset: str

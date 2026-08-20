@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -205,6 +206,64 @@ def test_croma_search_change_recomputes_only_croma(bench_env) -> None:
     assert calls["ri"] == 0
     assert calls["mari"] == 0
     assert calls["knn"] == 0
+
+
+def test_partial_croma_cache_is_rejected_and_recomputed(bench_env) -> None:
+    """A pre-total-support cache cannot bypass the public CRoMa contract."""
+    _setup(bench_env)
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+
+    cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
+    payload_path = next((cache_artifacts / "croma_m_sweep" / "M1").glob("*.json"))
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    payload["by_m"]["1"].update(
+        {
+            "croma": 99.0,
+            "croma_undefined_frac": 0.25,
+            "croma_q_alpha": 99.0,
+            "croma_ltm_alpha": 99.0,
+        }
+    )
+    payload_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    headline_path = next((cache_artifacts / "croma_headline_samples" / "M1").glob("*.npy"))
+    np.save(headline_path, np.load(headline_path)[:-1])
+    aligned_path = next((cache_artifacts / "croma_samples_aligned_by_m" / "M1").glob("*.npy"))
+    aligned = np.load(aligned_path)
+    aligned[0, 0] = np.nan
+    np.save(aligned_path, aligned)
+
+    calls = {"croma": 0}
+    original_croma_compute = bm.CRoMa.compute
+
+    def wrapped_croma_compute(*args, **kwargs):
+        calls["croma"] += 1
+        return original_croma_compute(*args, **kwargs)
+
+    bench_env._monkeypatch.setattr(bm.CRoMa, "compute", wrapped_croma_compute)
+
+    assert bench_env.run("toy", "k-star", "--progress", "off") == 0
+    assert calls["croma"] == 1
+
+    metrics = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
+    assert metrics.loc[0, "croma"] == 0.9657262993950306
+    assert metrics.loc[0, "croma_undefined_frac"] == 0.0
+    per_sample = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
+    np.testing.assert_allclose(
+        per_sample["croma_m1"],
+        [
+            0.9619974087755232,
+            0.970965547572644,
+            0.970965547572644,
+            0.9619974087755232,
+            0.9694551900145382,
+            0.95136476856489,
+            0.95136476856489,
+            0.9694551900145382,
+        ],
+        rtol=0.0,
+        atol=1e-15,
+    )
 
 
 def test_k_values_change_recomputes_knn_ri_mari_not_croma(bench_env) -> None:

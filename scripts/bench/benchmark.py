@@ -663,6 +663,11 @@ def _croma_payload_to_by_m(
         return None
     if any(not _CROMA_PAYLOAD_KEYS.issubset(entry) for entry in by_m.values()):
         return None
+    try:
+        if any(float(entry["croma_undefined_frac"]) != 0.0 for entry in by_m.values()):
+            return None
+    except (TypeError, ValueError):
+        return None
     return by_m
 
 
@@ -1253,14 +1258,23 @@ def main() -> int:
                     croma_samples_aligned_by_m = cache.get_npy(
                         key=keys["croma_samples_aligned_by_m"]
                     )
-                    if (
-                        croma_by_m is None
-                        or croma_samples is None
-                        or not _npy_matches_shape(
+                    croma_cache_valid = (
+                        croma_by_m is not None
+                        and _npy_matches_shape(
+                            croma_samples,
+                            (len(aligned_manifest),),
+                        )
+                        and bool(np.all(np.isfinite(croma_samples)))
+                        and _npy_matches_shape(
                             croma_samples_aligned_by_m,
                             (len(aligned_manifest), len(croma_m_values)),
                         )
-                    ):
+                        and bool(np.all(np.isfinite(croma_samples_aligned_by_m)))
+                    )
+                    if not croma_cache_valid:
+                        croma_by_m = None
+                        croma_samples = None
+                        croma_samples_aligned_by_m = None
                         all_cache_hit = False
                 else:
                     all_cache_hit = False

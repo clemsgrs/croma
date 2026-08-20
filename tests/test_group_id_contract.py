@@ -39,15 +39,17 @@ def _unit(angle_deg: float) -> list[float]:
 #: Row 0 is the query ``q`` (label ``A``, confounder ``V1``). Row 1 is an ``OS``
 #: impostor (wrong label, same confounder) sitting almost on top of it; row 2 is a far
 #: ``OS`` impostor; row 3 is the query's nearest ``SO`` ally (same label, other
-#: confounder). Row 4 completes the 2x2 so the same rows can be scored paired.
-_ANGLES = (0.0, 5.0, 120.0, 60.0, 130.0)
-_LABELS = ("A", "B", "B", "A", "B")
-_CONFOUNDERS = ("V1", "V1", "V1", "V2", "V2")
+#: confounder). Row 4 completes the 2x2 so the same rows can be scored paired. Row 5
+#: supplies a second ``(A, V1)`` occurrence, keeping row 1 scoreable when rows 0 and 1
+#: share an independence group.
+_ANGLES = (0.0, 5.0, 120.0, 60.0, 130.0, 180.0)
+_LABELS = ("A", "B", "B", "A", "B", "A")
+_CONFOUNDERS = ("V1", "V1", "V1", "V2", "V2", "V1")
 
 
 def _neighbourhood_manifest(*, impostor_group: str) -> pd.DataFrame:
-    """The five rows above, with the near impostor's group under the caller's control."""
-    groups = ["g0", impostor_group, "g2", "g3", "g4"]
+    """The six rows above, with the near impostor's group under the caller's control."""
+    groups = ["g0", impostor_group, "g2", "g3", "g4", "g5"]
     return pd.DataFrame(
         {
             "sample_id": [f"s{i}" for i in range(len(_ANGLES))],
@@ -124,7 +126,7 @@ def test_manifest_with_only_slide_id_names_the_missing_group_id(tmp_path: Path) 
 
 def test_slide_id_alongside_group_id_is_ordinary_metadata() -> None:
     manifest = _neighbourhood_manifest(impostor_group="g0")
-    manifest["slide_id"] = ["sl0", "sl1", "sl2", "sl3", "sl4"]
+    manifest["slide_id"] = ["sl0", "sl1", "sl2", "sl3", "sl4", "sl5"]
 
     # ``slide_id`` disagrees with ``group_id`` on row 1; only ``group_id`` may be read.
     assert _query_croma(manifest, evaluation_design="all") > 0.0

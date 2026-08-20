@@ -117,7 +117,16 @@ def _setup(bench_env) -> None:
 def run_compute(bench_env, *, recompute: bool = False) -> Path:
     """Run the compute-only driver on the fixed synthetic tileset; return the run dir."""
     _setup(bench_env)
-    extra = ["--models", ",".join(MODELS), "--k-max", "5", "--progress", "off"]
+    extra = [
+        "--models",
+        ",".join(MODELS),
+        "--k-max",
+        "5",
+        "--croma-m-max",
+        "5",
+        "--progress",
+        "off",
+    ]
     if recompute:
         extra.append("--recompute-metrics")
     assert bench_env.run("toy", "k-star", *extra) == 0
@@ -165,6 +174,8 @@ def test_compute_is_deterministic(bench_env) -> None:
             "--models",
             ",".join(MODELS),
             "--k-max",
+            "5",
+            "--croma-m-max",
             "5",
             "--recompute-metrics",
             "--progress",

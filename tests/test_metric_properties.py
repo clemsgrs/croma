@@ -208,7 +208,7 @@ def test_metric_stays_inside_its_range(metric: type, embedding) -> None:
         assert np.all(values >= low) and np.all(values <= high)
 
 
-def test_a_constant_embedding_leaves_croma_undefined_rather_than_neutral() -> None:
+def test_a_constant_embedding_makes_croma_fail_rather_than_report_neutral() -> None:
     """Collapsed features make CRoMa's denominator zero, and zero is not a score.
 
     ``0.0`` would read as an exactly contested neighbourhood -- the metric's most confident
@@ -219,11 +219,8 @@ def test_a_constant_embedding_leaves_croma_undefined_rather_than_neutral() -> No
     """
     features, manifest = constant_embedding()
 
-    scored = compute_metric(CRoMa, features, manifest)
-
-    assert np.isnan(scored.score)
-    assert scored.score != 0.0
-    assert scored.sample_values.size == 0
+    with pytest.raises(RuntimeError, match=r"zero margin denominator .*d_OS \+ d_SO = 0"):
+        compute_metric(CRoMa, features, manifest)
 
 
 @pytest.mark.parametrize("metric", [RI, MaRI], ids=["RI", "MaRI"])

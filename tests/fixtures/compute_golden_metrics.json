@@ -43,9 +43,9 @@
     "croma_q_alpha": 0.06725566831653537,
     "croma_ltm_alpha": -0.0033496949201987074,
     "croma_f0": 0.03125,
-    "croma_auc": NaN,
-    "croma_min": 0.22574782457592726,
-    "croma_delta": NaN
+    "croma_auc": 0.2844894039738843,
+    "croma_min": 0.2679600891457098,
+    "croma_delta": -0.04534929161167783
   },
   {
     "dataset": "toy",
@@ -91,9 +91,9 @@
     "croma_q_alpha": 0.26462017725404074,
     "croma_ltm_alpha": 0.22383639062779448,
     "croma_f0": 0.0,
-    "croma_auc": NaN,
-    "croma_min": 0.39277810285008613,
-    "croma_delta": NaN
+    "croma_auc": 0.45097973596042246,
+    "croma_min": 0.4401324933382512,
+    "croma_delta": -0.03728389446919511
   },
   {
     "dataset": "toy",
@@ -139,8 +139,8 @@
     "croma_q_alpha": 0.2590260180189692,
     "croma_ltm_alpha": 0.1843114538265701,
     "croma_f0": 0.0,
-    "croma_auc": NaN,
-    "croma_min": 0.317743699542361,
-    "croma_delta": NaN
+    "croma_auc": 0.37036158737065883,
+    "croma_min": 0.3586928370366737,
+    "croma_delta": -0.04717855795809206
   }
 ]

@@ -159,9 +159,10 @@ where :math:`d_{SO}` and :math:`d_{OS}` are the mean cosine distances to the ``m
 ``SO`` and ``OS`` neighbours. The result lies in :math:`(-1, 1)`: positive is
 **biology-dominant** (the biological match is closer than the impostor), negative is
 **confounder-dominant** and fragile, and zero is an exactly contested boundary. The margin
-exists for every sample as long as the evaluation set holds at least ``m`` neighbours of
-each type -- a property of the dataset, not the model, and satisfied by construction in
-the benchmark cohorts.
+exists for every sample when the evaluation set holds at least ``m`` neighbours of each
+type and their summed mean distance is nonzero. Typed-neighbour availability is a property
+of the manifest; a zero denominator instead signals degenerate embedding geometry. Both
+conditions are satisfied by construction in the benchmark cohorts.
 
 .. themed-figure:: _static/figures/croma_geometry
    :alt: A fragile and a robust model, with their nearest SO and OS distances marked.
@@ -233,8 +234,10 @@ the impostor and the biological match equidistant) counts as confounder-dominant
 nothing about it says biology won. Under ``all`` each sample counts once; under
 ``paired_2x2`` each subset occurrence counts once, so a sample scored in two subsets
 contributes twice. In the degenerate case of an evaluation set holding fewer than ``m``
-typed neighbours of a kind, the unscorable samples are excluded from the denominator and
-reported by ``undefined_frac``.
+typed neighbours of a kind, CRoMa raises a descriptive ``RuntimeError`` naming the dataset,
+evaluation design, subset and missing-neighbour cause. It likewise raises if a collapsed
+embedding makes :math:`d_{OS} + d_{SO} = 0`. No partial pooled score or tail statistic is
+returned in either case.
 
 Read ``f0`` as "how much of this model's evidence is on the fragile side", where ``value``
 says where the middle of the distribution sits and ``ltm_alpha`` how bad the worst decile

@@ -1,5 +1,4 @@
 import inspect
-import re
 
 import numpy as np
 import pandas as pd
@@ -14,14 +13,7 @@ from croma.metrics.croma import (
     _confounder_dominant_fraction,
     _sample_croma_with_causes,
 )
-from metric_harness import constant_embedding
-
-
-def _croma_warning(caplog: pytest.LogCaptureFixture) -> str:
-    """The single ``[CRoMa]`` warning the run logged, as text."""
-    messages = [rec.message for rec in caplog.records if rec.message.startswith("[CRoMa]")]
-    assert len(messages) == 1, messages
-    return messages[0]
+from metric_harness import constant_embedding, contested
 
 
 def _make_manifest(
@@ -142,9 +134,9 @@ class TestComputeSampleCRoMa:
     def test_the_two_causes_partition_the_undefined_samples(self) -> None:
         """An unfilled slot is the search's failure; an all-zero one is the denominator's.
 
-        The masks have to be disjoint and cover the NaN set exactly, because the warning
-        reports counts taken from them: any overlap double-counts a sample and any gap
-        leaves one undefined for a reason nobody is told.
+        The masks have to be disjoint and cover the NaN set exactly, because the
+        total-support error reports counts taken from them: any overlap double-counts a
+        sample and any gap leaves one unscoreable for a reason nobody is told.
         """
         so_dists = np.array([[0.1], [np.inf], [0.0], [0.3]])
         os_dists = np.array([[0.3], [0.2], [0.0], [np.inf]])
@@ -275,24 +267,7 @@ class TestCRoMaCompute:
         result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
         assert result.value < 0.0
 
-    def test_all_same_label_and_center_are_undefined(self) -> None:
-        manifest = _make_manifest(
-            n=4,
-            labels=["A", "A", "A", "A"],
-            centers=["C1", "C1", "C1", "C1"],
-        )
-        features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
-
-        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
-
-        assert result.undefined_frac == pytest.approx(1.0)
-        assert result.sample_values.shape[0] == 0
-        assert result.sample_values_aligned.shape == (len(manifest),)
-        assert result.occurrence_defined_mask.shape == (len(manifest),)
-        assert result.occurrence_defined_mask.tolist() == [False] * len(manifest)
-        assert np.isnan(result.sample_values_aligned).all()
-
-    def test_unresolved_rows_at_cap_warn(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_unresolved_rows_at_cap_raise_with_evaluation_context_and_cause(self) -> None:
         labels = ["A", "A", "B", "B"]
         centers = ["C1", "C2", "C1", "C2"]
         slides = ["s1", "s1", "s2", "s2"]
@@ -307,27 +282,24 @@ class TestCRoMaCompute:
             dtype=float,
         )
 
-        result = _compute_croma(
-            features=features,
-            manifest=manifest,
-            evaluation_design="all",
-            m=1,
-            start_k=1,
-            k_growth_factor=1.5,
-        )
+        with pytest.raises(RuntimeError) as exc_info:
+            _compute_croma(
+                features=features,
+                manifest=manifest,
+                evaluation_design="all",
+                m=1,
+                start_k=1,
+                k_growth_factor=1.5,
+            )
 
-        assert result.k_final == 3
-        assert result.undefined_frac > 0.0
-        message = _croma_warning(caplog)
+        message = str(exc_info.value)
         assert "dataset 'toy' (all)" in message
-        # The cause here really is the search: it ran out of radius before finding both
-        # types. The message must say so, and must not offer the other cause as well.
-        assert "the neighbour search could not find 1 SO and 1 OS neighbor(s)" in message
+        assert "subset 'dataset'" in message
+        assert "after adaptive neighbour search reached k=3" in message
+        assert "could not find 1 SO and 1 OS neighbour(s)" in message
         assert "denominator" not in message
 
-    def test_a_collapsed_embedding_does_not_blame_the_neighbour_search(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_a_collapsed_embedding_raises_with_zero_denominator_cause(self) -> None:
         """Every distance zero: the search resolves completely, and every sample is NaN.
 
         The two causes of a NaN sample come apart here. The search finds its ``m`` SO and
@@ -338,41 +310,41 @@ class TestCRoMaCompute:
         """
         features, manifest = constant_embedding()
 
-        result = CRoMa.compute(
-            features,
-            manifest,
-            confounder_column="scanner_vendor",
-            evaluation_design="all",
-            m=1,
-        )
+        with pytest.raises(RuntimeError) as exc_info:
+            CRoMa.compute(
+                features,
+                manifest,
+                confounder_column="scanner_vendor",
+                evaluation_design="all",
+                m=1,
+            )
 
-        assert result.undefined_frac == pytest.approx(1.0)
-        message = _croma_warning(caplog)
+        message = str(exc_info.value)
+        assert "dataset 'toy' (all)" in message
+        assert "subset 'dataset'" in message
         assert "could not find" not in message
-        assert "denominator" in message
-        assert "collapsed" in message
+        assert "zero margin denominator (d_OS + d_SO = 0)" in message
+        assert "collapsed embedding" in message
 
-    def test_undefined_causes_account_for_every_undefined_sample(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
-        """Whichever causes are reported, together they must add up to ``undefined_frac``.
+    def test_fully_scoreable_values_alignment_and_tail_statistics_are_preserved(self) -> None:
+        features, manifest = contested()
 
-        A cause breakdown that does not close is a third way to misreport: it would leave
-        some NaN samples silently unaccounted for.
-        """
-        features, manifest = constant_embedding()
-
-        result = CRoMa.compute(
-            features,
-            manifest,
-            confounder_column="scanner_vendor",
+        result = _compute_croma(
+            features=features,
+            manifest=manifest,
             evaluation_design="all",
             m=1,
+            alpha=0.25,
         )
 
-        n_undefined = int(round(result.undefined_frac * len(manifest)))
-        counted = sum(int(n) for n in re.findall(r"(\d+) where ", _croma_warning(caplog)))
-        assert counted == n_undefined == len(manifest)
+        assert result.value == pytest.approx(0.0, abs=1e-12)
+        assert result.sample_values == pytest.approx(np.zeros(len(manifest)), abs=1e-12)
+        assert result.sample_values_aligned == pytest.approx(np.zeros(len(manifest)), abs=1e-12)
+        assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
+        assert result.undefined_frac == pytest.approx(0.0)
+        assert result.q_alpha == pytest.approx(0.0, abs=1e-12)
+        assert result.ltm_alpha == pytest.approx(0.0, abs=1e-12)
+        assert result.f0 == pytest.approx(1.0)
 
     def test_start_k_is_clamped(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -416,18 +388,15 @@ class TestCRoMaCompute:
         monkeypatch.setattr(croma_mod, "NearestNeighbors", _FakeNN)
         monkeypatch.setattr(croma_mod, "_scan_typed_neighbors_for_query_rows", _never_define)
 
-        result = _compute_croma(
-            features=features,
-            manifest=manifest,
-            evaluation_design="all",
-            m=1,
-            start_k=2,
-            k_growth_factor=1.5,
-        )
-
-        assert result.k_start == 2
-        assert result.k_final == 9
-        assert result.retries == 4
+        with pytest.raises(RuntimeError, match="adaptive neighbour search reached k=9"):
+            _compute_croma(
+                features=features,
+                manifest=manifest,
+                evaluation_design="all",
+                m=1,
+                start_k=2,
+                k_growth_factor=1.5,
+            )
 
     def test_queries_only_unresolved_samples_over_retries(
         self, monkeypatch: pytest.MonkeyPatch
@@ -469,6 +438,9 @@ class TestCRoMaCompute:
                 out[: max(1, n // 2)] = True
             else:
                 out[:] = True
+            resolved_indices = query_indices[out]
+            kwargs["so_dists"][resolved_indices, :] = 0.1
+            kwargs["os_dists"][resolved_indices, :] = 0.2
             return out
 
         monkeypatch.setattr(croma_mod, "NearestNeighbors", _FakeNN)
@@ -571,9 +543,9 @@ class TestCRoMaF0:
         assert len(defined) == len(manifest)
         assert result.f0 == pytest.approx(float(np.mean(defined <= 0.0)))
 
-    def test_undefined_rows_are_excluded_from_the_denominator(self) -> None:
-        # Two of the four rows are OS-dominant; the other two have no typed neighbour of
-        # both kinds at all, so they are undefined and must not dilute F(0).
+    def test_unscoreable_rows_prevent_partial_pooled_and_tail_statistics(self) -> None:
+        # Four rows are scoreable, while two lack both required neighbour types. The public
+        # call must fail instead of returning pooled CRoMa or tail fields for only four rows.
         manifest = _make_manifest(
             n=6,
             labels=["A", "A", "B", "B", "C", "C"],
@@ -590,23 +562,17 @@ class TestCRoMaF0:
             ],
             dtype=float,
         )
-        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
+        with pytest.raises(RuntimeError) as exc_info:
+            _compute_croma(
+                features=features,
+                manifest=manifest,
+                evaluation_design="all",
+                m=1,
+            )
 
-        defined = result.sample_values_aligned[result.occurrence_defined_mask]
-        assert 0 < len(defined) < len(manifest)
-        assert result.f0 == pytest.approx(float(np.mean(defined <= 0.0)))
-
-    def test_an_all_undefined_result_has_a_nan_f0(self) -> None:
-        manifest = _make_manifest(
-            n=4,
-            labels=["A", "A", "A", "A"],
-            centers=["C1", "C1", "C1", "C1"],
-        )
-        features = np.array([[1, 0], [0.9, 0.1], [0.8, 0.2], [0.7, 0.3]], dtype=float)
-
-        result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
-
-        assert np.isnan(result.f0)
+        message = str(exc_info.value)
+        assert "2/6 sample(s) could not find 1 SO and 1 OS neighbour(s)" in message
+        assert "no pooled or tail statistics were computed" in message
 
     def test_paired_counts_a_repeated_source_sample_once_per_occurrence(self) -> None:
         """One sample scored in two subsets contributes an occurrence to each.
