@@ -11,6 +11,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import benchmark as bm
+from support_schema import RETIRED_AGGREGATE_FIELD, RETIRED_FLAGSHIP_AGGREGATE_FIELD
 
 
 def _toy_manifest() -> pd.DataFrame:
@@ -238,7 +239,7 @@ def test_partial_croma_cache_is_rejected_and_recomputed(bench_env) -> None:
 
     metrics = pd.read_csv(bench_env.results_dir("toy") / "metrics.csv")
     assert metrics.loc[0, "croma"] == 0.9657262993950306
-    assert "croma_undefined_frac" not in metrics.columns
+    assert RETIRED_FLAGSHIP_AGGREGATE_FIELD not in metrics.columns
     per_sample = pd.read_csv(bench_env.results_dir("toy") / "per_sample_metrics.csv")
     np.testing.assert_allclose(
         per_sample["croma_m1"],
@@ -278,7 +279,7 @@ def test_legacy_croma_coverage_payload_is_not_a_cache_hit(bench_env) -> None:
     cache_artifacts = bench_env.results_dir("toy") / "cache" / "artifacts"
     payload_path = next((cache_artifacts / "croma_m_sweep" / "M1").glob("*.json"))
     payload = json.loads(payload_path.read_text(encoding="utf-8"))
-    payload["by_m"]["1"]["croma_undefined_frac"] = 0.0
+    payload["by_m"]["1"][RETIRED_FLAGSHIP_AGGREGATE_FIELD] = 0.0
     payload_path.write_text(json.dumps(payload), encoding="utf-8")
 
     calls = _spy_on_croma_compute(bench_env)
@@ -513,6 +514,27 @@ def test_metric_summary_caches_store_positive_support(bench_env) -> None:
         payload_path = next((cache_artifacts / artifact_name / "M1").glob("*.json"))
         payload = json.loads(payload_path.read_text(encoding="utf-8"))
         assert payload["support"] == 0.25
+        assert RETIRED_AGGREGATE_FIELD not in payload
+
+
+def test_metric_summary_cache_rejects_retired_aggregate() -> None:
+    payload = {
+        "k": 1,
+        "value": 0.5,
+        "std": 0.0,
+        "support": 0.25,
+        "ss_dominated_undefined_frac": 0.75,
+        "oo_dominated_undefined_frac": 0.0,
+        "mixed_undefined_frac": 0.0,
+        "median_value": 0.5,
+        "q_alpha": 0.5,
+        "ltm_alpha": 0.5,
+        "evaluation_design": "all",
+        "evaluation_unit": "sample",
+        RETIRED_AGGREGATE_FIELD: 0.75,
+    }
+
+    assert bm._summary_from_payload(payload) is None
 
 
 def test_legacy_summary_without_support_is_not_a_cache_hit(bench_env) -> None:

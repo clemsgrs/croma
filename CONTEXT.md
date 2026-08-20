@@ -59,9 +59,12 @@ cluster (that word belongs to the bootstrap, which resamples these same groups).
 
 **Support fraction**:
 The fraction of anchors on which RI/MaRI are defined (the shared `support` field).
-Always reported alongside RI/MaRI because those metrics are undefined on
-SS-dominated anchors and their pooled values are otherwise computed on a silent,
-model-dependent subset.
+It is required when constructing a result and always reported alongside RI/MaRI because
+those metrics are undefined on anchors with no typed evidence and their pooled values are
+otherwise computed on a silent, model-dependent subset. The cause fractions are shared too:
+`ss_dominated_undefined_frac`, `oo_dominated_undefined_frac`, and
+`mixed_undefined_frac`. Do not add metric-prefixed copies or a complementary aggregate;
+CRoMa has total support by contract and carries none of these fields.
 
 **Confounder probe**:
 The balanced accuracy with which a $k$-NN probe recovers the confounder from the frozen
@@ -114,13 +117,14 @@ All tail statistics are read off one object: the empirical CDF of a model's
 per-sample CRoMa. Report exactly two of them.
 
 **Confounder-dominant fraction** — $F(0)$:
-The CDF evaluated at zero: the fraction of _defined_ evaluation units whose
+The CDF evaluated at zero: the fraction of evaluation units whose
 neighbourhood is confounder-dominant, $\mathrm{CRoMa}_i \le 0$. A _prevalence_ — how
 often the margin goes the wrong way. Lower is better, so it is a diagnostic and is
 never bolded as a "best". The inequality is closed, so an exactly contested unit
-counts as confounder-dominant; the denominator is the defined units only (a manifest
-sample each under `all`, a subset occurrence each under `paired_2x2`), which is what
-`q_alpha` and `ltm_alpha` are read off too, and `undefined_frac` measures the rest.
+counts as confounder-dominant; the denominator is every requested unit (a manifest sample
+each under `all`, a subset occurrence each under `paired_2x2`), which is what `q_alpha`
+and `ltm_alpha` are read off too. A CRoMa computation fails instead of returning a
+partially supported result.
 CRoMa computes it: read `CRoMaResult.f0` / the stored `croma_f0`, never a fresh
 `(samples < 0).mean()` over a per-sample artifact — that is how a boundary or a
 denominator drifts.

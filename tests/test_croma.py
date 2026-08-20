@@ -13,7 +13,9 @@ from croma.metrics.croma import (
     _confounder_dominant_fraction,
     _sample_croma_with_causes,
 )
+from croma.types import CRoMaResult
 from metric_harness import constant_embedding, contested
+from support_schema import RETIRED_AGGREGATE_FIELD
 
 
 def _make_manifest(
@@ -153,6 +155,24 @@ class TestComputeSampleCRoMa:
 
 class TestCRoMaCompute:
 
+    def test_result_construction_rejects_legacy_positional_coverage(self) -> None:
+        positional = (
+            "toy",
+            1,
+            0.1,
+            0.0,
+            1,
+            np.asarray([0.1]),
+            np.asarray([0.1]),
+            np.asarray([0.1]),
+        )
+
+        with pytest.raises(TypeError):
+            CRoMaResult(*positional, np.asarray([True]), 0.0)
+
+        result = CRoMaResult(*positional, evaluation_design="all")
+        assert result.evaluation_design == "all"
+
     def test_default_k_growth_factor_is_two(self) -> None:
         sig = inspect.signature(CrossConfounderRobustnessMargin.compute)
         assert sig.parameters["k_growth_factor"].default == 2.0
@@ -184,13 +204,11 @@ class TestCRoMaCompute:
 
         assert by_m[1].value == pytest.approx(single_m1.value)
         assert by_m[1].std == pytest.approx(single_m1.std)
-        assert by_m[1].undefined_frac == pytest.approx(single_m1.undefined_frac)
         assert by_m[1].q_alpha == pytest.approx(single_m1.q_alpha)
         assert by_m[1].ltm_alpha == pytest.approx(single_m1.ltm_alpha)
 
         assert by_m[2].value == pytest.approx(single_m2.value)
         assert by_m[2].std == pytest.approx(single_m2.std)
-        assert by_m[2].undefined_frac == pytest.approx(single_m2.undefined_frac)
         assert by_m[2].q_alpha == pytest.approx(single_m2.q_alpha)
         assert by_m[2].ltm_alpha == pytest.approx(single_m2.ltm_alpha)
 
@@ -236,9 +254,8 @@ class TestCRoMaCompute:
         assert result.n_pairs >= 1
         assert result.sample_values.shape[0] <= 8
         assert result.sample_values_aligned.shape == (len(manifest),)
-        assert result.occurrence_defined_mask.shape == (len(manifest),)
-        assert result.undefined_frac == pytest.approx(0.0)
-        assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
+        assert not hasattr(result, "occurrence_defined_mask")
+        assert not hasattr(result, RETIRED_AGGREGATE_FIELD)
 
     def test_so_closer_yields_croma_above_zero_all_rows(self) -> None:
         features, manifest = _toy_features_so_closer()
@@ -340,8 +357,6 @@ class TestCRoMaCompute:
         assert result.value == pytest.approx(0.0, abs=1e-12)
         assert result.sample_values == pytest.approx(np.zeros(len(manifest)), abs=1e-12)
         assert result.sample_values_aligned == pytest.approx(np.zeros(len(manifest)), abs=1e-12)
-        assert result.occurrence_defined_mask.tolist() == [True] * len(manifest)
-        assert result.undefined_frac == pytest.approx(0.0)
         assert result.q_alpha == pytest.approx(0.0, abs=1e-12)
         assert result.ltm_alpha == pytest.approx(0.0, abs=1e-12)
         assert result.f0 == pytest.approx(1.0)
@@ -539,7 +554,7 @@ class TestCRoMaF0:
         features, manifest = _toy_features_so_closer()
         result = _compute_croma(features=features, manifest=manifest, evaluation_design="all", m=1)
 
-        defined = result.sample_values_aligned[result.occurrence_defined_mask]
+        defined = result.sample_values_aligned
         assert len(defined) == len(manifest)
         assert result.f0 == pytest.approx(float(np.mean(defined <= 0.0)))
 
@@ -589,7 +604,7 @@ class TestCRoMaF0:
         )
 
         assert result.evaluation_unit == "occurrence"
-        defined = result.sample_values_aligned[result.occurrence_defined_mask]
+        defined = result.sample_values_aligned
         assert len(defined) == 16
         assert manifest["sample_id"].nunique() == 15
         assert result.f0 == pytest.approx(0.5)
@@ -602,4 +617,3 @@ class TestCRoMaF0:
         finite = result.sample_values
         assert result.value == pytest.approx(float(np.median(finite)))
         assert result.q_alpha == pytest.approx(float(np.percentile(finite, 10)))
-        assert result.undefined_frac == pytest.approx(0.0)

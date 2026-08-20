@@ -52,8 +52,11 @@ at.
    which undermines a direct comparison between them. Always read ``result.support``
    alongside the score; a high RI resting on thin support is not a strong result. RI and
    MaRI always use the same support: distance weighting changes MaRI's score, never whether
-   an anchor contributes. CRoMa scores every unit instead, by searching outward until it
-   finds typed neighbours.
+   an anchor contributes. The benchmark therefore stores one shared ``support`` column and
+   one shared set of cause fractions, never RI- and MaRI-prefixed copies. There is no
+   complementary aggregate field: ``support`` is the required positive contract. CRoMa
+   scores every unit instead, by searching outward until it finds typed neighbours, and its
+   result and artifacts carry no support fields.
 
 Robustness Index
 ----------------
