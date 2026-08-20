@@ -25,7 +25,14 @@ class MarginAwareRobustnessIndex(BaseRobustnessIndex):
     @classmethod
     def _weights(cls, distances: np.ndarray, **kwargs: float) -> np.ndarray:
         tau = float(kwargs["tau"])
-        return np.exp(-distances / tau)
+        with np.errstate(over="ignore", under="ignore"):
+            return np.exp(-distances / tau)
+
+    @classmethod
+    def _log_weights(cls, distances: np.ndarray, **kwargs: float) -> np.ndarray:
+        wide_distances = np.asarray(distances, dtype=np.longdouble)
+        wide_tau = np.longdouble(kwargs["tau"])
+        return -wide_distances / wide_tau
 
     @classmethod
     def recommend_tau(

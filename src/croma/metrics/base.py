@@ -1,6 +1,7 @@
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -35,12 +36,36 @@ VALID_EVALUATION_DESIGNS = (
     EVALUATION_DESIGN_PAIRED_2X2,
 )
 
+_MIN_NORMAL_WEIGHT = float(np.finfo(float).tiny)
+
 
 def _ratio_or_default(so: float, os: float, default: float = 0.5) -> float:
     denom = float(so + os)
     if denom <= 0:
         return float(default)
     return float(float(so) / denom)
+
+
+def _ratio_from_log_evidence(
+    log_so: float | np.floating, log_os: float | np.floating, default: float = 0.5
+) -> float:
+    """Return the SO share without exponentiating both evidence totals first."""
+    log_denom = np.logaddexp(log_so, log_os)
+    if not np.isfinite(log_denom):
+        return float(default)
+    return float(np.exp(log_so - log_denom))
+
+
+def _ratio_from_evidence_totals(
+    so: float,
+    os: float,
+    log_so: float | np.floating,
+    log_os: float | np.floating,
+    default: float = 0.5,
+) -> float:
+    if so + os >= _MIN_NORMAL_WEIGHT:
+        return _ratio_or_default(so, os, default)
+    return _ratio_from_log_evidence(log_so, log_os, default)
 
 
 def _normalize_evaluation_design(value: object) -> str:
@@ -80,6 +105,40 @@ class _UndefinedBreakdown:
     mixed_frac: float
 
 
+class _NeighborScore(NamedTuple):
+    pooled: float
+    sample_scores: np.ndarray
+    informative_mask: np.ndarray
+    undefined_type: np.ndarray
+    so_evidence: np.ndarray
+    os_evidence: np.ndarray
+    log_so_total: float | np.floating
+    log_os_total: float | np.floating
+
+
+@dataclass
+class _EvidenceTotals:
+    so: float = 0.0
+    os: float = 0.0
+    log_so: float | np.floating = np.longdouble(-np.inf)
+    log_os: float | np.floating = np.longdouble(-np.inf)
+
+    def add(
+        self,
+        so_values: np.ndarray,
+        os_values: np.ndarray,
+        log_so: float | np.floating,
+        log_os: float | np.floating,
+    ) -> None:
+        self.so += float(so_values.sum())
+        self.os += float(os_values.sum())
+        self.log_so = np.logaddexp(self.log_so, log_so)
+        self.log_os = np.logaddexp(self.log_os, log_os)
+
+    def ratio(self) -> float:
+        return _ratio_from_evidence_totals(self.so, self.os, self.log_so, self.log_os)
+
+
 @dataclass(frozen=True)
 class _RobustnessArtifacts:
     curve: dict[int, float]
@@ -103,6 +162,8 @@ class BaseRobustnessIndex(ABC):
             raise ValueError("features must be a 2-D array of shape (N, D)")
         if len(features) != len(manifest):
             raise ValueError("features row count must match manifest row count")
+        if len(manifest) == 0:
+            raise ValueError("evaluation must contain at least one evaluation unit")
 
     @classmethod
     def _normalize_manifest_inputs(
@@ -120,6 +181,12 @@ class BaseRobustnessIndex(ABC):
     @abstractmethod
     def _weights(cls, distances: np.ndarray, **kwargs: float) -> np.ndarray:
         raise NotImplementedError
+
+    @classmethod
+    def _log_weights(cls, distances: np.ndarray, **kwargs: float) -> np.ndarray:
+        """Log weights used only when the ordinary linear ratio loses all evidence."""
+        with np.errstate(divide="ignore"):
+            return np.log(cls._weights(distances, **kwargs))
 
     @classmethod
     def _score_from_neighbors(
@@ -159,9 +226,25 @@ class BaseRobustnessIndex(ABC):
         os_per_sample = np.where(os_mask, weights, 0.0).sum(axis=1)
 
         denom = so_per_sample + os_per_sample
-        informative = denom > 0
+        informative = (so_mask | os_mask).any(axis=1)
         sample_scores = np.full(n, np.nan, dtype=float)
-        sample_scores[informative] = so_per_sample[informative] / denom[informative]
+        linear = informative & (denom >= _MIN_NORMAL_WEIGHT)
+        sample_scores[linear] = so_per_sample[linear] / denom[linear]
+
+        needs_stable_ratio = informative & ~linear
+        if needs_stable_ratio.any():
+            log_weights = cls._log_weights(dist, **kwargs)
+            log_so = np.logaddexp.reduce(
+                np.where(so_mask[needs_stable_ratio], log_weights[needs_stable_ratio], -np.inf),
+                axis=1,
+            )
+            log_os = np.logaddexp.reduce(
+                np.where(os_mask[needs_stable_ratio], log_weights[needs_stable_ratio], -np.inf),
+                axis=1,
+            )
+            sample_scores[needs_stable_ratio] = [
+                _ratio_from_log_evidence(so, os) for so, os in zip(log_so, log_os)
+            ]
 
         undefined_type = np.zeros(n, dtype=int)
         undef = ~informative
@@ -179,7 +262,18 @@ class BaseRobustnessIndex(ABC):
             )
         undefined_type[undef_no_neigh] = 3
 
-        pooled = _ratio_or_default(float(so_per_sample.sum()), float(os_per_sample.sum()))
+        so_total = float(so_per_sample.sum())
+        os_total = float(os_per_sample.sum())
+        if informative.any():
+            log_weights = cls._log_weights(dist, **kwargs)
+            pooled = _ratio_from_evidence_totals(
+                so_total,
+                os_total,
+                np.logaddexp.reduce(np.where(so_mask, log_weights, -np.inf), axis=None),
+                np.logaddexp.reduce(np.where(os_mask, log_weights, -np.inf), axis=None),
+            )
+        else:
+            pooled = 0.5
         return pooled, sample_scores, informative, undefined_type
 
     @classmethod
@@ -192,7 +286,7 @@ class BaseRobustnessIndex(ABC):
         valid_counts: np.ndarray,
         k_values: list[int],
         **kwargs: float,
-    ) -> dict[int, tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    ) -> dict[int, _NeighborScore]:
         n = len(labels)
         kmax = int(max(k_values))
         actual_cols = min(kmax, neigh_idx.shape[1])
@@ -217,38 +311,55 @@ class BaseRobustnessIndex(ABC):
         oo_mask = slot_valid & ~same_label & ~same_center
 
         weights = cls._weights(dist, **kwargs)
+        log_weights = cls._log_weights(dist, **kwargs)
         so_weighted = np.where(so_mask, weights, 0.0)
         os_weighted = np.where(os_mask, weights, 0.0)
 
+        so_log_weighted = np.where(so_mask, log_weights, -np.inf)
+        os_log_weighted = np.where(os_mask, log_weights, -np.inf)
+
         so_cum = np.cumsum(so_weighted, axis=1)
         os_cum = np.cumsum(os_weighted, axis=1)
+        so_log_cum = np.logaddexp.accumulate(so_log_weighted, axis=1)
+        os_log_cum = np.logaddexp.accumulate(os_log_weighted, axis=1)
+        typed_cum = np.cumsum((so_mask | os_mask).astype(int), axis=1)
         ss_cum = np.cumsum(ss_mask.astype(int), axis=1)
         oo_cum = np.cumsum(oo_mask.astype(int), axis=1)
 
-        out: dict[
-            int,
-            tuple[float, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-        ] = {}
+        out: dict[int, _NeighborScore] = {}
         for k in k_values:
             ki = min(int(k), actual_cols) - 1
             if ki < 0:
-                out[int(k)] = (
+                out[int(k)] = _NeighborScore(
                     0.5,
                     np.full(n, np.nan, dtype=float),
                     np.zeros(n, dtype=bool),
                     np.full(n, 3, dtype=int),
                     np.zeros(n, dtype=float),
                     np.zeros(n, dtype=float),
+                    -np.inf,
+                    -np.inf,
                 )
                 continue
 
             so_at_k = so_cum[:, ki]
             os_at_k = os_cum[:, ki]
+            log_so_at_k = so_log_cum[:, ki]
+            log_os_at_k = os_log_cum[:, ki]
             denom = so_at_k + os_at_k
-            informative = denom > 0
+            informative = typed_cum[:, ki] > 0
 
             sample_scores = np.full(n, np.nan, dtype=float)
-            sample_scores[informative] = so_at_k[informative] / denom[informative]
+            linear = informative & (denom >= _MIN_NORMAL_WEIGHT)
+            sample_scores[linear] = so_at_k[linear] / denom[linear]
+            needs_stable_ratio = informative & ~linear
+            sample_scores[needs_stable_ratio] = [
+                _ratio_from_log_evidence(so, os)
+                for so, os in zip(
+                    log_so_at_k[needs_stable_ratio],
+                    log_os_at_k[needs_stable_ratio],
+                )
+            ]
 
             eff_k_this = np.minimum(valid_counts, int(k))
             undefined_type = np.zeros(n, dtype=int)
@@ -267,14 +378,26 @@ class BaseRobustnessIndex(ABC):
                 )
             undefined_type[undef_no_neigh] = 3
 
-            pooled = _ratio_or_default(float(so_at_k.sum()), float(os_at_k.sum()))
-            out[int(k)] = (
+            so_total = float(so_at_k.sum())
+            os_total = float(os_at_k.sum())
+            if informative.any():
+                pooled = _ratio_from_evidence_totals(
+                    so_total,
+                    os_total,
+                    np.logaddexp.reduce(log_so_at_k),
+                    np.logaddexp.reduce(log_os_at_k),
+                )
+            else:
+                pooled = 0.5
+            out[int(k)] = _NeighborScore(
                 pooled,
                 sample_scores,
                 informative,
                 undefined_type,
                 so_at_k,
                 os_at_k,
+                np.logaddexp.reduce(log_so_at_k),
+                np.logaddexp.reduce(log_os_at_k),
             )
 
         return out
@@ -1034,9 +1157,16 @@ class BaseRobustnessIndex(ABC):
         ).astype(str)
         occurrence_sources = prepared_neighbors.source_indices.astype(int)
         for k in candidates:
-            pooled, per_sample, informative_mask, undefined_type, _so_arr, _os_arr = all_k_results[
-                int(k)
-            ]
+            (
+                pooled,
+                per_sample,
+                informative_mask,
+                undefined_type,
+                _so_arr,
+                _os_arr,
+                _log_so_total,
+                _log_os_total,
+            ) = all_k_results[int(k)]
             sample_arr = np.asarray(per_sample[informative_mask], dtype=float)
             undefined_breakdown = cls._compute_undefined_breakdown(
                 occurrence_total=len(per_sample),
@@ -1105,8 +1235,7 @@ class BaseRobustnessIndex(ABC):
         candidates = _normalize_k_values(k_values)
 
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
-        per_k_so_total: dict[int, float] = {int(k): 0.0 for k in candidates}
-        per_k_os_total: dict[int, float] = {int(k): 0.0 for k in candidates}
+        per_k_evidence = {int(k): _EvidenceTotals() for k in candidates}
         per_k_occurrence_values: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
         per_k_occurrence_defined: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
         per_k_occurrence_types: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
@@ -1136,11 +1265,12 @@ class BaseRobustnessIndex(ABC):
                     undefined_type,
                     so_arr,
                     os_arr,
+                    log_so_total,
+                    log_os_total,
                 ) = all_k_results[int(k)]
                 per_k_pair_values[int(k)].append(float(pair_value))
                 per_k_occurrence_total[int(k)] += int(len(per_sample))
-                per_k_so_total[int(k)] += float(so_arr.sum())
-                per_k_os_total[int(k)] += float(os_arr.sum())
+                per_k_evidence[int(k)].add(so_arr, os_arr, log_so_total, log_os_total)
                 per_k_occurrence_values[int(k)].append(np.asarray(per_sample, dtype=float))
                 per_k_occurrence_defined[int(k)].append(np.asarray(informative_mask, dtype=bool))
                 per_k_occurrence_types[int(k)].append(np.asarray(undefined_type, dtype=int))
@@ -1177,7 +1307,7 @@ class BaseRobustnessIndex(ABC):
             if not pair_values:
                 continue
 
-            pooled = _ratio_or_default(per_k_so_total[int(k)], per_k_os_total[int(k)])
+            pooled = per_k_evidence[int(k)].ratio()
             pair_arr = np.asarray(pair_values, dtype=float)
             occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(float)
             occurrence_defined_mask = np.concatenate(per_k_occurrence_defined[int(k)]).astype(bool)
@@ -1421,8 +1551,7 @@ class BaseRobustnessIndex(ABC):
         kmax = int(max(candidates))
 
         per_k_pair_values: dict[int, list[float]] = {int(k): [] for k in candidates}
-        per_k_so_total: dict[int, float] = {int(k): 0.0 for k in candidates}
-        per_k_os_total: dict[int, float] = {int(k): 0.0 for k in candidates}
+        per_k_evidence = {int(k): _EvidenceTotals() for k in candidates}
         per_k_occurrence_values: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
         per_k_occurrence_defined: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
         per_k_occurrence_types: dict[int, list[np.ndarray]] = {int(k): [] for k in candidates}
@@ -1461,11 +1590,12 @@ class BaseRobustnessIndex(ABC):
                     undefined_type,
                     so_arr,
                     os_arr,
+                    log_so_total,
+                    log_os_total,
                 ) = all_k_results[int(k)]
                 per_k_pair_values[int(k)].append(float(pair_value))
                 per_k_occurrence_total[int(k)] += int(len(per_sample))
-                per_k_so_total[int(k)] += float(so_arr.sum())
-                per_k_os_total[int(k)] += float(os_arr.sum())
+                per_k_evidence[int(k)].add(so_arr, os_arr, log_so_total, log_os_total)
                 per_k_occurrence_values[int(k)].append(np.asarray(per_sample, dtype=float))
                 per_k_occurrence_defined[int(k)].append(np.asarray(informative_mask, dtype=bool))
                 per_k_occurrence_types[int(k)].append(np.asarray(undefined_type, dtype=int))
@@ -1502,7 +1632,7 @@ class BaseRobustnessIndex(ABC):
             if not pair_values:
                 continue
 
-            pooled = _ratio_or_default(per_k_so_total[int(k)], per_k_os_total[int(k)])
+            pooled = per_k_evidence[int(k)].ratio()
             pair_arr = np.asarray(pair_values, dtype=float)
             occurrence_values = np.concatenate(per_k_occurrence_values[int(k)]).astype(float)
             occurrence_defined_mask = np.concatenate(per_k_occurrence_defined[int(k)]).astype(bool)

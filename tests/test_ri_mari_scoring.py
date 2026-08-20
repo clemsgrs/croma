@@ -5,6 +5,53 @@ import pytest
 from croma import MaRI, RI
 
 
+@pytest.mark.parametrize("metric", [RI, MaRI])
+def test_empty_sample_evaluation_is_rejected(metric) -> None:
+    manifest = pd.DataFrame(
+        columns=[
+            "sample_id",
+            "image_path",
+            "label",
+            "scanner_vendor",
+            "group_id",
+            "dataset",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="at least one evaluation unit"):
+        metric.compute(
+            np.empty((0, 2), dtype=float),
+            manifest,
+            confounder_column="scanner_vendor",
+            k_candidates=[1],
+            evaluation_design="all",
+        )
+
+
+@pytest.mark.parametrize("metric", [RI, MaRI])
+def test_empty_occurrence_evaluation_is_rejected(metric) -> None:
+    manifest = pd.DataFrame(
+        columns=[
+            "sample_id",
+            "image_path",
+            "label",
+            "scanner_vendor",
+            "group_id",
+            "dataset",
+            "subset",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="at least one evaluation unit"):
+        metric.compute(
+            np.empty((0, 2), dtype=float),
+            manifest,
+            confounder_column="scanner_vendor",
+            k_candidates=[1],
+            evaluation_design="paired_2x2",
+        )
+
+
 def test_ri_pooled_fallback_returns_half_when_no_so_or_os() -> None:
     labels = np.array([0, 1], dtype=int)
     centers = np.array([0, 1], dtype=int)
@@ -24,6 +71,28 @@ def test_ri_pooled_fallback_returns_half_when_no_so_or_os() -> None:
     assert score == 0.5
     assert np.isnan(sample_scores).all()
     assert informative_mask.tolist() == [False, False]
+
+
+def test_mari_single_k_ratio_is_stable_at_the_smallest_positive_tau() -> None:
+    labels = np.array([0, 0, 1], dtype=int)
+    centers = np.array([0, 1, 0], dtype=int)
+    neigh_idx = np.array([[1, 2], [-1, -1], [-1, -1]], dtype=int)
+    neigh_dist = np.array([[0.1, 1.0], [np.inf, np.inf], [np.inf, np.inf]], dtype=float)
+    valid_counts = np.array([2, 0, 0], dtype=int)
+
+    score, sample_scores, informative_mask, _undefined_type = MaRI._score_from_neighbors(
+        labels=labels,
+        centers=centers,
+        neigh_idx=neigh_idx,
+        neigh_dist=neigh_dist,
+        valid_counts=valid_counts,
+        k=2,
+        tau=float(np.nextafter(0.0, 1.0)),
+    )
+
+    assert score == 1.0
+    np.testing.assert_array_equal(sample_scores, np.array([1.0, np.nan, np.nan]))
+    assert informative_mask.tolist() == [True, False, False]
 
 
 def test_mari_weights_change_score_when_distances_swap() -> None:
