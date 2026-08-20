@@ -43,15 +43,17 @@ at.
 
 .. note::
 
-   A sample whose top-``k`` contains no typed neighbour carries no evidence for RI and
-   MaRI. The pooled score is still defined -- it just silently rests on the subset of
-   samples that *do* carry typed evidence. That subset, the **support**, is
-   model-dependent: two models' scores on the same cohort can summarize different sets of
-   samples, which undermines a direct comparison between them. Always read the support
-   fraction (``1 - result.undefined_frac``) alongside the score; a high RI resting on a
-   thin support is not a strong result. RI and MaRI always use the same support: distance
-   weighting changes MaRI's score, never whether an anchor contributes. CRoMa scores every
-   sample instead, by searching outward until it finds typed neighbours.
+   An evaluation unit whose top-``k`` contains no typed neighbour carries no evidence for
+   RI and MaRI. The pooled score is still defined -- it just rests on the units that *do*
+   carry typed evidence. ``result.support`` is the fraction of all requested evaluation
+   units in that set: manifest samples under ``all``, or subset occurrences under
+   ``paired_2x2`` (so a sample requested in two subsets counts twice). Support is
+   model-dependent: two models' scores on the same cohort can summarize different units,
+   which undermines a direct comparison between them. Always read ``result.support``
+   alongside the score; a high RI resting on thin support is not a strong result. RI and
+   MaRI always use the same support: distance weighting changes MaRI's score, never whether
+   an anchor contributes. CRoMa scores every unit instead, by searching outward until it
+   finds typed neighbours.
 
 Robustness Index
 ----------------
@@ -84,7 +86,7 @@ biological kNN balanced accuracy, so RI and MaRI always operate at the same ``k`
        evaluation_design="paired_2x2",
        k_candidates=[5, 11, 21],
    )
-   print(ri.value, ri.k, ri.undefined_frac)
+   print(ri.value, ri.k, ri.support)
 
 Margin-aware Robustness Index
 -----------------------------

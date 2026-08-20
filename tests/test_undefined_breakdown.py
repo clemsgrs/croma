@@ -107,6 +107,48 @@ def test_occurrence_support_is_the_defined_occurrence_fraction(metric) -> None:
     assert result.support == pytest.approx(0.5)
 
 
+def test_partial_sample_support_warning_is_reported_positively() -> None:
+    with pytest.warns(RuntimeWarning, match=r"RI/MaRI support is 50\.0% across samples\."):
+        RI.compute(
+            features=_partial_support_features(),
+            manifest=_partial_support_manifest(),
+            confounder_column="scanner_vendor",
+            evaluation_design="all",
+            k_candidates=[1],
+        )
+
+
+def test_partial_occurrence_support_warning_names_subset_occurrences() -> None:
+    with pytest.warns(
+        RuntimeWarning,
+        match=r"RI/MaRI support is 50\.0% across subset occurrences\.",
+    ):
+        RI.compute(
+            features=_partial_support_features(),
+            manifest=_partial_support_manifest().assign(subset="pair"),
+            confounder_column="scanner_vendor",
+            evaluation_design="paired_2x2",
+            k_candidates=[1],
+        )
+
+
+def test_low_support_warning_preserves_the_dominant_undefined_cause() -> None:
+    with pytest.warns(RuntimeWarning) as caught:
+        RI.compute(
+            features=_partial_support_features(),
+            manifest=_partial_support_manifest(),
+            confounder_column="scanner_vendor",
+            evaluation_design="all",
+            k_candidates=[1],
+        )
+
+    assert any(
+        str(warning.message)
+        == "toy: undefined RI/MaRI samples are predominantly OO-dominated (50.0%)."
+        for warning in caught
+    )
+
+
 @pytest.mark.parametrize("metric", [RI, MaRI])
 @pytest.mark.parametrize("evaluation_design", ["all", "paired_2x2"])
 def test_undefined_causes_keep_the_all_unit_denominator(metric, evaluation_design: str) -> None:
@@ -128,7 +170,7 @@ def test_undefined_causes_keep_the_all_unit_denominator(metric, evaluation_desig
         result.mixed_undefined_frac,
     )
     assert cause_fractions == pytest.approx((0.0, 0.5, 0.0))
-    assert sum(cause_fractions) == pytest.approx(1.0 - result.support)
+    assert result.support + sum(cause_fractions) == pytest.approx(1.0)
 
 
 def test_undefined_samples_are_bucketed_as_ss_oo_or_mixed() -> None:
@@ -193,7 +235,7 @@ def test_no_valid_neighbors_are_classified_as_mixed() -> None:
     assert undefined_type.tolist() == [3, 3]
 
 
-def test_all_rows_undefined_fraction_uses_sample_denominator() -> None:
+def test_all_rows_support_uses_sample_denominator() -> None:
     result = RI.compute(
         features=_all_rows_undefined_features(),
         manifest=_all_rows_undefined_manifest(),
@@ -204,12 +246,13 @@ def test_all_rows_undefined_fraction_uses_sample_denominator() -> None:
 
     assert result.evaluation_design == "all"
     assert result.evaluation_unit == "sample"
-    assert result.undefined_frac == pytest.approx(1.0)
-    assert result.undefined_frac == pytest.approx(
-        result.ss_dominated_undefined_frac
+    assert result.support == pytest.approx(0.0)
+    assert (
+        result.support
+        + result.ss_dominated_undefined_frac
         + result.oo_dominated_undefined_frac
         + result.mixed_undefined_frac
-    )
+    ) == pytest.approx(1.0)
 
 
 def test_mari_uses_the_same_undefined_type_classification_as_ri() -> None:
@@ -240,7 +283,7 @@ def test_mari_uses_the_same_undefined_type_classification_as_ri() -> None:
     np.testing.assert_array_equal(undef_ri, undef_mari)
 
 
-def test_paired_breakdown_sums_to_occurrence_weighted_undefined_fraction() -> None:
+def test_paired_breakdown_sums_to_the_unsupported_occurrence_fraction() -> None:
     result = RI.compute(
         features=_paired_features(),
         manifest=_paired_manifest(),
@@ -251,8 +294,9 @@ def test_paired_breakdown_sums_to_occurrence_weighted_undefined_fraction() -> No
 
     assert result.evaluation_design == "paired_2x2"
     assert result.evaluation_unit == "occurrence"
-    assert result.undefined_frac == pytest.approx(
-        result.ss_dominated_undefined_frac
+    assert (
+        result.support
+        + result.ss_dominated_undefined_frac
         + result.oo_dominated_undefined_frac
         + result.mixed_undefined_frac
-    )
+    ) == pytest.approx(1.0)

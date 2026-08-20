@@ -77,7 +77,7 @@ def _assert_artifacts_equal(direct, cached) -> None:
     for k in direct.curve:
         assert cached.curve[k] == pytest.approx(direct.curve[k], abs=0, rel=0)
     assert cached.result.value == pytest.approx(direct.result.value, abs=0, rel=0)
-    assert cached.result.undefined_frac == pytest.approx(direct.result.undefined_frac, abs=0, rel=0)
+    assert cached.result.support == pytest.approx(direct.result.support, abs=0, rel=0)
     np.testing.assert_array_equal(
         np.asarray(cached.result.sample_values_aligned, dtype=float),
         np.asarray(direct.result.sample_values_aligned, dtype=float),

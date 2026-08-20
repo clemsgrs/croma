@@ -52,8 +52,8 @@ ri = RI.compute(features, manifest, k_candidates=[5, 11, 21], **common)
 mari = MaRI.compute(features, manifest, k_candidates=[5, 11, 21], **common)
 croma = CRoMa.compute(features, manifest, **common)
 
-print(f"RI    {ri.value:.3f}  (k={ri.k}, undefined {ri.undefined_frac:.1%})")
-print(f"MaRI  {mari.value:.3f}  (tau={mari.tau:.4f})")
+print(f"RI    {ri.value:.3f}  (k={ri.k}, support {ri.support:.1%})")
+print(f"MaRI  {mari.value:.3f}  (tau={mari.tau:.4f}, support {mari.support:.1%})")
 print(f"CRoMa {croma.value:+.3f}  (lower-tail mean {croma.ltm_alpha:+.3f})")
 ```
 
@@ -84,7 +84,7 @@ Top 8 of 25 ranked pathology encoders, over 3 tile cohorts; the DINOv2-B control
 
 Three habits will keep you out of trouble:
 
-1. **Always read `undefined_frac` next to RI and MaRI.** Samples with no informative neighbour in their top `k` are excluded from the score, so a high RI over a thin support is not a strong result.
+1. **Always read `support` next to RI and MaRI.** It is the fraction of evaluation units with informative neighbours inside `k`: manifest samples under `all`, or subset occurrences under `paired_2x2`. A high RI over a thin support is not a strong result.
 2. **Never pin `tau`.** It defaults to `None`, which resolves it per model on the scale of that model's own neighbour distances. One fixed `tau` shared across models sharpens the margin for some and flattens it for others -- exactly the distortion MaRI exists to remove. See [Choosing tau](https://clemsgrs.github.io/croma/metrics.html#choosing-tau).
 3. **Read the tail, not just the mean.** `croma.ltm_alpha` is the mean of the worst 10% of samples. Pooled scores hide brittle subgroups.
 
