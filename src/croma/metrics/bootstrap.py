@@ -66,8 +66,8 @@ def _percentile_ci(boot: np.ndarray, point: float, level: float, n_boot: int) ->
     hi_q = 100.0 - lo_q
     return BootstrapCI(
         point=float(point),
-        lo=float(np.percentile(finite, lo_q)),
-        hi=float(np.percentile(finite, hi_q)),
+        lo=float(np.percentile(finite, lo_q, method="linear")),
+        hi=float(np.percentile(finite, hi_q, method="linear")),
         level=float(level),
         n_boot=int(n_boot),
     )
@@ -122,6 +122,58 @@ def bootstrap_pooled_median(
         pooled = np.concatenate([cluster_values[i] for i in pick])
         boot[b] = np.median(pooled) if pooled.size else float("nan")
 
+    return _percentile_ci(boot, point, level, int(n_boot))
+
+
+def paired_cluster_bootstrap_delta(
+    canonical: np.ndarray,
+    alternative: np.ndarray,
+    group_ids: np.ndarray,
+    *,
+    subset_ids: np.ndarray | None = None,
+    n_boot: int = 2000,
+    level: float = 0.95,
+    seed: int = 0,
+) -> BootstrapCI:
+    """Paired shared-group bootstrap for an alternative-minus-canonical median.
+
+    One independence-group draw is applied to both aligned occurrence vectors in
+    each replicate. The returned point and every replicate are differences between
+    the two pooled medians, not medians of the occurrence-level differences.
+    """
+
+    canonical = np.asarray(canonical, dtype=float)
+    alternative = np.asarray(alternative, dtype=float)
+    group_ids = np.asarray(group_ids)
+    subsets = None if subset_ids is None else np.asarray(subset_ids)
+    if canonical.ndim != 1 or alternative.ndim != 1 or group_ids.ndim != 1:
+        raise ValueError("canonical, alternative, and group_ids must be one-dimensional")
+    if not (len(canonical) == len(alternative) == len(group_ids)):
+        raise ValueError("canonical, alternative, and group_ids must be the same length")
+    if subsets is not None and (subsets.ndim != 1 or len(subsets) != len(canonical)):
+        raise ValueError("subset_ids must be one-dimensional and match the value length")
+    if not np.isfinite(canonical).all() or not np.isfinite(alternative).all():
+        raise ValueError("paired CRoMa values must all be finite")
+
+    def balanced_median(values: np.ndarray, rows: np.ndarray) -> float:
+        if subsets is None:
+            return float(np.median(values[rows]))
+        subset_medians = [
+            np.median(values[rows][subsets[rows] == subset]) for subset in np.unique(subsets[rows])
+        ]
+        return float(np.median(subset_medians))
+
+    groups = _cluster_row_groups(group_ids)
+    if not groups:
+        raise ValueError("paired bootstrap requires at least one independence group")
+    all_rows = np.arange(len(canonical), dtype=int)
+    point = balanced_median(alternative, all_rows) - balanced_median(canonical, all_rows)
+    rng = np.random.default_rng(seed)
+    boot = np.empty(int(n_boot), dtype=float)
+    for replicate in range(int(n_boot)):
+        picked_groups = rng.integers(0, len(groups), len(groups))
+        rows = np.concatenate([groups[index] for index in picked_groups])
+        boot[replicate] = balanced_median(alternative, rows) - balanced_median(canonical, rows)
     return _percentile_ci(boot, point, level, int(n_boot))
 
 

@@ -224,6 +224,38 @@ def test_rudolfv2_native_forward_rejects_an_unexpected_token_layout(
         embed(object())
 
 
+def test_rudolfv2_explicit_cls_only_pooling_returns_raw_cls(
+    monkeypatch: pytest.MonkeyPatch, extraction_module
+) -> None:
+    ee = extraction_module
+    cls = np.array([[[-1.0, -2.0]]], dtype=np.float32)
+    registers = np.full((1, 8, 2), np.inf, dtype=np.float32)
+    patches = np.full((1, 784, 2), (4.0, 6.0), dtype=np.float32)
+    tokens = np.concatenate((cls, registers, patches), axis=1)
+
+    class FakeBackbone:
+        def encode(self, batch):
+            return {"last_hidden_state": tokens}
+
+    class FakeModel:
+        model = FakeBackbone()
+
+        def eval(self):
+            return self
+
+        def to(self, device):
+            return self
+
+    monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
+    _model, _transform, embed = ee._load_model_and_transform(
+        mr._build_model_registry()["RudolfV 2-S"],
+        ee.torch.device("cpu"),
+        pooling="cls-only",
+    )
+
+    np.testing.assert_array_equal(embed(object()), np.array([[-1.0, -2.0]], dtype=np.float32))
+
+
 @pytest.mark.parametrize(
     ("name", "model_width", "pooled_width"),
     [
@@ -558,6 +590,81 @@ def test_hf_auto_loader_forwards_only_explicit_checkpoint_revision(
         ("processor", expected_kwargs),
         ("model", expected_kwargs),
     ]
+
+
+def test_waiv_explicit_cls_mean_patch_pooling_uses_raw_final_layer_tokens(
+    monkeypatch: pytest.MonkeyPatch, extraction_module
+) -> None:
+    ee = extraction_module
+    cls = np.array([[[-1.0, -2.0]]], dtype=np.float32)
+    patches = np.full((1, 256, 2), (3.0, 5.0), dtype=np.float32)
+    tokens = np.concatenate((cls, patches), axis=1)
+    calls: list[object] = []
+
+    class FakeModel:
+        config = types.SimpleNamespace(pixel_mean=[0.5] * 3, pixel_std=[0.5] * 3)
+
+        def eval(self):
+            return self
+
+        def to(self, device):
+            return self
+
+        def __call__(self, *, pixel_values):
+            calls.append(pixel_values)
+            return types.SimpleNamespace(last_hidden_state=tokens)
+
+    monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
+    monkeypatch.setattr(
+        ee.torch,
+        "cat",
+        lambda tensors, dim: np.concatenate(tensors, axis=dim),
+        raising=False,
+    )
+    spec = mr._build_model_registry()["Mascaret"]
+    _model, _transform, embed = ee._load_model_and_transform(
+        spec, ee.torch.device("cpu"), pooling="cls-mean-patch"
+    )
+    batch = object()
+
+    output = embed(batch)
+
+    assert calls == [batch]
+    np.testing.assert_array_equal(
+        output,
+        np.array([[-1.0, -2.0, 3.0, 5.0]], dtype=np.float32),
+    )
+
+
+@pytest.mark.parametrize("token_count", [256, 258])
+def test_waiv_explicit_pooling_rejects_unexpected_token_layout(
+    monkeypatch: pytest.MonkeyPatch, extraction_module, token_count: int
+) -> None:
+    ee = extraction_module
+
+    class FakeModel:
+        config = types.SimpleNamespace(pixel_mean=[0.5] * 3, pixel_std=[0.5] * 3)
+
+        def eval(self):
+            return self
+
+        def to(self, device):
+            return self
+
+        def __call__(self, *, pixel_values):
+            return types.SimpleNamespace(
+                last_hidden_state=np.zeros((1, token_count, 2), dtype=np.float32)
+            )
+
+    monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
+    _model, _transform, embed = ee._load_model_and_transform(
+        mr._build_model_registry()["Mascaret"],
+        ee.torch.device("cpu"),
+        pooling="cls-mean-patch",
+    )
+
+    with pytest.raises(RuntimeError, match=r"257 tokens \(CLS \+ 256 patches\)"):
+        embed(object())
 
 
 @pytest.mark.parametrize(

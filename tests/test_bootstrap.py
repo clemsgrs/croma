@@ -6,6 +6,7 @@ from croma.metrics.bootstrap import (
     RankStability,
     bootstrap_pooled_median,
     bootstrap_spearman,
+    paired_cluster_bootstrap_delta,
     paired_rank_stability,
 )
 
@@ -89,6 +90,44 @@ class TestPairedRankStability:
         )
         assert set(rs.value_ci) == {"x", "y"}
         assert rs.value_ci["x"].lo <= rs.value_ci["x"].point <= rs.value_ci["x"].hi
+
+
+def test_paired_cluster_bootstrap_delta_uses_one_shared_group_resample() -> None:
+    canonical = np.array([0.0, 0.0])
+    alternative = np.array([1.0, 3.0])
+    groups = np.array(["slide-a", "slide-b"])
+
+    ci = paired_cluster_bootstrap_delta(
+        canonical,
+        alternative,
+        groups,
+        n_boot=4,
+        level=0.5,
+        seed=0,
+    )
+
+    # seed=0 draws [b,b], [b,a], [a,a], [a,a]. Each draw computes
+    # median(alternative) - median(canonical) on that same shared group sample.
+    assert ci == BootstrapCI(point=2.0, lo=1.0, hi=2.25, level=0.5, n_boot=4)
+
+
+def test_paired_cluster_bootstrap_delta_preserves_subset_balancing() -> None:
+    canonical = np.zeros(4)
+    alternative = np.array([0.0, 0.0, 0.0, 10.0])
+    groups = np.array(["a", "b", "c", "d"])
+    subsets = np.array(["left", "left", "left", "right"])
+
+    ci = paired_cluster_bootstrap_delta(
+        canonical,
+        alternative,
+        groups,
+        subset_ids=subsets,
+        n_boot=4,
+        seed=0,
+    )
+
+    # Each arm is first reduced within subset, then balanced across subsets.
+    assert ci.point == pytest.approx(5.0)
 
 
 class TestBootstrapSpearman:

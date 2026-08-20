@@ -63,6 +63,10 @@ _RUDOLFV2_NUM_PATCHES = 784
 _RUDOLFV2_MEAN = (0.7072, 0.5787, 0.7036)
 _RUDOLFV2_STD = (0.2119, 0.2301, 0.1775)
 
+_WAIV_POOLING_CONTRACTS = ("canonical", "cls-mean-patch", "cls-only")
+_RUDOLFV2_POOLING_CONTRACTS = ("canonical", "cls-only")
+_WAIV_PATCH_TOKENS = 256
+
 
 @dataclasses.dataclass(frozen=True)
 class _WaivExtractionConfig:
@@ -70,8 +74,8 @@ class _WaivExtractionConfig:
     input_dtype: str = "float32"
     scale_uint8: bool = True
 
-    def details(self) -> dict:
-        return {
+    def details(self, pooling: str = "canonical") -> dict:
+        details = {
             "preprocessing": {
                 "resize": self.input_size,
                 "center_crop": self.input_size,
@@ -81,11 +85,31 @@ class _WaivExtractionConfig:
                 ),
                 "normalization": "checkpoint-config:pixel_mean,pixel_std",
             },
-            "pooling": {
+        }
+        if pooling == "canonical":
+            details["pooling"] = {
                 "method": "checkpoint-native:model.encode",
                 "output_normalization": "checkpoint-native",
-            },
-        }
+            }
+        elif pooling == "cls-mean-patch":
+            details["pooling"] = {
+                "representation_id": pooling,
+                "method": "concatenate-raw-cls-and-mean-patches",
+                "patch_tokens": _WAIV_PATCH_TOKENS,
+                "output_normalization": "none",
+            }
+        elif pooling == "cls-only":
+            details["pooling"] = {
+                "representation_id": pooling,
+                "method": "raw-cls",
+                "output_normalization": "none",
+            }
+        else:
+            raise ValueError(
+                f"unknown Waiv pooling contract {pooling!r}; "
+                f"expected one of {list(_WAIV_POOLING_CONTRACTS)}"
+            )
+        return details
 
     def build_transform(self, v2, model):
         return v2.Compose(
@@ -102,8 +126,26 @@ class _WaivExtractionConfig:
         )
 
     @staticmethod
-    def embed(model, batch):
-        return model.encode(batch)
+    def embed(model, batch, pooling: str = "canonical"):
+        if pooling == "canonical":
+            return model.encode(batch)
+        output = model(pixel_values=batch)
+        tokens = output.last_hidden_state
+        expected_tokens = 1 + _WAIV_PATCH_TOKENS
+        if tokens.ndim != 3 or tokens.shape[1] != expected_tokens:
+            raise RuntimeError(
+                "Waiv final-layer forward must return "
+                f"{expected_tokens} tokens (CLS + {_WAIV_PATCH_TOKENS} patches); "
+                f"got shape {tuple(tokens.shape)}."
+            )
+        if pooling == "cls-mean-patch":
+            return torch.cat([tokens[:, 0], tokens[:, 1:].mean(1)], dim=-1)
+        if pooling == "cls-only":
+            return tokens[:, 0]
+        raise ValueError(
+            f"unknown Waiv pooling contract {pooling!r}; "
+            f"expected one of {list(_WAIV_POOLING_CONTRACTS)}"
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -118,9 +160,9 @@ class _RudolfV2ExtractionConfig:
     register_tokens: int = _RUDOLFV2_NUM_REGISTERS
     patch_tokens: int = _RUDOLFV2_NUM_PATCHES
 
-    def details(self) -> dict:
+    def details(self, pooling: str = "canonical") -> dict:
         size = [self.input_size, self.input_size]
-        return {
+        details = {
             "preprocessing": {
                 "resize": size,
                 "resize_interpolation": self.interpolation,
@@ -133,12 +175,27 @@ class _RudolfV2ExtractionConfig:
                 "normalization_mean": list(self.normalization_mean),
                 "normalization_std": list(self.normalization_std),
             },
-            "pooling": {
+        }
+        if pooling == "canonical":
+            details["pooling"] = {
                 "method": "concatenate-cls-and-mean-patches",
                 "register_tokens_excluded": self.register_tokens,
                 "patch_tokens": self.patch_tokens,
-            },
-        }
+            }
+        elif pooling == "cls-only":
+            details["pooling"] = {
+                "representation_id": pooling,
+                "method": "raw-cls",
+                "register_tokens_excluded": self.register_tokens,
+                "patch_tokens": self.patch_tokens,
+                "output_normalization": "none",
+            }
+        else:
+            raise ValueError(
+                f"unknown RudolfV 2 pooling contract {pooling!r}; "
+                f"expected one of {list(_RUDOLFV2_POOLING_CONTRACTS)}"
+            )
+        return details
 
     def build_transform(self, v2):
         size = (self.input_size, self.input_size)
@@ -162,7 +219,7 @@ class _RudolfV2ExtractionConfig:
             ]
         )
 
-    def embed(self, model, batch):
+    def embed(self, model, batch, pooling: str = "canonical"):
         tokens = model.model.encode(batch)["last_hidden_state"]
         prefix_tokens = 1 + self.register_tokens
         expected_tokens = prefix_tokens + self.patch_tokens
@@ -173,8 +230,15 @@ class _RudolfV2ExtractionConfig:
                 f"{self.patch_tokens} patches); "
                 f"got shape {tuple(tokens.shape)}."
             )
-        patch_tokens = tokens[:, prefix_tokens:]
-        return torch.cat([tokens[:, 0], patch_tokens.mean(1)], dim=-1)
+        if pooling == "canonical":
+            patch_tokens = tokens[:, prefix_tokens:]
+            return torch.cat([tokens[:, 0], patch_tokens.mean(1)], dim=-1)
+        if pooling == "cls-only":
+            return tokens[:, 0]
+        raise ValueError(
+            f"unknown RudolfV 2 pooling contract {pooling!r}; "
+            f"expected one of {list(_RUDOLFV2_POOLING_CONTRACTS)}"
+        )
 
 
 _BACKEND_EXTRACTION_CONFIGS = {
@@ -286,13 +350,30 @@ def _resolve_image_paths(manifest_path: Path, image_path_map: Path | None) -> li
     return resolved
 
 
-def _model_extraction_details(spec: ModelSpec) -> dict:
+def _model_extraction_details(spec: ModelSpec, pooling: str = "canonical") -> dict:
     config = _BACKEND_EXTRACTION_CONFIGS.get(spec.backend)
-    return config.details() if config is not None else {}
+    if config is None:
+        if pooling != "canonical":
+            raise ValueError(
+                f"explicit pooling is unsupported for backend {spec.backend!r}"
+            )
+        return {}
+    if spec.backend in {"waiv", "rudolfv2"}:
+        return config.details(pooling)
+    if pooling != "canonical":
+        raise ValueError(
+            f"explicit pooling is unsupported for backend {spec.backend!r}"
+        )
+    return config.details()
 
 
 def build_embedding_artifact_contract(
-    *, manifest_path: Path, spec: ModelSpec, batch_size: int, device_arg: str
+    *,
+    manifest_path: Path,
+    spec: ModelSpec,
+    batch_size: int,
+    device_arg: str,
+    pooling: str = "canonical",
 ) -> EmbeddingArtifactContract:
     """Build the exact artifact contract expected for one extraction invocation."""
 
@@ -305,7 +386,11 @@ def build_embedding_artifact_contract(
         raise ValueError(
             f"checkpoint revision must be an immutable 40-character commit SHA, got {revision!r}"
         )
-    device = _device_from_arg(device_arg)
+    uses_cuda = (
+        bool(torch is not None and torch.cuda.is_available())
+        if device_arg == "auto"
+        else str(device_arg).startswith("cuda")
+    )
     return EmbeddingArtifactContract(
         checkpoint_revision=revision,
         extraction_contract={
@@ -314,11 +399,11 @@ def build_embedding_artifact_contract(
             "model_id": str(spec.model_id),
             "extract": str(spec.extract),
             "timm_kwargs": dict(spec.timm_kwargs),
-            **_model_extraction_details(spec),
+            **_model_extraction_details(spec, pooling),
         },
         precision=(
             "mixed-float16"
-            if spec.mixed_precision and str(device).startswith("cuda")
+            if spec.mixed_precision and uses_cuda
             else "float32"
         ),
         manifest_fingerprint=manifest_fp,
@@ -326,12 +411,24 @@ def build_embedding_artifact_contract(
         output_dtype="float32",
         output_shape=(
             int(len(manifest)),
-            int(spec.embedding_dim) if spec.embedding_dim is not None else None,
+            (
+                int(spec.embedding_dim) * 2
+                if spec.backend == "waiv"
+                and pooling == "cls-mean-patch"
+                and spec.embedding_dim is not None
+                else int(spec.embedding_dim) // 2
+                if spec.backend == "rudolfv2"
+                and pooling == "cls-only"
+                and spec.embedding_dim is not None
+                else int(spec.embedding_dim) if spec.embedding_dim is not None else None
+            ),
         ),
     )
 
 
 def _device_from_arg(device_arg: str):
+    if torch is None:
+        raise RuntimeError("PyTorch is required for embedding extraction")
     if device_arg == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(device_arg)
@@ -350,7 +447,7 @@ class TileDataset:
         return self.transform(img)
 
 
-def _load_model_and_transform(spec: ModelSpec, device):
+def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canonical"):
     if spec.backend == "timm":
         timm_kwargs = dict(spec.timm_kwargs)
         model_id = spec.model_id
@@ -391,7 +488,7 @@ def _load_model_and_transform(spec: ModelSpec, device):
         transform = config.build_transform(v2, model)
 
         def embed_fn(batch):
-            return config.embed(model, batch)
+            return config.embed(model, batch, pooling)
 
         return model, transform, embed_fn
 
@@ -440,7 +537,7 @@ def _load_model_and_transform(spec: ModelSpec, device):
         transform = config.build_transform(v2)
 
         def embed_fn(batch):
-            return config.embed(model, batch)
+            return config.embed(model, batch, pooling)
 
         return model, transform, embed_fn
 
@@ -651,6 +748,7 @@ def embed_manifest(
     progress_enabled: bool | None = None,
     tile_progress_leave: bool = True,
     image_paths: list[str] | None = None,
+    pooling: str = "canonical",
 ) -> tuple[Path, tuple[int, int]]:
     manifest = _load_manifest(manifest_path)
     if artifact_contract is None:
@@ -659,6 +757,7 @@ def embed_manifest(
             spec=spec,
             batch_size=batch_size,
             device_arg=device_arg,
+            pooling=pooling,
         )
     device = _device_from_arg(device_arg)
     progress_on = bool(progress_enabled) if progress_enabled is not None else True
@@ -678,7 +777,9 @@ def embed_manifest(
     )
     progress_write(f"[embed] device: {device}", enabled=progress_on)
 
-    _model, transform, embed_fn = _load_model_and_transform(spec, device)
+    _model, transform, embed_fn = _load_model_and_transform(
+        spec, device, pooling=pooling
+    )
     dataset = TileDataset(resolved_image_paths, transform)
     loader = DataLoader(
         dataset,
