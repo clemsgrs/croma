@@ -491,9 +491,13 @@ def test_benchmark_can_select_different_confounder_k(bench_env) -> None:
     k_sweep_df = pd.read_csv(results_dir / "k_sweep_metrics.csv")
 
     assert int(metrics_df.loc[0, "k"]) == 1
+    assert metrics_df.loc[0, "bio_knn_bacc"] == 0.90
+    assert metrics_df.loc[0, "confounder_knn_bacc"] == 0.60
     assert int(metrics_df.loc[0, "selected_k_confounder"]) == 3
     assert int(k_sweep_df.loc[0, "selected_k"]) == 1
     assert int(k_sweep_df.loc[0, "selected_k_confounder"]) == 3
+    assert k_sweep_df.loc[k_sweep_df["k"] == 1, "knn_confounder_bacc"].item() == 0.60
+    assert k_sweep_df.loc[k_sweep_df["k"] == 3, "knn_confounder_bacc"].item() == 0.92
 
 
 # --- k-grid: dense (default) vs PathoROB's sparse grid -------------------------------

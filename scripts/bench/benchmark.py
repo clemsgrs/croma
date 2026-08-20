@@ -975,11 +975,17 @@ def main() -> int:
                 # MaRI cache component for tau. In auto mode the numeric tau is not known
                 # until the operating k and neighbours are resolved, but it is fully
                 # determined by the other key components (embedding/manifest fingerprints,
-                # k-config, evaluation design), so a stable "auto" sentinel is a correct
-                # cache key: it can only collide across runs that would produce the same
-                # per-model tau anyway. An explicit override keys on its numeric value.
+                # k-config, evaluation design, and the shared k in median-k mode), so a
+                # stable "auto" sentinel plus those inputs is a correct cache identity. An
+                # explicit override keys on its numeric value and leaves the curve k-free.
                 tau_value = float(args.tau) if args.tau is not None else "auto"
                 use_median_k_value = bool(use_median_k)
+                shared_k_params = (
+                    {"shared_k": int(dataset_median_k)} if use_median_k else {}
+                )
+                auto_tau_shared_k_params = (
+                    shared_k_params if args.tau is None else {}
+                )
 
                 keys = {
                     "knn_bio_curve": build_cache_key(
@@ -1021,6 +1027,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "confounder_column": confounder_column,
+                            **auto_tau_shared_k_params,
                         },
                     ),
                     "ri_summary": build_cache_key(
@@ -1032,6 +1039,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "ri_samples": build_cache_key(
@@ -1043,6 +1051,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "ri_samples_aligned": build_cache_key(
@@ -1054,6 +1063,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "ri_undefined_types": build_cache_key(
@@ -1065,6 +1075,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "mari_summary": build_cache_key(
@@ -1077,6 +1088,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "tau_assessment": build_cache_key(
@@ -1089,6 +1101,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "mari_samples": build_cache_key(
@@ -1101,6 +1114,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "mari_samples_aligned": build_cache_key(
@@ -1113,6 +1127,7 @@ def main() -> int:
                             "tau": tau_value,
                             "confounder_column": confounder_column,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "mari_undefined_types": build_cache_key(
@@ -1124,6 +1139,7 @@ def main() -> int:
                             "k_values": k_values_param,
                             "tau": tau_value,
                             "use_median_k": use_median_k_value,
+                            **shared_k_params,
                         },
                     ),
                     "croma_m_sweep": build_cache_key(
@@ -1423,11 +1439,15 @@ def main() -> int:
                     or ri_samples_aligned is None
                     or ri_undefined_types is None
                 ):
+                    ri_curve_missing = ri_curve is None
+                    ri_compute_k_values = (
+                        k_values if ri_curve_missing else [int(selected_k)]
+                    )
                     if evaluation_design == "paired_2x2":
                         ri_artifacts = RI._compute_artifacts_from_prepared_subsets(
                             prepared_subsets=_ensure_paired_subset_cache(),
                             dataset_name=dataset_name,
-                            k_values=k_values,
+                            k_values=ri_compute_k_values,
                             evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
                             include_selected_result=True,
@@ -1437,12 +1457,13 @@ def main() -> int:
                         ri_artifacts = RI._compute_artifacts_from_prepared_all_rows(
                             prepared_neighbors=_ensure_all_rows_cache(),
                             dataset_name=dataset_name,
-                            k_values=k_values,
+                            k_values=ri_compute_k_values,
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
                         )
-                    ri_curve = dict(ri_artifacts.curve)
+                    if ri_curve_missing:
+                        ri_curve = dict(ri_artifacts.curve)
                     if ri_artifacts.result is None:
                         raise RuntimeError(
                             "RI shared scoring did not return a selected-k result"
@@ -1477,9 +1498,10 @@ def main() -> int:
                     ri_undefined_types = np.asarray(
                         ri.sample_undefined_types, dtype=int
                     )
-                    cache.put_json(
-                        key=keys["ri_curve"], payload=_curve_payload(ri_curve)
-                    )
+                    if ri_curve_missing:
+                        cache.put_json(
+                            key=keys["ri_curve"], payload=_curve_payload(ri_curve)
+                        )
                     cache.put_json(key=keys["ri_summary"], payload=ri_summary)
                     cache.put_npy(key=keys["ri_samples"], values=ri_samples)
                     cache.put_npy(
@@ -1552,11 +1574,15 @@ def main() -> int:
                     or mari_samples_aligned is None
                     or mari_undefined_types is None
                 ):
+                    mari_curve_missing = mari_curve is None
+                    mari_compute_k_values = (
+                        k_values if mari_curve_missing else [int(selected_k)]
+                    )
                     if evaluation_design == "paired_2x2":
                         mari_artifacts = MaRI._compute_artifacts_from_prepared_subsets(
                             prepared_subsets=_ensure_paired_subset_cache(),
                             dataset_name=dataset_name,
-                            k_values=k_values,
+                            k_values=mari_compute_k_values,
                             evaluation_design=evaluation_design,
                             selected_k=int(selected_k),
                             include_selected_result=True,
@@ -1567,13 +1593,14 @@ def main() -> int:
                         mari_artifacts = MaRI._compute_artifacts_from_prepared_all_rows(
                             prepared_neighbors=_ensure_all_rows_cache(),
                             dataset_name=dataset_name,
-                            k_values=k_values,
+                            k_values=mari_compute_k_values,
                             selected_k=int(selected_k),
                             include_selected_result=True,
                             warn_selected_result=True,
                             tau=model_tau,
                         )
-                    mari_curve = dict(mari_artifacts.curve)
+                    if mari_curve_missing:
+                        mari_curve = dict(mari_artifacts.curve)
                     if mari_artifacts.result is None:
                         raise RuntimeError(
                             "MaRI shared scoring did not return a selected-k result"
@@ -1608,9 +1635,10 @@ def main() -> int:
                     mari_undefined_types = np.asarray(
                         mari.sample_undefined_types, dtype=int
                     )
-                    cache.put_json(
-                        key=keys["mari_curve"], payload=_curve_payload(mari_curve)
-                    )
+                    if mari_curve_missing:
+                        cache.put_json(
+                            key=keys["mari_curve"], payload=_curve_payload(mari_curve)
+                        )
                     cache.put_json(key=keys["mari_summary"], payload=mari_summary)
                     cache.put_npy(key=keys["mari_samples"], values=mari_samples)
                     cache.put_npy(
@@ -1792,7 +1820,7 @@ def main() -> int:
                     "croma_search": croma_search_sig,
                     "bio_knn_bacc": float(knn_bacc_by_k[int(selected_k)]),
                     "confounder_knn_bacc": float(
-                        knn_confounder_bacc_by_k[int(selected_k_confounder)]
+                        knn_confounder_bacc_by_k[int(selected_k)]
                     ),
                     "selected_k_confounder": int(selected_k_confounder),
                     "ri": float(ri_summary["value"]),
