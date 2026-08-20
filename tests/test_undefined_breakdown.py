@@ -60,6 +60,77 @@ def _all_rows_undefined_features() -> np.ndarray:
     )
 
 
+def _partial_support_manifest() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "sample_id": ["a-v1", "a-v2", "b-v1", "b-v2"],
+            "image_path": [f"/tmp/{i}.png" for i in range(4)],
+            "label": ["A", "A", "B", "B"],
+            "scanner_vendor": ["V1", "V2", "V1", "V2"],
+            "group_id": [f"slide-{i}" for i in range(4)],
+            "dataset": ["toy"] * 4,
+        }
+    )
+
+
+def _partial_support_features() -> np.ndarray:
+    # Nearest-neighbour types by row are OO, OS, OS, OO, respectively.
+    angles = np.array([0.0, 0.2, -0.2, 0.05], dtype=float)
+    return np.column_stack((np.cos(angles), np.sin(angles)))
+
+
+@pytest.mark.parametrize("metric", [RI, MaRI])
+def test_sample_support_is_the_defined_sample_fraction(metric) -> None:
+    result = metric.compute(
+        features=_partial_support_features(),
+        manifest=_partial_support_manifest(),
+        confounder_column="scanner_vendor",
+        evaluation_design="all",
+        k_candidates=[1],
+    )
+
+    assert result.occurrence_defined_mask.tolist() == [False, True, True, False]
+    assert result.support == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("metric", [RI, MaRI])
+def test_occurrence_support_is_the_defined_occurrence_fraction(metric) -> None:
+    result = metric.compute(
+        features=_partial_support_features(),
+        manifest=_partial_support_manifest().assign(subset="pair"),
+        confounder_column="scanner_vendor",
+        evaluation_design="paired_2x2",
+        k_candidates=[1],
+    )
+
+    assert result.occurrence_defined_mask.tolist() == [False, True, True, False]
+    assert result.support == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("metric", [RI, MaRI])
+@pytest.mark.parametrize("evaluation_design", ["all", "paired_2x2"])
+def test_undefined_causes_keep_the_all_unit_denominator(metric, evaluation_design: str) -> None:
+    manifest = _partial_support_manifest()
+    if evaluation_design == "paired_2x2":
+        manifest = manifest.assign(subset="pair")
+
+    result = metric.compute(
+        features=_partial_support_features(),
+        manifest=manifest,
+        confounder_column="scanner_vendor",
+        evaluation_design=evaluation_design,
+        k_candidates=[1],
+    )
+
+    cause_fractions = (
+        result.ss_dominated_undefined_frac,
+        result.oo_dominated_undefined_frac,
+        result.mixed_undefined_frac,
+    )
+    assert cause_fractions == pytest.approx((0.0, 0.5, 0.0))
+    assert sum(cause_fractions) == pytest.approx(1.0 - result.support)
+
+
 def test_undefined_samples_are_bucketed_as_ss_oo_or_mixed() -> None:
     labels = np.array([0, 0, 1, 1], dtype=int)
     centers = np.array([0, 0, 1, 0], dtype=int)

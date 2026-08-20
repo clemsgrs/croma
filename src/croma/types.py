@@ -5,6 +5,13 @@ import numpy as np
 
 @dataclass(frozen=True)
 class RobustnessResult:
+    """One RI or MaRI evaluation and the units supporting its pooled score.
+
+    ``support`` is the canonical aggregate: the fraction of sample or occurrence units
+    with defined RI/MaRI values. The cause-specific undefined fractions retain all
+    evaluation units as their denominator.
+    """
+
     dataset: str
     k: int
     value: float
@@ -17,6 +24,8 @@ class RobustnessResult:
     sample_undefined_types: np.ndarray
     occurrence_subsets: np.ndarray
     occurrence_source_indices: np.ndarray
+    # Deprecated compatibility field for the staged support migration. New callers use
+    # ``support``; this complement remains temporarily for consumers of the old contract.
     undefined_frac: float = 0.0
     ss_dominated_undefined_frac: float = 0.0
     oo_dominated_undefined_frac: float = 0.0
@@ -30,6 +39,9 @@ class RobustnessResult:
     # The temperature MaRI actually scored with, whether the caller pinned it or it was
     # resolved automatically. ``nan`` on RI, which carries no temperature.
     tau: float = float("nan")
+    # Appended with a compatibility default so existing result constructors keep their
+    # positional layout during the expansion step.
+    support: float = 1.0
 
 
 @dataclass(frozen=True)

@@ -726,6 +726,7 @@ class BaseRobustnessIndex(ABC):
             sample_undefined_types=undefined_types,
             occurrence_subsets=occurrence_subsets,
             occurrence_source_indices=occurrence_source_indices,
+            support=float(np.mean(occurrence_defined_mask)),
             undefined_frac=undefined_frac,
             ss_dominated_undefined_frac=ss_dominated_undefined_frac,
             oo_dominated_undefined_frac=oo_dominated_undefined_frac,
