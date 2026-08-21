@@ -592,12 +592,13 @@ def test_hf_auto_loader_forwards_only_explicit_checkpoint_revision(
     ]
 
 
-def test_waiv_explicit_cls_mean_patch_pooling_uses_raw_final_layer_tokens(
-    monkeypatch: pytest.MonkeyPatch, extraction_module
+@pytest.mark.parametrize(("name", "patch_count"), [("Mascaret", 256), ("Phaet", 196)])
+def test_waiv_explicit_cls_mean_patch_pooling_uses_exact_raw_final_layer_tokens(
+    monkeypatch: pytest.MonkeyPatch, extraction_module, name: str, patch_count: int
 ) -> None:
     ee = extraction_module
     cls = np.array([[[-1.0, -2.0]]], dtype=np.float32)
-    patches = np.full((1, 256, 2), (3.0, 5.0), dtype=np.float32)
+    patches = np.full((1, patch_count, 2), (3.0, 5.0), dtype=np.float32)
     tokens = np.concatenate((cls, patches), axis=1)
     calls: list[object] = []
 
@@ -621,7 +622,7 @@ def test_waiv_explicit_cls_mean_patch_pooling_uses_raw_final_layer_tokens(
         lambda tensors, dim: np.concatenate(tensors, axis=dim),
         raising=False,
     )
-    spec = mr._build_model_registry()["Mascaret"]
+    spec = mr._build_model_registry()[name]
     _model, _transform, embed = ee._load_model_and_transform(
         spec, ee.torch.device("cpu"), pooling="cls-mean-patch"
     )
@@ -636,9 +637,21 @@ def test_waiv_explicit_cls_mean_patch_pooling_uses_raw_final_layer_tokens(
     )
 
 
-@pytest.mark.parametrize("token_count", [256, 258])
+@pytest.mark.parametrize(
+    ("name", "expected_patches", "token_count"),
+    [
+        ("Mascaret", 256, 256),
+        ("Mascaret", 256, 258),
+        ("Phaet", 196, 196),
+        ("Phaet", 196, 198),
+    ],
+)
 def test_waiv_explicit_pooling_rejects_unexpected_token_layout(
-    monkeypatch: pytest.MonkeyPatch, extraction_module, token_count: int
+    monkeypatch: pytest.MonkeyPatch,
+    extraction_module,
+    name: str,
+    expected_patches: int,
+    token_count: int,
 ) -> None:
     ee = extraction_module
 
@@ -658,13 +671,56 @@ def test_waiv_explicit_pooling_rejects_unexpected_token_layout(
 
     monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
     _model, _transform, embed = ee._load_model_and_transform(
-        mr._build_model_registry()["Mascaret"],
+        mr._build_model_registry()[name],
         ee.torch.device("cpu"),
         pooling="cls-mean-patch",
     )
 
-    with pytest.raises(RuntimeError, match=r"257 tokens \(CLS \+ 256 patches\)"):
+    with pytest.raises(
+        RuntimeError,
+        match=rf"{expected_patches + 1} tokens \(CLS \+ {expected_patches} patches\)",
+    ):
         embed(object())
+
+
+@pytest.mark.parametrize(
+    ("name", "patch_count", "width"),
+    [("Mascaret", 256, 3072), ("Phaet", 196, 2048)],
+)
+def test_waiv_alternative_artifact_contract_records_exact_layout_and_width(
+    tmp_path: Path,
+    extraction_module,
+    name: str,
+    patch_count: int,
+    width: int,
+) -> None:
+    ee = extraction_module
+    manifest_path = tmp_path / "manifest.csv"
+    pd.DataFrame(
+        {
+            "sample_id": ["tile"],
+            "image_path": ["tile.png"],
+            "label": ["a"],
+            "confounder": ["x"],
+            "group_id": ["group"],
+        }
+    ).to_csv(manifest_path, index=False)
+
+    contract = ee.build_embedding_artifact_contract(
+        manifest_path=manifest_path,
+        spec=mr._build_model_registry()[name],
+        batch_size=1,
+        device_arg="cpu",
+        pooling="cls-mean-patch",
+    )
+
+    assert contract.output_shape == (1, width)
+    assert contract.extraction_contract["pooling"] == {
+        "representation_id": "cls-mean-patch",
+        "method": "concatenate-raw-cls-and-mean-patches",
+        "patch_tokens": patch_count,
+        "output_normalization": "none",
+    }
 
 
 @pytest.mark.parametrize(

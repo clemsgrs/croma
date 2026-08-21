@@ -34,13 +34,14 @@ from croma.metrics.mari import TAU_FALLBACK  # noqa: E402
 from croma.metrics.neighbors import (  # noqa: E402
     _balanced_accuracy_by_k_from_prepared_neighbors,
 )
-from croma.metrics.pairs import normalize_manifest  # noqa: E402
+from croma.metrics.pairs import normalize_manifest, resolve_manifest_subsets  # noqa: E402
 from embedding_artifacts import (  # noqa: E402
     ArtifactCompatibilityError,
     artifact_is_reusable,
     sidecar_path,
 )
 import extract_embeddings as extraction  # noqa: E402
+import benchmarks as benchmark_registry  # noqa: E402
 from model_registry import _build_model_registry  # noqa: E402
 from run_config import resolve_sweep_k_values  # noqa: E402
 import views as benchmark_views  # noqa: E402
@@ -76,6 +77,71 @@ TRACER_ALTERNATIVE = "cls-mean-patch"
 
 
 @dataclass(frozen=True)
+class StudyModelPlan:
+    """One canonical Waiv encoder and its quarantined alternative."""
+
+    alternative: str
+    alternative_width: int
+    batch_size: int
+
+
+@dataclass(frozen=True)
+class StudyBenchmarkPlan:
+    """Publication-frozen operating contract for one PathoROB benchmark."""
+
+    tileset: str
+    evaluation_design: str
+    fixed_k: int
+    biological_k_max: int
+    diagnostic_k_max: int | None
+
+
+WAIV_STUDY_MODELS = {
+    "Mascaret": StudyModelPlan(
+        alternative="cls-mean-patch",
+        alternative_width=3072,
+        batch_size=32,
+    ),
+    "Phaet": StudyModelPlan(
+        alternative="cls-mean-patch",
+        alternative_width=2048,
+        batch_size=64,
+    ),
+}
+
+PATHOROB_STUDY_BENCHMARKS = {
+    "pathorob-camelyon": StudyBenchmarkPlan(
+        tileset="pathorob-camelyon",
+        evaluation_design="all",
+        fixed_k=11,
+        biological_k_max=600,
+        diagnostic_k_max=300,
+    ),
+    "pathorob-tcga-2x2": StudyBenchmarkPlan(
+        tileset="pathorob-tcga-2x2",
+        evaluation_design="paired_2x2",
+        fixed_k=61,
+        biological_k_max=1200,
+        diagnostic_k_max=None,
+    ),
+    "pathorob-tcga-4x4": StudyBenchmarkPlan(
+        tileset="pathorob-tcga-4x4",
+        evaluation_design="all",
+        fixed_k=71,
+        biological_k_max=600,
+        diagnostic_k_max=None,
+    ),
+    "pathorob-tolkach-esca": StudyBenchmarkPlan(
+        tileset="pathorob-tolkach-esca",
+        evaluation_design="all",
+        fixed_k=61,
+        biological_k_max=1000,
+        diagnostic_k_max=None,
+    ),
+}
+
+
+@dataclass(frozen=True)
 class RepresentationEvaluation:
     """One representation evaluated under the pooling-sensitivity protocol."""
 
@@ -85,8 +151,8 @@ class RepresentationEvaluation:
     confounder_knn_bacc: float
     biological_kstar: int
     biological_kstar_bacc: float
-    diagnostic_kstar_300: int
-    diagnostic_kstar_300_bacc: float
+    diagnostic_kstar_300: int | None
+    diagnostic_kstar_300_bacc: float | None
     tau: float
     ri: float
     mari: float
@@ -98,6 +164,19 @@ class RepresentationEvaluation:
     croma_f0: float
     croma_ltm10: float
     croma_result: object
+
+
+@dataclass(frozen=True)
+class StudyRun:
+    """One paired canonical/alternative result ready for panel publication."""
+
+    benchmark: str
+    tileset: str
+    model: str
+    canonical: RepresentationEvaluation
+    alternative: RepresentationEvaluation
+    aligned_manifest: pd.DataFrame
+    provenance_inputs: dict
 
 
 _COMPARISON_MEASURES = (
@@ -124,16 +203,18 @@ def select_biological_kstars(
     scores: dict[int, float],
     *,
     production_k_max: int = 600,
-    diagnostic_k_max: int = 300,
-) -> tuple[tuple[int, float], tuple[int, float]]:
-    """Select production-600 and diagnostic-300 k* with production ties."""
+    diagnostic_k_max: int | None = 300,
+) -> tuple[tuple[int, float], tuple[int, float] | None]:
+    """Select production and optional diagnostic k* with smallest-k ties."""
 
     production_grid = resolve_sweep_k_values(production_k_max, "sparse")
-    diagnostic_grid = resolve_sweep_k_values(diagnostic_k_max, "sparse")
     missing = [k for k in production_grid if k not in scores]
     if missing:
         raise ValueError(f"biological k* scores are missing sparse k values: {missing}")
     production_k = _select_k_from_balanced_accuracy(k_values=production_grid, scores=scores)
+    if diagnostic_k_max is None:
+        return (int(production_k), float(scores[production_k])), None
+    diagnostic_grid = resolve_sweep_k_values(diagnostic_k_max, "sparse")
     diagnostic_k = _select_k_from_balanced_accuracy(k_values=diagnostic_grid, scores=scores)
     return (
         (int(production_k), float(scores[production_k])),
@@ -147,13 +228,14 @@ def evaluate_representation(
     features: np.ndarray,
     manifest: pd.DataFrame,
     confounder_column: str,
+    evaluation_design: str = "all",
     fixed_k: int = 11,
     production_k_max: int = 600,
-    diagnostic_k_max: int = 300,
+    diagnostic_k_max: int | None = 300,
     headline_m: int = CROMA_HEADLINE_M,
     croma_start_k: int = 200,
 ) -> RepresentationEvaluation:
-    """Evaluate one all-rows representation with one shared production neighbour cache."""
+    """Evaluate one representation with one design-specific neighbour cache."""
 
     features = np.asarray(features)
     if features.ndim != 2 or features.shape[0] != len(manifest):
@@ -166,52 +248,107 @@ def evaluate_representation(
         source=f"{representation} evaluation manifest",
     )
     production_grid = resolve_sweep_k_values(production_k_max, "sparse")
-    diagnostic_grid = resolve_sweep_k_values(diagnostic_k_max, "sparse")
     k_values = sorted({int(fixed_k), *production_grid})
-    prepared = RI._prepare_all_rows_neighbor_cache(
-        features=features,
-        df=normalized_manifest,
-        k_values=k_values,
-    )
-    biological_scores = _balanced_accuracy_by_k_from_prepared_neighbors(
-        labels=prepared.labels,
-        neigh_idx=prepared.neigh_idx,
-        valid_counts=prepared.valid_counts,
-        k_values=production_grid,
-    )
-    (production_k, production_bacc), (diagnostic_k, diagnostic_bacc) = select_biological_kstars(
+    if evaluation_design == "paired_2x2":
+        normalized_features = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-12)
+        prepared = RI._prepare_paired_subset_neighbor_cache(
+            features=normalized_features,
+            subsets=resolve_manifest_subsets(normalized_manifest),
+            k_values=k_values,
+        )
+        biological_scores = RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
+            prepared_subsets=prepared,
+            target="label",
+            k_values=production_grid,
+            warn_context=f"{representation} biological k*",
+        )
+        fixed_biological = RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
+            prepared_subsets=prepared,
+            target="label",
+            k_values=[int(fixed_k)],
+            warn_context=f"{representation} fixed-k biological probe",
+        )[int(fixed_k)]
+        fixed_confounder = RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
+            prepared_subsets=prepared,
+            target="confounder",
+            k_values=[int(fixed_k)],
+            warn_context=f"{representation} fixed-k confounder probe",
+        )[int(fixed_k)]
+    elif evaluation_design == "all":
+        prepared = RI._prepare_all_rows_neighbor_cache(
+            features=features,
+            df=normalized_manifest,
+            k_values=k_values,
+        )
+        biological_scores = _balanced_accuracy_by_k_from_prepared_neighbors(
+            labels=prepared.labels,
+            neigh_idx=prepared.neigh_idx,
+            valid_counts=prepared.valid_counts,
+            k_values=production_grid,
+        )
+        fixed_biological = _balanced_accuracy_by_k_from_prepared_neighbors(
+            labels=prepared.labels,
+            neigh_idx=prepared.neigh_idx,
+            valid_counts=prepared.valid_counts,
+            k_values=[int(fixed_k)],
+        )[int(fixed_k)]
+        fixed_confounder = _balanced_accuracy_by_k_from_prepared_neighbors(
+            labels=prepared.centers,
+            neigh_idx=prepared.neigh_idx,
+            valid_counts=prepared.valid_counts,
+            k_values=[int(fixed_k)],
+        )[int(fixed_k)]
+    else:
+        raise ValueError("evaluation_design must be 'all' or 'paired_2x2'")
+
+    production_selection, diagnostic_selection = select_biological_kstars(
         biological_scores,
         production_k_max=production_k_max,
         diagnostic_k_max=diagnostic_k_max,
     )
-    fixed_biological = _balanced_accuracy_by_k_from_prepared_neighbors(
-        labels=prepared.labels,
-        neigh_idx=prepared.neigh_idx,
-        valid_counts=prepared.valid_counts,
-        k_values=[int(fixed_k)],
-    )[int(fixed_k)]
-    fixed_confounder = _balanced_accuracy_by_k_from_prepared_neighbors(
-        labels=prepared.centers,
-        neigh_idx=prepared.neigh_idx,
-        valid_counts=prepared.valid_counts,
-        k_values=[int(fixed_k)],
-    )[int(fixed_k)]
+    production_k, production_bacc = production_selection
+    if diagnostic_selection is None:
+        diagnostic_k = None
+        diagnostic_bacc = None
+    else:
+        diagnostic_k, diagnostic_bacc = diagnostic_selection
 
     dataset_name = RI._infer_dataset_name(normalized_manifest)
-    ri_artifacts = RI._compute_artifacts_from_prepared_all_rows(
-        prepared_neighbors=prepared,
-        dataset_name=dataset_name,
-        k_values=[int(fixed_k)],
-        selected_k=int(fixed_k),
-    )
-    typed_distances = MaRI._typed_neighbor_distances_from_neighbors(
-        labels=prepared.labels,
-        centers=prepared.centers,
-        neigh_idx=prepared.neigh_idx,
-        neigh_dist=prepared.neigh_dist,
-        valid_counts=prepared.valid_counts,
-        k=int(fixed_k),
-    )
+    if evaluation_design == "paired_2x2":
+        ri_artifacts = RI._compute_artifacts_from_prepared_subsets(
+            prepared_subsets=prepared,
+            dataset_name=dataset_name,
+            k_values=[int(fixed_k)],
+            evaluation_design=evaluation_design,
+            selected_k=int(fixed_k),
+        )
+        typed_chunks = [
+            MaRI._typed_neighbor_distances_from_neighbors(
+                labels=subset.labels,
+                centers=subset.centers,
+                neigh_idx=subset.neigh_idx,
+                neigh_dist=subset.neigh_dist,
+                valid_counts=subset.valid_counts,
+                k=int(fixed_k),
+            )
+            for subset in prepared
+        ]
+        typed_distances = np.concatenate(typed_chunks) if typed_chunks else np.empty(0, dtype=float)
+    else:
+        ri_artifacts = RI._compute_artifacts_from_prepared_all_rows(
+            prepared_neighbors=prepared,
+            dataset_name=dataset_name,
+            k_values=[int(fixed_k)],
+            selected_k=int(fixed_k),
+        )
+        typed_distances = MaRI._typed_neighbor_distances_from_neighbors(
+            labels=prepared.labels,
+            centers=prepared.centers,
+            neigh_idx=prepared.neigh_idx,
+            neigh_dist=prepared.neigh_dist,
+            valid_counts=prepared.valid_counts,
+            k=int(fixed_k),
+        )
     recommended_tau = (
         float(np.median(typed_distances)) if int(typed_distances.size) > 0 else float("nan")
     )
@@ -220,13 +357,23 @@ def evaluate_representation(
         if np.isfinite(recommended_tau) and recommended_tau > 0.0
         else float(TAU_FALLBACK)
     )
-    mari_artifacts = MaRI._compute_artifacts_from_prepared_all_rows(
-        prepared_neighbors=prepared,
-        dataset_name=dataset_name,
-        k_values=[int(fixed_k)],
-        selected_k=int(fixed_k),
-        tau=float(tau),
-    )
+    if evaluation_design == "paired_2x2":
+        mari_artifacts = MaRI._compute_artifacts_from_prepared_subsets(
+            prepared_subsets=prepared,
+            dataset_name=dataset_name,
+            k_values=[int(fixed_k)],
+            evaluation_design=evaluation_design,
+            selected_k=int(fixed_k),
+            tau=float(tau),
+        )
+    else:
+        mari_artifacts = MaRI._compute_artifacts_from_prepared_all_rows(
+            prepared_neighbors=prepared,
+            dataset_name=dataset_name,
+            k_values=[int(fixed_k)],
+            selected_k=int(fixed_k),
+            tau=float(tau),
+        )
     ri_result = ri_artifacts.result
     mari_result = mari_artifacts.result
     if ri_result is None or mari_result is None:
@@ -249,7 +396,7 @@ def evaluate_representation(
         features=features,
         manifest=normalized_manifest,
         confounder_column="confounder",
-        evaluation_design="all",
+        evaluation_design=evaluation_design,
         m=int(headline_m),
         alpha=0.10,
         start_k=int(croma_start_k),
@@ -261,8 +408,8 @@ def evaluate_representation(
         confounder_knn_bacc=float(fixed_confounder),
         biological_kstar=int(production_k),
         biological_kstar_bacc=float(production_bacc),
-        diagnostic_kstar_300=int(diagnostic_k),
-        diagnostic_kstar_300_bacc=float(diagnostic_bacc),
+        diagnostic_kstar_300=(None if diagnostic_k is None else int(diagnostic_k)),
+        diagnostic_kstar_300_bacc=(None if diagnostic_bacc is None else float(diagnostic_bacc)),
         tau=float(tau),
         ri=float(ri_result.value),
         mari=float(mari_result.value),
@@ -463,6 +610,9 @@ def build_comparison_frames(
     for measure in _COMPARISON_MEASURES:
         canonical_value = getattr(canonical, measure)
         alternative_value = getattr(alternative, measure)
+        if canonical_value is None or alternative_value is None:
+            canonical_value = float("nan")
+            alternative_value = float("nan")
         delta = float(alternative_value) - float(canonical_value)
         comparison[f"canonical_{measure}"] = canonical_value
         comparison[f"alternative_{measure}"] = alternative_value
@@ -479,7 +629,8 @@ def build_comparison_frames(
             "fixed_k": int(evaluation.fixed_k),
         }
         for measure in _COMPARISON_MEASURES:
-            row[measure] = getattr(evaluation, measure)
+            value = getattr(evaluation, measure)
+            row[measure] = float("nan") if value is None else value
         ranking_rows.append(row)
     rankings = (
         pd.DataFrame(ranking_rows)
@@ -510,12 +661,22 @@ def _render_report(
     alternative: RepresentationEvaluation,
     comparison: pd.Series,
 ) -> bytes:
+    benchmark_plan = PATHOROB_STUDY_BENCHMARKS.get(benchmark)
+    production_k_max = benchmark_plan.biological_k_max if benchmark_plan is not None else 600
+    diagnostic_k_max = benchmark_plan.diagnostic_k_max if benchmark_plan is not None else 300
+    diagnostic_sentence = (
+        f" The truncated-at-{diagnostic_k_max} diagnostic never changes the fixed-k " "comparison."
+        if diagnostic_k_max is not None
+        else ""
+    )
     lines = [
         "# Pooling sensitivity tracer",
         "",
         f"Benchmark: `{benchmark}`. Model: `{model}`. All paired comparisons use fixed k={canonical.fixed_k}.",
         "",
-        "MaRI uses a separate automatically resolved tau for each representation at the fixed comparison k. Biological k* is reported separately from the production sparse sweep to k_max=600; the truncated-at-300 diagnostic never changes the fixed-k comparison.",
+        "MaRI uses a separate automatically resolved tau for each representation at the "
+        f"fixed comparison k. Biological k* is reported separately from the production "
+        f"sparse sweep to k_max={production_k_max}." + diagnostic_sentence,
         "",
         "| measure | canonical | alternative | signed delta | absolute delta |",
         "|---|---:|---:|---:|---:|",
@@ -581,6 +742,7 @@ def render_study_bundle(
         occurrence_arrays["canonical_croma"],
         occurrence_arrays["alternative_croma"],
         occurrence_arrays["group_id"],
+        subset_ids=occurrence_arrays["subset"],
         n_boot=int(n_boot),
         level=0.95,
         seed=0,
@@ -594,6 +756,11 @@ def render_study_bundle(
     comparisons["croma_delta_ci_lo"] = float(ci.lo)
     comparisons["croma_delta_ci_hi"] = float(ci.hi)
     comparisons["croma_delta_supported"] = bool(ci.lo > 0.0 or ci.hi < 0.0)
+    canonical_pooled = float(np.median(occurrence_arrays["canonical_croma"]))
+    alternative_pooled = float(np.median(occurrence_arrays["alternative_croma"]))
+    comparisons["canonical_pooled_occurrence_croma"] = canonical_pooled
+    comparisons["alternative_pooled_occurrence_croma"] = alternative_pooled
+    comparisons["delta_pooled_occurrence_croma"] = alternative_pooled - canonical_pooled
     comparisons["median_paired_occurrence_croma_delta"] = float(
         np.median(occurrence_arrays["alternative_croma"] - occurrence_arrays["canonical_croma"])
     )
@@ -612,6 +779,9 @@ def render_study_bundle(
             comparison=comparisons.iloc[0],
         ),
     }
+    benchmark_plan = PATHOROB_STUDY_BENCHMARKS.get(benchmark)
+    production_k_max = benchmark_plan.biological_k_max if benchmark_plan is not None else 600
+    diagnostic_k_max = benchmark_plan.diagnostic_k_max if benchmark_plan is not None else 300
     provenance = {
         "schema_version": 1,
         "study": "pooling-sensitivity",
@@ -623,8 +793,8 @@ def render_study_bundle(
         "fixed_k": int(canonical.fixed_k),
         "biological_kstar": {
             "grid": "pathorob-sparse",
-            "production_k_max": 600,
-            "diagnostic_k_max": 300,
+            "production_k_max": int(production_k_max),
+            "diagnostic_k_max": (None if diagnostic_k_max is None else int(diagnostic_k_max)),
             "tie_break": "smallest-k",
         },
         "mari_tau": "per-representation-auto-at-fixed-k",
@@ -649,10 +819,82 @@ def render_study_bundle(
     return files
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run the isolated Mascaret/Camelyon pooling-sensitivity tracer."
+def render_panel_bundle(
+    *,
+    runs: list[StudyRun],
+    replay_commands: list[str],
+    n_boot: int = 2000,
+) -> dict[Path, bytes]:
+    """Render a deterministic aggregate without depending on caller run order."""
+
+    if not runs:
+        raise ValueError("pooling-sensitivity panel requires at least one run")
+    ordered = sorted(runs, key=lambda run: (run.benchmark, run.model))
+    identities = [(run.benchmark, run.model) for run in ordered]
+    if len(set(identities)) != len(identities):
+        raise ValueError("pooling-sensitivity panel contains a duplicate benchmark/model run")
+
+    comparison_frames: list[pd.DataFrame] = []
+    ranking_frames: list[pd.DataFrame] = []
+    per_occurrence: dict[Path, bytes] = {}
+    run_provenance: list[dict] = []
+    report_sections: list[str] = ["# Pooling sensitivity panel", ""]
+    for run in ordered:
+        bundle = render_study_bundle(
+            benchmark=run.benchmark,
+            tileset=run.tileset,
+            model=run.model,
+            canonical=run.canonical,
+            alternative=run.alternative,
+            aligned_manifest=run.aligned_manifest,
+            provenance_inputs=run.provenance_inputs,
+            replay_commands=replay_commands,
+            n_boot=int(n_boot),
+        )
+        comparison_frames.append(pd.read_csv(io.BytesIO(bundle[Path("results/comparisons.csv")])))
+        ranking_frames.append(pd.read_csv(io.BytesIO(bundle[Path("results/rankings.csv")])))
+        occurrence_path = Path("per-occurrence") / run.benchmark / f"{run.model}.npz"
+        per_occurrence[occurrence_path] = bundle[occurrence_path]
+        per_run_provenance = json.loads(bundle[Path("run-provenance.json")])
+        run_provenance.append(per_run_provenance)
+        report = bundle[Path("report.md")].decode("utf-8").strip()
+        report_sections.extend([f"## {run.benchmark} — {run.model}", "", report, ""])
+
+    files: dict[Path, bytes] = {
+        Path("results/comparisons.csv"): _csv_bytes(
+            pd.concat(comparison_frames, ignore_index=True)
+        ),
+        Path("results/rankings.csv"): _csv_bytes(pd.concat(ranking_frames, ignore_index=True)),
+        Path("report.md"): ("\n".join(report_sections).rstrip() + "\n").encode("utf-8"),
+        **per_occurrence,
+    }
+    provenance = {
+        "schema_version": 2,
+        "study": "pooling-sensitivity",
+        "croma_version": str(croma_version),
+        "bootstrap": {
+            "grouping": "shared-group_id",
+            "level": 0.95,
+            "method": "numpy-linear-percentile",
+            "n_boot": int(n_boot),
+            "seed": 0,
+            "contrast": "alternative-minus-canonical-headline-croma",
+        },
+        "runs": run_provenance,
+        "replay_commands": list(replay_commands),
+        "output_artifacts": {
+            path.as_posix(): {"sha256": _sha256_bytes(payload), "size": len(payload)}
+            for path, payload in sorted(files.items(), key=lambda item: item[0].as_posix())
+        },
+    }
+    files[Path("run-provenance.json")] = (
+        json.dumps(provenance, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     )
+    return files
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the isolated Waiv pooling-sensitivity panel.")
     parser.add_argument(
         "--canonical-root",
         type=Path,
@@ -668,11 +910,30 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--eval-manifest",
         type=Path,
-        default=REPO / "data" / "pathorob" / "manifests" / "pathorob-camelyon-ri.csv",
+        default=None,
+        help="Legacy single-benchmark manifest override.",
+    )
+    parser.add_argument(
+        "--eval-manifest-root",
+        type=Path,
+        default=REPO / "data" / "pathorob" / "manifests",
+        help="Directory containing the four PathoROB RI-view manifests.",
     )
     parser.add_argument("--device", default="auto")
-    parser.add_argument("--batch-size", type=int, default=32)
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=None,
+        help="Legacy Mascaret tracer batch override; panel defaults are model-specific.",
+    )
     parser.add_argument("--num-workers", type=int, default=4)
+    parser.add_argument("--models", nargs="+", choices=tuple(WAIV_STUDY_MODELS))
+    parser.add_argument("--benchmarks", nargs="+", choices=tuple(PATHOROB_STUDY_BENCHMARKS))
+    parser.add_argument(
+        "--extract-only",
+        action="store_true",
+        help="Extract/validate the selected alternative inventory and stop.",
+    )
     parser.add_argument(
         "--baseline-only",
         action="store_true",
@@ -701,15 +962,75 @@ def main(argv: list[str] | None = None) -> int:
     )
     if args.baseline_only:
         return 0
-    run_mascaret_camelyon(
+    if args.eval_manifest is not None and args.models is None and args.benchmarks is None:
+        if args.extract_only:
+            raise ValueError("--extract-only cannot be combined with the legacy tracer CLI")
+        run_mascaret_camelyon(
+            canonical_root=args.canonical_root,
+            study_root=args.study_root,
+            eval_manifest_path=args.eval_manifest,
+            device_arg=str(args.device),
+            batch_size=(
+                WAIV_STUDY_MODELS[TRACER_MODEL].batch_size
+                if args.batch_size is None
+                else int(args.batch_size)
+            ),
+            num_workers=int(args.num_workers),
+            check=bool(args.check),
+            force=bool(args.force),
+        )
+        return 0
+    models = tuple(args.models or WAIV_STUDY_MODELS)
+    benchmarks = tuple(args.benchmarks or PATHOROB_STUDY_BENCHMARKS)
+    if args.batch_size is not None and models != (TRACER_MODEL,):
+        raise ValueError("--batch-size is only valid with --models Mascaret")
+    if args.eval_manifest is not None and benchmarks != (TRACER_BENCHMARK,):
+        raise ValueError("--eval-manifest is only valid with --benchmarks pathorob-camelyon")
+    inventory = extract_waiv_panel(
         canonical_root=args.canonical_root,
         study_root=args.study_root,
-        eval_manifest_path=args.eval_manifest,
         device_arg=str(args.device),
-        batch_size=int(args.batch_size),
         num_workers=int(args.num_workers),
         check=bool(args.check),
         force=bool(args.force),
+        models=models,
+        benchmarks=benchmarks,
+    )
+    if args.extract_only:
+        verify_preservation_baseline(
+            canonical_root=args.canonical_root,
+            study_root=args.study_root,
+        )
+        return 0
+    runs = evaluate_waiv_panel(
+        canonical_root=args.canonical_root,
+        study_root=args.study_root,
+        eval_manifest_root=args.eval_manifest_root,
+        device_arg=str(args.device),
+        inventory=inventory,
+        eval_manifest_override=args.eval_manifest,
+    )
+    replay = (
+        "python scripts/studies/pooling_sensitivity.py "
+        f"--canonical-root {Path(args.canonical_root).resolve()} "
+        f"--study-root {Path(args.study_root).resolve()} "
+        f"--eval-manifest-root {Path(args.eval_manifest_root).resolve()} "
+        f"--device {args.device} --num-workers {args.num_workers} "
+        f"--models {' '.join(models)} --benchmarks {' '.join(benchmarks)}"
+    )
+    bundle = render_panel_bundle(
+        runs=runs,
+        replay_commands=[replay, replay + " --check"],
+    )
+    publish_study_bundle(
+        args.study_root,
+        bundle,
+        check=bool(args.check),
+        force=bool(args.force),
+    )
+    verify_preservation_baseline(
+        canonical_root=args.canonical_root,
+        study_root=args.study_root,
     )
     return 0
 
@@ -823,6 +1144,21 @@ def _require_isolated_target(*, target: Path, study_root: Path, canonical_path: 
         raise RuntimeError("alternative sidecar hard-links the canonical sidecar")
 
 
+def _validate_study_matrix(
+    path: Path,
+    expected: extraction.EmbeddingArtifactContract,
+) -> None:
+    """Require the complete numerical contract that sidecar matching cannot prove."""
+
+    matrix = np.load(path, mmap_mode="r")
+    if matrix.shape != expected.output_shape:
+        raise RuntimeError(
+            f"alternative matrix must have shape {expected.output_shape}; got {matrix.shape}"
+        )
+    if matrix.dtype != np.float32 or not np.isfinite(matrix).all():
+        raise RuntimeError("alternative matrix must be finite FP32")
+
+
 def extract_study_representation(
     *,
     canonical_root: Path,
@@ -872,12 +1208,14 @@ def extract_study_representation(
         device_arg=device_arg,
         pooling=representation,
     )
-    if not check and not force:
+    if not check:
         try:
             if artifact_is_reusable(target, expected):
+                _validate_study_matrix(target, expected)
                 return target, "reused"
         except ArtifactCompatibilityError:
-            raise
+            if not force:
+                raise
 
     if check:
         with tempfile.TemporaryDirectory(prefix="croma-pooling-check-") as directory:
@@ -893,6 +1231,7 @@ def extract_study_representation(
                 progress_enabled=False,
                 pooling=representation,
             )
+            _validate_study_matrix(temporary, expected)
             if not target.is_file() or not sidecar_path(target).is_file():
                 raise RuntimeError("study extraction check failed: target artifact is missing")
             if (
@@ -913,7 +1252,62 @@ def extract_study_representation(
         progress_enabled=True,
         pooling=representation,
     )
+    _validate_study_matrix(target, expected)
     return target, "forced" if force else "written"
+
+
+def extract_waiv_panel(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    device_arg: str,
+    num_workers: int,
+    check: bool = False,
+    force: bool = False,
+    models: tuple[str, ...] | None = None,
+    benchmarks: tuple[str, ...] | None = None,
+) -> dict[tuple[str, str], tuple[Path, str]]:
+    """Extract or validate the requested Waiv model/benchmark cross-product."""
+
+    selected_models = tuple(WAIV_STUDY_MODELS) if models is None else tuple(models)
+    selected_benchmarks = (
+        tuple(PATHOROB_STUDY_BENCHMARKS) if benchmarks is None else tuple(benchmarks)
+    )
+    unknown_models = [name for name in selected_models if name not in WAIV_STUDY_MODELS]
+    unknown_benchmarks = [
+        name for name in selected_benchmarks if name not in PATHOROB_STUDY_BENCHMARKS
+    ]
+    if unknown_models or unknown_benchmarks:
+        raise ValueError(
+            f"unknown pooling panel selection: models={unknown_models}, "
+            f"benchmarks={unknown_benchmarks}"
+        )
+
+    inventory: dict[tuple[str, str], tuple[Path, str]] = {}
+    for benchmark in selected_benchmarks:
+        benchmark_plan = PATHOROB_STUDY_BENCHMARKS[benchmark]
+        for model in selected_models:
+            model_plan = WAIV_STUDY_MODELS[model]
+            mode = "check" if check else "extract"
+            print(f"[study] {mode} {benchmark} / {model}", flush=True)
+            artifact = extract_study_representation(
+                canonical_root=canonical_root,
+                study_root=study_root,
+                tileset=benchmark_plan.tileset,
+                model=model,
+                representation=model_plan.alternative,
+                batch_size=model_plan.batch_size,
+                num_workers=int(num_workers),
+                device_arg=device_arg,
+                check=bool(check),
+                force=bool(force),
+            )
+            inventory[(benchmark, model)] = artifact
+            print(
+                f"[study] completed {mode} {benchmark} / {model}: {artifact[1]}",
+                flush=True,
+            )
+    return inventory
 
 
 def _file_provenance(path: Path) -> dict[str, str | int]:
@@ -932,10 +1326,11 @@ def _load_validated_canonical_matrix(
     manifest_path: Path,
     batch_size: int,
     device_arg: str,
+    model: str = TRACER_MODEL,
 ) -> np.ndarray:
-    """Open a canonical Mascaret matrix only when its full contract matches."""
+    """Open a canonical matrix only when its complete contract matches."""
 
-    spec = _build_model_registry()[TRACER_MODEL]
+    spec = _build_model_registry()[model]
     expected = extraction.build_embedding_artifact_contract(
         manifest_path=manifest_path,
         spec=spec,
@@ -948,11 +1343,140 @@ def _load_validated_canonical_matrix(
     matrix = np.load(canonical_path, mmap_mode="r")
     if matrix.shape != expected.output_shape:
         raise RuntimeError(
-            f"canonical Mascaret must have shape {expected.output_shape}; got {matrix.shape}"
+            f"canonical {model} must have shape {expected.output_shape}; got {matrix.shape}"
         )
     if matrix.dtype != np.float32 or not np.isfinite(matrix).all():
-        raise RuntimeError("canonical Mascaret must be finite FP32")
+        raise RuntimeError(f"canonical {model} must be finite FP32")
     return matrix
+
+
+def _evaluation_manifest_path(root: Path, benchmark: str) -> Path:
+    relative = Path(benchmark_registry.get(benchmark).manifest)
+    return Path(root).resolve() / relative.name
+
+
+def evaluate_waiv_panel(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    eval_manifest_root: Path,
+    device_arg: str,
+    inventory: dict[tuple[str, str], tuple[Path, str]],
+    eval_manifest_override: Path | None = None,
+) -> list[StudyRun]:
+    """Evaluate an extracted Waiv inventory at its frozen study operating points."""
+
+    canonical_root = Path(canonical_root).resolve()
+    study_root = Path(study_root).resolve()
+    runs: list[StudyRun] = []
+    for benchmark, model in sorted(inventory):
+        try:
+            benchmark_plan = PATHOROB_STUDY_BENCHMARKS[benchmark]
+            model_plan = WAIV_STUDY_MODELS[model]
+        except KeyError:
+            raise ValueError(
+                f"inventory contains an unknown study run: {(benchmark, model)}"
+            ) from None
+        eval_manifest_path = (
+            Path(eval_manifest_override).resolve()
+            if eval_manifest_override is not None
+            else _evaluation_manifest_path(eval_manifest_root, benchmark)
+        )
+        view = benchmark_views.load_view(
+            benchmark,
+            embeddings_root=canonical_root,
+            eval_manifest_path=eval_manifest_path,
+        )
+        if view.spec.design != benchmark_plan.evaluation_design:
+            raise RuntimeError(
+                f"benchmark design drift for {benchmark}: "
+                f"expected {benchmark_plan.evaluation_design}, got {view.spec.design}"
+            )
+        tileset_manifest_path = canonical_root / benchmark_plan.tileset / "manifest.csv"
+        canonical_path = canonical_root / benchmark_plan.tileset / f"{model}.npy"
+        canonical_full = _load_validated_canonical_matrix(
+            canonical_path=canonical_path,
+            manifest_path=tileset_manifest_path,
+            batch_size=model_plan.batch_size,
+            device_arg=device_arg,
+            model=model,
+        )
+        alternative_path = inventory[(benchmark, model)][0]
+        expected_alternative = extraction.build_embedding_artifact_contract(
+            manifest_path=tileset_manifest_path,
+            spec=_build_model_registry()[model],
+            batch_size=model_plan.batch_size,
+            device_arg=device_arg,
+            pooling=model_plan.alternative,
+        )
+        if not artifact_is_reusable(alternative_path, expected_alternative):
+            raise FileNotFoundError(f"alternative embedding is missing: {alternative_path}")
+        alternative_full = np.load(alternative_path, mmap_mode="r")
+        expected_shape = (expected_alternative.output_shape[0], model_plan.alternative_width)
+        if expected_alternative.output_shape != expected_shape:
+            raise RuntimeError(
+                f"{model} extraction width drifted from the study plan: "
+                f"{expected_alternative.output_shape[1]} != {model_plan.alternative_width}"
+            )
+        if alternative_full.shape != expected_shape:
+            raise RuntimeError(
+                f"{model} {model_plan.alternative} must have shape {expected_shape}; "
+                f"got {alternative_full.shape}"
+            )
+        if alternative_full.dtype != np.float32 or not np.isfinite(alternative_full).all():
+            raise RuntimeError(f"{model} {model_plan.alternative} must be finite FP32")
+
+        evaluation_kwargs = {
+            "manifest": view.eval_manifest,
+            "confounder_column": "confounder",
+            "evaluation_design": benchmark_plan.evaluation_design,
+            "fixed_k": benchmark_plan.fixed_k,
+            "production_k_max": benchmark_plan.biological_k_max,
+            "diagnostic_k_max": benchmark_plan.diagnostic_k_max,
+        }
+        print(f"[study] evaluate {benchmark} / {model} / canonical", flush=True)
+        canonical_eval = evaluate_representation(
+            representation="canonical",
+            features=np.asarray(canonical_full[view.rows]),
+            **evaluation_kwargs,
+        )
+        print(f"[study] evaluate {benchmark} / {model} / alternative", flush=True)
+        alternative_eval = evaluate_representation(
+            representation=model_plan.alternative,
+            features=np.asarray(alternative_full[view.rows]),
+            **evaluation_kwargs,
+        )
+        print(f"[study] completed {benchmark} / {model}", flush=True)
+        occurrence_sources = np.asarray(
+            canonical_eval.croma_result.occurrence_source_indices, dtype=np.int64
+        )
+        aligned_manifest = view.eval_manifest.iloc[occurrence_sources].reset_index(drop=True)
+        aligned_manifest["source_sample_index"] = occurrence_sources
+        aligned_manifest["subset"] = np.asarray(
+            canonical_eval.croma_result.occurrence_subsets, dtype=str
+        )
+        runs.append(
+            StudyRun(
+                benchmark=benchmark,
+                tileset=benchmark_plan.tileset,
+                model=model,
+                canonical=canonical_eval,
+                alternative=alternative_eval,
+                aligned_manifest=aligned_manifest,
+                provenance_inputs={
+                    "canonical_matrix": _file_provenance(canonical_path),
+                    "canonical_sidecar": _file_provenance(sidecar_path(canonical_path)),
+                    "alternative_matrix": _file_provenance(alternative_path),
+                    "alternative_sidecar": _file_provenance(sidecar_path(alternative_path)),
+                    "tileset_manifest": _file_provenance(tileset_manifest_path),
+                    "evaluation_manifest": _file_provenance(eval_manifest_path),
+                    "preservation_baseline": _file_provenance(
+                        study_root / PRESERVATION_BASELINE_NAME
+                    ),
+                },
+            )
+        )
+    return runs
 
 
 def run_mascaret_camelyon(

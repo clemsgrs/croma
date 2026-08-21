@@ -65,7 +65,10 @@ _RUDOLFV2_STD = (0.2119, 0.2301, 0.1775)
 
 _WAIV_POOLING_CONTRACTS = ("canonical", "cls-mean-patch", "cls-only")
 _RUDOLFV2_POOLING_CONTRACTS = ("canonical", "cls-only")
-_WAIV_PATCH_TOKENS = 256
+_WAIV_PATCH_TOKENS_BY_MODEL_ID = {
+    "wearewaiv/mascaret": 256,
+    "wearewaiv/phaet": 196,
+}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -73,6 +76,7 @@ class _WaivExtractionConfig:
     input_size: int = 224
     input_dtype: str = "float32"
     scale_uint8: bool = True
+    patch_tokens: int = 256
 
     def details(self, pooling: str = "canonical") -> dict:
         details = {
@@ -95,7 +99,7 @@ class _WaivExtractionConfig:
             details["pooling"] = {
                 "representation_id": pooling,
                 "method": "concatenate-raw-cls-and-mean-patches",
-                "patch_tokens": _WAIV_PATCH_TOKENS,
+                "patch_tokens": self.patch_tokens,
                 "output_normalization": "none",
             }
         elif pooling == "cls-only":
@@ -125,17 +129,16 @@ class _WaivExtractionConfig:
             ]
         )
 
-    @staticmethod
-    def embed(model, batch, pooling: str = "canonical"):
+    def embed(self, model, batch, pooling: str = "canonical"):
         if pooling == "canonical":
             return model.encode(batch)
         output = model(pixel_values=batch)
         tokens = output.last_hidden_state
-        expected_tokens = 1 + _WAIV_PATCH_TOKENS
+        expected_tokens = 1 + self.patch_tokens
         if tokens.ndim != 3 or tokens.shape[1] != expected_tokens:
             raise RuntimeError(
                 "Waiv final-layer forward must return "
-                f"{expected_tokens} tokens (CLS + {_WAIV_PATCH_TOKENS} patches); "
+                f"{expected_tokens} tokens (CLS + {self.patch_tokens} patches); "
                 f"got shape {tuple(tokens.shape)}."
             )
         if pooling == "cls-mean-patch":
@@ -245,6 +248,17 @@ _BACKEND_EXTRACTION_CONFIGS = {
     "waiv": _WaivExtractionConfig(),
     "rudolfv2": _RudolfV2ExtractionConfig(),
 }
+
+
+def _waiv_extraction_config(spec: ModelSpec) -> _WaivExtractionConfig:
+    try:
+        patch_tokens = _WAIV_PATCH_TOKENS_BY_MODEL_ID[spec.model_id]
+    except KeyError:
+        raise ValueError(f"unknown Waiv token layout for model {spec.model_id!r}") from None
+    return dataclasses.replace(
+        _BACKEND_EXTRACTION_CONFIGS["waiv"],
+        patch_tokens=int(patch_tokens),
+    )
 
 
 def _extract_timm_features(out, extract: str):
@@ -358,7 +372,9 @@ def _model_extraction_details(spec: ModelSpec, pooling: str = "canonical") -> di
                 f"explicit pooling is unsupported for backend {spec.backend!r}"
             )
         return {}
-    if spec.backend in {"waiv", "rudolfv2"}:
+    if spec.backend == "waiv":
+        return _waiv_extraction_config(spec).details(pooling)
+    if spec.backend == "rudolfv2":
         return config.details(pooling)
     if pooling != "canonical":
         raise ValueError(
@@ -478,7 +494,7 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
     if spec.backend == "waiv":
         from torchvision.transforms import v2
 
-        config = _BACKEND_EXTRACTION_CONFIGS["waiv"]
+        config = _waiv_extraction_config(spec)
         model = AutoModel.from_pretrained(
             spec.model_id,
             trust_remote_code=True,
