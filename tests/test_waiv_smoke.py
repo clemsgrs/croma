@@ -18,9 +18,17 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 
-@pytest.mark.parametrize(("name", "embedding_dim"), [("Mascaret", 1536), ("Phaet", 1024)])
-def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
-    name: str, embedding_dim: int
+@pytest.mark.parametrize(
+    ("name", "pooling", "embedding_dim", "unit_normalized"),
+    [
+        ("Mascaret", "canonical", 1536, True),
+        ("Mascaret", "cls-mean-patch", 3072, False),
+        ("Phaet", "canonical", 1024, True),
+        ("Phaet", "cls-mean-patch", 2048, False),
+    ],
+)
+def test_real_waiv_weights_return_stable_finite_fp32_embeddings(
+    name: str, pooling: str, embedding_dim: int, unit_normalized: bool
 ) -> None:
     torch = pytest.importorskip("torch")
     pytest.importorskip("torchvision")
@@ -35,7 +43,9 @@ def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
     device = torch.device(os.environ.get("CROMA_WAIV_SMOKE_DEVICE", "cpu"))
     if device.type == "cuda" and not torch.cuda.is_available():
         pytest.skip("requested Waiv CUDA smoke check but CUDA is unavailable")
-    model, transform, embed_fn = ee._load_model_and_transform(_build_model_registry()[name], device)
+    model, transform, embed_fn = ee._load_model_and_transform(
+        _build_model_registry()[name], device, pooling=pooling
+    )
     image = image_module.fromarray(np.zeros((112, 224, 3), dtype=np.uint8))
     batch = transform(image).unsqueeze(0).to(device)
 
@@ -53,9 +63,10 @@ def test_real_waiv_weights_return_stable_unit_fp32_embeddings(
     assert first.dtype == torch.float32
     assert torch.isfinite(first).all()
     torch.testing.assert_close(first, second, rtol=0, atol=0)
-    torch.testing.assert_close(
-        torch.linalg.vector_norm(first, dim=1),
-        torch.ones(1, device=first.device),
-        rtol=1e-5,
-        atol=1e-6,
-    )
+    if unit_normalized:
+        torch.testing.assert_close(
+            torch.linalg.vector_norm(first, dim=1),
+            torch.ones(1, device=first.device),
+            rtol=1e-5,
+            atol=1e-6,
+        )
