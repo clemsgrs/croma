@@ -534,6 +534,68 @@ def publish_study_bundle(
     return "forced" if force else "written"
 
 
+_OCCURRENCE_IDENTITY_FIELDS = (
+    "occurrence_index",
+    "source_sample_index",
+    "subset",
+    "sample_id",
+    "group_id",
+)
+
+
+def build_occurrence_identity(*, result, manifest: pd.DataFrame) -> pd.DataFrame:
+    """Resolve a result's complete occurrence identity from its source manifest."""
+
+    missing = [field for field in ("sample_id", "group_id") if field not in manifest]
+    if missing:
+        raise ValueError(f"occurrence manifest is missing identity columns: {missing}")
+    sources = np.asarray(result.occurrence_source_indices, dtype=np.int64)
+    subsets = np.asarray(result.occurrence_subsets).astype(str)
+    if sources.ndim != 1 or subsets.shape != sources.shape:
+        raise ValueError("occurrence source and subset identities must be aligned 1-D arrays")
+    if np.any(sources < 0) or np.any(sources >= len(manifest)):
+        raise ValueError("occurrence source identity is outside the manifest")
+    source_rows = manifest.iloc[sources]
+    return pd.DataFrame(
+        {
+            "occurrence_index": np.arange(len(sources), dtype=np.int64),
+            "source_sample_index": sources,
+            "subset": subsets,
+            "sample_id": source_rows["sample_id"].astype(str).to_numpy(),
+            "group_id": source_rows["group_id"].astype(str).to_numpy(),
+        }
+    )
+
+
+def validate_occurrence_identity(
+    *, canonical_identity: pd.DataFrame, alternative_identity: pd.DataFrame
+) -> None:
+    """Require exact paired occurrence/source/subset/sample/group identity."""
+
+    for field in _OCCURRENCE_IDENTITY_FIELDS:
+        if field not in canonical_identity or field not in alternative_identity:
+            raise ValueError(f"occurrence identity mismatch: missing {field}")
+        if not np.array_equal(
+            canonical_identity[field].to_numpy(),
+            alternative_identity[field].to_numpy(),
+        ):
+            raise ValueError(f"occurrence identity mismatch: {field}")
+
+
+def align_paired_occurrence_manifest(
+    *, canonical, alternative, manifest: pd.DataFrame
+) -> pd.DataFrame:
+    """Independently derive and validate both representations' occurrence identities."""
+
+    canonical_identity = build_occurrence_identity(result=canonical, manifest=manifest)
+    alternative_identity = build_occurrence_identity(result=alternative, manifest=manifest)
+    validate_occurrence_identity(
+        canonical_identity=canonical_identity,
+        alternative_identity=alternative_identity,
+    )
+    return canonical_identity
+
+
 def build_occurrence_arrays(
     *, canonical, alternative, aligned_manifest: pd.DataFrame
 ) -> dict[str, np.ndarray]:
@@ -550,13 +612,22 @@ def build_occurrence_arrays(
         if "source_sample_index" in aligned_manifest
         else np.arange(len(aligned_manifest), dtype=np.int64)
     )
+    expected_occurrences = (
+        aligned_manifest["occurrence_index"].to_numpy(dtype=np.int64)
+        if "occurrence_index" in aligned_manifest
+        else np.arange(len(aligned_manifest), dtype=np.int64)
+    )
     expected_subsets = (
         aligned_manifest["subset"].astype(str).to_numpy()
         if "subset" in aligned_manifest
         else np.full(len(aligned_manifest), "dataset", dtype="<U7")
     )
     identity_matches = (
-        np.array_equal(canonical_sources, alternative_sources)
+        np.array_equal(
+            expected_occurrences,
+            np.arange(len(aligned_manifest), dtype=np.int64),
+        )
+        and np.array_equal(canonical_sources, alternative_sources)
         and np.array_equal(canonical_sources, expected_sources)
         and np.array_equal(canonical_subsets, alternative_subsets)
         and np.array_equal(canonical_subsets, expected_subsets)
@@ -576,7 +647,7 @@ def build_occurrence_arrays(
     return {
         "canonical_croma": canonical_values,
         "alternative_croma": alternative_values,
-        "occurrence_index": np.arange(expected_length, dtype=np.int64),
+        "occurrence_index": expected_occurrences,
         "source_sample_index": expected_sources,
         "subset": np.asarray(expected_subsets, dtype=str),
         "sample_id": np.asarray(aligned_manifest["sample_id"].astype(str).tolist(), dtype=str),
@@ -1152,11 +1223,11 @@ def _validate_study_matrix(
 
     matrix = np.load(path, mmap_mode="r")
     if matrix.shape != expected.output_shape:
-        raise RuntimeError(
+        raise ArtifactCompatibilityError(
             f"alternative matrix must have shape {expected.output_shape}; got {matrix.shape}"
         )
     if matrix.dtype != np.float32 or not np.isfinite(matrix).all():
-        raise RuntimeError("alternative matrix must be finite FP32")
+        raise ArtifactCompatibilityError("alternative matrix must be finite FP32")
 
 
 def extract_study_representation(
@@ -1447,13 +1518,10 @@ def evaluate_waiv_panel(
             **evaluation_kwargs,
         )
         print(f"[study] completed {benchmark} / {model}", flush=True)
-        occurrence_sources = np.asarray(
-            canonical_eval.croma_result.occurrence_source_indices, dtype=np.int64
-        )
-        aligned_manifest = view.eval_manifest.iloc[occurrence_sources].reset_index(drop=True)
-        aligned_manifest["source_sample_index"] = occurrence_sources
-        aligned_manifest["subset"] = np.asarray(
-            canonical_eval.croma_result.occurrence_subsets, dtype=str
+        aligned_manifest = align_paired_occurrence_manifest(
+            canonical=canonical_eval.croma_result,
+            alternative=alternative_eval.croma_result,
+            manifest=view.eval_manifest,
         )
         runs.append(
             StudyRun(
@@ -1547,9 +1615,11 @@ def run_mascaret_camelyon(
         manifest=eval_manifest,
         confounder_column="confounder",
     )
-    aligned_manifest = eval_manifest.copy().reset_index(drop=True)
-    aligned_manifest["source_sample_index"] = np.arange(len(aligned_manifest), dtype=int)
-    aligned_manifest["subset"] = "dataset"
+    aligned_manifest = align_paired_occurrence_manifest(
+        canonical=canonical_eval.croma_result,
+        alternative=alternative_eval.croma_result,
+        manifest=eval_manifest,
+    )
     provenance_inputs = {
         "canonical_matrix": _file_provenance(canonical_path),
         "canonical_sidecar": _file_provenance(sidecar_path(canonical_path)),

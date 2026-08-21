@@ -209,6 +209,39 @@ def test_occurrence_artifact_rejects_representation_identity_mismatch() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("occurrence_index", 9),
+        ("source_sample_index", 9),
+        ("subset", "other"),
+        ("sample_id", "other-sample"),
+        ("group_id", "other-group"),
+    ],
+)
+def test_paired_occurrence_identity_rejects_each_exact_component(
+    field: str,
+    replacement: int | str,
+) -> None:
+    canonical = pd.DataFrame(
+        {
+            "occurrence_index": [0, 1],
+            "source_sample_index": [4, 7],
+            "subset": ["A", "B"],
+            "sample_id": ["repeat", "repeat"],
+            "group_id": ["slide-a", "slide-b"],
+        }
+    )
+    alternative = canonical.copy()
+    alternative.loc[1, field] = replacement
+
+    with pytest.raises(ValueError, match=field):
+        study.validate_occurrence_identity(
+            canonical_identity=canonical,
+            alternative_identity=alternative,
+        )
+
+
 def _evaluation(representation: str, offset: float):
     return study.RepresentationEvaluation(
         representation=representation,
@@ -823,6 +856,7 @@ def test_alternative_extraction_is_study_owned_and_resumable(
 
 def test_alternative_extraction_rejects_a_compatible_nonfinite_matrix(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     canonical_root = tmp_path / "output" / "embeddings"
     study_root = tmp_path / "output" / "studies" / "pooling-sensitivity"
@@ -869,6 +903,32 @@ def test_alternative_extraction_rejects_a_compatible_nonfinite_matrix(
             num_workers=0,
             device_arg="cpu",
         )
+
+    writes: list[Path] = []
+
+    def fake_embed_manifest(*, output_path, artifact_contract, **kwargs):
+        writes.append(Path(output_path))
+        study.extraction.publish_embedding_artifact(
+            Path(output_path),
+            np.zeros((1, 3072), dtype=np.float32),
+            artifact_contract,
+        )
+        return Path(output_path), (1, 3072)
+
+    monkeypatch.setattr(study.extraction, "embed_manifest", fake_embed_manifest)
+    assert study.extract_study_representation(
+        canonical_root=canonical_root,
+        study_root=study_root,
+        tileset="pathorob-camelyon",
+        model="Mascaret",
+        representation="cls-mean-patch",
+        batch_size=1,
+        num_workers=0,
+        device_arg="cpu",
+        force=True,
+    ) == (target, "forced")
+    assert writes == [target]
+    assert np.isfinite(np.load(target)).all()
 
 
 def test_waiv_panel_extraction_inventory_is_exact_and_uses_model_batch_contracts(
