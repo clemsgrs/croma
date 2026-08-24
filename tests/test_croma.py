@@ -3,6 +3,7 @@ import inspect
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn import config_context
 
 from croma import CRoMa
 import croma.metrics.croma as croma_mod
@@ -474,6 +475,88 @@ class TestCRoMaCompute:
 
         assert len(query_sizes) >= 2
         assert query_sizes[1] < query_sizes[0]
+
+    def test_adaptive_search_batches_queries_without_changing_results(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        n = 600
+        features = np.column_stack(
+            [
+                np.linspace(0.0, 1.0, n, dtype=float),
+                np.linspace(1.0, 0.0, n, dtype=float),
+            ]
+        )
+        query_sizes: list[int] = []
+
+        class _FakeNN:
+            def __init__(self, metric: str) -> None:
+                self.metric = metric
+
+            def fit(self, _x: np.ndarray) -> "_FakeNN":
+                return self
+
+            def kneighbors(self, x: np.ndarray, n_neighbors: int) -> tuple[np.ndarray, np.ndarray]:
+                query_sizes.append(int(x.shape[0]))
+                distances = np.zeros((len(x), n_neighbors), dtype=float)
+                neighbors = np.tile(np.arange(n_neighbors, dtype=int), (len(x), 1))
+                return distances, neighbors
+
+        def _define_only_after_retry(**kwargs) -> np.ndarray:
+            query_indices = kwargs["query_indices"]
+            defined = np.full(len(query_indices), kwargs["neigh_idx"].shape[1] > 1)
+            resolved = query_indices[defined]
+            kwargs["so_dists"][resolved, :] = 0.1
+            kwargs["os_dists"][resolved, :] = 0.2
+            return defined
+
+        monkeypatch.setattr(croma_mod, "NearestNeighbors", _FakeNN)
+        monkeypatch.setattr(
+            croma_mod,
+            "_scan_typed_neighbors_for_query_rows",
+            _define_only_after_retry,
+        )
+
+        with config_context(working_memory=1):
+            so_dists, os_dists, search_meta = croma_mod._iterative_typed_neighbor_search(
+                features=features,
+                labels=np.arange(n) % 2,
+                centers=np.arange(n) % 3,
+                group_ids=np.asarray([f"slide-{i}" for i in range(n)]),
+                m=1,
+                start_k=1,
+                k_growth_factor=2.0,
+            )
+
+        assert query_sizes == [218, 218, 164, 218, 218, 164]
+        np.testing.assert_array_equal(so_dists, np.full((n, 1), 0.1))
+        np.testing.assert_array_equal(os_dists, np.full((n, 1), 0.2))
+        assert search_meta == croma_mod._CRoMaSearchMeta(k_start=1, k_final=4, retries=2)
+
+    def test_working_memory_query_batches_preserve_real_neighbors_exactly(self) -> None:
+        n = 600
+        x = np.linspace(0.01, 1.0, n, dtype=np.float64)
+        features = np.column_stack([x, x**2, x**3 + 0.01, 1.0 - x / 3.0])
+        model = croma_mod.NearestNeighbors(metric="cosine").fit(features)
+
+        with config_context(working_memory=1):
+            full_distances, full_neighbors = model.kneighbors(features, n_neighbors=67)
+            batches = list(
+                croma_mod._working_memory_query_batches(
+                    np.arange(n, dtype=int),
+                    n_samples=n,
+                )
+            )
+            batched = [model.kneighbors(features[batch], n_neighbors=67) for batch in batches]
+
+        assert [len(batch) for batch in batches] == [218, 218, 164]
+        np.testing.assert_array_equal(
+            np.vstack([distances for distances, _neighbors in batched]),
+            full_distances,
+        )
+        np.testing.assert_array_equal(
+            np.vstack([neighbors for _distances, neighbors in batched]),
+            full_neighbors,
+        )
 
     def test_invalid_evaluation_design_rejected(self) -> None:
         features, manifest = _toy_features_so_closer()

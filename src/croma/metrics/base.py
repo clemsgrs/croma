@@ -1,5 +1,6 @@
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, replace
 from typing import NamedTuple
 
@@ -489,14 +490,32 @@ class BaseRobustnessIndex(ABC):
         subsets: list[EvaluationSubset],
         k_values: list[int] | tuple[int, ...],
     ) -> list[_PreparedNeighborSubset]:
+        return list(
+            cls._iter_paired_subset_neighbor_cache(
+                features=features,
+                subsets=subsets,
+                k_values=k_values,
+            )
+        )
+
+    @classmethod
+    def _iter_paired_subset_neighbor_cache(
+        cls,
+        *,
+        features: np.ndarray,
+        subsets: list[EvaluationSubset],
+        k_values: list[int] | tuple[int, ...],
+        assume_normalized: bool = True,
+    ) -> Iterator[_PreparedNeighborSubset]:
+        """Yield one paired cache at a time so callers can bound retained memory."""
+
         candidates = _normalize_k_values(k_values)
         kmax = int(max(candidates))
-        prepared_subsets: list[_PreparedNeighborSubset] = []
         for subset in subsets:
             prepared = cls._prepare_subset_inputs(
                 features=features,
                 subset=subset,
-                assume_normalized=True,
+                assume_normalized=assume_normalized,
             )
             if prepared is None:
                 continue
@@ -505,25 +524,22 @@ class BaseRobustnessIndex(ABC):
                 prepared.group_ids,
                 kmax,
             )
-            prepared_subsets.append(
-                _PreparedNeighborSubset(
-                    subset_id=prepared.subset_id,
-                    source_indices=prepared.source_indices,
-                    labels=prepared.labels,
-                    centers=prepared.centers,
-                    group_ids=prepared.group_ids,
-                    neigh_idx=neigh_idx,
-                    neigh_dist=neigh_dist,
-                    valid_counts=valid_counts,
-                )
+            yield _PreparedNeighborSubset(
+                subset_id=prepared.subset_id,
+                source_indices=prepared.source_indices,
+                labels=prepared.labels,
+                centers=prepared.centers,
+                group_ids=prepared.group_ids,
+                neigh_idx=neigh_idx,
+                neigh_dist=neigh_dist,
+                valid_counts=valid_counts,
             )
-        return prepared_subsets
 
     @classmethod
     def _knn_balanced_accuracy_by_k_from_prepared_subsets(
         cls,
         *,
-        prepared_subsets: list[_PreparedNeighborSubset],
+        prepared_subsets: Iterable[_PreparedNeighborSubset],
         target: str,
         k_values: list[int] | tuple[int, ...],
         warn_context: str,

@@ -1,6 +1,7 @@
 import hashlib
 import io
 import json
+import shlex
 import sys
 import zipfile
 from dataclasses import replace
@@ -10,6 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 import pytest
+from sklearn import config_context, get_config
 
 ROOT = Path(__file__).resolve().parents[1]
 for directory in (ROOT / "scripts" / "studies", ROOT / "scripts" / "bench"):
@@ -65,6 +67,66 @@ def test_waiv_study_plan_freezes_models_benchmarks_and_operating_points() -> Non
     }
 
 
+def test_rudolfv2_study_plan_is_the_frozen_three_by_four_matrix() -> None:
+    model_ids = ("RudolfV 2", "RudolfV 2-B", "RudolfV 2-S")
+    runs = study.build_study_plan(
+        model_ids=model_ids,
+        model_plans=study.RUDOLFV2_STUDY_MODELS,
+    )
+
+    assert len(runs) == 12
+    assert [run.model_id for run in runs] == [model_id for model_id in model_ids for _ in range(4)]
+    assert [
+        (
+            run.benchmark_name,
+            run.benchmark.fixed_k,
+            run.benchmark.biological_k_max,
+            run.benchmark.diagnostic_k_max,
+        )
+        for run in runs[:4]
+    ] == [
+        ("pathorob-camelyon", 11, 600, 300),
+        ("pathorob-tcga-2x2", 61, 1200, None),
+        ("pathorob-tcga-4x4", 71, 600, None),
+        ("pathorob-tolkach-esca", 61, 1000, None),
+    ]
+    assert [
+        (
+            run.model_id,
+            run.identity.published_name,
+            run.identity.variant_role,
+            run.identity.parent_registry_id,
+            run.identity.canonical_width,
+            run.model_plan.alternative_width,
+            run.model_plan.batch_size,
+            run.model_plan.alternative,
+        )
+        for run in runs[::4]
+    ] == [
+        ("RudolfV 2", "RudolfV-2", "teacher", None, 3072, 1536, 32, "cls-only"),
+        (
+            "RudolfV 2-B",
+            "RudolfV-2-B",
+            "distilled-student",
+            "RudolfV 2",
+            1536,
+            768,
+            32,
+            "cls-only",
+        ),
+        (
+            "RudolfV 2-S",
+            "RudolfV-2-S",
+            "distilled-student",
+            "RudolfV 2",
+            768,
+            384,
+            64,
+            "cls-only",
+        ),
+    ]
+
+
 def _write_canonical_panel(root: Path) -> dict[str, tuple[int, int]]:
     before: dict[str, tuple[int, int]] = {}
     for tileset in study.PATHOROB_TILESETS:
@@ -112,6 +174,73 @@ def test_preservation_baseline_records_exactly_the_twenty_study_pairs(
     assert {
         path: (Path(path).stat().st_size, Path(path).stat().st_mtime_ns) for path in before
     } == before
+
+
+def test_preservation_baseline_reads_an_exact_access_mirror_but_keeps_logical_paths(
+    tmp_path: Path,
+) -> None:
+    logical_root = tmp_path / "unavailable-logical-embeddings"
+    access_root = tmp_path / "local-access-embeddings"
+    study_root = tmp_path / "logical-study"
+    before = _write_canonical_panel(access_root)
+    direct_baseline = study.capture_preservation_baseline(
+        canonical_root=access_root,
+        study_root=tmp_path / "direct-study",
+    )
+
+    baseline = study.capture_preservation_baseline(
+        canonical_root=logical_root,
+        canonical_access_root=access_root,
+        study_root=study_root,
+    )
+
+    assert baseline == study_root / study.PRESERVATION_BASELINE_NAME
+    assert baseline.read_bytes() == direct_baseline.read_bytes()
+    payload = json.loads(baseline.read_text(encoding="utf-8"))
+    for item in payload["artifacts"]:
+        access_path = access_root / item["relative_path"]
+        assert item["sha256"] == hashlib.sha256(access_path.read_bytes()).hexdigest()
+        assert item["mtime_ns"] == access_path.stat().st_mtime_ns
+    assert not logical_root.exists()
+    assert study.verify_preservation_baseline(
+        canonical_root=logical_root,
+        canonical_access_root=access_root,
+        study_root=study_root,
+    ) == {"artifacts": 40, "matrices": 20, "sidecars": 20}
+    assert {
+        path: (Path(path).stat().st_size, Path(path).stat().st_mtime_ns) for path in before
+    } == before
+
+
+def test_preservation_baseline_rejects_an_incomplete_access_mirror(tmp_path: Path) -> None:
+    access_root = tmp_path / "local-access-embeddings"
+    _write_canonical_panel(access_root)
+    missing = access_root / "pathorob-camelyon/RudolfV 2-S.npy.json"
+    missing.unlink()
+
+    with pytest.raises(FileNotFoundError, match=str(missing)):
+        study.capture_preservation_baseline(
+            canonical_root=tmp_path / "logical-embeddings",
+            canonical_access_root=access_root,
+            study_root=tmp_path / "study",
+        )
+
+
+def test_file_provenance_hashes_access_bytes_but_reports_the_logical_path(
+    tmp_path: Path,
+) -> None:
+    logical = tmp_path / "logical" / "matrix.npy"
+    access = tmp_path / "access" / "matrix.npy"
+    access.parent.mkdir()
+    access.write_bytes(b"exact-local-mirror")
+
+    assert study._file_provenance(logical, access_path=access) == {
+        "path": str(logical.resolve()),
+        "sha256": hashlib.sha256(b"exact-local-mirror").hexdigest(),
+        "size": len(b"exact-local-mirror"),
+        "mtime_ns": access.stat().st_mtime_ns,
+    }
+    assert not logical.exists()
 
 
 def test_per_occurrence_npz_is_byte_deterministic_with_fixed_zip_metadata() -> None:
@@ -168,6 +297,39 @@ def test_study_bundle_check_compares_bytes_without_touching_targets(
         study.publish_study_bundle(root, {Path("report.md"): b"different\n"}, check=True)
 
     assert (target.read_bytes(), target.stat().st_mtime_ns) == before
+
+
+def test_force_rewrites_only_incompatible_bundle_targets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "study"
+    initial = {
+        Path("per-occurrence/waiv.npz"): b"protected-waiv-bytes",
+        Path("report.md"): b"old report\n",
+    }
+    study.publish_study_bundle(root, initial)
+    protected = root / "per-occurrence/waiv.npz"
+    protected_before = (protected.read_bytes(), protected.stat().st_mtime_ns)
+    writes: list[Path] = []
+    atomic_write = study._atomic_write
+
+    def recording_write(path: Path, payload: bytes) -> None:
+        writes.append(path)
+        atomic_write(path, payload)
+
+    monkeypatch.setattr(study, "_atomic_write", recording_write)
+
+    assert (
+        study.publish_study_bundle(
+            root,
+            {**initial, Path("report.md"): b"new report\n"},
+            force=True,
+        )
+        == "forced"
+    )
+    assert writes == [root / "report.md"]
+    assert (protected.read_bytes(), protected.stat().st_mtime_ns) == protected_before
+    assert (root / "report.md").read_bytes() == b"new report\n"
 
 
 def test_force_cannot_escape_the_study_root(tmp_path: Path) -> None:
@@ -289,6 +451,45 @@ def test_comparison_schema_has_one_shared_support_and_signed_absolute_deltas() -
     assert not any("croma_support" in column for column in row.index)
     assert rankings["representation"].tolist() == ["cls-mean-patch", "canonical"]
     assert rankings["croma_rank"].tolist() == [1, 2]
+
+
+def test_rudolf_machine_outputs_keep_registry_teacher_student_identity() -> None:
+    canonical = _evaluation("canonical", 0.0)
+    alternative = _evaluation("cls-only", 0.1)
+
+    comparisons, rankings = study.build_comparison_frames(
+        benchmark="pathorob-camelyon",
+        tileset="pathorob-camelyon",
+        model="RudolfV 2-B",
+        canonical=canonical,
+        alternative=alternative,
+    )
+
+    expected = {
+        "model": "RudolfV 2-B",
+        "variant_role": "distilled-student",
+        "parent_model": "RudolfV 2",
+    }
+    assert comparisons.loc[0, list(expected)].to_dict() == expected
+    assert rankings[list(expected)].to_dict("records") == [expected, expected]
+    assert "published_name" not in comparisons
+    assert "published_name" not in rankings
+
+    comparison = comparisons.iloc[0].copy()
+    comparison["croma_delta_ci_point"] = 0.1
+    comparison["croma_delta_ci_lo"] = 0.01
+    comparison["croma_delta_ci_hi"] = 0.2
+    comparison["croma_delta_supported"] = True
+    comparison["median_paired_occurrence_croma_delta"] = 0.1
+    report = study._render_report(
+        benchmark="pathorob-camelyon",
+        model="RudolfV 2-B",
+        canonical=canonical,
+        alternative=alternative,
+        comparison=comparison,
+    ).decode()
+    assert "Model: `RudolfV-2-B`" in report
+    assert "distilled student of `RudolfV-2`" in report
 
 
 def test_comparison_schema_leaves_camelyon_diagnostic_blank_for_other_benchmarks() -> None:
@@ -424,7 +625,9 @@ def test_representation_evaluation_uses_fixed_k_auto_tau_and_total_croma() -> No
     )
 
 
-def test_paired_representation_evaluation_uses_occurrences_and_no_camelyon_diagnostic() -> None:
+def test_paired_representation_evaluation_uses_occurrences_and_no_camelyon_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cells = [
         ("A", "V1", 4.0, 1.0),
         ("A", "V2", 4.0, -1.0),
@@ -458,13 +661,28 @@ def test_paired_representation_evaluation_uses_occurrences_and_no_camelyon_diagn
                     }
                 )
 
+    streamed_cache_calls: list[tuple[int, int, bool]] = []
+    original_iterator = study.RI._iter_paired_subset_neighbor_cache
+
+    def record_iterator(**kwargs):
+        streamed_cache_calls.append(
+            (
+                len(kwargs["subsets"]),
+                max(kwargs["k_values"]),
+                kwargs["assume_normalized"],
+            )
+        )
+        yield from original_iterator(**kwargs)
+
+    monkeypatch.setattr(study.RI, "_iter_paired_subset_neighbor_cache", record_iterator)
+
     result = study.evaluate_representation(
         representation="canonical",
         features=np.asarray(rows, dtype=np.float32),
         manifest=pd.DataFrame(manifest_rows),
         confounder_column="scanner_vendor",
         evaluation_design="paired_2x2",
-        fixed_k=11,
+        fixed_k=5,
         production_k_max=20,
         diagnostic_k_max=None,
         headline_m=1,
@@ -475,14 +693,69 @@ def test_paired_representation_evaluation_uses_occurrences_and_no_camelyon_diagn
     assert result.diagnostic_kstar_300 is None
     assert result.diagnostic_kstar_300_bacc is None
     assert result.biological_knn_bacc == 1.0
-    assert result.confounder_knn_bacc == 0.0
-    assert result.ri == 1.0
-    assert result.mari == 1.0
-    assert result.support == 1.0
+    assert result.confounder_knn_bacc == 1.0
+    assert result.ri == 0.5
+    assert result.mari == 0.5
+    assert result.support == 0.0
     assert result.croma == pytest.approx(0.8823441360626401)
     assert result.croma_result.evaluation_design == "paired_2x2"
     assert result.croma_result.evaluation_unit == "occurrence"
     assert result.croma_result.sample_values_aligned.shape == (48,)
+    assert streamed_cache_calls == [(2, 11, False)]
+
+
+def test_streamed_paired_evaluation_retains_only_fixed_k_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    full_cache = study._PreparedNeighborSubset(
+        subset_id="pair-1",
+        source_indices=np.arange(4, dtype=np.int64),
+        labels=np.asarray([0, 0, 1, 1]),
+        centers=np.asarray([0, 1, 0, 1]),
+        group_ids=np.asarray(["g0", "g1", "g2", "g3"]),
+        neigh_idx=np.asarray(
+            [
+                [1, 2, 3],
+                [0, 2, 3],
+                [3, 0, 1],
+                [2, 0, 1],
+            ],
+            dtype=np.int64,
+        ),
+        neigh_dist=np.asarray(
+            [
+                [0.1, 0.2, 0.3],
+                [0.1, 0.2, 0.3],
+                [0.1, 0.2, 0.3],
+                [0.1, 0.2, 0.3],
+            ],
+            dtype=float,
+        ),
+        valid_counts=np.full(4, 3, dtype=np.int64),
+    )
+
+    def fake_iterator(**kwargs):
+        assert kwargs["k_values"] == [1, 3]
+        assert kwargs["assume_normalized"] is False
+        yield full_cache
+
+    monkeypatch.setattr(study.RI, "_iter_paired_subset_neighbor_cache", fake_iterator)
+
+    retained, biological_scores = study._prepare_streamed_paired_evaluation(
+        features=np.zeros((4, 2), dtype=np.float32),
+        subsets=[],
+        production_k_values=[1, 3],
+        fixed_k=1,
+        warn_context="toy biological k*",
+    )
+
+    assert biological_scores == {1: 1.0, 3: 0.0}
+    assert len(retained) == 1
+    assert retained[0].neigh_idx.shape == (4, 1)
+    assert retained[0].neigh_dist.shape == (4, 1)
+    np.testing.assert_array_equal(retained[0].valid_counts, np.ones(4, dtype=np.int64))
+    assert not np.shares_memory(retained[0].neigh_idx, full_cache.neigh_idx)
+    assert not np.shares_memory(retained[0].neigh_dist, full_cache.neigh_dist)
 
 
 def test_benchmark_view_accepts_explicit_embedding_and_manifest_roots(
@@ -793,6 +1066,225 @@ def test_legacy_eval_manifest_cli_keeps_the_issue_150_tracer_contract(
     ]
 
 
+def test_evaluate_only_cli_validates_existing_inventory_without_extraction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical_root = tmp_path / "embeddings"
+    study_root = tmp_path / "study"
+    canonical_access_root = tmp_path / "access-embeddings"
+    study_access_root = tmp_path / "access-study"
+    eval_manifest_root = tmp_path / "logical-eval-manifests"
+    eval_manifest_access_root = tmp_path / "access-eval-manifests"
+    calls: dict[str, object] = {}
+    monkeypatch.setattr(study, "capture_preservation_baseline", lambda **kwargs: None)
+    monkeypatch.setattr(study, "verify_preservation_baseline", lambda **kwargs: None)
+    monkeypatch.setattr(
+        study,
+        "extract_pooling_panel",
+        lambda **kwargs: pytest.fail("evaluate-only must not extract representations"),
+    )
+    monkeypatch.setattr(
+        study,
+        "build_study_inventory",
+        lambda **kwargs: calls.setdefault("validated", kwargs),
+    )
+
+    def fake_evaluate(**kwargs):
+        calls["inventory"] = kwargs["inventory"]
+        calls["evaluate"] = kwargs
+        return ["run"]
+
+    monkeypatch.setattr(study, "evaluate_pooling_panel_isolated", fake_evaluate)
+    monkeypatch.setattr(
+        study,
+        "render_panel_bundle",
+        lambda **kwargs: calls.setdefault("replay", kwargs["replay_commands"])
+        and {Path("report.md"): b"report\n"},
+    )
+    monkeypatch.setattr(
+        study,
+        "publish_study_bundle",
+        lambda *args, **kwargs: calls.setdefault("publish", kwargs) or "checked",
+    )
+
+    assert (
+        study.main(
+            [
+                "--canonical-root",
+                str(canonical_root),
+                "--study-root",
+                str(study_root),
+                "--canonical-access-root",
+                str(canonical_access_root),
+                "--study-access-root",
+                str(study_access_root),
+                "--eval-manifest-root",
+                str(eval_manifest_root),
+                "--eval-manifest-access-root",
+                str(eval_manifest_access_root),
+                "--models",
+                "RudolfV 2-S",
+                "--benchmarks",
+                "pathorob-camelyon",
+                "--evaluate-only",
+                "--check",
+            ]
+        )
+        == 0
+    )
+    target = study_root / "embeddings/pathorob-camelyon/RudolfV 2-S/cls-only.npy"
+    assert calls["inventory"] == {("pathorob-camelyon", "RudolfV 2-S"): (target, "reused")}
+    assert calls["validated"]["canonical_access_root"] == canonical_access_root
+    assert calls["validated"]["study_access_root"] == study_access_root
+    assert calls["evaluate"]["canonical_access_root"] == canonical_access_root
+    assert calls["evaluate"]["study_access_root"] == study_access_root
+    assert calls["evaluate"]["eval_manifest_access_root"] == eval_manifest_access_root
+    assert all("access-" not in command for command in calls["replay"])
+    for command in calls["replay"]:
+        arguments = shlex.split(command)
+        assert arguments[arguments.index("--models") + 1 : arguments.index("--benchmarks")] == [
+            "RudolfV 2-S"
+        ]
+    assert calls["publish"] == {"check": True, "force": False}
+
+
+def test_isolated_cell_worker_bounds_neighbor_working_memory_during_evaluation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed_working_memory: list[int] = []
+    sentinel = object()
+
+    def fake_evaluate(**kwargs):
+        observed_working_memory.append(get_config()["working_memory"])
+        return [sentinel]
+
+    monkeypatch.setattr(study, "evaluate_pooling_panel", fake_evaluate)
+    request = study.StudyCellRequest(
+        benchmark="pathorob-camelyon",
+        model="RudolfV 2-S",
+        inventory_entry=(tmp_path / "cls-only.npy", "reused"),
+        canonical_root=tmp_path / "embeddings",
+        study_root=tmp_path / "study",
+        eval_manifest_root=tmp_path / "manifests",
+        device_arg="cpu",
+        model_plans=study.POOLING_STUDY_MODELS,
+    )
+
+    with config_context(working_memory=777):
+        assert study._evaluate_pooling_cell(request) is sentinel
+        assert get_config()["working_memory"] == 777
+
+    assert observed_working_memory == [128]
+
+
+def test_isolated_panel_sends_one_sorted_cell_to_each_runner(tmp_path: Path) -> None:
+    requests: list[tuple[str, str, tuple[Path, str]]] = []
+    inventory = {
+        ("pathorob-tcga-4x4", "RudolfV 2-S"): (tmp_path / "small.npy", "reused"),
+        ("pathorob-camelyon", "Mascaret"): (tmp_path / "mascaret.npy", "reused"),
+    }
+
+    def fake_cell_runner(request):
+        requests.append((request.benchmark, request.model, request.inventory_entry))
+        return f"{request.benchmark}/{request.model}"
+
+    runs = study.evaluate_pooling_panel_isolated(
+        canonical_root=tmp_path / "canonical",
+        study_root=tmp_path / "study",
+        eval_manifest_root=tmp_path / "manifests",
+        device_arg="cpu",
+        inventory=inventory,
+        model_plans=study.POOLING_STUDY_MODELS,
+        cell_runner=fake_cell_runner,
+    )
+
+    assert requests == [
+        (
+            "pathorob-camelyon",
+            "Mascaret",
+            (tmp_path / "mascaret.npy", "reused"),
+        ),
+        (
+            "pathorob-tcga-4x4",
+            "RudolfV 2-S",
+            (tmp_path / "small.npy", "reused"),
+        ),
+    ]
+    assert runs == [
+        "pathorob-camelyon/Mascaret",
+        "pathorob-tcga-4x4/RudolfV 2-S",
+    ]
+
+
+def test_isolated_panel_default_uses_one_spawned_executor_per_cell(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    spawn_context = object()
+    requested_contexts: list[str] = []
+    executors = []
+
+    class FakeFuture:
+        def __init__(self, value):
+            self.value = value
+
+        def result(self):
+            return self.value
+
+    class FakeExecutor:
+        def __init__(self, *, max_workers, mp_context):
+            self.max_workers = max_workers
+            self.mp_context = mp_context
+            self.submissions = []
+            executors.append(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def submit(self, function, request):
+            self.submissions.append((function, request))
+            return FakeFuture(f"{request.benchmark}/{request.model}")
+
+    def fake_get_context(method: str):
+        requested_contexts.append(method)
+        return spawn_context
+
+    monkeypatch.setattr(study.multiprocessing, "get_context", fake_get_context)
+    monkeypatch.setattr(study, "ProcessPoolExecutor", FakeExecutor)
+    inventory = {
+        ("pathorob-tcga-4x4", "RudolfV 2-S"): (tmp_path / "small.npy", "reused"),
+        ("pathorob-camelyon", "Mascaret"): (tmp_path / "mascaret.npy", "reused"),
+    }
+
+    runs = study.evaluate_pooling_panel_isolated(
+        canonical_root=tmp_path / "canonical",
+        study_root=tmp_path / "study",
+        eval_manifest_root=tmp_path / "manifests",
+        device_arg="cpu",
+        inventory=inventory,
+        model_plans=study.POOLING_STUDY_MODELS,
+    )
+
+    assert requested_contexts == ["spawn", "spawn"]
+    assert len(executors) == 2
+    assert all(executor.max_workers == 1 for executor in executors)
+    assert all(executor.mp_context is spawn_context for executor in executors)
+    assert [
+        (function, request.benchmark, request.model)
+        for executor in executors
+        for function, request in executor.submissions
+    ] == [
+        (study._evaluate_pooling_cell, "pathorob-camelyon", "Mascaret"),
+        (study._evaluate_pooling_cell, "pathorob-tcga-4x4", "RudolfV 2-S"),
+    ]
+    assert runs == [
+        "pathorob-camelyon/Mascaret",
+        "pathorob-tcga-4x4/RudolfV 2-S",
+    ]
+
+
 def test_alternative_extraction_is_study_owned_and_resumable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -852,6 +1344,141 @@ def test_alternative_extraction_is_study_owned_and_resumable(
     assert (canonical.read_bytes(), canonical.stat().st_mtime_ns) == canonical_before
     assert writes[0] == target
     assert writes[1] != target
+
+
+def test_rudolf_cls_only_materializes_the_exact_validated_canonical_prefix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    canonical_root = tmp_path / "embeddings"
+    study_root = tmp_path / "study"
+    directory = canonical_root / "pathorob-camelyon"
+    directory.mkdir(parents=True)
+    manifest_path = directory / "manifest.csv"
+    pd.DataFrame(
+        {
+            "sample_id": ["a", "b"],
+            "image_path": ["a.png", "b.png"],
+            "label": ["normal", "tumor"],
+            "confounder": ["RUMC", "UMCU"],
+            "group_id": ["slide-a", "slide-b"],
+        }
+    ).to_csv(manifest_path, index=False)
+    model = "RudolfV 2-S"
+    spec = study._build_model_registry()[model]
+    canonical_path = directory / f"{model}.npy"
+    canonical = np.arange(2 * 768, dtype=np.float32).reshape(2, 768)
+    canonical_contract = study.extraction.build_embedding_artifact_contract(
+        manifest_path=manifest_path,
+        spec=spec,
+        batch_size=64,
+        device_arg="cpu",
+        pooling="canonical",
+    )
+    study.extraction.publish_embedding_artifact(
+        canonical_path,
+        canonical,
+        canonical_contract,
+    )
+    protected = {
+        path: (path.read_bytes(), path.stat().st_mtime_ns)
+        for path in (canonical_path, study.sidecar_path(canonical_path))
+    }
+    monkeypatch.setattr(
+        study.extraction,
+        "embed_manifest",
+        lambda **kwargs: pytest.fail("Rudolf CLS-only must reuse the validated canonical CLS"),
+    )
+
+    target, status = study.extract_study_representation(
+        canonical_root=canonical_root,
+        study_root=study_root,
+        tileset="pathorob-camelyon",
+        model=model,
+        representation="cls-only",
+        batch_size=64,
+        num_workers=0,
+        device_arg="cpu",
+    )
+
+    assert status == "written"
+    np.testing.assert_array_equal(np.load(target), canonical[:, :384])
+    materialization = json.loads(study.sidecar_path(target).read_text())["extraction_contract"][
+        "materialization"
+    ]
+    assert materialization == {
+        "method": "validated-canonical-cls-prefix",
+        "output_normalization": "none",
+        "slice_start": 0,
+        "slice_stop": 384,
+        "source_matrix_sha256": hashlib.sha256(canonical_path.read_bytes()).hexdigest(),
+        "source_representation": "canonical-cls-plus-mean-patches",
+        "source_sidecar_sha256": hashlib.sha256(
+            study.sidecar_path(canonical_path).read_bytes()
+        ).hexdigest(),
+        "source_width": 768,
+    }
+    target_before = (target.read_bytes(), target.stat().st_mtime_ns)
+    assert study.extract_study_representation(
+        canonical_root=canonical_root,
+        study_root=study_root,
+        tileset="pathorob-camelyon",
+        model=model,
+        representation="cls-only",
+        batch_size=64,
+        num_workers=0,
+        device_arg="cpu",
+        check=True,
+    ) == (target, "checked")
+    assert (target.read_bytes(), target.stat().st_mtime_ns) == target_before
+    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in protected} == protected
+
+
+def test_rudolf_cls_derivation_rejects_a_noncanonical_pooling_layout(
+    tmp_path: Path,
+) -> None:
+    canonical_root = tmp_path / "embeddings"
+    directory = canonical_root / "pathorob-camelyon"
+    directory.mkdir(parents=True)
+    manifest_path = directory / "manifest.csv"
+    pd.DataFrame(
+        {
+            "sample_id": ["a"],
+            "image_path": ["a.png"],
+            "label": ["normal"],
+            "confounder": ["RUMC"],
+            "group_id": ["slide-a"],
+        }
+    ).to_csv(manifest_path, index=False)
+    model = "RudolfV 2-S"
+    spec = study._build_model_registry()[model]
+    canonical_path = directory / f"{model}.npy"
+    wrong_contract = study.extraction.build_embedding_artifact_contract(
+        manifest_path=manifest_path,
+        spec=spec,
+        batch_size=64,
+        device_arg="cpu",
+        pooling="cls-only",
+    )
+    study.extraction.publish_embedding_artifact(
+        canonical_path,
+        np.zeros((1, 384), dtype=np.float32),
+        wrong_contract,
+    )
+
+    with pytest.raises(
+        study.ArtifactCompatibilityError,
+        match="incompatible embedding artifact provenance: extraction_contract, output_shape",
+    ):
+        study.extract_study_representation(
+            canonical_root=canonical_root,
+            study_root=tmp_path / "study",
+            tileset="pathorob-camelyon",
+            model=model,
+            representation="cls-only",
+            batch_size=64,
+            num_workers=0,
+            device_arg="cpu",
+        )
 
 
 def test_alternative_extraction_rejects_a_compatible_nonfinite_matrix(
@@ -973,6 +1600,45 @@ def test_waiv_panel_extraction_inventory_is_exact_and_uses_model_batch_contracts
     )
 
 
+def test_rudolf_panel_extraction_inventory_is_exact_across_all_widths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[dict] = []
+
+    def fake_extract(**kwargs):
+        calls.append(kwargs)
+        return (
+            study.study_embedding_path(
+                study_root=kwargs["study_root"],
+                tileset=kwargs["tileset"],
+                model=kwargs["model"],
+                representation=kwargs["representation"],
+            ),
+            "written",
+        )
+
+    monkeypatch.setattr(study, "extract_study_representation", fake_extract)
+    inventory = study.extract_pooling_panel(
+        canonical_root=tmp_path / "embeddings",
+        study_root=tmp_path / "study",
+        device_arg="cuda",
+        num_workers=4,
+        model_plans=study.RUDOLFV2_STUDY_MODELS,
+    )
+
+    assert len(inventory) == 12
+    assert set(inventory) == {
+        (benchmark, model)
+        for benchmark in study.PATHOROB_STUDY_BENCHMARKS
+        for model in study.RUDOLFV2_STUDY_MODELS
+    }
+    assert {
+        model: {call["batch_size"] for call in calls if call["model"] == model}
+        for model in study.RUDOLFV2_STUDY_MODELS
+    } == {"RudolfV 2": {32}, "RudolfV 2-B": {32}, "RudolfV 2-S": {64}}
+    assert all(call["representation"] == "cls-only" for call in calls)
+
+
 @pytest.mark.parametrize("member", ["matrix", "sidecar"])
 @pytest.mark.parametrize("link_kind", ["symlink", "hardlink"])
 def test_alternative_extraction_refuses_canonical_aliases_without_writes(
@@ -1036,6 +1702,94 @@ def test_study_mapping_assigns_each_model_family_its_only_alternative() -> None:
         "RudolfV 2-B": "cls-only",
         "RudolfV 2-S": "cls-only",
     }
+
+
+def test_rudolf_inventory_validates_all_twelve_pairs_without_writes(tmp_path: Path) -> None:
+    canonical_root = tmp_path / "logical-embeddings"
+    study_root = tmp_path / "logical-study"
+    canonical_access_root = tmp_path / "access-embeddings"
+    study_access_root = tmp_path / "access-study"
+    protected: dict[Path, tuple[bytes, int]] = {}
+    registry = study._build_model_registry()
+    for benchmark in study.PATHOROB_STUDY_BENCHMARKS.values():
+        directory = canonical_access_root / benchmark.tileset
+        directory.mkdir(parents=True)
+        manifest_path = directory / "manifest.csv"
+        pd.DataFrame(
+            {
+                "sample_id": ["a", "b"],
+                "image_path": ["a.png", "b.png"],
+                "label": ["normal", "tumor"],
+                "confounder": ["RUMC", "UMCU"],
+                "group_id": ["slide-a", "slide-b"],
+            }
+        ).to_csv(manifest_path, index=False)
+        for model, plan in study.RUDOLFV2_STUDY_MODELS.items():
+            canonical_path = directory / f"{model}.npy"
+            canonical_contract = study.extraction.build_embedding_artifact_contract(
+                manifest_path=manifest_path,
+                spec=registry[model],
+                batch_size=plan.batch_size,
+                device_arg="cpu",
+                pooling="canonical",
+            )
+            study.extraction.publish_embedding_artifact(
+                canonical_path,
+                np.zeros((2, 2 * plan.alternative_width), dtype=np.float32),
+                canonical_contract,
+            )
+            target, status = study.extract_study_representation(
+                canonical_root=canonical_access_root,
+                study_root=study_access_root,
+                tileset=benchmark.tileset,
+                model=model,
+                representation=plan.alternative,
+                batch_size=plan.batch_size,
+                num_workers=0,
+                device_arg="cpu",
+            )
+            assert status == "written"
+            for path in (target, study.sidecar_path(target)):
+                protected[path] = (path.read_bytes(), path.stat().st_mtime_ns)
+
+    inventory = study.build_study_inventory(
+        canonical_root=canonical_root,
+        study_root=study_root,
+        canonical_access_root=canonical_access_root,
+        study_access_root=study_access_root,
+        model_ids=tuple(study.RUDOLFV2_STUDY_MODELS),
+        device_arg="cpu",
+        model_plans=study.RUDOLFV2_STUDY_MODELS,
+    )
+
+    assert len(inventory) == 12
+    assert inventory.groupby("model_registry_id").size().to_dict() == {
+        "RudolfV 2": 4,
+        "RudolfV 2-B": 4,
+        "RudolfV 2-S": 4,
+    }
+    assert set(inventory["width"]) == {384, 768, 1536}
+    assert set(inventory["dtype"]) == {"float32"}
+    assert "published_name" not in inventory
+    assert {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in protected} == protected
+
+    poisoned = study.study_embedding_path(
+        study_root=study_access_root,
+        tileset="pathorob-camelyon",
+        model="RudolfV 2-S",
+        representation="cls-only",
+    )
+    np.save(poisoned, np.full((2, 384), np.nan, dtype=np.float32))
+    with pytest.raises(study.ArtifactCompatibilityError, match="finite FP32"):
+        study.build_study_inventory(
+            canonical_root=canonical_root,
+            study_root=study_root,
+            canonical_access_root=canonical_access_root,
+            study_access_root=study_access_root,
+            model_ids=tuple(study.RUDOLFV2_STUDY_MODELS),
+            device_arg="cpu",
+            model_plans=study.RUDOLFV2_STUDY_MODELS,
+        )
 
 
 def test_canonical_loader_rejects_mismatched_sidecar_contract(tmp_path: Path) -> None:
