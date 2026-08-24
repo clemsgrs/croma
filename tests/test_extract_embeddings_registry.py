@@ -224,13 +224,24 @@ def test_rudolfv2_native_forward_rejects_an_unexpected_token_layout(
         embed(object())
 
 
-def test_rudolfv2_explicit_cls_only_pooling_returns_raw_cls(
-    monkeypatch: pytest.MonkeyPatch, extraction_module
+@pytest.mark.parametrize(
+    ("name", "model_width"),
+    [
+        ("RudolfV 2", 1536),
+        ("RudolfV 2-B", 768),
+        ("RudolfV 2-S", 384),
+    ],
+)
+def test_rudolfv2_family_explicit_cls_only_pooling_returns_raw_final_cls(
+    monkeypatch: pytest.MonkeyPatch,
+    extraction_module,
+    name: str,
+    model_width: int,
 ) -> None:
     ee = extraction_module
-    cls = np.array([[[-1.0, -2.0]]], dtype=np.float32)
-    registers = np.full((1, 8, 2), np.inf, dtype=np.float32)
-    patches = np.full((1, 784, 2), (4.0, 6.0), dtype=np.float32)
+    cls = np.arange(model_width, dtype=np.float32).reshape(1, 1, model_width)
+    registers = np.full((1, 8, model_width), np.inf, dtype=np.float32)
+    patches = np.full((1, 784, model_width), -np.inf, dtype=np.float32)
     tokens = np.concatenate((cls, registers, patches), axis=1)
 
     class FakeBackbone:
@@ -248,12 +259,17 @@ def test_rudolfv2_explicit_cls_only_pooling_returns_raw_cls(
 
     monkeypatch.setattr(ee.AutoModel, "from_pretrained", lambda *args, **kwargs: FakeModel())
     _model, _transform, embed = ee._load_model_and_transform(
-        mr._build_model_registry()["RudolfV 2-S"],
+        mr._build_model_registry()[name],
         ee.torch.device("cpu"),
         pooling="cls-only",
     )
 
-    np.testing.assert_array_equal(embed(object()), np.array([[-1.0, -2.0]], dtype=np.float32))
+    output = embed(object())
+
+    np.testing.assert_array_equal(output, tokens[:, 0])
+    assert output.shape == (1, model_width)
+    assert output.dtype == np.float32
+    assert np.isfinite(output).all()
 
 
 @pytest.mark.parametrize(

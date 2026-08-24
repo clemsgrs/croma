@@ -18,15 +18,23 @@ if str(SCRIPTS) not in sys.path:
     reason="set CROMA_RUN_RUDOLFV2_SMOKE=1 to run gated RudolfV 2 checkpoints",
 )
 @pytest.mark.parametrize(
-    ("name", "model_width", "pooled_width"),
+    ("name", "model_width", "canonical_width"),
     [
         ("RudolfV 2", 1536, 3072),
         ("RudolfV 2-B", 768, 1536),
         ("RudolfV 2-S", 384, 768),
     ],
 )
-def test_real_rudolfv2_native_pooling_is_exact_and_deterministic(
-    name: str, model_width: int, pooled_width: int
+@pytest.mark.parametrize(
+    ("pooling", "width_factor"),
+    [("canonical", 2), ("cls-only", 1)],
+)
+def test_real_rudolfv2_pooling_contracts_are_exact_and_deterministic(
+    name: str,
+    model_width: int,
+    canonical_width: int,
+    pooling: str,
+    width_factor: int,
 ) -> None:
     try:
         import timm  # noqa: F401 - required by the pinned remote code
@@ -41,7 +49,7 @@ def test_real_rudolfv2_native_pooling_is_exact_and_deterministic(
     assert transformers.__version__.split(".", maxsplit=1)[0] == "5"
     spec = mr._build_model_registry()[name]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, _transform, embed = ee._load_model_and_transform(spec, device)
+    model, _transform, embed = ee._load_model_and_transform(spec, device, pooling=pooling)
     batch = torch.linspace(
         -1.0,
         1.0,
@@ -54,16 +62,27 @@ def test_real_rudolfv2_native_pooling_is_exact_and_deterministic(
         published = model.model.encode(batch)
         first = embed(batch)
         second = embed(batch)
-    expected = torch.cat(
-        [
-            published["x_norm_clstoken"],
-            published["x_norm_patchtokens"].mean(1),
-        ],
-        dim=-1,
+    torch.testing.assert_close(
+        published["last_hidden_state"][:, 0],
+        published["x_norm_clstoken"],
+        rtol=0,
+        atol=0,
+    )
+    expected = (
+        torch.cat(
+            [
+                published["x_norm_clstoken"],
+                published["x_norm_patchtokens"].mean(1),
+            ],
+            dim=-1,
+        )
+        if pooling == "canonical"
+        else published["last_hidden_state"][:, 0]
     )
 
     assert published["last_hidden_state"].shape == (1, 793, model_width)
-    assert first.shape == (1, pooled_width)
+    assert canonical_width == model_width * 2
+    assert first.shape == (1, model_width * width_factor)
     assert first.dtype == torch.float32
     assert torch.isfinite(first).all()
     torch.testing.assert_close(first, expected, rtol=0, atol=0)

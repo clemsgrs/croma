@@ -11,15 +11,20 @@ import argparse
 import hashlib
 import io
 import json
+import multiprocessing
 import os
+import shlex
 import sys
 import tempfile
 import zipfile
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn import config_context
 
 REPO = Path(__file__).resolve().parents[2]
 for _path in (REPO / "src", REPO / "scripts" / "bench"):
@@ -28,13 +33,18 @@ for _path in (REPO / "src", REPO / "scripts" / "bench"):
 
 from croma.metrics.neighbors import _select_k_from_balanced_accuracy  # noqa: E402
 from croma import CRoMa, MaRI, RI, __version__ as croma_version  # noqa: E402
+from croma.metrics.base import _PreparedNeighborSubset  # noqa: E402
 from croma.metrics.bootstrap import paired_cluster_bootstrap_delta  # noqa: E402
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 from croma.metrics.mari import TAU_FALLBACK  # noqa: E402
 from croma.metrics.neighbors import (  # noqa: E402
     _balanced_accuracy_by_k_from_prepared_neighbors,
 )
-from croma.metrics.pairs import normalize_manifest, resolve_manifest_subsets  # noqa: E402
+from croma.metrics.pairs import (  # noqa: E402
+    EvaluationSubset,
+    normalize_manifest,
+    resolve_manifest_subsets,
+)
 from embedding_artifacts import (  # noqa: E402
     ArtifactCompatibilityError,
     artifact_is_reusable,
@@ -42,7 +52,7 @@ from embedding_artifacts import (  # noqa: E402
 )
 import extract_embeddings as extraction  # noqa: E402
 import benchmarks as benchmark_registry  # noqa: E402
-from model_registry import _build_model_registry  # noqa: E402
+from model_registry import ModelSpec, _build_model_registry  # noqa: E402
 from run_config import resolve_sweep_k_values  # noqa: E402
 import views as benchmark_views  # noqa: E402
 
@@ -74,15 +84,26 @@ TRACER_BENCHMARK = "pathorob-camelyon"
 TRACER_TILESET = "pathorob-camelyon"
 TRACER_MODEL = "Mascaret"
 TRACER_ALTERNATIVE = "cls-mean-patch"
+NEIGHBOR_WORKING_MEMORY_MIB = 128
 
 
 @dataclass(frozen=True)
 class StudyModelPlan:
-    """One canonical Waiv encoder and its quarantined alternative."""
+    """One canonical encoder and its quarantined pooling alternative."""
 
     alternative: str
     alternative_width: int
     batch_size: int
+
+
+@dataclass(frozen=True)
+class StudyModelIdentity:
+    """Machine identity retained separately from publication spelling."""
+
+    published_name: str
+    variant_role: str
+    parent_registry_id: str | None
+    canonical_width: int
 
 
 @dataclass(frozen=True)
@@ -94,6 +115,17 @@ class StudyBenchmarkPlan:
     fixed_k: int
     biological_k_max: int
     diagnostic_k_max: int | None
+
+
+@dataclass(frozen=True)
+class StudyRunPlan:
+    """One model-by-benchmark cell in a declared sensitivity panel."""
+
+    model_id: str
+    model_plan: StudyModelPlan
+    identity: StudyModelIdentity | None
+    benchmark_name: str
+    benchmark: StudyBenchmarkPlan
 
 
 WAIV_STUDY_MODELS = {
@@ -108,6 +140,58 @@ WAIV_STUDY_MODELS = {
         batch_size=64,
     ),
 }
+
+RUDOLFV2_STUDY_MODELS = {
+    "RudolfV 2": StudyModelPlan(
+        alternative="cls-only",
+        alternative_width=1536,
+        batch_size=32,
+    ),
+    "RudolfV 2-B": StudyModelPlan(
+        alternative="cls-only",
+        alternative_width=768,
+        batch_size=32,
+    ),
+    "RudolfV 2-S": StudyModelPlan(
+        alternative="cls-only",
+        alternative_width=384,
+        batch_size=64,
+    ),
+}
+
+POOLING_STUDY_MODELS = {**WAIV_STUDY_MODELS, **RUDOLFV2_STUDY_MODELS}
+
+
+def _load_rudolfv2_model_identities() -> dict[str, StudyModelIdentity]:
+    """Load teacher/student and report identities from benchmark metadata."""
+
+    metadata = pd.read_csv(
+        REPO / "scripts" / "bench" / "model_metadata.csv",
+        keep_default_na=False,
+        na_values=[],
+    ).set_index("model")
+    identities: dict[str, StudyModelIdentity] = {}
+    for model_id in RUDOLFV2_STUDY_MODELS:
+        if model_id not in metadata.index:
+            raise RuntimeError(f"study model is missing from model metadata: {model_id!r}")
+        row = metadata.loc[model_id]
+        try:
+            canonical_width = int(str(row["dim"]).strip().removeprefix("$").removesuffix("$"))
+        except ValueError as exc:
+            raise RuntimeError(
+                f"study model has an invalid published embedding dimension: {model_id!r}"
+            ) from exc
+        parent = str(row["parent_model"]).strip()
+        identities[model_id] = StudyModelIdentity(
+            published_name=str(row["published_name"]).strip(),
+            variant_role=str(row["variant_role"]).strip(),
+            parent_registry_id=parent or None,
+            canonical_width=int(canonical_width),
+        )
+    return identities
+
+
+RUDOLFV2_MODEL_IDENTITIES = _load_rudolfv2_model_identities()
 
 PATHOROB_STUDY_BENCHMARKS = {
     "pathorob-camelyon": StudyBenchmarkPlan(
@@ -139,6 +223,40 @@ PATHOROB_STUDY_BENCHMARKS = {
         diagnostic_k_max=None,
     ),
 }
+
+
+def build_study_plan(
+    *,
+    model_ids: tuple[str, ...],
+    model_plans: dict[str, StudyModelPlan] | None = None,
+    benchmark_ids: tuple[str, ...] | None = None,
+) -> tuple[StudyRunPlan, ...]:
+    """Build a deterministic model-major matrix from frozen declarations."""
+
+    plans = POOLING_STUDY_MODELS if model_plans is None else model_plans
+    unknown = [model_id for model_id in model_ids if model_id not in plans]
+    if unknown:
+        raise ValueError(f"models do not have pooling-sensitivity plans: {unknown}")
+    selected_benchmarks = (
+        tuple(PATHOROB_STUDY_BENCHMARKS) if benchmark_ids is None else tuple(benchmark_ids)
+    )
+    unknown_benchmarks = [
+        name for name in selected_benchmarks if name not in PATHOROB_STUDY_BENCHMARKS
+    ]
+    if unknown_benchmarks:
+        raise ValueError(f"unknown pooling-sensitivity benchmarks: {unknown_benchmarks}")
+    return tuple(
+        StudyRunPlan(
+            model_id=model_id,
+            model_plan=plans[model_id],
+            identity=RUDOLFV2_MODEL_IDENTITIES.get(model_id),
+            benchmark_name=benchmark_name,
+            benchmark=benchmark_plan,
+        )
+        for model_id in model_ids
+        for benchmark_name in selected_benchmarks
+        for benchmark_plan in (PATHOROB_STUDY_BENCHMARKS[benchmark_name],)
+    )
 
 
 @dataclass(frozen=True)
@@ -177,6 +295,25 @@ class StudyRun:
     alternative: RepresentationEvaluation
     aligned_manifest: pd.DataFrame
     provenance_inputs: dict
+    identity: StudyModelIdentity | None = None
+
+
+@dataclass(frozen=True)
+class StudyCellRequest:
+    """Serializable inputs for one isolated model-by-benchmark evaluation."""
+
+    benchmark: str
+    model: str
+    inventory_entry: tuple[Path, str]
+    canonical_root: Path
+    study_root: Path
+    eval_manifest_root: Path
+    device_arg: str
+    model_plans: dict[str, StudyModelPlan]
+    canonical_access_root: Path | None = None
+    study_access_root: Path | None = None
+    eval_manifest_access_root: Path | None = None
+    eval_manifest_override: Path | None = None
 
 
 _COMPARISON_MEASURES = (
@@ -222,6 +359,46 @@ def select_biological_kstars(
     )
 
 
+def _prepare_streamed_paired_evaluation(
+    *,
+    features: np.ndarray,
+    subsets: list[EvaluationSubset],
+    production_k_values: list[int],
+    fixed_k: int,
+    warn_context: str,
+) -> tuple[list[_PreparedNeighborSubset], dict[int, float]]:
+    """Stream full-k subset caches while retaining only fixed-k columns."""
+
+    fixed_caches: list[_PreparedNeighborSubset] = []
+    full_k_values = sorted({int(fixed_k), *production_k_values})
+
+    def full_caches() -> Iterator[_PreparedNeighborSubset]:
+        for full_cache in RI._iter_paired_subset_neighbor_cache(
+            features=features,
+            subsets=subsets,
+            k_values=full_k_values,
+            assume_normalized=False,
+        ):
+            width = min(int(fixed_k), int(full_cache.neigh_idx.shape[1]))
+            fixed_caches.append(
+                replace(
+                    full_cache,
+                    neigh_idx=full_cache.neigh_idx[:, :width].copy(),
+                    neigh_dist=full_cache.neigh_dist[:, :width].copy(),
+                    valid_counts=np.minimum(full_cache.valid_counts, int(fixed_k)),
+                )
+            )
+            yield full_cache
+
+    biological_scores = RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
+        prepared_subsets=full_caches(),
+        target="label",
+        k_values=production_k_values,
+        warn_context=warn_context,
+    )
+    return fixed_caches, biological_scores
+
+
 def evaluate_representation(
     *,
     representation: str,
@@ -250,16 +427,11 @@ def evaluate_representation(
     production_grid = resolve_sweep_k_values(production_k_max, "sparse")
     k_values = sorted({int(fixed_k), *production_grid})
     if evaluation_design == "paired_2x2":
-        normalized_features = features / (np.linalg.norm(features, axis=1, keepdims=True) + 1e-12)
-        prepared = RI._prepare_paired_subset_neighbor_cache(
-            features=normalized_features,
+        prepared, biological_scores = _prepare_streamed_paired_evaluation(
+            features=features,
             subsets=resolve_manifest_subsets(normalized_manifest),
-            k_values=k_values,
-        )
-        biological_scores = RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
-            prepared_subsets=prepared,
-            target="label",
-            k_values=production_grid,
+            production_k_values=production_grid,
+            fixed_k=int(fixed_k),
             warn_context=f"{representation} biological k*",
         )
         fixed_biological = RI._knn_balanced_accuracy_by_k_from_prepared_subsets(
@@ -392,6 +564,16 @@ def evaluate_representation(
     ):
         raise RuntimeError("fixed-k RI and MaRI must share support and cause fractions")
 
+    ri_value = float(ri_result.value)
+    mari_value = float(mari_result.value)
+    support = float(ri_result.support)
+    ss_dominated_undefined_frac = float(ri_result.ss_dominated_undefined_frac)
+    oo_dominated_undefined_frac = float(ri_result.oo_dominated_undefined_frac)
+    mixed_undefined_frac = float(ri_result.mixed_undefined_frac)
+    del prepared, typed_distances, ri_artifacts, mari_artifacts, ri_result, mari_result
+    if evaluation_design == "paired_2x2":
+        del typed_chunks
+
     croma_result = CRoMa.compute(
         features=features,
         manifest=normalized_manifest,
@@ -411,12 +593,12 @@ def evaluate_representation(
         diagnostic_kstar_300=(None if diagnostic_k is None else int(diagnostic_k)),
         diagnostic_kstar_300_bacc=(None if diagnostic_bacc is None else float(diagnostic_bacc)),
         tau=float(tau),
-        ri=float(ri_result.value),
-        mari=float(mari_result.value),
-        support=float(ri_result.support),
-        ss_dominated_undefined_frac=float(ri_result.ss_dominated_undefined_frac),
-        oo_dominated_undefined_frac=float(ri_result.oo_dominated_undefined_frac),
-        mixed_undefined_frac=float(ri_result.mixed_undefined_frac),
+        ri=ri_value,
+        mari=mari_value,
+        support=support,
+        ss_dominated_undefined_frac=ss_dominated_undefined_frac,
+        oo_dominated_undefined_frac=oo_dominated_undefined_frac,
+        mixed_undefined_frac=mixed_undefined_frac,
         croma=float(croma_result.value),
         croma_f0=float(croma_result.f0),
         croma_ltm10=float(croma_result.ltm_alpha),
@@ -448,6 +630,12 @@ def _atomic_write(path: Path, payload: bytes) -> None:
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def _resolved_access_root(logical_root: Path, access_root: Path | None) -> Path:
+    """Return the explicit read root, defaulting to the logical root."""
+
+    return Path(logical_root if access_root is None else access_root).resolve()
 
 
 def deterministic_npz_bytes(arrays: dict[str, np.ndarray]) -> bytes:
@@ -527,7 +715,9 @@ def publish_study_bundle(
             "study bundle is partial or incompatible; inspect it or rerun with --force"
         )
 
-    for target, payload in targets:
+    for (target, payload), match in zip(targets, matching):
+        if match:
+            continue
         if target.is_symlink():
             raise RuntimeError(f"refusing to replace a study symlink: {target}")
         _atomic_write(target, payload)
@@ -669,6 +859,7 @@ def build_comparison_frames(
         raise ValueError("canonical evaluation must use representation='canonical'")
     if canonical.fixed_k != alternative.fixed_k:
         raise ValueError("canonical and alternative must use the same fixed k")
+    identity = RUDOLFV2_MODEL_IDENTITIES.get(str(model))
 
     comparison: dict[str, str | int | float] = {
         "benchmark": str(benchmark),
@@ -678,6 +869,9 @@ def build_comparison_frames(
         "alternative_representation": alternative.representation,
         "fixed_k": int(canonical.fixed_k),
     }
+    if identity is not None:
+        comparison["variant_role"] = identity.variant_role
+        comparison["parent_model"] = identity.parent_registry_id or ""
     for measure in _COMPARISON_MEASURES:
         canonical_value = getattr(canonical, measure)
         alternative_value = getattr(alternative, measure)
@@ -699,6 +893,9 @@ def build_comparison_frames(
             "representation": evaluation.representation,
             "fixed_k": int(evaluation.fixed_k),
         }
+        if identity is not None:
+            row["variant_role"] = identity.variant_role
+            row["parent_model"] = identity.parent_registry_id or ""
         for measure in _COMPARISON_MEASURES:
             value = getattr(evaluation, measure)
             row[measure] = float("nan") if value is None else value
@@ -708,7 +905,8 @@ def build_comparison_frames(
         .sort_values(["croma", "representation"], ascending=[False, True], kind="stable")
         .reset_index(drop=True)
     )
-    rankings.insert(4, "croma_rank", np.arange(1, len(rankings) + 1, dtype=int))
+    rank_column = 6 if identity is not None else 4
+    rankings.insert(rank_column, "croma_rank", np.arange(1, len(rankings) + 1, dtype=int))
     return pd.DataFrame([comparison]), rankings
 
 
@@ -740,10 +938,20 @@ def _render_report(
         if diagnostic_k_max is not None
         else ""
     )
+    identity = RUDOLFV2_MODEL_IDENTITIES.get(str(model))
+    report_model = str(model) if identity is None else identity.published_name
+    relationship = ""
+    if identity is not None:
+        if identity.parent_registry_id is None:
+            relationship = " Family role: teacher."
+        else:
+            parent = RUDOLFV2_MODEL_IDENTITIES[identity.parent_registry_id].published_name
+            relationship = f" Family role: distilled student of `{parent}`."
     lines = [
         "# Pooling sensitivity tracer",
         "",
-        f"Benchmark: `{benchmark}`. Model: `{model}`. All paired comparisons use fixed k={canonical.fixed_k}.",
+        f"Benchmark: `{benchmark}`. Model: `{report_model}`.{relationship} "
+        f"All paired comparisons use fixed k={canonical.fixed_k}.",
         "",
         "MaRI uses a separate automatically resolved tau for each representation at the "
         f"fixed comparison k. Biological k* is reported separately from the production "
@@ -884,6 +1092,14 @@ def render_study_bundle(
             for path, payload in sorted(files.items(), key=lambda item: item[0].as_posix())
         },
     }
+    identity = RUDOLFV2_MODEL_IDENTITIES.get(str(model))
+    if identity is not None:
+        provenance["model_identity"] = {
+            "model_registry_id": str(model),
+            "variant_role": identity.variant_role,
+            "parent_registry_id": identity.parent_registry_id,
+            "canonical_width": identity.canonical_width,
+        }
     files[Path("run-provenance.json")] = (
         json.dumps(provenance, indent=2, sort_keys=True).encode("utf-8") + b"\n"
     )
@@ -929,7 +1145,8 @@ def render_panel_bundle(
         per_run_provenance = json.loads(bundle[Path("run-provenance.json")])
         run_provenance.append(per_run_provenance)
         report = bundle[Path("report.md")].decode("utf-8").strip()
-        report_sections.extend([f"## {run.benchmark} — {run.model}", "", report, ""])
+        report_model = run.model if run.identity is None else run.identity.published_name
+        report_sections.extend([f"## {run.benchmark} — {report_model}", "", report, ""])
 
     files: dict[Path, bytes] = {
         Path("results/comparisons.csv"): _csv_bytes(
@@ -965,7 +1182,7 @@ def render_panel_bundle(
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run the isolated Waiv pooling-sensitivity panel.")
+    parser = argparse.ArgumentParser(description="Run the isolated pooling-sensitivity panel.")
     parser.add_argument(
         "--canonical-root",
         type=Path,
@@ -973,10 +1190,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Read-only canonical embeddings root.",
     )
     parser.add_argument(
+        "--canonical-access-root",
+        type=Path,
+        default=None,
+        help="Optional exact local mirror used only for canonical reads.",
+    )
+    parser.add_argument(
         "--study-root",
         type=Path,
         default=REPO / "output" / "studies" / "pooling-sensitivity",
         help="Only root this study may write.",
+    )
+    parser.add_argument(
+        "--study-access-root",
+        type=Path,
+        default=None,
+        help="Optional exact local mirror used only for study-artifact reads.",
     )
     parser.add_argument(
         "--eval-manifest",
@@ -990,6 +1219,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=REPO / "data" / "pathorob" / "manifests",
         help="Directory containing the four PathoROB RI-view manifests.",
     )
+    parser.add_argument(
+        "--eval-manifest-access-root",
+        type=Path,
+        default=None,
+        help="Optional exact local mirror used only for evaluation-manifest reads.",
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument(
         "--batch-size",
@@ -998,12 +1233,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Legacy Mascaret tracer batch override; panel defaults are model-specific.",
     )
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--models", nargs="+", choices=tuple(WAIV_STUDY_MODELS))
+    parser.add_argument("--models", nargs="+", choices=tuple(POOLING_STUDY_MODELS))
     parser.add_argument("--benchmarks", nargs="+", choices=tuple(PATHOROB_STUDY_BENCHMARKS))
-    parser.add_argument(
+    workflow = parser.add_mutually_exclusive_group()
+    workflow.add_argument(
         "--extract-only",
         action="store_true",
         help="Extract/validate the selected alternative inventory and stop.",
+    )
+    workflow.add_argument(
+        "--evaluate-only",
+        action="store_true",
+        help="Validate and evaluate existing alternatives without extraction.",
     )
     parser.add_argument(
         "--baseline-only",
@@ -1029,13 +1270,17 @@ def main(argv: list[str] | None = None) -> int:
     capture_preservation_baseline(
         canonical_root=args.canonical_root,
         study_root=args.study_root,
+        canonical_access_root=args.canonical_access_root,
+        study_access_root=args.study_access_root,
         check=bool(args.check),
     )
     if args.baseline_only:
         return 0
     if args.eval_manifest is not None and args.models is None and args.benchmarks is None:
-        if args.extract_only:
-            raise ValueError("--extract-only cannot be combined with the legacy tracer CLI")
+        if args.extract_only or args.evaluate_only:
+            raise ValueError(
+                "--extract-only/--evaluate-only cannot be combined with the legacy tracer CLI"
+            )
         run_mascaret_camelyon(
             canonical_root=args.canonical_root,
             study_root=args.study_root,
@@ -1051,21 +1296,56 @@ def main(argv: list[str] | None = None) -> int:
             force=bool(args.force),
         )
         return 0
-    models = tuple(args.models or WAIV_STUDY_MODELS)
+    models = tuple(args.models or POOLING_STUDY_MODELS)
     benchmarks = tuple(args.benchmarks or PATHOROB_STUDY_BENCHMARKS)
+    if (
+        args.canonical_access_root is not None
+        or args.study_access_root is not None
+        or args.eval_manifest_access_root is not None
+    ) and not args.evaluate_only:
+        raise ValueError("local access roots require --evaluate-only")
     if args.batch_size is not None and models != (TRACER_MODEL,):
         raise ValueError("--batch-size is only valid with --models Mascaret")
     if args.eval_manifest is not None and benchmarks != (TRACER_BENCHMARK,):
         raise ValueError("--eval-manifest is only valid with --benchmarks pathorob-camelyon")
-    inventory = extract_waiv_panel(
+    if args.evaluate_only:
+        inventory = {
+            (run.benchmark_name, run.model_id): (
+                study_embedding_path(
+                    study_root=args.study_root,
+                    tileset=run.benchmark.tileset,
+                    model=run.model_id,
+                    representation=run.model_plan.alternative,
+                ),
+                "reused",
+            )
+            for run in build_study_plan(
+                model_ids=models,
+                model_plans=POOLING_STUDY_MODELS,
+                benchmark_ids=benchmarks,
+            )
+        }
+    else:
+        inventory = extract_pooling_panel(
+            canonical_root=args.canonical_root,
+            study_root=args.study_root,
+            device_arg=str(args.device),
+            num_workers=int(args.num_workers),
+            model_plans=POOLING_STUDY_MODELS,
+            check=bool(args.check),
+            force=bool(args.force),
+            models=models,
+            benchmarks=benchmarks,
+        )
+    build_study_inventory(
         canonical_root=args.canonical_root,
         study_root=args.study_root,
+        canonical_access_root=args.canonical_access_root,
+        study_access_root=args.study_access_root,
+        model_ids=models,
         device_arg=str(args.device),
-        num_workers=int(args.num_workers),
-        check=bool(args.check),
-        force=bool(args.force),
-        models=models,
-        benchmarks=benchmarks,
+        model_plans=POOLING_STUDY_MODELS,
+        benchmark_ids=benchmarks,
     )
     if args.extract_only:
         verify_preservation_baseline(
@@ -1073,25 +1353,41 @@ def main(argv: list[str] | None = None) -> int:
             study_root=args.study_root,
         )
         return 0
-    runs = evaluate_waiv_panel(
+    runs = evaluate_pooling_panel_isolated(
         canonical_root=args.canonical_root,
         study_root=args.study_root,
         eval_manifest_root=args.eval_manifest_root,
+        canonical_access_root=args.canonical_access_root,
+        study_access_root=args.study_access_root,
+        eval_manifest_access_root=args.eval_manifest_access_root,
         device_arg=str(args.device),
         inventory=inventory,
+        model_plans=POOLING_STUDY_MODELS,
         eval_manifest_override=args.eval_manifest,
     )
-    replay = (
-        "python scripts/studies/pooling_sensitivity.py "
-        f"--canonical-root {Path(args.canonical_root).resolve()} "
-        f"--study-root {Path(args.study_root).resolve()} "
-        f"--eval-manifest-root {Path(args.eval_manifest_root).resolve()} "
-        f"--device {args.device} --num-workers {args.num_workers} "
-        f"--models {' '.join(models)} --benchmarks {' '.join(benchmarks)}"
+    replay = shlex.join(
+        [
+            "python",
+            "scripts/studies/pooling_sensitivity.py",
+            "--canonical-root",
+            str(Path(args.canonical_root).resolve()),
+            "--study-root",
+            str(Path(args.study_root).resolve()),
+            "--eval-manifest-root",
+            str(Path(args.eval_manifest_root).resolve()),
+            "--device",
+            str(args.device),
+            "--num-workers",
+            str(args.num_workers),
+            "--models",
+            *models,
+            "--benchmarks",
+            *benchmarks,
+        ]
     )
     bundle = render_panel_bundle(
         runs=runs,
-        replay_commands=[replay, replay + " --check"],
+        replay_commands=[replay, replay + " --evaluate-only --check"],
     )
     publish_study_bundle(
         args.study_root,
@@ -1102,21 +1398,33 @@ def main(argv: list[str] | None = None) -> int:
     verify_preservation_baseline(
         canonical_root=args.canonical_root,
         study_root=args.study_root,
+        canonical_access_root=args.canonical_access_root,
+        study_access_root=args.study_access_root,
     )
     return 0
 
 
 def capture_preservation_baseline(
-    *, canonical_root: Path, study_root: Path, check: bool = False
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    canonical_access_root: Path | None = None,
+    study_access_root: Path | None = None,
+    check: bool = False,
 ) -> Path:
     """Record hashes and filesystem metadata for the exact protected 5x4 panel."""
 
     canonical_root = Path(canonical_root).resolve()
     study_root = Path(study_root).resolve()
+    canonical_access_root = _resolved_access_root(
+        canonical_root,
+        canonical_access_root,
+    )
+    study_access_root = _resolved_access_root(study_root, study_access_root)
     artifacts: list[dict[str, str | int]] = []
     for tileset in PATHOROB_TILESETS:
         for model in STUDY_MODELS:
-            matrix = canonical_root / tileset / f"{model}.npy"
+            matrix = canonical_access_root / tileset / f"{model}.npy"
             for kind, path in (
                 ("matrix", matrix),
                 ("sidecar", matrix.with_suffix(".npy.json")),
@@ -1127,7 +1435,7 @@ def capture_preservation_baseline(
                 artifacts.append(
                     {
                         "kind": kind,
-                        "relative_path": path.relative_to(canonical_root).as_posix(),
+                        "relative_path": path.relative_to(canonical_access_root).as_posix(),
                         "sha256": _sha256_file(path),
                         "size": int(stat.st_size),
                         "mtime_ns": int(stat.st_mtime_ns),
@@ -1143,10 +1451,12 @@ def capture_preservation_baseline(
         + b"\n"
     )
     output_path = study_root / PRESERVATION_BASELINE_NAME
-    if output_path.exists():
-        if output_path.read_bytes() != payload:
+    access_output_path = study_access_root / PRESERVATION_BASELINE_NAME
+    if access_output_path.exists():
+        if access_output_path.read_bytes() != payload:
             raise RuntimeError(
-                f"preservation baseline already exists with different bytes: {output_path}"
+                "preservation baseline already exists with different bytes: "
+                f"{access_output_path}"
             )
         return output_path
     if check:
@@ -1157,10 +1467,19 @@ def capture_preservation_baseline(
     return output_path
 
 
-def verify_preservation_baseline(*, canonical_root: Path, study_root: Path) -> dict[str, int]:
+def verify_preservation_baseline(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    canonical_access_root: Path | None = None,
+    study_access_root: Path | None = None,
+) -> dict[str, int]:
     """Verify hashes, sizes, and mtimes against the recorded protected baseline."""
 
-    baseline_path = Path(study_root).resolve() / PRESERVATION_BASELINE_NAME
+    logical_study_root = Path(study_root).resolve()
+    baseline_path = (
+        _resolved_access_root(logical_study_root, study_access_root) / PRESERVATION_BASELINE_NAME
+    )
     if not baseline_path.is_file():
         raise FileNotFoundError(f"preservation baseline is missing: {baseline_path}")
     payload = json.loads(baseline_path.read_text(encoding="utf-8"))
@@ -1168,8 +1487,9 @@ def verify_preservation_baseline(*, canonical_root: Path, study_root: Path) -> d
     if not isinstance(artifacts, list) or len(artifacts) != 40:
         raise RuntimeError("preservation baseline must contain exactly 40 artifacts")
     canonical_root = Path(canonical_root).resolve()
+    canonical_access_root = _resolved_access_root(canonical_root, canonical_access_root)
     for expected in artifacts:
-        path = canonical_root / str(expected["relative_path"])
+        path = canonical_access_root / str(expected["relative_path"])
         if not path.is_file():
             raise RuntimeError(f"protected canonical artifact disappeared: {path}")
         stat = path.stat()
@@ -1230,6 +1550,103 @@ def _validate_study_matrix(
         raise ArtifactCompatibilityError("alternative matrix must be finite FP32")
 
 
+_RUDOLFV2_CANONICAL_POOLING = {
+    "method": "concatenate-cls-and-mean-patches",
+    "register_tokens_excluded": 8,
+    "patch_tokens": 784,
+}
+
+
+def _prepare_rudolf_cls_derivation(
+    *,
+    canonical_path: Path,
+    manifest_path: Path,
+    spec: ModelSpec,
+    batch_size: int,
+    device_arg: str,
+    alternative_contract: extraction.EmbeddingArtifactContract,
+) -> tuple[extraction.EmbeddingArtifactContract, np.ndarray]:
+    """Validate and describe the lossless canonical-CLS prefix derivation."""
+
+    canonical_contract = extraction.build_embedding_artifact_contract(
+        manifest_path=manifest_path,
+        spec=spec,
+        batch_size=int(batch_size),
+        device_arg=device_arg,
+        pooling="canonical",
+    )
+    if not artifact_is_reusable(canonical_path, canonical_contract):
+        raise FileNotFoundError(f"canonical embedding is missing: {canonical_path}")
+    _validate_study_matrix(canonical_path, canonical_contract)
+    canonical = np.load(canonical_path, mmap_mode="r")
+    canonical_width = int(canonical_contract.output_shape[1])
+    alternative_width = int(alternative_contract.output_shape[1])
+    if canonical_contract.extraction_contract.get("pooling") != _RUDOLFV2_CANONICAL_POOLING:
+        raise ArtifactCompatibilityError(
+            "Rudolf canonical artifact must use the exact CLS+mean-patches layout"
+        )
+    if canonical_width != 2 * alternative_width:
+        raise ArtifactCompatibilityError(
+            "Rudolf CLS-only width must be exactly half the canonical CLS+mean width"
+        )
+    canonical_sidecar = sidecar_path(canonical_path)
+    derivation = {
+        "method": "validated-canonical-cls-prefix",
+        "source_representation": "canonical-cls-plus-mean-patches",
+        "source_matrix_sha256": _sha256_file(canonical_path),
+        "source_sidecar_sha256": _sha256_file(canonical_sidecar),
+        "source_width": canonical_width,
+        "slice_start": 0,
+        "slice_stop": alternative_width,
+        "output_normalization": "none",
+    }
+    extraction_contract = dict(alternative_contract.extraction_contract)
+    extraction_contract["materialization"] = derivation
+    return (
+        replace(
+            alternative_contract,
+            extraction_contract=extraction_contract,
+        ),
+        canonical,
+    )
+
+
+def _materialize_study_representation(
+    *,
+    output_path: Path,
+    canonical: np.ndarray | None,
+    expected: extraction.EmbeddingArtifactContract,
+    manifest_path: Path,
+    spec: ModelSpec,
+    batch_size: int,
+    num_workers: int,
+    device_arg: str,
+    representation: str,
+    progress_enabled: bool,
+) -> None:
+    """Publish one alternative through its declared materialization path."""
+
+    if canonical is not None:
+        width = int(expected.output_shape[1])
+        extraction.publish_embedding_artifact(
+            output_path,
+            np.asarray(canonical[:, :width]),
+            expected,
+        )
+        return
+    extraction.embed_manifest(
+        manifest_path=manifest_path,
+        output_path=output_path,
+        spec=spec,
+        batch_size=int(batch_size),
+        num_workers=int(num_workers),
+        device_arg=device_arg,
+        artifact_contract=expected,
+        progress_enabled=progress_enabled,
+        pooling=representation,
+    )
+
+
 def extract_study_representation(
     *,
     canonical_root: Path,
@@ -1279,6 +1696,16 @@ def extract_study_representation(
         device_arg=device_arg,
         pooling=representation,
     )
+    canonical: np.ndarray | None = None
+    if spec.backend == "rudolfv2" and representation == "cls-only":
+        expected, canonical = _prepare_rudolf_cls_derivation(
+            canonical_path=canonical_path,
+            manifest_path=manifest_path,
+            spec=spec,
+            batch_size=int(batch_size),
+            device_arg=device_arg,
+            alternative_contract=expected,
+        )
     if not check:
         try:
             if artifact_is_reusable(target, expected):
@@ -1291,16 +1718,17 @@ def extract_study_representation(
     if check:
         with tempfile.TemporaryDirectory(prefix="croma-pooling-check-") as directory:
             temporary = Path(directory) / target.name
-            extraction.embed_manifest(
-                manifest_path=manifest_path,
+            _materialize_study_representation(
                 output_path=temporary,
+                canonical=canonical,
+                expected=expected,
+                manifest_path=manifest_path,
                 spec=spec,
                 batch_size=int(batch_size),
                 num_workers=int(num_workers),
                 device_arg=device_arg,
-                artifact_contract=expected,
                 progress_enabled=False,
-                pooling=representation,
+                representation=representation,
             )
             _validate_study_matrix(temporary, expected)
             if not target.is_file() or not sidecar_path(target).is_file():
@@ -1312,39 +1740,41 @@ def extract_study_representation(
                 raise RuntimeError("study extraction check failed: target bytes differ")
         return target, "checked"
 
-    extraction.embed_manifest(
-        manifest_path=manifest_path,
+    _materialize_study_representation(
         output_path=target,
+        canonical=canonical,
+        expected=expected,
+        manifest_path=manifest_path,
         spec=spec,
         batch_size=int(batch_size),
         num_workers=int(num_workers),
         device_arg=device_arg,
-        artifact_contract=expected,
         progress_enabled=True,
-        pooling=representation,
+        representation=representation,
     )
     _validate_study_matrix(target, expected)
     return target, "forced" if force else "written"
 
 
-def extract_waiv_panel(
+def extract_pooling_panel(
     *,
     canonical_root: Path,
     study_root: Path,
     device_arg: str,
     num_workers: int,
+    model_plans: dict[str, StudyModelPlan],
     check: bool = False,
     force: bool = False,
     models: tuple[str, ...] | None = None,
     benchmarks: tuple[str, ...] | None = None,
 ) -> dict[tuple[str, str], tuple[Path, str]]:
-    """Extract or validate the requested Waiv model/benchmark cross-product."""
+    """Extract or validate one declared model/benchmark cross-product."""
 
-    selected_models = tuple(WAIV_STUDY_MODELS) if models is None else tuple(models)
+    selected_models = tuple(model_plans) if models is None else tuple(models)
     selected_benchmarks = (
         tuple(PATHOROB_STUDY_BENCHMARKS) if benchmarks is None else tuple(benchmarks)
     )
-    unknown_models = [name for name in selected_models if name not in WAIV_STUDY_MODELS]
+    unknown_models = [name for name in selected_models if name not in model_plans]
     unknown_benchmarks = [
         name for name in selected_benchmarks if name not in PATHOROB_STUDY_BENCHMARKS
     ]
@@ -1358,7 +1788,7 @@ def extract_waiv_panel(
     for benchmark in selected_benchmarks:
         benchmark_plan = PATHOROB_STUDY_BENCHMARKS[benchmark]
         for model in selected_models:
-            model_plan = WAIV_STUDY_MODELS[model]
+            model_plan = model_plans[model]
             mode = "check" if check else "extract"
             print(f"[study] {mode} {benchmark} / {model}", flush=True)
             artifact = extract_study_representation(
@@ -1381,11 +1811,133 @@ def extract_waiv_panel(
     return inventory
 
 
-def _file_provenance(path: Path) -> dict[str, str | int]:
-    stat = path.stat()
+def extract_waiv_panel(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    device_arg: str,
+    num_workers: int,
+    check: bool = False,
+    force: bool = False,
+    models: tuple[str, ...] | None = None,
+    benchmarks: tuple[str, ...] | None = None,
+) -> dict[tuple[str, str], tuple[Path, str]]:
+    """Compatibility wrapper for the issue-151 Waiv panel."""
+
+    return extract_pooling_panel(
+        canonical_root=canonical_root,
+        study_root=study_root,
+        device_arg=device_arg,
+        num_workers=num_workers,
+        model_plans=WAIV_STUDY_MODELS,
+        check=check,
+        force=force,
+        models=models,
+        benchmarks=benchmarks,
+    )
+
+
+def build_study_inventory(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    model_ids: tuple[str, ...],
+    device_arg: str,
+    canonical_access_root: Path | None = None,
+    study_access_root: Path | None = None,
+    model_plans: dict[str, StudyModelPlan] | None = None,
+    benchmark_ids: tuple[str, ...] | None = None,
+) -> pd.DataFrame:
+    """Validate every declared alternative and return its deterministic inventory."""
+
+    canonical_root = Path(canonical_root).resolve()
+    study_root = Path(study_root).resolve()
+    canonical_access_root = _resolved_access_root(
+        canonical_root,
+        canonical_access_root,
+    )
+    study_access_root = _resolved_access_root(study_root, study_access_root)
+    plans = POOLING_STUDY_MODELS if model_plans is None else model_plans
+    registry = _build_model_registry()
+    rows: list[dict[str, str | int]] = []
+    for run in build_study_plan(
+        model_ids=model_ids,
+        model_plans=plans,
+        benchmark_ids=benchmark_ids,
+    ):
+        manifest_path = canonical_access_root / run.benchmark.tileset / "manifest.csv"
+        logical_canonical_path = canonical_root / run.benchmark.tileset / f"{run.model_id}.npy"
+        canonical_path = canonical_access_root / run.benchmark.tileset / f"{run.model_id}.npy"
+        if not canonical_path.is_file():
+            raise FileNotFoundError(f"canonical embedding is missing: {canonical_path}")
+        target = study_embedding_path(
+            study_root=study_root,
+            tileset=run.benchmark.tileset,
+            model=run.model_id,
+            representation=run.model_plan.alternative,
+        )
+        _require_isolated_target(
+            target=target,
+            study_root=study_root,
+            canonical_path=logical_canonical_path,
+        )
+        access_target = study_embedding_path(
+            study_root=study_access_root,
+            tileset=run.benchmark.tileset,
+            model=run.model_id,
+            representation=run.model_plan.alternative,
+        )
+        expected = extraction.build_embedding_artifact_contract(
+            manifest_path=manifest_path,
+            spec=registry[run.model_id],
+            batch_size=run.model_plan.batch_size,
+            device_arg=device_arg,
+            pooling=run.model_plan.alternative,
+        )
+        if registry[run.model_id].backend == "rudolfv2":
+            expected, _canonical = _prepare_rudolf_cls_derivation(
+                canonical_path=canonical_path,
+                manifest_path=manifest_path,
+                spec=registry[run.model_id],
+                batch_size=run.model_plan.batch_size,
+                device_arg=device_arg,
+                alternative_contract=expected,
+            )
+        if not artifact_is_reusable(access_target, expected):
+            raise FileNotFoundError(f"alternative embedding is missing: {access_target}")
+        _validate_study_matrix(access_target, expected)
+        identity = run.identity
+        rows.append(
+            {
+                "benchmark": run.benchmark_name,
+                "tileset": run.benchmark.tileset,
+                "model_registry_id": run.model_id,
+                "variant_role": "" if identity is None else identity.variant_role,
+                "parent_registry_id": (
+                    "" if identity is None else (identity.parent_registry_id or "")
+                ),
+                "representation": run.model_plan.alternative,
+                "rows": int(expected.output_shape[0]),
+                "width": int(expected.output_shape[1]),
+                "dtype": "float32",
+                "manifest_fingerprint": expected.manifest_fingerprint,
+                "matrix_sha256": _sha256_file(access_target),
+                "sidecar_sha256": _sha256_file(sidecar_path(access_target)),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _file_provenance(
+    path: Path,
+    *,
+    access_path: Path | None = None,
+) -> dict[str, str | int]:
+    source = Path(path if access_path is None else access_path)
+    stat = source.stat()
     return {
         "path": str(path.resolve()),
-        "sha256": _sha256_file(path),
+        "sha256": _sha256_file(source),
         "size": int(stat.st_size),
         "mtime_ns": int(stat.st_mtime_ns),
     }
@@ -1426,36 +1978,55 @@ def _evaluation_manifest_path(root: Path, benchmark: str) -> Path:
     return Path(root).resolve() / relative.name
 
 
-def evaluate_waiv_panel(
+def evaluate_pooling_panel(
     *,
     canonical_root: Path,
     study_root: Path,
     eval_manifest_root: Path,
     device_arg: str,
     inventory: dict[tuple[str, str], tuple[Path, str]],
+    model_plans: dict[str, StudyModelPlan],
+    canonical_access_root: Path | None = None,
+    study_access_root: Path | None = None,
+    eval_manifest_access_root: Path | None = None,
     eval_manifest_override: Path | None = None,
 ) -> list[StudyRun]:
-    """Evaluate an extracted Waiv inventory at its frozen study operating points."""
+    """Evaluate an extracted inventory at frozen study operating points."""
 
     canonical_root = Path(canonical_root).resolve()
     study_root = Path(study_root).resolve()
+    canonical_access_root = _resolved_access_root(
+        canonical_root,
+        canonical_access_root,
+    )
+    study_access_root = _resolved_access_root(study_root, study_access_root)
+    eval_manifest_root = Path(eval_manifest_root).resolve()
+    eval_manifest_access_root = _resolved_access_root(
+        eval_manifest_root,
+        eval_manifest_access_root,
+    )
     runs: list[StudyRun] = []
     for benchmark, model in sorted(inventory):
         try:
             benchmark_plan = PATHOROB_STUDY_BENCHMARKS[benchmark]
-            model_plan = WAIV_STUDY_MODELS[model]
+            model_plan = model_plans[model]
         except KeyError:
             raise ValueError(
                 f"inventory contains an unknown study run: {(benchmark, model)}"
             ) from None
-        eval_manifest_path = (
+        logical_eval_manifest_path = (
             Path(eval_manifest_override).resolve()
             if eval_manifest_override is not None
             else _evaluation_manifest_path(eval_manifest_root, benchmark)
         )
+        eval_manifest_path = (
+            logical_eval_manifest_path
+            if eval_manifest_override is not None
+            else _evaluation_manifest_path(eval_manifest_access_root, benchmark)
+        )
         view = benchmark_views.load_view(
             benchmark,
-            embeddings_root=canonical_root,
+            embeddings_root=canonical_access_root,
             eval_manifest_path=eval_manifest_path,
         )
         if view.spec.design != benchmark_plan.evaluation_design:
@@ -1463,8 +2034,10 @@ def evaluate_waiv_panel(
                 f"benchmark design drift for {benchmark}: "
                 f"expected {benchmark_plan.evaluation_design}, got {view.spec.design}"
             )
-        tileset_manifest_path = canonical_root / benchmark_plan.tileset / "manifest.csv"
-        canonical_path = canonical_root / benchmark_plan.tileset / f"{model}.npy"
+        logical_tileset_manifest_path = canonical_root / benchmark_plan.tileset / "manifest.csv"
+        tileset_manifest_path = canonical_access_root / benchmark_plan.tileset / "manifest.csv"
+        logical_canonical_path = canonical_root / benchmark_plan.tileset / f"{model}.npy"
+        canonical_path = canonical_access_root / benchmark_plan.tileset / f"{model}.npy"
         canonical_full = _load_validated_canonical_matrix(
             canonical_path=canonical_path,
             manifest_path=tileset_manifest_path,
@@ -1472,14 +2045,30 @@ def evaluate_waiv_panel(
             device_arg=device_arg,
             model=model,
         )
-        alternative_path = inventory[(benchmark, model)][0]
+        logical_alternative_path = inventory[(benchmark, model)][0]
+        alternative_path = study_embedding_path(
+            study_root=study_access_root,
+            tileset=benchmark_plan.tileset,
+            model=model,
+            representation=model_plan.alternative,
+        )
+        model_spec = _build_model_registry()[model]
         expected_alternative = extraction.build_embedding_artifact_contract(
             manifest_path=tileset_manifest_path,
-            spec=_build_model_registry()[model],
+            spec=model_spec,
             batch_size=model_plan.batch_size,
             device_arg=device_arg,
             pooling=model_plan.alternative,
         )
+        if model_spec.backend == "rudolfv2":
+            expected_alternative, _canonical = _prepare_rudolf_cls_derivation(
+                canonical_path=canonical_path,
+                manifest_path=tileset_manifest_path,
+                spec=model_spec,
+                batch_size=model_plan.batch_size,
+                device_arg=device_arg,
+                alternative_contract=expected_alternative,
+            )
         if not artifact_is_reusable(alternative_path, expected_alternative):
             raise FileNotFoundError(f"alternative embedding is missing: {alternative_path}")
         alternative_full = np.load(alternative_path, mmap_mode="r")
@@ -1532,19 +2121,136 @@ def evaluate_waiv_panel(
                 alternative=alternative_eval,
                 aligned_manifest=aligned_manifest,
                 provenance_inputs={
-                    "canonical_matrix": _file_provenance(canonical_path),
-                    "canonical_sidecar": _file_provenance(sidecar_path(canonical_path)),
-                    "alternative_matrix": _file_provenance(alternative_path),
-                    "alternative_sidecar": _file_provenance(sidecar_path(alternative_path)),
-                    "tileset_manifest": _file_provenance(tileset_manifest_path),
-                    "evaluation_manifest": _file_provenance(eval_manifest_path),
+                    "canonical_matrix": _file_provenance(
+                        logical_canonical_path,
+                        access_path=canonical_path,
+                    ),
+                    "canonical_sidecar": _file_provenance(
+                        sidecar_path(logical_canonical_path),
+                        access_path=sidecar_path(canonical_path),
+                    ),
+                    "alternative_matrix": _file_provenance(
+                        logical_alternative_path,
+                        access_path=alternative_path,
+                    ),
+                    "alternative_sidecar": _file_provenance(
+                        sidecar_path(logical_alternative_path),
+                        access_path=sidecar_path(alternative_path),
+                    ),
+                    "tileset_manifest": _file_provenance(
+                        logical_tileset_manifest_path,
+                        access_path=tileset_manifest_path,
+                    ),
+                    "evaluation_manifest": _file_provenance(
+                        logical_eval_manifest_path,
+                        access_path=eval_manifest_path,
+                    ),
                     "preservation_baseline": _file_provenance(
-                        study_root / PRESERVATION_BASELINE_NAME
+                        study_root / PRESERVATION_BASELINE_NAME,
+                        access_path=study_access_root / PRESERVATION_BASELINE_NAME,
                     ),
                 },
+                identity=RUDOLFV2_MODEL_IDENTITIES.get(model),
             )
         )
     return runs
+
+
+def _evaluate_pooling_cell(request: StudyCellRequest) -> StudyRun:
+    """Evaluate exactly one cell inside a worker process."""
+
+    with config_context(working_memory=NEIGHBOR_WORKING_MEMORY_MIB):
+        runs = evaluate_pooling_panel(
+            canonical_root=request.canonical_root,
+            study_root=request.study_root,
+            eval_manifest_root=request.eval_manifest_root,
+            canonical_access_root=request.canonical_access_root,
+            study_access_root=request.study_access_root,
+            eval_manifest_access_root=request.eval_manifest_access_root,
+            device_arg=request.device_arg,
+            inventory={(request.benchmark, request.model): request.inventory_entry},
+            model_plans=request.model_plans,
+            eval_manifest_override=request.eval_manifest_override,
+        )
+    if len(runs) != 1:
+        raise RuntimeError(
+            f"isolated evaluation returned {len(runs)} cells for "
+            f"{(request.benchmark, request.model)}"
+        )
+    return runs[0]
+
+
+def _evaluate_pooling_cell_in_fresh_process(request: StudyCellRequest) -> StudyRun:
+    """Evaluate one cell and release all worker allocations before returning."""
+
+    context = multiprocessing.get_context("spawn")
+    with ProcessPoolExecutor(max_workers=1, mp_context=context) as executor:
+        return executor.submit(_evaluate_pooling_cell, request).result()
+
+
+def evaluate_pooling_panel_isolated(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    eval_manifest_root: Path,
+    device_arg: str,
+    inventory: dict[tuple[str, str], tuple[Path, str]],
+    model_plans: dict[str, StudyModelPlan],
+    canonical_access_root: Path | None = None,
+    study_access_root: Path | None = None,
+    eval_manifest_access_root: Path | None = None,
+    eval_manifest_override: Path | None = None,
+    cell_runner: Callable[[StudyCellRequest], StudyRun] | None = None,
+) -> list[StudyRun]:
+    """Evaluate cells sequentially in fresh processes to bound allocator high-water state."""
+
+    run_cell = _evaluate_pooling_cell_in_fresh_process if cell_runner is None else cell_runner
+    runs: list[StudyRun] = []
+    for benchmark, model in sorted(inventory):
+        request = StudyCellRequest(
+            benchmark=benchmark,
+            model=model,
+            inventory_entry=inventory[(benchmark, model)],
+            canonical_root=Path(canonical_root),
+            study_root=Path(study_root),
+            eval_manifest_root=Path(eval_manifest_root),
+            canonical_access_root=(
+                None if canonical_access_root is None else Path(canonical_access_root)
+            ),
+            study_access_root=None if study_access_root is None else Path(study_access_root),
+            eval_manifest_access_root=(
+                None if eval_manifest_access_root is None else Path(eval_manifest_access_root)
+            ),
+            device_arg=str(device_arg),
+            model_plans=model_plans,
+            eval_manifest_override=(
+                None if eval_manifest_override is None else Path(eval_manifest_override)
+            ),
+        )
+        runs.append(run_cell(request))
+    return runs
+
+
+def evaluate_waiv_panel(
+    *,
+    canonical_root: Path,
+    study_root: Path,
+    eval_manifest_root: Path,
+    device_arg: str,
+    inventory: dict[tuple[str, str], tuple[Path, str]],
+    eval_manifest_override: Path | None = None,
+) -> list[StudyRun]:
+    """Compatibility wrapper for the issue-151 Waiv panel."""
+
+    return evaluate_pooling_panel(
+        canonical_root=canonical_root,
+        study_root=study_root,
+        eval_manifest_root=eval_manifest_root,
+        device_arg=device_arg,
+        inventory=inventory,
+        model_plans=WAIV_STUDY_MODELS,
+        eval_manifest_override=eval_manifest_override,
+    )
 
 
 def run_mascaret_camelyon(

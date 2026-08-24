@@ -364,18 +364,22 @@ def test_rudolfv2_artifact_contract_records_preprocessing_and_pooling(
     }
 
 
-def test_rudolfv2_cls_only_contract_records_raw_cls_and_half_width(
-    tmp_path: Path, extraction_module
+@pytest.mark.parametrize(
+    ("name", "alternative_width"),
+    [("RudolfV 2", 1536), ("RudolfV 2-B", 768), ("RudolfV 2-S", 384)],
+)
+def test_rudolfv2_cls_only_contract_records_raw_cls_and_exact_family_width(
+    name: str, alternative_width: int, tmp_path: Path, extraction_module
 ) -> None:
     contract = extraction_module.build_embedding_artifact_contract(
         manifest_path=_write_manifest(tmp_path / "manifest.csv"),
-        spec=mr._build_model_registry()["RudolfV 2-S"],
+        spec=mr._build_model_registry()[name],
         batch_size=32,
         device_arg="cpu",
         pooling="cls-only",
     )
 
-    assert contract.output_shape == (2, 384)
+    assert contract.output_shape == (2, alternative_width)
     assert contract.extraction_contract["pooling"] == {
         "representation_id": "cls-only",
         "method": "raw-cls",

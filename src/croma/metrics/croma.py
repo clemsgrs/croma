@@ -1,8 +1,10 @@
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from sklearn import get_config
 from sklearn.neighbors import NearestNeighbors
 
 from croma.metrics.base import (
@@ -197,6 +199,20 @@ def _scan_typed_neighbors_for_query_rows(
     return defined
 
 
+def _working_memory_query_batches(
+    query_indices: np.ndarray,
+    *,
+    n_samples: int,
+) -> Iterator[np.ndarray]:
+    """Yield the same query slices as sklearn's pairwise-distance chunker."""
+
+    row_bytes = 8 * int(n_samples)
+    working_memory_mib = float(get_config()["working_memory"])
+    batch_size = max(1, int(working_memory_mib * (2**20) // row_bytes))
+    for start in range(0, int(query_indices.size), batch_size):
+        yield query_indices[start : start + batch_size]
+
+
 def _iterative_typed_neighbor_search(
     *,
     features: np.ndarray,
@@ -252,31 +268,35 @@ def _iterative_typed_neighbor_search(
             n_samples,
             _initial_n_neighbors(kmax=int(k_current), group_ids=group_ids, n_samples=n_samples) + 1,
         )
-        distances, raw_neighbors = model.kneighbors(
-            features[query_indices], n_neighbors=fetch_neighbors
-        )
+        for batch_indices in _working_memory_query_batches(
+            query_indices,
+            n_samples=n_samples,
+        ):
+            distances, raw_neighbors = model.kneighbors(
+                features[batch_indices], n_neighbors=fetch_neighbors
+            )
 
-        neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_group(
-            raw_neighbors=raw_neighbors,
-            raw_distances=distances,
-            query_indices=query_indices,
-            group_ids=group_ids,
-            kmax=int(k_current),
-        )
+            neigh_idx, neigh_dist, valid_counts = _filter_query_neighbors_excluding_same_group(
+                raw_neighbors=raw_neighbors,
+                raw_distances=distances,
+                query_indices=batch_indices,
+                group_ids=group_ids,
+                kmax=int(k_current),
+            )
 
-        newly_defined = _scan_typed_neighbors_for_query_rows(
-            labels=labels,
-            centers=centers,
-            query_indices=query_indices,
-            neigh_idx=neigh_idx,
-            neigh_dist=neigh_dist,
-            valid_counts=valid_counts,
-            m=int(m),
-            so_dists=so_dists,
-            os_dists=os_dists,
-        )
-        if bool(np.any(newly_defined)):
-            defined_mask[query_indices[newly_defined]] = True
+            newly_defined = _scan_typed_neighbors_for_query_rows(
+                labels=labels,
+                centers=centers,
+                query_indices=batch_indices,
+                neigh_idx=neigh_idx,
+                neigh_dist=neigh_dist,
+                valid_counts=valid_counts,
+                m=int(m),
+                so_dists=so_dists,
+                os_dists=os_dists,
+            )
+            if bool(np.any(newly_defined)):
+                defined_mask[batch_indices[newly_defined]] = True
         unresolved_mask = ~defined_mask
 
         if int(k_current) >= n_samples - 1:
