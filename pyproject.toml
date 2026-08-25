@@ -124,8 +124,9 @@ include = [
   "/src",
   "/tests",
   "/docs",
-  # The semantic form-contract test reads this public repository artifact directly.
+  # The semantic form-contract test reads these public repository artifacts directly.
   "/.github/ISSUE_TEMPLATE/tile-encoder-request.yml",
+  "/.github/ISSUE_TEMPLATE/slide-encoder-request.yml",
   "/scripts",
   # The published benchmark results (ADR-0016). A few tens of KB describing the package's
   # own evaluation, and tests/test_results_export.py reads them, so an sdist without them

@@ -16,6 +16,10 @@ one embedding per slide, and every number below is computed over those slide emb
 each other, nothing more. There is also no natural-image control at slide level, so no
 row carries the † mark.
 
+.. raw:: html
+
+   <p><a href="https://github.com/clemsgrs/croma/issues/new?template=slide-encoder-request.yml">Don't see a slide encoder? Request an evaluation</a></p>
+
 .. results-table:: pcabiop
    :caption: PCaBiop, sorted by median ``CRoMa``. Columns are explained under
              :ref:`result-columns`.
