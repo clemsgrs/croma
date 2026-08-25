@@ -93,6 +93,7 @@ too.
    metrics
    manifest
    api
+   request-model
 
 .. toctree::
    :maxdepth: 1

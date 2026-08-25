@@ -75,6 +75,15 @@ repro = [
 ]
 dev = [
   "pytest>=8.0",
+  # Tests inspect GitHub Issue Forms semantically instead of matching YAML text.
+  "PyYAML>=6.0",
+  # The rendered documentation journey is an acceptance-test seam, so the dev test
+  # environment needs the same Sphinx stack as the production docs build below.
+  "sphinx>=8.1",
+  "furo",
+  "sphinx-copybutton",
+  "sphinx-autodoc-typehints",
+  "sphinxext-opengraph",
   "matplotlib>=3.8",
   "scipy>=1.11",
   # Capped below the next major: black's style changes between majors, so an unpinned
@@ -115,6 +124,8 @@ include = [
   "/src",
   "/tests",
   "/docs",
+  # The semantic form-contract test reads this public repository artifact directly.
+  "/.github/ISSUE_TEMPLATE/tile-encoder-request.yml",
   "/scripts",
   # The published benchmark results (ADR-0016). A few tens of KB describing the package's
   # own evaluation, and tests/test_results_export.py reads them, so an sdist without them
