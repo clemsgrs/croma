@@ -621,6 +621,16 @@ def _cohort_provenance(cohort: Cohort, metrics: pd.DataFrame) -> dict:
 
 def _provenance(meta: dict[str, dict], rendered: dict[str, str], aggregate: pd.DataFrame) -> dict:
     """The sidecar. Everything a reader needs to say which run this table describes."""
+    # nIPD is published by its own manuscript-study exporter, but ADR-0016's repository
+    # sidecar still inventories every committed data file under results/. Reading those
+    # two finalized artifacts here preserves separate generation while keeping one
+    # checksum surface for the public tree.
+    separately_generated = {
+        f"results/{name}": (RESULTS / name).read_text(encoding="utf-8")
+        for name in ("nipd.json", "nipd.csv")
+        if (RESULTS / name).exists()
+    }
+    checksummed = {**rendered, **separately_generated}
     return {
         "croma_version": CROMA_VERSION,
         "exported": dt.date.today().isoformat(),
@@ -642,7 +652,7 @@ def _provenance(meta: dict[str, dict], rendered: dict[str, str], aggregate: pd.D
         # about the numbers. The freshness test covers the README instead.
         "files": {
             path: hashlib.sha256(content.encode()).hexdigest()
-            for path, content in sorted(rendered.items())
+            for path, content in sorted(checksummed.items())
             if path.startswith("results/") and not path.endswith("PROVENANCE.json")
         },
     }

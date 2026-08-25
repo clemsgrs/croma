@@ -3,7 +3,19 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
+
+from sphinx.deprecation import RemovedInSphinx10Warning
+
+# sphinx-autodoc-typehints 3.6 still calls a Sphinx API deprecated for removal in 10.
+# It is dependency noise rather than a documentation warning, and otherwise makes a
+# successful ``sphinx -W`` build look non-clean on Sphinx 9.
+warnings.filterwarnings(
+    "ignore",
+    category=RemovedInSphinx10Warning,
+    module=r"sphinx_autodoc_typehints\._parser",
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -34,11 +46,12 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinxext.opengraph",
     # Local: the themed-figure directive (docs/_ext/themedfigure.py), the directives that
-    # render the committed results/ CSVs (docs/_ext/resultstable.py), and the inline role
-    # that computes run-derived numbers from them (docs/_ext/resultsvalue.py).
+    # render committed publication artifacts, and the inline role that computes
+    # run-derived numbers from them (docs/_ext/resultsvalue.py).
     "themedfigure",
     "resultstable",
     "resultsvalue",
+    "nipdtable",
 ]
 
 templates_path = ["_templates"]

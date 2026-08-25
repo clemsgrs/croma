@@ -47,6 +47,12 @@ publication artifacts, whereas `scripts/repro/` writes the ignored paper assembl
   server: `html_extra_path` copies the whole tree to the site root.
 - `results/PROVENANCE.json` — protocol, per-cohort `k`, `tau` policy, roster size,
   `croma` version, source run path, export date, and a sha256 per committed data file.
+- `results/nipd.json` and `results/nipd.csv` — the downstream publication contract and
+  its tabular view. `scripts/tools/export_nipd.py` derives both from the canonical nIPD
+  study without rerunning probes. The JSON carries study-source hashes, schema/version,
+  repeat and interval provenance; the repository sidecar above hashes both emitted files.
+  The separate exporter preserves one float basis without making the representation-results
+  exporter understand probe trajectories.
 - A marked region of `README.md`, rewritten in place. A hand-written table in the README
   is the same hazard as a hand-written one on the site with less to catch it, so the
   exporter owns that block too. Its checksum is deliberately *not* in `PROVENANCE.json`:
