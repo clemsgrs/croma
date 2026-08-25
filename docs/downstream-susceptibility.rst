@@ -7,6 +7,35 @@ change over the confounding range**, and **positive nIPD means net improvement**
 near-zero signed area can include offsetting changes, so it is not proof of stable
 performance at every point.
 
+Interactive evidence browser
+----------------------------
+
+Select a cohort first, then inspect the cohort's pathology encoders on one signed nIPD
+axis. The overview runs from more degradation toward **less degradation**: negative is net
+degradation, zero is no net change, and positive is net improvement. Selecting an encoder
+opens the real sampled trajectory that supplies its scalar. ``DINOv2-B`` is shown
+separately as a natural-image control where it is available; it is not ranked with the
+pathology encoders.
+
+ID is the default mechanistic view. OOD also reflects transfer effects from acquisition
+groups unseen during training. The trajectory scale stays fixed while switching models
+within a cohort and regime. Its patterned signed lobes make cancellation visible, and the
+sampled points expose the paired-repeat 95% t-intervals used to describe uncertainty.
+
+.. raw:: html
+
+   <div class="croma-nipd-explorer" data-payload="nipd.json"
+        aria-label="Explore cohort-specific nIPD evidence">
+     <p>Loading the committed nIPD evidence…</p>
+   </div>
+   <noscript>
+     <p><strong>Interactive explorer unavailable:</strong> JavaScript is disabled.
+     The static tables below are the complete no-JavaScript equivalent.</p>
+   </noscript>
+
+The static tables below are the complete no-JavaScript equivalent and use the same
+committed payload as the explorer.
+
 The confounder-biased probe sweep trains a logistic probe to predict the biological class
 from frozen embeddings. Its training composition moves from balanced to fully confounded
 while the test rows stay fixed. At each Cramér's-``V`` value, nIPD compares mean balanced

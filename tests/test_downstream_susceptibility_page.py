@@ -77,6 +77,25 @@ def test_page_explains_nipd_before_the_continuity_metric_and_public_api(rendered
     assert 'href="nipd.json"' in html and 'href="nipd.csv"' in html
 
 
+def test_page_mounts_an_accessible_interactive_evidence_browser(rendered: Path) -> None:
+    page = rendered / "downstream-susceptibility.html"
+    html = page.read_text(encoding="utf-8")
+    text = _text(page)
+
+    assert 'class="croma-nipd-explorer"' in html
+    assert 'data-payload="nipd.json"' in html
+    assert 'aria-label="Explore cohort-specific nIPD evidence"' in html
+    assert "Interactive evidence browser" in text
+    assert "Select a cohort first" in text
+    assert "less degradation" in text
+    assert "negative is net degradation" in text
+    assert "zero is no net change" in text
+    assert "positive is net improvement" in text
+    assert "OOD also reflects transfer effects" in text
+    assert "The static tables below are the complete no-JavaScript equivalent" in text
+    assert 'src="_static/nipd-explorer.js' in html
+
+
 def test_static_tables_cover_every_cohort_regime_without_javascript(rendered: Path) -> None:
     page = rendered / "downstream-susceptibility.html"
     html = page.read_text(encoding="utf-8")

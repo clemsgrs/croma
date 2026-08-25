@@ -397,6 +397,267 @@ table.croma-results tr.croma-exposure-exposed {
 }
 
 /* --------------------------------------------------------------------------
+   Downstream-susceptibility explorer. The publication payload is the only data source;
+   theme variables keep every mark legible in both furo palettes.
+   -------------------------------------------------------------------------- */
+
+.croma-nipd-explorer {
+  --croma-nipd-negative: #b64c3f;
+  --croma-nipd-positive: #287a62;
+  margin: 1.25rem 0;
+  padding: 1rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.75rem;
+  background: var(--color-background-primary);
+}
+
+.croma-nipd-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.8rem;
+  align-items: end;
+}
+
+.croma-nipd-field {
+  display: flex;
+  flex: 1 1 14rem;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--color-foreground-secondary);
+  font-size: 0.8rem;
+}
+
+.croma-nipd-field select {
+  min-height: 2.75rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.35rem;
+  color: var(--color-foreground-primary);
+  background: var(--color-background-secondary);
+  font: inherit;
+  font-size: 0.88rem;
+}
+
+.croma-nipd-context,
+.croma-nipd-direction,
+.croma-nipd-cancellation,
+.croma-nipd-inspection {
+  color: var(--color-foreground-secondary);
+  font-size: 0.84rem;
+}
+
+.croma-nipd-context {
+  margin: 0.65rem 0 1rem;
+}
+
+.croma-nipd-heading {
+  margin: 0.6rem 0 0.25rem;
+  padding: 0;
+  font-size: 0.95rem;
+}
+
+.croma-nipd-direction {
+  margin: 0 0 0.25rem;
+  text-align: center;
+}
+
+.croma-nipd-overview,
+.croma-nipd-trajectory {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.croma-nipd-overview-scroll {
+  max-height: 30rem;
+  overflow: auto;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.35rem;
+}
+
+.croma-nipd-hit,
+.croma-nipd-sample-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.croma-nipd-model,
+.croma-nipd-sample {
+  cursor: pointer;
+  outline: none;
+  touch-action: manipulation;
+}
+
+.croma-nipd-model:hover .croma-nipd-hit,
+.croma-nipd-model:focus .croma-nipd-hit,
+.croma-nipd-model.is-selected .croma-nipd-hit {
+  fill: var(--color-background-secondary);
+}
+
+.croma-nipd-model:focus .croma-nipd-dot,
+.croma-nipd-model.is-selected .croma-nipd-dot,
+.croma-nipd-sample:focus .croma-nipd-sample-dot,
+.croma-nipd-sample.is-inspected .croma-nipd-sample-dot {
+  stroke: var(--color-foreground-primary);
+  stroke-width: 3;
+}
+
+.croma-nipd-dot,
+.croma-nipd-sample-dot {
+  fill: var(--color-brand-primary);
+  stroke: var(--color-background-primary);
+  stroke-width: 1.5;
+}
+
+.croma-nipd-model.is-control .croma-nipd-dot {
+  fill: var(--color-foreground-secondary);
+  stroke-width: 2;
+}
+
+.croma-nipd-model-label,
+.croma-nipd-value,
+.croma-nipd-axis-label,
+.croma-nipd-control-label,
+.croma-nipd-axis-title {
+  fill: var(--color-foreground-secondary);
+  font-size: 11px;
+}
+
+.croma-nipd-model-label {
+  fill: var(--color-foreground-primary);
+  text-anchor: end;
+}
+
+.croma-nipd-value,
+.croma-nipd-axis-label.is-end {
+  text-anchor: end;
+  font-variant-numeric: tabular-nums;
+}
+
+.croma-nipd-axis-label.is-middle,
+.croma-nipd-axis-title {
+  text-anchor: middle;
+}
+
+.croma-nipd-control-label {
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.croma-nipd-control-separator {
+  stroke: var(--color-background-border);
+  stroke-dasharray: 3 3;
+}
+
+.croma-nipd-zero {
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.croma-nipd-detail {
+  margin-top: 1rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+.croma-nipd-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.45rem;
+  margin: 0.65rem 0;
+}
+
+.croma-nipd-metrics div {
+  padding: 0.5rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.35rem;
+  background: var(--color-background-secondary);
+}
+
+.croma-nipd-metrics dt {
+  color: var(--color-foreground-secondary);
+  font-size: 0.7rem;
+}
+
+.croma-nipd-metrics dd {
+  margin: 0.15rem 0 0;
+  color: var(--color-foreground-primary);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.croma-nipd-interval {
+  fill: var(--color-brand-primary);
+  fill-opacity: 0.14;
+  stroke: none;
+}
+
+.croma-nipd-lobe.is-positive {
+  stroke: var(--croma-nipd-positive);
+  stroke-width: 0.6;
+}
+
+.croma-nipd-lobe.is-negative {
+  stroke: var(--croma-nipd-negative);
+  stroke-width: 0.6;
+}
+
+.croma-nipd-pattern-line {
+  fill: none;
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1;
+  opacity: 0.42;
+}
+
+.croma-nipd-mean {
+  fill: none;
+  stroke: var(--color-brand-primary);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.croma-nipd-whisker {
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1;
+}
+
+.croma-nipd-inspection {
+  min-height: 2.75rem;
+  margin: 0.25rem 0;
+  padding: 0.45rem 0.6rem;
+  border-left: 3px solid var(--color-brand-primary);
+  background: var(--color-background-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.croma-nipd-cancellation {
+  margin-bottom: 0;
+}
+
+@media (max-width: 42rem) {
+  .croma-nipd-explorer {
+    padding: 0.65rem;
+  }
+
+  .croma-nipd-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .croma-nipd-overview,
+  .croma-nipd-trajectory {
+    min-width: 38rem;
+  }
+
+  .croma-nipd-explorer {
+    overflow-x: auto;
+  }
+}
+
+/* --------------------------------------------------------------------------
    Themed figures. The SVG pairs are rendered at a paper column's natural size,
    which is small on a docs page: let them fill the content column instead.
    figures.js wraps each in a link to the full-size SVG; the cursor says so.

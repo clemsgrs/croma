@@ -110,9 +110,9 @@ html_static_path = ["_static"]
 # rather than only from the repository.
 html_extra_path = ["../results"]
 html_css_files = ["custom.css"]
-# Loaded on every page but inert on all but one: the explorer returns immediately unless
-# the page provides its mount point, and only then does it fetch the 35 KB payload.
-html_js_files = ["explorer.js", "figures.js", "pareto.js"]
+# Loaded on every page but inert unless that page provides the corresponding mount point;
+# each explorer fetches its committed publication payload only after finding a mount.
+html_js_files = ["explorer.js", "nipd-explorer.js", "figures.js", "pareto.js"]
 # Bare project name: the version lives in the sidebar card's release badge instead.
 html_title = "croma"
 html_show_sourcelink = False
