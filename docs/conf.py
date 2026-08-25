@@ -3,7 +3,19 @@
 from __future__ import annotations
 
 import sys
+import warnings
 from pathlib import Path
+
+from sphinx.deprecation import RemovedInSphinx10Warning
+
+# sphinx-autodoc-typehints 3.6 still calls a Sphinx API deprecated for removal in 10.
+# It is dependency noise rather than a documentation warning, and otherwise makes a
+# successful ``sphinx -W`` build look non-clean on Sphinx 9.
+warnings.filterwarnings(
+    "ignore",
+    category=RemovedInSphinx10Warning,
+    module=r"sphinx_autodoc_typehints\._parser",
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
