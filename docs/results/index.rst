@@ -12,6 +12,10 @@ published on its own page. Every number on this page is read at build time from 
 transcribed. The method is described in `A distributional robustness margin
 for pathology foundation models <https://arxiv.org/abs/2607.25497>`_.
 
+.. raw:: html
+
+   <p><a href="https://github.com/clemsgrs/croma/issues/new?template=tile-encoder-request.yml">Don't see a tile encoder? Request an evaluation</a></p>
+
 .. _aggregate-table:
 
 Two rankings, one frontier
