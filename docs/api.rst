@@ -132,6 +132,8 @@ accuracy.
 nIPD
 ^^^^
 
+.. _nipd-api:
+
 ``nipd`` is the normalized integrated performance degradation: the signed area under
 the chance-normalized degradation curve over Cramér's ``V``. It divides performance
 changes by baseline *skill* -- balanced accuracy above chance -- rather than by raw
@@ -151,6 +153,11 @@ coordinates. Consequently, interval widths -- not the number of sampled conditio
 weight the curve. The coordinates must be finite, strictly increasing, aligned with the
 accuracy rows and span ``0`` to ``1``. The mean baseline must exceed chance; there is no
 additional weak-skill threshold.
+
+Negative values mean net degradation, positive values mean net improvement, and values
+near zero mean **little or no net change over the confounding range**. Because positive
+and negative portions can cancel in a signed area, near-zero nIPD does not prove stable
+performance at every sampled point.
 
 .. code-block:: python
 

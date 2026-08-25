@@ -34,11 +34,12 @@ extensions = [
     "sphinx_autodoc_typehints",
     "sphinxext.opengraph",
     # Local: the themed-figure directive (docs/_ext/themedfigure.py), the directives that
-    # render the committed results/ CSVs (docs/_ext/resultstable.py), and the inline role
-    # that computes run-derived numbers from them (docs/_ext/resultsvalue.py).
+    # render committed publication artifacts, and the inline role that computes
+    # run-derived numbers from them (docs/_ext/resultsvalue.py).
     "themedfigure",
     "resultstable",
     "resultsvalue",
+    "nipdtable",
 ]
 
 templates_path = ["_templates"]

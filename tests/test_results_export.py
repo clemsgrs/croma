@@ -327,8 +327,19 @@ def _provenance() -> dict:
 
 
 def test_provenance_names_every_committed_artifact_and_no_others():
+    """Representation-results provenance covers only its exporter's files.
+
+    The manuscript-derived nIPD publication is owned by ``export_nipd.py`` and carries
+    source provenance inside its JSON payload. Combining the two would make either
+    exporter rewrite provenance for artifacts it cannot reproduce.
+    """
     listed = set(_provenance()["files"])
-    on_disk = {f"results/{p.name}" for p in RESULTS.iterdir() if p.name != "PROVENANCE.json"}
+    separately_owned = {"nipd.json", "nipd.csv"}
+    on_disk = {
+        f"results/{p.name}"
+        for p in RESULTS.iterdir()
+        if p.name != "PROVENANCE.json" and p.name not in separately_owned
+    }
     assert listed == on_disk
 
 

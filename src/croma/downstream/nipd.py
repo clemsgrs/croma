@@ -21,10 +21,11 @@ def nipd(accuracies: ArrayLike, cramers_v: ArrayLike, chance: float) -> float:
         g(V) = (mean_accuracy(V) - mean_accuracy(0)) / (mean_accuracy(0) - chance)
 
     nIPD is the signed area under ``g`` on ``[0, 1]``, estimated by trapezoidal
-    integration over the supplied Cramér's-V coordinates. Thus ``0`` means no
-    degradation, increasingly negative values mean greater shortcut susceptibility,
-    and ``-0.5`` is the area of a linear fall from baseline performance at ``V=0`` to
-    chance performance at ``V=1``.
+    integration over the supplied Cramér's-V coordinates. Thus increasingly negative
+    values mean greater shortcut susceptibility, values near ``0`` mean little or no net
+    change over the confounding range (not proven stability at every point), and positive
+    values mean net improvement. ``-0.5`` is the area of a linear fall from baseline
+    performance at ``V=0`` to chance performance at ``V=1``.
 
     Args:
         accuracies: ``(n_splits, n_iterations)`` balanced accuracies, row ``0`` the

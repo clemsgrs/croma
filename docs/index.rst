@@ -5,7 +5,8 @@ croma
 biology rather than by non-biological technical variation -- staining, scanning, tissue
 preparation -- across centers.
 
-It implements three complementary neighbourhood metrics:
+Its public measurements form two distinct branches. **Representation robustness** is
+measured directly in frozen embedding neighbourhoods by three complementary metrics:
 
 - **RI**, the Robustness Index, which counts favourable versus unfavourable neighbours
 - **MaRI**, the Margin-aware Robustness Index, which weights that same evidence by distance
@@ -17,6 +18,10 @@ provides a clean re-implementation of it, adds MaRI as its margin-aware extensio
 introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are described in
 `A distributional robustness margin for pathology foundation models
 <https://arxiv.org/abs/2607.25497>`_.
+
+**Downstream shortcut susceptibility** asks how a supervised biological-class probe changes
+when its training composition becomes confounder-biased. The primary reduction is
+:doc:`nIPD <downstream-susceptibility>`, a signed area normalized by baseline skill.
 
 .. code-block:: bash
 
@@ -54,8 +59,12 @@ point to name it.
        <p>Install croma and score your first model</p>
      </a>
      <a class="croma-card" href="metrics.html">
-       <h3>Metrics</h3>
+       <h3>Representation robustness</h3>
        <p>What RI, MaRI, and CRoMa measure</p>
+     </a>
+     <a class="croma-card" href="downstream-susceptibility.html">
+       <h3>Downstream shortcut susceptibility</h3>
+       <p>Understand nIPD and inspect every static result</p>
      </a>
      <a class="croma-card" href="manifest.html">
        <h3>Manifest</h3>
@@ -91,6 +100,7 @@ too.
 
    getting-started
    metrics
+   downstream-susceptibility
    manifest
    api
    request-model
