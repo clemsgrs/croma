@@ -7,6 +7,7 @@ import csv
 import importlib.util
 import json
 import math
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,7 @@ def _exporter():
     spec = importlib.util.spec_from_file_location("export_nipd", EXPORTER)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -54,6 +56,8 @@ def test_committed_payload_is_complete_and_valid() -> None:
         assert [(model["model"], model["panel"], model["ranked"]) for model in control] == [
             ("DINOv2-B", "tile", False)
         ]
+        assert "RudolfV-2" in [model["model"] for model in cohort["models"]]
+        assert "RudolfV 2" not in [model["model"] for model in cohort["models"]]
     assert all(model["model"] != "DINOv2-B" for model in published["cohorts"][3]["models"])
 
 
@@ -124,6 +128,11 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
             "shape",
         ),
         (lambda p: p["provenance"].update(study_revision="stale"), "provenance"),
+        (
+            lambda p: p["provenance"].update(apd_summary_sha256="0" * 64),
+            "provenance",
+        ),
+        (lambda p: p["cohorts"][0].update(chance=0.123), "chance"),
     ],
 )
 def test_validation_fails_closed(corrupt, message: str) -> None:
@@ -138,6 +147,10 @@ def test_validation_rejects_an_oversized_payload() -> None:
     payload["padding"] = "x" * _exporter().MAX_PAYLOAD_BYTES
     with pytest.raises(ValueError, match="oversized"):
         _exporter().validate_payload(payload)
+
+
+def test_committed_summary_is_fresh_from_the_committed_float_basis() -> None:
+    _exporter().check_committed(ROOT / "results")
 
 
 @pytest.mark.skipif(
