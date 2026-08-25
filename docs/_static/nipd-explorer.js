@@ -23,6 +23,9 @@
   var DETAIL_WIDTH = 720;
   var DETAIL_HEIGHT = 360;
   var DETAIL_PAD = { top: 26, right: 24, bottom: 55, left: 62 };
+  var ASSOCIATION_WIDTH = 720;
+  var ASSOCIATION_HEIGHT = 410;
+  var ASSOCIATION_PAD = { top: 34, right: 30, bottom: 58, left: 64 };
 
   function createView(payload) {
     if (!payload || payload.schema_version !== 1 || !Array.isArray(payload.cohorts)) {
@@ -131,6 +134,7 @@
         }) || null,
         pathology: pathologyModels(activeCohort, state.regime),
         control: activeCohort.models.filter(function (candidate) { return candidate.is_control; }),
+        association: association(activeCohort, state.regime),
         yDomain: contextYDomain(activeCohort, state.regime),
         readout: {
           nipd: result.nipd,
@@ -148,6 +152,30 @@
       setContext: setContext,
       snapshot: snapshot,
       swapFocus: swapFocus,
+    };
+  }
+
+  function association(cohort, regime) {
+    var metadata = cohort.association;
+    var result = metadata.regimes[regime];
+    return {
+      pathology: cohort.models.filter(function (model) { return model.ranked; })
+        .map(function (model) { return associationPoint(model, regime); }),
+      control: cohort.models.filter(function (model) { return model.is_control; })
+        .map(function (model) { return associationPoint(model, regime); }),
+      n: result.n,
+      rho: result.spearman_rho,
+      trend: result.trend,
+      descriptive: metadata.descriptive,
+    };
+  }
+
+  function associationPoint(model, regime) {
+    return {
+      model: model.model,
+      x: model.croma_median_m5,
+      y: model.regimes[regime].nipd,
+      isControl: model.is_control,
     };
   }
 
@@ -295,6 +323,10 @@
     }));
 
     mount.appendChild(renderDetail(view));
+    mount.appendChild(renderAssociation(state, function (name) {
+      view.select(name);
+      renderExplorer(mount, view, "association");
+    }));
 
     cohortSelect.addEventListener("change", function () {
       view.setContext(cohortSelect.value, regimeSelect.value);
@@ -309,10 +341,151 @@
       renderExplorer(mount, view, "comparison");
     });
     if (restoreFocus === "model") mount.querySelector(".croma-nipd-model.is-selected").focus();
+    if (restoreFocus === "association") {
+      mount.querySelector(".croma-nipd-association-point.is-selected").focus();
+    }
     if (restoreFocus === "cohort") cohortSelect.focus();
     if (restoreFocus === "regime") regimeSelect.focus();
     if (restoreFocus === "comparison") comparisonSelect.focus();
     if (restoreFocus === "swap") mount.querySelector(".croma-nipd-swap").focus();
+  }
+
+  function renderAssociation(state, choose) {
+    var associationState = state.association;
+    var points = associationState.pathology.concat(associationState.control);
+    var xValues = points.map(function (point) { return point.x; }).concat([0]);
+    var yValues = points.map(function (point) { return point.y; }).concat([0]);
+    if (associationState.trend) {
+      yValues = yValues.concat([
+        associationState.trend.intercept + associationState.trend.slope *
+        associationState.trend.x_min,
+        associationState.trend.intercept + associationState.trend.slope *
+          associationState.trend.x_max,
+      ]);
+    }
+    var xDomain = paddedDomain(xValues);
+    var yDomain = paddedDomain(yValues);
+    var x = linear(xDomain[0], xDomain[1], ASSOCIATION_PAD.left,
+      ASSOCIATION_WIDTH - ASSOCIATION_PAD.right);
+    var y = linear(yDomain[0], yDomain[1], ASSOCIATION_HEIGHT - ASSOCIATION_PAD.bottom,
+      ASSOCIATION_PAD.top);
+    var section = htmlEl("section", "croma-nipd-association");
+    section.setAttribute("aria-labelledby", "croma-nipd-association-heading");
+    var heading = htmlEl("h3", "croma-nipd-heading");
+    heading.id = "croma-nipd-association-heading";
+    heading.textContent = "CRoMa and downstream susceptibility";
+    section.appendChild(heading);
+    var annotation = htmlEl("p", "croma-nipd-association-stat");
+    annotation.textContent = "Spearman ρ = " + decimal(associationState.rho) + "; n = " +
+      associationState.n + " ranked pathology encoders" +
+      (associationState.descriptive ? "; descriptive (fitted trend omitted)." : ".");
+    section.appendChild(annotation);
+    var descriptionId = "croma-nipd-association-description";
+    var description = htmlEl("p", "croma-sr-only croma-nipd-association-description");
+    description.id = descriptionId;
+    description.textContent = "Model-level scatter of median CRoMa at m equals 5 against nIPD for " +
+      state.cohort.label + " " + state.regime.toUpperCase() + ". Statistics use ranked pathology " +
+      "encoders only. DINOv2-B is a separate natural-image reference when present. " +
+      (associationState.trend
+        ? "The least-squares trend over ranked pathology encoders has slope " +
+          decimal(associationState.trend.slope) + "."
+        : "The n=5 association is descriptive and has no fitted trend.");
+    section.appendChild(description);
+    var inspection = htmlEl("p", "croma-nipd-association-inspection");
+    inspection.setAttribute("aria-live", "polite");
+    var svg = svgEl("svg", {
+      class: "croma-nipd-association-plot",
+      viewBox: "0 0 " + ASSOCIATION_WIDTH + " " + ASSOCIATION_HEIGHT,
+      role: "group",
+      "aria-label": "CRoMa and nIPD association",
+      "aria-describedby": descriptionId,
+    });
+    svg.appendChild(svgEl("line", {
+      x1: x(0), x2: x(0), y1: ASSOCIATION_PAD.top,
+      y2: ASSOCIATION_HEIGHT - ASSOCIATION_PAD.bottom, class: "croma-nipd-zero",
+    }));
+    svg.appendChild(svgEl("line", {
+      x1: ASSOCIATION_PAD.left, x2: ASSOCIATION_WIDTH - ASSOCIATION_PAD.right,
+      y1: y(0), y2: y(0), class: "croma-nipd-zero",
+    }));
+    if (associationState.trend) {
+      svg.appendChild(svgEl("line", {
+        x1: x(associationState.trend.x_min),
+        y1: y(associationState.trend.intercept + associationState.trend.slope *
+          associationState.trend.x_min),
+        x2: x(associationState.trend.x_max),
+        y2: y(associationState.trend.intercept + associationState.trend.slope *
+          associationState.trend.x_max),
+        class: "croma-nipd-association-trend",
+        "aria-label": "Least-squares trend over ranked pathology encoders",
+      }));
+    }
+    points.forEach(function (point) {
+      var selected = point.model === state.selected.model;
+      var group = svgEl("g", {
+        class: "croma-nipd-association-point" + (selected ? " is-selected" : "") +
+          (point.isControl ? " is-control" : ""),
+        role: "button",
+        tabindex: "0",
+        "aria-pressed": selected ? "true" : "false",
+        "aria-label": associationInspection(point),
+      });
+      group.appendChild(svgEl("circle", {
+        cx: x(point.x), cy: y(point.y), r: 22, class: "croma-nipd-association-hit",
+      }));
+      if (point.isControl) {
+        group.appendChild(svgEl("polygon", {
+          points: [
+            [x(point.x), y(point.y) - 7], [x(point.x) + 7, y(point.y)],
+            [x(point.x), y(point.y) + 7], [x(point.x) - 7, y(point.y)],
+          ].map(function (pair) { return pair.join(","); }).join(" "),
+          class: "croma-nipd-association-mark",
+        }));
+      } else {
+        group.appendChild(svgEl("circle", {
+          cx: x(point.x), cy: y(point.y), r: 5, class: "croma-nipd-association-mark",
+        }));
+      }
+      if (selected || point.isControl) {
+        group.appendChild(svgText(x(point.x) + 9, y(point.y) - 9, point.model,
+          "croma-nipd-association-label"));
+      }
+      activate(group, function () { choose(point.model); });
+      group.addEventListener("click", function () { inspection.textContent = associationInspection(point); });
+      group.addEventListener("focus", function () { inspection.textContent = associationInspection(point); });
+      svg.appendChild(group);
+      if (selected) inspection.textContent = associationInspection(point);
+    });
+    svg.appendChild(svgText(ASSOCIATION_WIDTH / 2, ASSOCIATION_HEIGHT - 12,
+      "Median CRoMa (m=5)", "croma-nipd-axis-title"));
+    var yTitle = svgText(16, ASSOCIATION_HEIGHT / 2, "nIPD", "croma-nipd-axis-title");
+    yTitle.setAttribute("transform", "rotate(-90 16 " + ASSOCIATION_HEIGHT / 2 + ")");
+    svg.appendChild(yTitle);
+    [xDomain[0], 0, xDomain[1]].forEach(function (value) {
+      svg.appendChild(svgText(x(value), ASSOCIATION_HEIGHT - 36, decimal(value),
+        "croma-nipd-axis-label is-middle"));
+    });
+    [yDomain[0], 0, yDomain[1]].forEach(function (value) {
+      svg.appendChild(svgText(ASSOCIATION_PAD.left - 8, y(value) + 4, percent(value),
+        "croma-nipd-axis-label is-end"));
+    });
+    section.appendChild(svg);
+    section.appendChild(inspection);
+    return section;
+  }
+
+  function associationInspection(point) {
+    return point.model + ", " + (point.isControl
+      ? "natural-image reference excluded from trend and correlation"
+      : "pathology encoder") + ", median CRoMa " + decimal(point.x) + ", nIPD " +
+      percent(point.y);
+  }
+
+  function paddedDomain(values) {
+    var low = Math.min.apply(null, values);
+    var high = Math.max.apply(null, values);
+    var padding = Math.max((high - low) * 0.08, 0.01);
+    return [low - padding, high + padding];
   }
 
   function renderOverview(state, choose) {

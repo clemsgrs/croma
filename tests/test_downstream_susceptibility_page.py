@@ -96,6 +96,23 @@ def test_page_mounts_an_accessible_interactive_evidence_browser(rendered: Path) 
     assert 'src="_static/nipd-explorer.js' in html
 
 
+def test_page_explains_the_model_level_croma_nipd_association(rendered: Path) -> None:
+    page = rendered / "downstream-susceptibility.html"
+    html = page.read_text(encoding="utf-8")
+    text = _text(page)
+
+    assert "CRoMa and downstream susceptibility" in text
+    assert "median CRoMa at m=5" in text
+    assert "associated with nIPD" in text
+    assert "does not establish that CRoMa causes downstream performance" in text
+    assert "different evaluation samples" in text
+    assert "model-level comparison, not sample-level pairing" in text
+    assert "ranked pathology encoders only" in text
+    assert "DINOv2-B" in text and "excluded from the fitted trend and Spearman" in text
+    assert "PCaBiop contains n=5 encoders" in text and "descriptive" in text
+    assert 'src="_static/nipd-explorer.js' in html
+
+
 def test_static_tables_cover_every_cohort_regime_without_javascript(rendered: Path) -> None:
     page = rendered / "downstream-susceptibility.html"
     html = page.read_text(encoding="utf-8")
@@ -110,6 +127,9 @@ def test_static_tables_cover_every_cohort_regime_without_javascript(rendered: Pa
         assert f"chance balanced accuracy: {chance}" in text
     assert text.count("Baseline balanced accuracy") == 8
     assert text.count("Baseline skill") >= 8
+    assert text.count("Median CRoMa (m=5)") == 8
+    assert "Spearman ρ = 0.94; n=25 ranked pathology encoders" in text
+    assert "Spearman ρ = 0.60; n=5 ranked pathology encoders; descriptive" in text
     assert html.count('<table class="') >= 8
     assert "DINOv2-B †" in text
     assert (rendered / "nipd.json").read_bytes() == (ROOT / "results" / "nipd.json").read_bytes()
