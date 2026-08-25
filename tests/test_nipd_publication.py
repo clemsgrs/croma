@@ -61,29 +61,42 @@ def test_committed_payload_is_complete_and_valid() -> None:
     assert all(model["model"] != "DINOv2-B" for model in published["cohorts"][3]["models"])
 
 
-def test_representative_values_have_an_independent_float_basis() -> None:
+@pytest.mark.parametrize(
+    ("cohort_slug", "model_name", "regime", "expected_baseline", "expected_skill", "expected_nipd"),
+    [
+        ("camelyon", "CONCH", "id", 0.9714166667, 0.4714166667, -0.0427315084),
+        ("pcabiop", "PRISM2", "ood", 0.9449074074, 0.4449074074, -0.0111342352),
+    ],
+)
+def test_representative_values_have_an_independent_float_basis(
+    cohort_slug: str,
+    model_name: str,
+    regime: str,
+    expected_baseline: float,
+    expected_skill: float,
+    expected_nipd: float,
+) -> None:
     published = _payload()
-    camelyon = next(cohort for cohort in published["cohorts"] if cohort["slug"] == "camelyon")
-    conch = next(model for model in camelyon["models"] if model["model"] == "CONCH")
-    id_result = conch["regimes"]["id"]
+    cohort = next(item for item in published["cohorts"] if item["slug"] == cohort_slug)
+    model = next(item for item in cohort["models"] if item["model"] == model_name)
+    result = model["regimes"][regime]
 
     # Frozen manuscript-derived values, not recomputed from the implementation under test.
-    assert camelyon["chance"] == 0.5
-    assert id_result["baseline_balanced_accuracy"] == pytest.approx(0.9714166667)
-    assert id_result["baseline_skill"] == pytest.approx(0.4714166667)
-    assert id_result["nipd"] == pytest.approx(-0.0427315084)
+    assert result["baseline_balanced_accuracy"] == pytest.approx(expected_baseline)
+    assert result["baseline_skill"] == pytest.approx(expected_skill)
+    assert result["nipd"] == pytest.approx(expected_nipd)
 
     # Independently apply the trapezoidal definition to the exported float basis.
     area = sum(
         (right_v - left_v) * (left_y + right_y) / 2
         for left_v, right_v, left_y, right_y in zip(
-            camelyon["cramers_v"][:-1],
-            camelyon["cramers_v"][1:],
-            id_result["mean_normalized_trajectory"][:-1],
-            id_result["mean_normalized_trajectory"][1:],
+            cohort["cramers_v"][:-1],
+            cohort["cramers_v"][1:],
+            result["mean_normalized_trajectory"][:-1],
+            result["mean_normalized_trajectory"][1:],
         )
     )
-    assert area == pytest.approx(-0.0427315084, abs=2e-10)
+    assert area == pytest.approx(expected_nipd, abs=2e-10)
 
 
 def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:

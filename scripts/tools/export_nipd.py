@@ -9,6 +9,7 @@ import hashlib
 import io
 import json
 import math
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,12 +19,34 @@ import pandas as pd
 from scipy.stats import t as student_t
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
-from croma import __version__ as CROMA_VERSION, nipd  # noqa: E402
+LOCAL_SRC = (ROOT / "src").resolve()
+# Test modules may already have imported a globally installed croma. Publication must
+# never inherit that mutable interpreter state: evict only a foreign package, then put
+# this checkout first. A normal CLI process has nothing to evict.
+cached_croma = sys.modules.get("croma")
+if cached_croma is not None and not Path(cached_croma.__file__).resolve().is_relative_to(LOCAL_SRC):
+    for module_name in [
+        name for name in sys.modules if name == "croma" or name.startswith("croma.")
+    ]:
+        del sys.modules[module_name]
+sys.path.insert(0, str(LOCAL_SRC))
+from croma import nipd  # noqa: E402
+
+
+def _project_version() -> str:
+    match = re.search(
+        r'(?ms)^\[project\]\s*$.*?^version\s*=\s*"([^"]+)"',
+        (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    )
+    if match is None:
+        raise ValueError("pyproject.toml has no [project] version")
+    return match.group(1)
+
 
 SCHEMA_VERSION = 1
 STUDY_REVISION = "expanded-panel-paired-repeat-v1"
 PUBLICATION_DATE = "2026-08-25"
+CROMA_VERSION = _project_version()
 MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
