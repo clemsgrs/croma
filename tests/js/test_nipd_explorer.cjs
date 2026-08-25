@@ -6,10 +6,9 @@ const { FakeDocument } = require("./fake-dom.cjs");
 const root = path.resolve(__dirname, "../..");
 const explorer = require(path.join(root, "docs/_static/nipd-explorer.js"));
 
-function result(nipd, mean, baseline = 0.8, skill = 0.3) {
+function result(nipd, mean, baseline = 0.8) {
   return {
     baseline_balanced_accuracy: baseline,
-    baseline_skill: skill,
     mean_normalized_trajectory: mean,
     ci95_low: mean.map((value) => value - 0.1),
     ci95_high: mean.map((value) => value + 0.1),
@@ -24,10 +23,7 @@ function model(name, idNipd, oodNipd, options = {}) {
     is_control: Boolean(options.control),
     croma_median_m5: options.croma ?? 0,
     regimes: {
-      id: result(
-        idNipd, options.idMean || [0, 0.2, -0.2],
-        options.idBaseline, options.idSkill,
-      ),
+      id: result(idNipd, options.idMean || [0, 0.2, -0.2], options.idBaseline),
       ood: result(oodNipd, options.oodMean || [0, -0.1, -0.3]),
     },
   };
@@ -49,7 +45,7 @@ function associationMetadata({
 
 function publicationFixture() {
   return {
-    schema_version: 1,
+    schema_version: 2,
     provenance: { interval: "paired-repeat Student-t 95%" },
     cohorts: [
       {
@@ -57,9 +53,7 @@ function publicationFixture() {
         association: associationMetadata({ n: 3 }),
         models: [
           model("Atlas", -0.1, -0.15, { croma: 0.1 }),
-          model("Borealis", -0.3, -0.05, {
-            croma: -0.2, idBaseline: 0.75, idSkill: 0.25,
-          }),
+          model("Borealis", -0.3, -0.05, { croma: -0.2, idBaseline: 0.75 }),
           model("Cygnus", -0.2, -0.35, { croma: 0.3 }),
           model("DINOv2-B", -0.2, -0.25, { control: true, croma: 0.4 }),
         ],
@@ -328,8 +322,8 @@ test("rendered comparison associates readouts and inspected points with each mod
     mount.querySelectorAll(".croma-nipd-model-metrics").map((node) => node.getAttribute("aria-label")),
     ["Active model Atlas", "Comparison model Borealis"],
   );
-  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[0].textContent, /0.800.*0.300/);
-  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[1].textContent, /0.750.*0.250/);
+  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[0].textContent, /0.800.*Chance0.500/);
+  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[1].textContent, /0.750.*Chance0.500/);
   mount.querySelector(".croma-nipd-sample.is-comparison").dispatch("keydown", { key: "Enter" });
   assert.match(mount.querySelector(".croma-nipd-inspection").textContent, /^Borealis:/);
 });

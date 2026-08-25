@@ -126,9 +126,6 @@ Reading the columns
    * - ``RI`` / ``MaRI``
      - The pooled count-based and distance-weighted indices, in ``[0, 1]``, neutral at
        ``0.5``. See :doc:`../metrics`.
-   * - Δ
-     - ``MaRI − RI``. Informative in its sign — whether weighting by distance helps or
-       hurts — rather than ordered by its size, so it is never bolded either.
    * - ``CRoMa``
      - The median signed margin at the headline radius, in ``(-1, 1)``, neutral at ``0``.
    * - *F*\ (0)

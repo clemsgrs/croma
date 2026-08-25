@@ -56,3 +56,15 @@ indistinguishable on that column alone — while ``CONCH`` carries
 :results-value:`ratio(camelyon, croma_f0, CONCH, Virchow2)` the confounder-dominant mass
 and :results-value:`ratio(camelyon, croma_ltm10, CONCH, Virchow2)` the tail severity.
 Overlay the two above to see it.
+
+Shortcut susceptibility
+-----------------------
+
+``nIPD`` for every encoder on this cohort, in domain (ID) and out of domain (OOD);
+higher is less degradation, and the natural-image control sits last. Biological classes:
+2; chance balanced accuracy: 0.500. :doc:`../shortcut-susceptibility` defines the
+measure and holds the interactive explorer.
+
+.. nipd-table:: camelyon id
+
+.. nipd-table:: camelyon ood

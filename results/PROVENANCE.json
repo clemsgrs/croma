@@ -59,13 +59,13 @@
     }
   },
   "files": {
-    "results/camelyon.csv": "bb0a0dd0e62db64cd6d240fc98cfc4ae06794d46b06d5eae80e9bd3b6535d4d7",
+    "results/camelyon.csv": "9a1c689ceff74571d28400264754f32d318d957a440d50ee04c4ee21987a63b7",
     "results/cross_benchmark.csv": "a1c3574667ef7d2e6a125e6ca7c57f16598697b023b80db977a43021c7aaa16f",
     "results/distributions.json": "8edddfa380a0846f05f2912dcccd0e6f7d9f6bee6096337ca1f04149a4773c52",
-    "results/nipd.csv": "599772c79532deb8dde027f947d1a2a3c315add765c6b8bb893a357960a50a01",
-    "results/nipd.json": "278c80eeb0177978cb0192d9de3216b1d0a40623a595d9143b4925af9c23aa71",
-    "results/pcabiop.csv": "e757939d10a339d3afac300fea0851759cc82ddccabaad4c937ffe2c2d3d82eb",
-    "results/tcga-4x4.csv": "d30c1ae9305a83fe5bd0a9e4afa90cfbf7b09663cb41e66571b1abb18eaa231b",
-    "results/tolkach-esca.csv": "43fb47f602c35a3a12cd473b3ef08336739763972dd42e8fd0b8778a89b4cd3a"
+    "results/nipd.csv": "6c3b417e8ed6503c97b15524501c32efbef79941f0d2734fddb14b3d72aa177b",
+    "results/nipd.json": "26560ea723ec18b188f57247e97f71816d885be08ff029ed99d605cc5b066ddc",
+    "results/pcabiop.csv": "2634d9e54744d746b1815576ae9b3c450837af5d8ff99a66cf39ab952f00ad90",
+    "results/tcga-4x4.csv": "86fb3f37848fda79a84a01f75fcd891da5c4d5d0772b224103655d4e13e1ee14",
+    "results/tolkach-esca.csv": "3ee6b45181540785f248e1ee091ac8d7300a205fb44f694bad4b009ecc3e83d5"
   }
 }

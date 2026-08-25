@@ -35,7 +35,7 @@ def test_committed_payload_is_complete_and_valid() -> None:
     published = _payload()
     _exporter().validate_payload(published)
 
-    assert published["schema_version"] == 1
+    assert published["schema_version"] == 2
     assert [cohort["slug"] for cohort in published["cohorts"]] == [
         "camelyon",
         "tcga-4x4",
@@ -97,10 +97,10 @@ def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
 
 
 @pytest.mark.parametrize(
-    ("cohort_slug", "model_name", "regime", "expected_baseline", "expected_skill", "expected_nipd"),
+    ("cohort_slug", "model_name", "regime", "expected_baseline", "expected_nipd"),
     [
-        ("camelyon", "CONCH", "id", 0.9714166667, 0.4714166667, -0.0427315084),
-        ("pcabiop", "PRISM2", "ood", 0.9449074074, 0.4449074074, -0.0111342352),
+        ("camelyon", "CONCH", "id", 0.9714166667, -0.0427315084),
+        ("pcabiop", "PRISM2", "ood", 0.9449074074, -0.0111342352),
     ],
 )
 def test_representative_values_have_an_independent_float_basis(
@@ -108,7 +108,6 @@ def test_representative_values_have_an_independent_float_basis(
     model_name: str,
     regime: str,
     expected_baseline: float,
-    expected_skill: float,
     expected_nipd: float,
 ) -> None:
     published = _payload()
@@ -118,7 +117,6 @@ def test_representative_values_have_an_independent_float_basis(
 
     # Frozen manuscript-derived values, not recomputed from the implementation under test.
     assert result["baseline_balanced_accuracy"] == pytest.approx(expected_baseline)
-    assert result["baseline_skill"] == pytest.approx(expected_skill)
     assert result["nipd"] == pytest.approx(expected_nipd)
 
     # Independently apply the trapezoidal definition to the exported float basis.
@@ -152,7 +150,6 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
         "chance",
         "nipd",
         "baseline_balanced_accuracy",
-        "baseline_skill",
     ]
 
 

@@ -78,3 +78,20 @@ from 3 to 9 — so pinning one ``k`` would make every number hostage to who else
 be on the roster. The trade is stated rather than hidden: ``RI`` and ``MaRI`` are
 protocol-dependent, so those two columns are not measured at one shared operating point
 here, while ``CRoMa``, *F*\ (0) and LTM₁₀ are ``k``-free and unaffected.
+
+Shortcut susceptibility
+-----------------------
+
+``nIPD`` for the five whole-slide encoders, in domain (ID) and out of domain (OOD);
+higher is less degradation. Biological classes: 2; chance balanced accuracy: 0.500.
+:doc:`../shortcut-susceptibility` defines the measure and holds the interactive
+explorer.
+
+.. nipd-table:: pcabiop id
+
+.. nipd-table:: pcabiop ood
+
+Read ``MOOZY``'s positive OOD value with care. Its pretraining corpus includes the PANDA
+slides every probe trains on, so the apparent improvement under confounding plausibly
+reflects familiarity with the training data rather than robustness on the held-out PAR
+cohort, which no encoder has seen.

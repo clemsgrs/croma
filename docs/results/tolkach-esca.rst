@@ -55,3 +55,15 @@ range, and pick a second encoder under *Compare with* to overlay its shape.
 Several encoders are visibly bimodal — one population of neighbourhoods comfortably
 biology-dominant, another close to the line. A median reports where the middle of that
 lands and says nothing about the split, which is the case tail reporting exists for.
+
+Shortcut susceptibility
+-----------------------
+
+``nIPD`` for every encoder on this cohort, in domain (ID) and out of domain (OOD);
+higher is less degradation, and the natural-image control sits last. Biological classes:
+6; chance balanced accuracy: 0.167. :doc:`../shortcut-susceptibility` defines the
+measure and holds the interactive explorer.
+
+.. nipd-table:: tolkach-esca id
+
+.. nipd-table:: tolkach-esca ood

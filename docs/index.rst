@@ -19,9 +19,10 @@ introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are descri
 `A distributional robustness margin for pathology foundation models
 <https://arxiv.org/abs/2607.25497>`_.
 
-**Downstream shortcut susceptibility** asks how a supervised biological-class probe changes
-when its training composition becomes confounder-biased. The primary reduction is
-:doc:`nIPD <downstream-susceptibility>`, a signed area normalized by baseline skill.
+**Shortcut susceptibility** asks how a supervised biological-class probe changes when
+its training composition becomes confounder-biased. The primary reduction is
+:doc:`nIPD <shortcut-susceptibility>`, a signed area normalized by the baseline's margin
+over chance.
 
 .. code-block:: bash
 
@@ -62,9 +63,9 @@ point to name it.
        <h3>Representation robustness</h3>
        <p>What RI, MaRI, and CRoMa measure</p>
      </a>
-     <a class="croma-card" href="downstream-susceptibility.html">
-       <h3>Downstream shortcut susceptibility</h3>
-       <p>Understand nIPD and inspect every static result</p>
+     <a class="croma-card" href="shortcut-susceptibility.html">
+       <h3>Shortcut susceptibility</h3>
+       <p>Understand nIPD and explore the evidence</p>
      </a>
      <a class="croma-card" href="manifest.html">
        <h3>Manifest</h3>
@@ -100,10 +101,9 @@ too.
 
    getting-started
    metrics
-   downstream-susceptibility
+   shortcut-susceptibility
    manifest
    api
-   request-model
 
 .. toctree::
    :maxdepth: 1
