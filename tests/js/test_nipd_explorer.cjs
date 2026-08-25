@@ -22,12 +22,27 @@ function model(name, idNipd, oodNipd, options = {}) {
     model: name,
     ranked: !options.control,
     is_control: Boolean(options.control),
+    croma_median_m5: options.croma ?? 0,
     regimes: {
       id: result(
         idNipd, options.idMean || [0, 0.2, -0.2],
         options.idBaseline, options.idSkill,
       ),
       ood: result(oodNipd, options.oodMean || [0, -0.1, -0.3]),
+    },
+  };
+}
+
+function associationMetadata({
+  n = 2, idRho = 0.5, oodRho = -0.5, descriptive = false,
+  slope = 0.2368421053, intercept = -0.2157894737,
+} = {}) {
+  const trend = descriptive ? null : { slope, intercept, x_min: -0.2, x_max: 0.3 };
+  return {
+    descriptive,
+    regimes: {
+      id: { n, spearman_rho: idRho, trend },
+      ood: { n, spearman_rho: oodRho, trend },
     },
   };
 }
@@ -39,23 +54,30 @@ function publicationFixture() {
     cohorts: [
       {
         slug: "camelyon", label: "Camelyon", chance: 0.5, cramers_v: [0, 0.5, 1],
+        association: associationMetadata({ n: 3 }),
         models: [
-          model("Atlas", -0.1, -0.15),
-          model("Borealis", -0.3, -0.05, { idBaseline: 0.75, idSkill: 0.25 }),
-          model("DINOv2-B", -0.2, -0.25, { control: true }),
+          model("Atlas", -0.1, -0.15, { croma: 0.1 }),
+          model("Borealis", -0.3, -0.05, {
+            croma: -0.2, idBaseline: 0.75, idSkill: 0.25,
+          }),
+          model("Cygnus", -0.2, -0.35, { croma: 0.3 }),
+          model("DINOv2-B", -0.2, -0.25, { control: true, croma: 0.4 }),
         ],
       },
       {
         slug: "tcga-4x4", label: "TCGA-4×4", chance: 0.25, cramers_v: [0, 0.5, 1],
+        association: associationMetadata(),
         models: [model("Atlas", -0.4, -0.35), model("Cygnus", 0.1, 0.05)],
       },
       {
         slug: "tolkach-esca", label: "Tolkach-ESCA", chance: 1 / 6,
         cramers_v: [0, 0.5, 1],
+        association: associationMetadata(),
         models: [model("Atlas", -0.2, -0.15), model("Draco", -0.1, -0.05)],
       },
       {
         slug: "pcabiop", label: "PCaBiop", chance: 0.5, cramers_v: [0, 0.5, 1],
+        association: associationMetadata({ descriptive: true }),
         models: [model("Prism", -0.05, 0.05), model("Quartz", -0.2, -0.1)],
       },
     ],
@@ -95,13 +117,57 @@ test("opens with exactly four publication cohorts and ID selected", () => {
 
 test("orders pathology models by descending nIPD without the control", () => {
   const state = explorer.createView(publicationFixture()).snapshot();
-  assert.deepEqual(state.pathology.map(({ model: name }) => name), ["Atlas", "Borealis"]);
+  assert.deepEqual(state.pathology.map(({ model: name }) => name), ["Atlas", "Cygnus", "Borealis"]);
   assert.equal(state.selected.model, "Atlas");
 });
 
 test("separates the natural-image control from pathology ordering", () => {
   const state = explorer.createView(publicationFixture()).snapshot();
   assert.deepEqual(state.control.map(({ model: name }) => name), ["DINOv2-B"]);
+});
+
+test("association is scoped to the active cohort and regime with ranked-only statistics", () => {
+  const view = explorer.createView(publicationFixture());
+  let association = view.snapshot().association;
+  assert.deepEqual(association.pathology.map(({ model: name, x, y }) => [name, x, y]), [
+    ["Atlas", 0.1, -0.1], ["Borealis", -0.2, -0.3], ["Cygnus", 0.3, -0.2],
+  ]);
+  assert.deepEqual(association.control.map(({ model: name }) => name), ["DINOv2-B"]);
+  assert.equal(association.n, 3);
+  assert.ok(Math.abs(association.rho - 0.5) < 1e-12);
+  assert.equal(association.trend.slope, 0.2368421053);
+  assert.equal(association.trend.intercept, -0.2157894737);
+
+  view.setContext("camelyon", "ood");
+  association = view.snapshot().association;
+  assert.deepEqual(association.pathology.map(({ model: name, y }) => [name, y]), [
+    ["Atlas", -0.15], ["Borealis", -0.05], ["Cygnus", -0.35],
+  ]);
+});
+
+test("real publication association statistics match the manuscript analysis", () => {
+  const payload = require(path.join(root, "results/nipd.json"));
+  const view = explorer.createView(payload);
+  const expected = {
+    "camelyon/id": [25, 0.9384615385, 0.2931782414],
+    "camelyon/ood": [25, 0.7423076923, 0.1106497823],
+    "tcga-4x4/id": [25, 0.9084615385, 0.2394929256],
+    "tcga-4x4/ood": [25, 0.8907692308, 0.4135274686],
+    "tolkach-esca/id": [25, 0.9484615385, 0.09464837],
+    "tolkach-esca/ood": [25, 0.8115384615, 0.0300501935],
+    "pcabiop/id": [5, 0.9, null],
+    "pcabiop/ood": [5, 0.6, null],
+  };
+  for (const [scope, [n, rho, slope]] of Object.entries(expected)) {
+    const [cohort, regime] = scope.split("/");
+    view.setContext(cohort, regime);
+    const association = view.snapshot().association;
+    assert.equal(association.n, n, scope);
+    assert.ok(Math.abs(association.rho - rho) < 1e-12, scope);
+    assert.equal(association.descriptive, cohort === "pcabiop", scope);
+    if (slope === null) assert.equal(association.trend, null, scope);
+    else assert.ok(Math.abs(association.trend.slope - slope) < 1e-12, scope);
+  }
 });
 
 test("context changes preserve a model present at the destination", () => {
@@ -196,9 +262,23 @@ test("boot renders controls and keyboard interaction updates focus and inspectio
 
   assert.equal(mount.querySelectorAll("select").length, 3);
   assert.equal(requestedUrl, "https://example.test/nipd.json");
-  assert.equal(mount.querySelectorAll(".croma-nipd-model").length, 3);
-  mount.querySelectorAll(".croma-nipd-model")[1].dispatch("keydown", { key: "Enter" });
+  assert.equal(mount.querySelector(".croma-nipd-association-plot")
+    .getAttribute("aria-label"), "CRoMa and nIPD association");
+  assert.match(mount.querySelector(".croma-nipd-association-description").textContent,
+    /least-squares trend over ranked pathology encoders has slope 0\.237/);
+  assert.equal(mount.querySelectorAll(".croma-nipd-model").length, 4);
+  mount.querySelectorAll(".croma-nipd-model")[2].dispatch("keydown", { key: "Enter" });
   assert.match(document.activeElement.getAttribute("aria-label"), /^Borealis, nIPD/);
+  assert.match(mount.querySelector(".croma-nipd-association-point.is-selected")
+    .getAttribute("aria-label"), /^Borealis, pathology encoder/);
+  assert.equal(mount.querySelector(".croma-nipd-association-point.is-selected")
+    .getAttribute("aria-pressed"), "true");
+
+  mount.querySelectorAll(".croma-nipd-association-point")[2]
+    .dispatch("keydown", { key: "Enter" });
+  assert.match(mount.querySelector("#croma-nipd-active-heading")?.textContent ||
+    mount.querySelector(".croma-nipd-detail").textContent, /Cygnus normalized performance change/);
+  assert.match(document.activeElement.getAttribute("aria-label"), /^Cygnus, pathology encoder/);
 
   mount.querySelectorAll(".croma-nipd-sample")[1].dispatch("keydown", { key: " " });
   assert.match(mount.querySelector(".croma-nipd-inspection").textContent, /Cramér's V 0.500/);

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import linregress, spearmanr
 from scipy.stats import t as student_t
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,6 +66,7 @@ class Cohort:
     chance: float
     cramers_v: tuple[float, ...]
     panel: str
+    association_descriptive: bool = False
 
 
 COHORTS = (
@@ -86,7 +88,15 @@ COHORTS = (
         "tile",
     ),
     Cohort("tolkach-esca", "tolkach", "Tolkach-ESCA", 1 / 6, (0.0, 1 / 3, 2 / 3, 1.0), "tile"),
-    Cohort("pcabiop", "pcabiop", "PCaBiop", 0.5, tuple(i / 10 for i in range(11)), "slide"),
+    Cohort(
+        "pcabiop",
+        "pcabiop",
+        "PCaBiop",
+        0.5,
+        tuple(i / 10 for i in range(11)),
+        "slide",
+        association_descriptive=True,
+    ),
 )
 
 
@@ -129,6 +139,31 @@ def _trajectory(accuracies: np.ndarray, chance: float) -> dict:
         "ci95_low": [_round(value) for value in mean - half],
         "ci95_high": [_round(value) for value in mean + half],
     }
+
+
+def _association(models: list[dict], *, descriptive: bool) -> dict:
+    """Derive the one ranked-panel association float basis used by every site view."""
+    ranked = [model for model in models if model["ranked"]]
+    regimes = {}
+    for regime in ("id", "ood"):
+        xs = np.asarray([model["croma_median_m5"] for model in ranked], dtype=float)
+        ys = np.asarray([model["regimes"][regime]["nipd"] for model in ranked], dtype=float)
+        rho = float(spearmanr(xs, ys).statistic)
+        trend = None
+        if not descriptive:
+            fit = linregress(xs, ys)
+            trend = {
+                "slope": _round(fit.slope),
+                "intercept": _round(fit.intercept),
+                "x_min": _round(xs.min()),
+                "x_max": _round(xs.max()),
+            }
+        regimes[regime] = {
+            "n": len(ranked),
+            "spearman_rho": _round(rho),
+            "trend": trend,
+        }
+    return {"descriptive": descriptive, "regimes": regimes}
 
 
 def build_payload(source: Path) -> dict:
@@ -182,6 +217,7 @@ def build_payload(source: Path) -> dict:
                 "label": cohort.label,
                 "chance": _round(cohort.chance),
                 "cramers_v": [_round(value) for value in cohort.cramers_v],
+                "association": _association(models, descriptive=cohort.association_descriptive),
                 "models": models,
             }
         )
@@ -301,16 +337,15 @@ def validate_payload(payload: dict) -> None:
                 trajectory = np.asarray(arrays[0], dtype=float)
                 coordinates = np.asarray(v, dtype=float)
                 area = float(
-                    np.sum(
-                        np.diff(coordinates)
-                        * (trajectory[:-1] + trajectory[1:])
-                        / 2.0
-                    )
+                    np.sum(np.diff(coordinates) * (trajectory[:-1] + trajectory[1:]) / 2.0)
                 )
                 if not math.isclose(area, float(result["nipd"]), abs_tol=2e-9):
                     raise ValueError(
                         f"{config.slug}/{model['model']}/{regime} nIPD/trajectory drift"
                     )
+        expected_association = _association(models, descriptive=config.association_descriptive)
+        if published_cohort.get("association") != expected_association:
+            raise ValueError(f"{config.slug} association metadata drift")
 
 
 def summary_csv(payload: dict) -> str:

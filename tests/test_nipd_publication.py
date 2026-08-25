@@ -61,6 +61,41 @@ def test_committed_payload_is_complete_and_valid() -> None:
     assert all(model["model"] != "DINOv2-B" for model in published["cohorts"][3]["models"])
 
 
+def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
+    published = _payload()
+    expected = {
+        "camelyon": {
+            "id": (25, 0.9384615385, 0.2931782414),
+            "ood": (25, 0.7423076923, 0.1106497823),
+        },
+        "tcga-4x4": {
+            "id": (25, 0.9084615385, 0.2394929256),
+            "ood": (25, 0.8907692308, 0.4135274686),
+        },
+        "tolkach-esca": {
+            "id": (25, 0.9484615385, 0.09464837),
+            "ood": (25, 0.8115384615, 0.0300501935),
+        },
+    }
+    for cohort in published["cohorts"][:3]:
+        association = cohort["association"]
+        assert association["descriptive"] is False
+        for regime, (n, rho, slope) in expected[cohort["slug"]].items():
+            result = association["regimes"][regime]
+            assert result["n"] == n
+            assert result["spearman_rho"] == pytest.approx(rho)
+            assert result["trend"]["slope"] == pytest.approx(slope)
+
+    pcabiop = published["cohorts"][3]["association"]
+    assert pcabiop == {
+        "descriptive": True,
+        "regimes": {
+            "id": {"n": 5, "spearman_rho": 0.9, "trend": None},
+            "ood": {"n": 5, "spearman_rho": 0.6, "trend": None},
+        },
+    }
+
+
 @pytest.mark.parametrize(
     ("cohort_slug", "model_name", "regime", "expected_baseline", "expected_skill", "expected_nipd"),
     [
@@ -146,6 +181,10 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
             "provenance",
         ),
         (lambda p: p["cohorts"][0].update(chance=0.123), "chance"),
+        (
+            lambda p: p["cohorts"][0]["association"]["regimes"]["id"].update(spearman_rho=0.0),
+            "association",
+        ),
     ],
 )
 def test_validation_fails_closed(corrupt, message: str) -> None:

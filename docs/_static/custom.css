@@ -463,7 +463,8 @@ table.croma-results tr.croma-exposure-exposed {
 }
 
 .croma-nipd-overview,
-.croma-nipd-trajectory {
+.croma-nipd-trajectory,
+.croma-nipd-association-plot {
   display: block;
   width: 100%;
   height: auto;
@@ -705,6 +706,78 @@ table.croma-results tr.croma-exposure-exposed {
   margin-bottom: 0;
 }
 
+.croma-nipd-association {
+  margin-top: 1rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--color-background-border);
+}
+
+.croma-nipd-association-stat,
+.croma-nipd-association-inspection {
+  color: var(--color-foreground-secondary);
+  font-size: 0.84rem;
+}
+
+.croma-nipd-association-stat {
+  margin: 0 0 0.25rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.croma-nipd-association-inspection {
+  min-height: 2.75rem;
+  margin: 0.25rem 0 0;
+  padding: 0.45rem 0.6rem;
+  border-left: 3px solid var(--color-brand-primary);
+  background: var(--color-background-secondary);
+}
+
+.croma-nipd-association-trend {
+  stroke: var(--color-foreground-secondary);
+  stroke-width: 1.4;
+  stroke-dasharray: 2 4;
+  opacity: 0.7;
+}
+
+.croma-nipd-association-point {
+  cursor: pointer;
+  outline: none;
+  touch-action: manipulation;
+}
+
+.croma-nipd-association-hit {
+  fill: transparent;
+  pointer-events: all;
+}
+
+.croma-nipd-association-mark {
+  fill: var(--color-brand-primary);
+  stroke: var(--color-background-primary);
+  stroke-width: 1.5;
+}
+
+.croma-nipd-association-point.is-control .croma-nipd-association-mark {
+  fill: var(--color-foreground-secondary);
+  stroke: var(--color-foreground-primary);
+  stroke-width: 2;
+}
+
+.croma-nipd-association-point:hover .croma-nipd-association-mark,
+.croma-nipd-association-point:focus .croma-nipd-association-mark,
+.croma-nipd-association-point.is-selected .croma-nipd-association-mark {
+  stroke: var(--color-foreground-primary);
+  stroke-width: 3;
+}
+
+.croma-nipd-association-point.is-selected .croma-nipd-association-mark {
+  fill: var(--croma-nipd-positive);
+}
+
+.croma-nipd-association-label {
+  fill: var(--color-foreground-primary);
+  font-size: 10px;
+  font-weight: 650;
+}
+
 @media (max-width: 42rem) {
   .croma-nipd-explorer {
     padding: 0.65rem;
@@ -715,7 +788,8 @@ table.croma-results tr.croma-exposure-exposed {
   }
 
   .croma-nipd-overview,
-  .croma-nipd-trajectory {
+  .croma-nipd-trajectory,
+  .croma-nipd-association-plot {
     min-width: 38rem;
   }
 

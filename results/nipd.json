@@ -27,6 +27,31 @@
         0.8571428571,
         1.0
       ],
+      "association": {
+        "descriptive": false,
+        "regimes": {
+          "id": {
+            "n": 25,
+            "spearman_rho": 0.9384615385,
+            "trend": {
+              "slope": 0.2931782414,
+              "intercept": -0.104549707,
+              "x_min": -0.4426145889,
+              "x_max": 0.3240403856
+            }
+          },
+          "ood": {
+            "n": 25,
+            "spearman_rho": 0.7423076923,
+            "trend": {
+              "slope": 0.1106497823,
+              "intercept": -0.033320079,
+              "x_min": -0.4426145889,
+              "x_max": 0.3240403856
+            }
+          }
+        }
+      },
       "models": [
         {
           "model": "Virchow2",
@@ -2123,6 +2148,31 @@
         0.8416254115,
         1.0
       ],
+      "association": {
+        "descriptive": false,
+        "regimes": {
+          "id": {
+            "n": 25,
+            "spearman_rho": 0.9084615385,
+            "trend": {
+              "slope": 0.2394929256,
+              "intercept": -0.059041326,
+              "x_min": -0.0104313569,
+              "x_max": 0.3962500356
+            }
+          },
+          "ood": {
+            "n": 25,
+            "spearman_rho": 0.8907692308,
+            "trend": {
+              "slope": 0.4135274686,
+              "intercept": -0.072854026,
+              "x_min": -0.0104313569,
+              "x_max": 0.3962500356
+            }
+          }
+        }
+      },
       "models": [
         {
           "model": "Virchow2",
@@ -4060,6 +4110,31 @@
         0.6666666667,
         1.0
       ],
+      "association": {
+        "descriptive": false,
+        "regimes": {
+          "id": {
+            "n": 25,
+            "spearman_rho": 0.9484615385,
+            "trend": {
+              "slope": 0.09464837,
+              "intercept": -0.038509132,
+              "x_min": 0.1112681424,
+              "x_max": 0.584275795
+            }
+          },
+          "ood": {
+            "n": 25,
+            "spearman_rho": 0.8115384615,
+            "trend": {
+              "slope": 0.0300501935,
+              "intercept": -0.0118973234,
+              "x_min": 0.1112681424,
+              "x_max": 0.584275795
+            }
+          }
+        }
+      },
       "models": [
         {
           "model": "Virchow2",
@@ -5536,6 +5611,21 @@
         0.9,
         1.0
       ],
+      "association": {
+        "descriptive": true,
+        "regimes": {
+          "id": {
+            "n": 5,
+            "spearman_rho": 0.9,
+            "trend": null
+          },
+          "ood": {
+            "n": 5,
+            "spearman_rho": 0.6,
+            "trend": null
+          }
+        }
+      },
       "models": [
         {
           "model": "PRISM",

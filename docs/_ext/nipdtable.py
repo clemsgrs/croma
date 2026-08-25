@@ -32,12 +32,18 @@ class NipdTable(Directive):
             raise ValueError(f"nIPD regime must be id or ood, got {regime!r}")
         cohort = next(item for item in _payload()["cohorts"] if item["slug"] == slug)
         heading = "ID" if regime == "id" else "OOD"
+        association = cohort["association"]
+        association_result = association["regimes"][regime]
+        descriptor = "; descriptive" if association["descriptive"] else ""
         lines = [
-            f".. list-table:: {cohort['label']} — {heading}",
+            f".. list-table:: {cohort['label']} — {heading}; Spearman ρ = "
+            f"{association_result['spearman_rho']:.2f}; n={association_result['n']} "
+            f"ranked pathology encoders{descriptor}",
             "   :header-rows: 1",
             "   :class: croma-results",
             "",
             "   * - Model",
+            "     - Median CRoMa (m=5)",
             "     - ``nIPD``",
             "     - Baseline balanced accuracy",
             "     - Baseline skill",
@@ -48,17 +54,19 @@ class NipdTable(Directive):
             lines.extend(
                 [
                     f"   * - {model['model']}{mark}",
+                    f"     - {model['croma_median_m5']:.3f}",
                     f"     - {result['nipd']:.3f}",
                     f"     - {result['baseline_balanced_accuracy']:.3f}",
                     f"     - {result['baseline_skill']:.3f}",
                 ]
             )
         container = nodes.container()
-        self.state.nested_parse(StringList(lines, source=str(RESULT)), self.content_offset, container)
+        self.state.nested_parse(
+            StringList(lines, source=str(RESULT)), self.content_offset, container
+        )
         return container.children
 
 
 def setup(app):
     app.add_directive("nipd-table", NipdTable)
     return {"parallel_read_safe": True}
-

@@ -25,6 +25,13 @@ Optionally overlay one second encoder: both trajectories and intervals stay visi
 same fixed scale, while patterned signed-area shading and the active readouts belong to one
 model at a time. **Swap active model** transfers that emphasis without clearing the pair.
 
+The separate **CRoMa and downstream susceptibility** scatter below the trajectory uses
+median CRoMa at ``m=5`` and nIPD from the active cohort and regime. Selecting a point opens
+that encoder's trajectory, and selecting an encoder above highlights the same point. The
+fitted trend and Spearman coefficient use ranked pathology encoders only. ``DINOv2-B`` is
+shown as a distinct natural-image reference where available, but is excluded from the
+fitted trend and Spearman correlation.
+
 .. raw:: html
 
    <div class="croma-nipd-explorer" data-payload="nipd.json"
@@ -36,8 +43,16 @@ model at a time. **Swap active model** transfers that emphasis without clearing 
      The static tables below are the complete no-JavaScript equivalent.</p>
    </noscript>
 
+Higher CRoMa is **associated with nIPD** in these within-cohort model panels. This does
+not establish that CRoMa causes downstream performance. Representation metrics and
+downstream probes can use different evaluation samples, so this is a model-level
+comparison, not sample-level pairing. PCaBiop contains ``n=5`` encoders; its Spearman
+coefficient is descriptive, and the fitted trend is omitted to avoid giving it the same
+inferential weight as the 25-model tile panels.
+
 The static tables below are the complete no-JavaScript equivalent and use the same
-committed payload as the explorer.
+committed payload as the explorer. They include the exact median CRoMa and nIPD source
+values and ranked-panel Spearman coefficient for every cohort and regime.
 
 The confounder-biased probe sweep trains a logistic probe to predict the biological class
 from frozen embeddings. Its training composition moves from balanced to fully confounded
