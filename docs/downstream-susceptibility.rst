@@ -21,6 +21,9 @@ ID is the default mechanistic view. OOD also reflects transfer effects from acqu
 groups unseen during training. The trajectory scale stays fixed while switching models
 within a cohort and regime. Its patterned signed lobes make cancellation visible, and the
 sampled points expose the paired-repeat 95% t-intervals used to describe uncertainty.
+Optionally overlay one second encoder: both trajectories and intervals stay visible on the
+same fixed scale, while patterned signed-area shading and the active readouts belong to one
+model at a time. **Swap active model** transfers that emphasis without clearing the pair.
 
 .. raw:: html
 

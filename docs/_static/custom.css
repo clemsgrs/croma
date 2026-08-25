@@ -404,6 +404,7 @@ table.croma-results tr.croma-exposure-exposed {
 .croma-nipd-explorer {
   --croma-nipd-negative: #b64c3f;
   --croma-nipd-positive: #287a62;
+  --croma-nipd-comparison: #9b5fc0;
   margin: 1.25rem 0;
   padding: 1rem;
   border: 1px solid var(--color-background-border);
@@ -495,6 +496,12 @@ table.croma-results tr.croma-exposure-exposed {
   fill: var(--color-background-secondary);
 }
 
+.croma-nipd-model.is-comparison .croma-nipd-hit {
+  stroke: var(--croma-nipd-comparison);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 3;
+}
+
 .croma-nipd-model:focus .croma-nipd-dot,
 .croma-nipd-model.is-selected .croma-nipd-dot,
 .croma-nipd-sample:focus .croma-nipd-sample-dot,
@@ -562,26 +569,59 @@ table.croma-results tr.croma-exposure-exposed {
   border-top: 1px solid var(--color-background-border);
 }
 
+.croma-nipd-swap {
+  min-height: 2.75rem;
+  margin: 0.3rem 0;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--color-background-border);
+  border-radius: 0.35rem;
+  color: var(--color-foreground-primary);
+  background: var(--color-background-secondary);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+
+.croma-nipd-swap:hover,
+.croma-nipd-swap:focus-visible {
+  border-color: var(--color-brand-primary);
+}
+
 .croma-nipd-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
   gap: 0.45rem;
   margin: 0.65rem 0;
 }
 
-.croma-nipd-metrics div {
+.croma-nipd-model-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0.45rem;
+  border: 2px solid var(--color-brand-primary);
+  border-radius: 0.4rem;
+}
+
+.croma-nipd-model-metrics.is-comparison {
+  border-color: var(--croma-nipd-comparison);
+  border-style: dashed;
+}
+
+.croma-nipd-model-metrics div {
   padding: 0.5rem;
   border: 1px solid var(--color-background-border);
   border-radius: 0.35rem;
   background: var(--color-background-secondary);
 }
 
-.croma-nipd-metrics dt {
+.croma-nipd-model-metrics dt {
   color: var(--color-foreground-secondary);
   font-size: 0.7rem;
 }
 
-.croma-nipd-metrics dd {
+.croma-nipd-model-metrics dd {
   margin: 0.15rem 0 0;
   color: var(--color-foreground-primary);
   font-size: 0.95rem;
@@ -589,10 +629,22 @@ table.croma-results tr.croma-exposure-exposed {
   font-weight: 650;
 }
 
+.croma-nipd-model-metric-name {
+  grid-column: 1 / -1;
+}
+
 .croma-nipd-interval {
   fill: var(--color-brand-primary);
   fill-opacity: 0.14;
   stroke: none;
+}
+
+.croma-nipd-interval.is-comparison {
+  fill: var(--croma-nipd-comparison);
+  fill-opacity: 0.09;
+  stroke: var(--croma-nipd-comparison);
+  stroke-width: 0.7;
+  stroke-dasharray: 4 3;
 }
 
 .croma-nipd-lobe.is-positive {
@@ -620,9 +672,24 @@ table.croma-results tr.croma-exposure-exposed {
   stroke-linecap: round;
 }
 
+.croma-nipd-mean.is-comparison {
+  stroke: var(--croma-nipd-comparison);
+  stroke-width: 1.9;
+  stroke-dasharray: 7 4;
+}
+
 .croma-nipd-whisker {
   stroke: var(--color-foreground-secondary);
   stroke-width: 1;
+}
+
+.croma-nipd-whisker.is-comparison {
+  stroke: var(--croma-nipd-comparison);
+  stroke-dasharray: 3 2;
+}
+
+.croma-nipd-sample-dot.is-comparison {
+  fill: var(--croma-nipd-comparison);
 }
 
 .croma-nipd-inspection {
@@ -644,7 +711,7 @@ table.croma-results tr.croma-exposure-exposed {
   }
 
   .croma-nipd-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .croma-nipd-overview,

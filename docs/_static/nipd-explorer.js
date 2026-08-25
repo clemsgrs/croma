@@ -29,7 +29,7 @@
       throw new Error("Unsupported nIPD publication payload");
     }
     var cohorts = payload.cohorts;
-    var state = { cohort: cohorts[0].slug, regime: "id", model: null };
+    var state = { cohort: cohorts[0].slug, regime: "id", model: null, comparison: null };
     state.model = pathologyModels(cohorts[0], "id")[0].model;
 
     function cohort() {
@@ -55,24 +55,56 @@
       if (!destination.models.some(function (candidate) { return candidate.model === state.model; })) {
         state.model = pathologyModels(destination, regime)[0].model;
       }
+      if (!destination.models.some(function (candidate) {
+        return candidate.model === state.comparison;
+      }) || state.comparison === state.model) {
+        state.comparison = null;
+      }
     }
 
     function select(name) {
       if (!cohort().models.some(function (candidate) { return candidate.model === name; })) {
         throw new Error("Unknown model in active nIPD context: " + name);
       }
-      state.model = name;
+      if (name === state.comparison) {
+        swapFocus();
+      } else {
+        state.model = name;
+      }
     }
 
-    function inspectPoint(index) {
+    function compare(name) {
+      if (name === null || name === "" || name === state.model) {
+        state.comparison = null;
+        return;
+      }
+      if (!cohort().models.some(function (candidate) { return candidate.model === name; })) {
+        throw new Error("Unknown comparison model in active nIPD context: " + name);
+      }
+      state.comparison = name;
+    }
+
+    function swapFocus() {
+      if (state.comparison === null) return;
+      var previous = state.model;
+      state.model = state.comparison;
+      state.comparison = previous;
+    }
+
+    function inspectPoint(index, name) {
       var activeCohort = cohort();
-      var activeModel = model();
-      var result = activeModel.regimes[state.regime];
+      var inspectedModel = name ? activeCohort.models.find(function (candidate) {
+        return candidate.model === name;
+      }) : model();
+      if (!inspectedModel) {
+        throw new Error("Unknown model in active nIPD context: " + name);
+      }
+      var result = inspectedModel.regimes[state.regime];
       if (!Number.isInteger(index) || index < 0 || index >= activeCohort.cramers_v.length) {
         throw new Error("Unknown sampled point: " + index);
       }
       return {
-        model: activeModel.model,
+        model: inspectedModel.model,
         regime: state.regime.toUpperCase(),
         cramersV: activeCohort.cramers_v[index],
         mean: result.mean_normalized_trajectory[index],
@@ -91,8 +123,12 @@
           return { slug: candidate.slug, label: candidate.label };
         }),
         cohort: activeCohort,
+        models: activeCohort.models,
         regime: state.regime,
         selected: activeModel,
+        comparison: activeCohort.models.find(function (candidate) {
+          return candidate.model === state.comparison;
+        }) || null,
         pathology: pathologyModels(activeCohort, state.regime),
         control: activeCohort.models.filter(function (candidate) { return candidate.is_control; }),
         yDomain: contextYDomain(activeCohort, state.regime),
@@ -105,7 +141,14 @@
       };
     }
 
-    return { inspectPoint: inspectPoint, select: select, setContext: setContext, snapshot: snapshot };
+    return {
+      compare: compare,
+      inspectPoint: inspectPoint,
+      select: select,
+      setContext: setContext,
+      snapshot: snapshot,
+      swapFocus: swapFocus,
+    };
   }
 
   function pathologyModels(cohort, regime) {
@@ -212,8 +255,25 @@
         option.selected = entry[0] === state.regime;
         regimeSelect.appendChild(option);
       });
+    var comparisonSelect = htmlEl("select");
+    comparisonSelect.setAttribute("aria-label", "Comparison model");
+    var noComparison = htmlEl("option");
+    noComparison.value = "";
+    noComparison.textContent = "No comparison";
+    noComparison.selected = state.comparison === null;
+    comparisonSelect.appendChild(noComparison);
+    state.models.filter(function (candidate) {
+      return candidate.model !== state.selected.model;
+    }).forEach(function (candidate) {
+      var option = htmlEl("option");
+      option.value = candidate.model;
+      option.textContent = candidate.model + (candidate.is_control ? " — natural-image control" : "");
+      option.selected = state.comparison && candidate.model === state.comparison.model;
+      comparisonSelect.appendChild(option);
+    });
     controls.appendChild(labelled("Cohort", cohortSelect));
     controls.appendChild(labelled("Evaluation regime", regimeSelect));
+    controls.appendChild(labelled("Compare with (optional)", comparisonSelect));
     mount.appendChild(controls);
 
     var context = htmlEl("p", "croma-nipd-context");
@@ -244,9 +304,15 @@
       view.setContext(cohortSelect.value, regimeSelect.value);
       renderExplorer(mount, view, "regime");
     });
+    comparisonSelect.addEventListener("change", function () {
+      view.compare(comparisonSelect.value);
+      renderExplorer(mount, view, "comparison");
+    });
     if (restoreFocus === "model") mount.querySelector(".croma-nipd-model.is-selected").focus();
     if (restoreFocus === "cohort") cohortSelect.focus();
     if (restoreFocus === "regime") regimeSelect.focus();
+    if (restoreFocus === "comparison") comparisonSelect.focus();
+    if (restoreFocus === "swap") mount.querySelector(".croma-nipd-swap").focus();
   }
 
   function renderOverview(state, choose) {
@@ -284,10 +350,12 @@
       var result = model.regimes[state.regime];
       var group = svgEl("g", {
         class: "croma-nipd-model" + (model.model === state.selected.model ? " is-selected" : "") +
+          (state.comparison && model.model === state.comparison.model ? " is-comparison" : "") +
           (model.is_control ? " is-control" : ""),
         role: "button",
         tabindex: "0",
         "aria-label": model.model + ", nIPD " + percent(result.nipd) +
+          (state.comparison && model.model === state.comparison.model ? ", comparison model" : "") +
           (model.is_control ? ", natural-image control, not ranked" : ", pathology encoder"),
       });
       group.appendChild(svgEl("rect", {
@@ -309,27 +377,38 @@
 
   function renderDetail(view) {
     var state = view.snapshot();
-    var result = state.selected.regimes[state.regime];
     var section = htmlEl("section", "croma-nipd-detail");
     section.setAttribute("aria-labelledby", "croma-nipd-active-heading");
     var heading = htmlEl("h3", "croma-nipd-heading");
     heading.id = "croma-nipd-active-heading";
-    heading.textContent = state.selected.model + " normalized performance change";
+    heading.textContent = state.selected.model + " normalized performance change" +
+      (state.comparison ? " compared with " + state.comparison.model : "");
     section.appendChild(heading);
 
-    var metrics = htmlEl("dl", "croma-nipd-metrics");
-    metric(metrics, "nIPD from mean curve", percent(result.nipd));
-    metric(metrics, "Baseline balanced accuracy", decimal(result.baseline_balanced_accuracy));
-    metric(metrics, "Chance", decimal(state.cohort.chance));
-    metric(metrics, "Baseline skill", decimal(result.baseline_skill));
+    if (state.comparison) {
+      var swap = htmlEl("button", "croma-nipd-swap");
+      swap.type = "button";
+      swap.textContent = "Swap active model";
+      swap.setAttribute("aria-label", "Make " + state.comparison.model + " the active model");
+      swap.addEventListener("click", function () {
+        view.swapFocus();
+        renderExplorer(section.parentNode, view, "swap");
+      });
+      section.appendChild(swap);
+    }
+
+    var metrics = htmlEl("div", "croma-nipd-metrics");
+    metrics.appendChild(modelMetrics(state, state.selected, "Active"));
+    if (state.comparison) metrics.appendChild(modelMetrics(state, state.comparison, "Comparison"));
     section.appendChild(metrics);
 
     var descriptionId = "croma-nipd-plot-description";
     var description = htmlEl("p", "croma-sr-only");
     description.id = descriptionId;
-    description.textContent = "Mean normalized performance-change trajectory with real sampled Cramér's V points, " +
-      "paired-repeat 95% t-intervals, a zero reference, and signed area to zero. " +
-      "Positive and negative lobes use different fill patterns.";
+    description.textContent = "Active and optional comparison normalized performance-change trajectories " +
+      "with real sampled Cramér's V points, paired-repeat 95% t-intervals, and a zero reference. " +
+      "Only the active model has patterned positive and negative signed-area lobes; the comparison " +
+      "uses a dashed line and square points.";
     section.appendChild(description);
     var inspection = htmlEl("p", "croma-nipd-inspection");
     inspection.setAttribute("aria-live", "polite");
@@ -343,8 +422,26 @@
     return section;
   }
 
+  function modelMetrics(state, selectedModel, role) {
+    var result = selectedModel.regimes[state.regime];
+    var list = htmlEl("dl", "croma-nipd-model-metrics is-" + role.toLowerCase());
+    list.setAttribute("aria-label", role + " model " + selectedModel.model);
+    var name = htmlEl("div", "croma-nipd-model-metric-name");
+    var term = htmlEl("dt");
+    var description = htmlEl("dd");
+    term.textContent = role + " model";
+    description.textContent = selectedModel.model;
+    name.appendChild(term);
+    name.appendChild(description);
+    list.appendChild(name);
+    metric(list, "nIPD from mean curve", percent(result.nipd));
+    metric(list, "Baseline balanced accuracy", decimal(result.baseline_balanced_accuracy));
+    metric(list, "Chance", decimal(state.cohort.chance));
+    metric(list, "Baseline skill", decimal(result.baseline_skill));
+    return list;
+  }
+
   function renderTrajectory(state, view, inspection, descriptionId) {
-    var result = state.selected.regimes[state.regime];
     var xs = state.cohort.cramers_v;
     var yDomain = state.yDomain;
     var x = linear(0, 1, DETAIL_PAD.left, DETAIL_WIDTH - DETAIL_PAD.right);
@@ -364,54 +461,10 @@
       x1: DETAIL_PAD.left, x2: DETAIL_WIDTH - DETAIL_PAD.right,
       y1: y(0), y2: y(0), class: "croma-nipd-zero",
     }));
-    svg.appendChild(svgEl("polygon", {
-      points: result.ci95_low.map(function (value, index) { return x(xs[index]) + "," + y(value); })
-        .concat(result.ci95_high.slice().reverse().map(function (value, reverseIndex) {
-          return x(xs[xs.length - 1 - reverseIndex]) + "," + y(value);
-        })).join(" "),
-      class: "croma-nipd-interval",
-    }));
-    splitSignSegments(xs, result.mean_normalized_trajectory).forEach(function (segment) {
-      var first = segment.points[0];
-      var last = segment.points[segment.points.length - 1];
-      var points = [[first[0], 0]].concat(segment.points, [[last[0], 0]]);
-      svg.appendChild(svgEl("polygon", {
-        points: points.map(function (point) { return x(point[0]) + "," + y(point[1]); }).join(" "),
-        class: "croma-nipd-lobe is-" + segment.sign,
-        fill: "url(#nipd-" + segment.sign + ")",
-        "aria-label": segment.sign + " signed-area lobe",
-      }));
-    });
-    svg.appendChild(svgEl("polyline", {
-      points: result.mean_normalized_trajectory.map(function (value, index) {
-        return x(xs[index]) + "," + y(value);
-      }).join(" "),
-      class: "croma-nipd-mean",
-    }));
-    xs.forEach(function (value, index) {
-      var point = view.inspectPoint(index);
-      var group = svgEl("g", {
-        class: "croma-nipd-sample", role: "button", tabindex: "0",
-        "aria-label": inspectionText(point),
-      });
-      group.appendChild(svgEl("line", {
-        x1: x(value), x2: x(value), y1: y(point.low), y2: y(point.high), class: "croma-nipd-whisker",
-      }));
-      group.appendChild(svgEl("circle", {
-        cx: x(value), cy: y(point.mean), r: 22, class: "croma-nipd-sample-hit",
-      }));
-      group.appendChild(svgEl("circle", {
-        cx: x(value), cy: y(point.mean), r: 4, class: "croma-nipd-sample-dot",
-      }));
-      activate(group, function () {
-        svg.querySelectorAll(".croma-nipd-sample").forEach(function (candidate) {
-          candidate.classList.remove("is-inspected");
-        });
-        group.classList.add("is-inspected");
-        updateInspection(inspection, point);
-      });
-      svg.appendChild(group);
-    });
+    if (state.comparison) {
+      svg.appendChild(renderSeries(state.comparison, "comparison", false));
+    }
+    svg.appendChild(renderSeries(state.selected, "active", true));
     svg.appendChild(svgText(DETAIL_WIDTH / 2, DETAIL_HEIGHT - 10, "Cramér's V", "croma-nipd-axis-title"));
     var yTitle = svgText(15, DETAIL_HEIGHT / 2, "Normalized performance change g(V)", "croma-nipd-axis-title");
     yTitle.setAttribute("transform", "rotate(-90 15 " + DETAIL_HEIGHT / 2 + ")");
@@ -424,10 +477,76 @@
       svg.appendChild(label);
     });
     return svg;
+
+    function renderSeries(selectedModel, role, shadeArea) {
+      var result = selectedModel.regimes[state.regime];
+      var group = svgEl("g", {
+        class: "croma-nipd-series is-" + role,
+        role: "group",
+        "aria-label": (role === "active" ? "Active model " : "Comparison model ") +
+          selectedModel.model + " sampled trajectory",
+      });
+      group.appendChild(svgEl("polygon", {
+        points: result.ci95_low.map(function (value, index) { return x(xs[index]) + "," + y(value); })
+          .concat(result.ci95_high.slice().reverse().map(function (value, reverseIndex) {
+            return x(xs[xs.length - 1 - reverseIndex]) + "," + y(value);
+          })).join(" "),
+        class: "croma-nipd-interval is-" + role,
+        "aria-label": selectedModel.model + " paired-repeat 95% t-interval",
+      }));
+      if (shadeArea) {
+        splitSignSegments(xs, result.mean_normalized_trajectory).forEach(function (segment) {
+          var first = segment.points[0];
+          var last = segment.points[segment.points.length - 1];
+          var points = [[first[0], 0]].concat(segment.points, [[last[0], 0]]);
+          group.appendChild(svgEl("polygon", {
+            points: points.map(function (point) { return x(point[0]) + "," + y(point[1]); }).join(" "),
+            class: "croma-nipd-lobe is-" + segment.sign,
+            fill: "url(#nipd-" + segment.sign + ")",
+            "aria-label": segment.sign + " signed-area lobe for active model " + selectedModel.model,
+          }));
+        });
+      }
+      group.appendChild(svgEl("polyline", {
+        points: result.mean_normalized_trajectory.map(function (value, index) {
+          return x(xs[index]) + "," + y(value);
+        }).join(" "),
+        class: "croma-nipd-mean is-" + role,
+      }));
+      xs.forEach(function (value, index) {
+        var point = view.inspectPoint(index, selectedModel.model);
+        var sample = svgEl("g", {
+          class: "croma-nipd-sample is-" + role, role: "button", tabindex: "0",
+          "aria-label": inspectionText(point),
+        });
+        sample.appendChild(svgEl("line", {
+          x1: x(value), x2: x(value), y1: y(point.low), y2: y(point.high),
+          class: "croma-nipd-whisker is-" + role,
+        }));
+        sample.appendChild(svgEl("circle", {
+          cx: x(value), cy: y(point.mean), r: 22, class: "croma-nipd-sample-hit",
+        }));
+        sample.appendChild(role === "active" ? svgEl("circle", {
+          cx: x(value), cy: y(point.mean), r: 4, class: "croma-nipd-sample-dot is-active",
+        }) : svgEl("rect", {
+          x: x(value) - 4, y: y(point.mean) - 4, width: 8, height: 8,
+          class: "croma-nipd-sample-dot is-comparison",
+        }));
+        activate(sample, function () {
+          svg.querySelectorAll(".croma-nipd-sample").forEach(function (candidate) {
+            candidate.classList.remove("is-inspected");
+          });
+          sample.classList.add("is-inspected");
+          updateInspection(inspection, point);
+        });
+        group.appendChild(sample);
+      });
+      return group;
+    }
   }
 
   function inspectionText(point) {
-    return "Cramér's V " + decimal(point.cramersV) + ", normalized mean change " +
+    return point.model + ": Cramér's V " + decimal(point.cramersV) + ", normalized mean change " +
       percent(point.mean) + ", " + point.interval + " " + percent(point.low) + " to " +
       percent(point.high);
   }
