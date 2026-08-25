@@ -294,7 +294,19 @@ def validate_payload(payload: dict) -> None:
                     raise ValueError(
                         f"{config.slug}/{model['model']}/{regime} malformed interval bounds"
                     )
-                area = float(np.trapz(arrays[0], v))
+                # Spell out the trapezoidal rule used by ``croma.nipd``. NumPy 2
+                # removed ``np.trapz``, while ``np.trapezoid`` is absent from the
+                # oldest supported NumPy; this expression works across both and keeps
+                # validation independent of the reduction call that produced nIPD.
+                trajectory = np.asarray(arrays[0], dtype=float)
+                coordinates = np.asarray(v, dtype=float)
+                area = float(
+                    np.sum(
+                        np.diff(coordinates)
+                        * (trajectory[:-1] + trajectory[1:])
+                        / 2.0
+                    )
+                )
                 if not math.isclose(area, float(result["nipd"]), abs_tol=2e-9):
                     raise ValueError(
                         f"{config.slug}/{model['model']}/{regime} nIPD/trajectory drift"

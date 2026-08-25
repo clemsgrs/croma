@@ -166,6 +166,15 @@ def test_committed_summary_is_fresh_from_the_committed_float_basis() -> None:
     _exporter().check_committed(ROOT / "results")
 
 
+def test_publication_validation_supports_numpy_without_trapz(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """NumPy 2 removed ``trapz``; the committed float basis must still validate."""
+    exporter = _exporter()
+    monkeypatch.delattr(exporter.np, "trapz", raising=False)
+    exporter.validate_payload(_payload())
+
+
 @pytest.mark.skipif(
     not (ROOT / "output" / "studies" / "apd" / "apd.csv").exists(),
     reason="canonical ignored study output is not present in this checkout",
