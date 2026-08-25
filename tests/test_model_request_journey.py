@@ -90,6 +90,23 @@ def _visible_text(path: Path) -> str:
     return parser.text
 
 
+def _assert_results_prompt(
+    page: Path,
+    *,
+    explanation_end: str,
+    prompt: str,
+    form_template: str,
+) -> None:
+    html = page.read_text(encoding="utf-8")
+    article = html.split('<article role="main"', maxsplit=1)[1]
+
+    assert article.index(explanation_end) < article.index(prompt) < article.index("<table")
+    prompt_link = next(anchor for anchor in _anchors(page) if anchor["text"] == prompt)
+    assert prompt_link["href"] == (
+        f"https://github.com/clemsgrs/croma/issues/new?template={form_template}"
+    )
+
+
 def test_sidebar_offers_model_evaluation_request_on_every_page(rendered_docs: Path) -> None:
     for page in ("index.html", "results/index.html"):
         html = (rendered_docs / page).read_text(encoding="utf-8")
@@ -112,7 +129,7 @@ def test_sidebar_offers_model_evaluation_request_on_every_page(rendered_docs: Pa
         assert request_start.endswith('">')
 
 
-def test_request_chooser_routes_public_tile_and_private_models(rendered_docs: Path) -> None:
+def test_request_chooser_routes_public_tile_slide_and_private_models(rendered_docs: Path) -> None:
     page = rendered_docs / "request-model.html"
     anchors = _anchors(page)
     visible_text = _visible_text(page)
@@ -127,6 +144,13 @@ def test_request_chooser_routes_public_tile_and_private_models(rendered_docs: Pa
     }.items() <= next(
         anchor.items() for anchor in anchors if anchor["text"] == "Request a tile encoder"
     )
+    assert "evaluation on the PCaBiop whole-slide panel" in visible_text
+    assert {
+        "text": "Request a slide encoder",
+        "href": "https://github.com/clemsgrs/croma/issues/new?template=slide-encoder-request.yml",
+    }.items() <= next(
+        anchor.items() for anchor in anchors if anchor["text"] == "Request a slide encoder"
+    )
     private_link = next(
         anchor
         for anchor in anchors
@@ -139,16 +163,20 @@ def test_request_chooser_routes_public_tile_and_private_models(rendered_docs: Pa
 
 
 def test_tile_results_prompt_precedes_the_first_results_table(rendered_docs: Path) -> None:
-    html = (rendered_docs / "results" / "index.html").read_text(encoding="utf-8")
-    article = html.split('<article role="main"', maxsplit=1)[1]
-    prompt = "Don't see a tile encoder? Request an evaluation"
-
-    assert article.index("</p>") < article.index(prompt) < article.index("<table")
-    prompt_link = next(
-        anchor
-        for anchor in _anchors(rendered_docs / "results" / "index.html")
-        if anchor["text"] == "Don't see a tile encoder? Request an evaluation"
+    _assert_results_prompt(
+        rendered_docs / "results" / "index.html",
+        explanation_end="</p>",
+        prompt="Don't see a tile encoder? Request an evaluation",
+        form_template="tile-encoder-request.yml",
     )
-    assert prompt_link["href"] == (
-        "https://github.com/clemsgrs/croma/issues/new?template=tile-encoder-request.yml"
+
+
+def test_pcabiop_prompt_follows_the_explanation_and_precedes_the_first_results_table(
+    rendered_docs: Path,
+) -> None:
+    _assert_results_prompt(
+        rendered_docs / "results" / "pcabiop.html",
+        explanation_end="row carries the † mark.",
+        prompt="Don't see a slide encoder? Request an evaluation",
+        form_template="slide-encoder-request.yml",
     )

@@ -10,6 +10,13 @@ Public tile encoders
 for evaluation on the three PathoROB tile cohorts: Camelyon, TCGA-4×4, and Tolkach-ESCA.
 This opens a GitHub feature request for manual triage.
 
+Public slide encoders
+---------------------
+
+`Request a slide encoder <https://github.com/clemsgrs/croma/issues/new?template=slide-encoder-request.yml>`_
+for evaluation on the PCaBiop whole-slide panel. This opens a GitHub feature request for
+manual triage.
+
 Private models
 --------------
 

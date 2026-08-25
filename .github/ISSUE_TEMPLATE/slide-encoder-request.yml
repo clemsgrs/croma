@@ -1,0 +1,75 @@
+name: Request a slide encoder
+description: Propose a public slide encoder for manual evaluation on the PCaBiop whole-slide panel
+title: "[Slide encoder request] "
+labels:
+  - model-request
+  - slide-encoder
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This creates a GitHub feature request for manual triage. It does not run the model or start an evaluation.
+
+        Models not yet supported by slide2vec remain requestable. If accepted, any slide2vec integration is tracked as a linked prerequisite; this form does not perform that work.
+
+  - type: input
+    id: model_name
+    attributes:
+      label: Model name
+      description: What is the public name of the slide encoder?
+    validations:
+      required: true
+
+  - type: input
+    id: checkpoint_url
+    attributes:
+      label: Public checkpoint URL
+      description: Publicly listed standard gated Hugging Face checkpoints are accepted. A source repository is supplemental and cannot replace the checkpoint URL.
+      placeholder: https://huggingface.co/organization/model
+    validations:
+      required: true
+
+  - type: input
+    id: preferred_revision
+    attributes:
+      label: Preferred version or revision
+      description: Name a tag, branch, commit, or checkpoint revision if one is preferred.
+
+  - type: input
+    id: paper_project_url
+    attributes:
+      label: Paper or project URL
+      description: Link to the model paper, project page, or documentation if available.
+
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Short rationale
+      description: Why would adding this encoder be useful to readers of the slide results?
+    validations:
+      required: true
+
+  - type: textarea
+    id: encoder_contract
+    attributes:
+      label: Encoder contract (link or describe)
+      description: Link to documentation for these facts and describe only any gaps — slide checkpoint and loader; required tile encoder; tile output variant and dimension; tile size and spacing; slide sampling or maximum-tile assumptions; coordinate, order, and level-zero geometry inputs; aggregation method; final output representation and dimension; recommended precision; custom dependencies or remote code. Documented facts need not be repeated.
+      placeholder: Link to the relevant documentation, then describe only anything it does not cover.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Your relationship to the model
+      options:
+        - Author or maintainer
+        - Contributor or collaborator
+        - Unaffiliated requester
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context
+      description: Share anything else that may help with manual triage.
