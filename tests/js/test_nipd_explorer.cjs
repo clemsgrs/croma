@@ -62,6 +62,28 @@ function publicationFixture() {
   };
 }
 
+async function bootFixture(fetchImplementation) {
+  const document = new FakeDocument();
+  const mount = document.createElement("div");
+  mount.className = "croma-nipd-explorer";
+  mount.dataset.payload = "nipd.json";
+  document.body.appendChild(mount);
+  global.document = document;
+  global.fetch = fetchImplementation || (async () => ({
+    ok: true, json: async () => publicationFixture(),
+  }));
+  explorer.boot(document);
+  await new Promise(setImmediate);
+  await new Promise(setImmediate);
+  return { document, mount };
+}
+
+function addBorealisComparison(mount) {
+  const comparison = mount.querySelector('[aria-label="Comparison model"]');
+  comparison.value = "Borealis";
+  comparison.dispatch("change");
+}
+
 test("opens with exactly four publication cohorts and ID selected", () => {
   const state = explorer.createView(publicationFixture()).snapshot();
   assert.deepEqual(state.cohorts.map(({ slug }) => slug), [
@@ -166,21 +188,11 @@ test("sample inspection returns the selected committed point and interval", () =
 });
 
 test("boot renders controls and keyboard interaction updates focus and inspection", async () => {
-  const document = new FakeDocument();
-  const mount = document.createElement("div");
-  mount.className = "croma-nipd-explorer";
-  mount.dataset.payload = "nipd.json";
-  document.body.appendChild(mount);
-  global.document = document;
   let requestedUrl;
-  global.fetch = async (url) => {
+  const { document, mount } = await bootFixture(async (url) => {
     requestedUrl = url;
     return { ok: true, json: async () => publicationFixture() };
-  };
-
-  explorer.boot(document);
-  await new Promise(setImmediate);
-  await new Promise(setImmediate);
+  });
 
   assert.equal(mount.querySelectorAll("select").length, 3);
   assert.equal(requestedUrl, "https://example.test/nipd.json");
@@ -201,33 +213,37 @@ test("boot renders controls and keyboard interaction updates focus and inspectio
   assert.match(mount.querySelector(".croma-nipd-context").textContent, /transfer effects/);
 });
 
-test("rendered comparison keeps two identifiable series but one active signed area", async () => {
-  const document = new FakeDocument();
-  const mount = document.createElement("div");
-  mount.className = "croma-nipd-explorer";
-  mount.dataset.payload = "nipd.json";
-  document.body.appendChild(mount);
-  global.document = document;
-  global.fetch = async () => ({ ok: true, json: async () => publicationFixture() });
-
-  explorer.boot(document);
-  await new Promise(setImmediate);
-  await new Promise(setImmediate);
-
-  const comparison = mount.querySelector('[aria-label="Comparison model"]');
-  comparison.value = "Borealis";
-  comparison.dispatch("change");
-
+test("rendered comparison shows two series and shades only the active area", async () => {
+  const { mount } = await bootFixture();
+  addBorealisComparison(mount);
   assert.equal(mount.querySelectorAll("select").length, 3);
   assert.equal(mount.querySelectorAll(".croma-nipd-series").length, 2);
   assert.equal(mount.querySelectorAll(".croma-nipd-interval").length, 2);
   assert.equal(mount.querySelectorAll(".croma-nipd-mean").length, 2);
   assert.equal(mount.querySelectorAll(".croma-nipd-sample").length, 6);
   assert.equal(mount.querySelectorAll(".croma-nipd-lobe").length, 2);
-  assert.equal(mount.querySelector(".croma-nipd-series.is-active").querySelectorAll(".croma-nipd-lobe").length, 2);
-  assert.equal(mount.querySelector(".croma-nipd-series.is-comparison").querySelectorAll(".croma-nipd-lobe").length, 0);
-  assert.match(mount.querySelector(".croma-nipd-series.is-comparison").getAttribute("aria-label"), /Borealis/);
-  assert.match(mount.querySelector(".croma-nipd-sample.is-comparison").getAttribute("aria-label"), /Borealis/);
+  assert.equal(
+    mount.querySelector(".croma-nipd-series.is-active").querySelectorAll(".croma-nipd-lobe").length,
+    2,
+  );
+  assert.equal(
+    mount.querySelector(".croma-nipd-series.is-comparison")
+      .querySelectorAll(".croma-nipd-lobe").length,
+    0,
+  );
+});
+
+test("rendered comparison associates readouts and inspected points with each model", async () => {
+  const { mount } = await bootFixture();
+  addBorealisComparison(mount);
+  assert.match(
+    mount.querySelector(".croma-nipd-series.is-comparison").getAttribute("aria-label"),
+    /Borealis/,
+  );
+  assert.match(
+    mount.querySelector(".croma-nipd-sample.is-comparison").getAttribute("aria-label"),
+    /Borealis/,
+  );
   assert.deepEqual(
     mount.querySelectorAll(".croma-nipd-model-metrics").map((node) => node.getAttribute("aria-label")),
     ["Active model Atlas", "Comparison model Borealis"],
@@ -236,7 +252,11 @@ test("rendered comparison keeps two identifiable series but one active signed ar
   assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[1].textContent, /0.750.*0.250/);
   mount.querySelector(".croma-nipd-sample.is-comparison").dispatch("keydown", { key: "Enter" });
   assert.match(mount.querySelector(".croma-nipd-inspection").textContent, /^Borealis:/);
+});
 
+test("swap transfers active focus and readouts without clearing the pair", async () => {
+  const { document, mount } = await bootFixture();
+  addBorealisComparison(mount);
   mount.querySelector(".croma-nipd-swap").dispatch("click");
   assert.equal(document.activeElement.getAttribute("aria-label"), "Make Atlas the active model");
   assert.match(mount.querySelector(".croma-nipd-series.is-active").getAttribute("aria-label"), /Borealis/);
@@ -244,5 +264,5 @@ test("rendered comparison keeps two identifiable series but one active signed ar
     mount.querySelectorAll(".croma-nipd-model-metrics").map((node) => node.getAttribute("aria-label")),
     ["Active model Borealis", "Comparison model Atlas"],
   );
-  assert.equal(mount.querySelectorAll(".croma-nipd-lobe").length, 2);
+  assert.equal(mount.querySelectorAll(".croma-nipd-series").length, 2);
 });
