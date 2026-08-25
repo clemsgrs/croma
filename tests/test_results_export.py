@@ -99,10 +99,9 @@ def test_cohort_table_sorts_by_croma_descending():
     assert table["model"].tolist() == ["high", "mid", "low"]
 
 
-def test_cohort_table_derives_delta_and_preserves_shared_support():
+def test_cohort_table_preserves_shared_support():
     metrics = _metrics(model=["A"], ri=[0.40], mari=[0.55], support=[0.30])
     row = er.build_cohort_table(metrics).iloc[0]
-    assert row["delta"] == pytest.approx(0.15)
     assert row["support"] == pytest.approx(0.30)
 
 

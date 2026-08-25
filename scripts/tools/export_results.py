@@ -131,9 +131,9 @@ SLIDE_COHORTS: tuple[Cohort, ...] = (
 #: Everything the exporter publishes a cohort table and distributions for.
 ALL_COHORTS: tuple[Cohort, ...] = COHORTS + SLIDE_COHORTS
 
-#: Published columns, in order, for a per-cohort table. Matches the manuscript's results
-#: table: two retrieval diagnostics, the two pooled counts and their difference, then the
-#: three distributional statistics and the support the counts rest on.
+#: Published columns, in order, for a per-cohort table: two retrieval diagnostics, the
+#: two pooled counts, then the three distributional statistics and the support the
+#: counts rest on.
 COHORT_COLUMNS = [
     "model",
     "is_control",
@@ -141,7 +141,6 @@ COHORT_COLUMNS = [
     "conf_bacc",
     "ri",
     "mari",
-    "delta",
     "croma",
     "croma_f0",
     "croma_ltm10",
@@ -234,7 +233,6 @@ def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
             "support": metrics["support"].astype(float),
         }
     )
-    out["delta"] = out["mari"] - out["ri"]
     return (
         out[COHORT_COLUMNS]
         .sort_values("croma", ascending=False, kind="stable")

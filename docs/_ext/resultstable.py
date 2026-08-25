@@ -41,9 +41,8 @@ class Column:
     """One published column: where it comes from and how it reads.
 
     ``best`` is ``"max"``, ``"min"`` or ``None``. ``None`` marks a *diagnostic* rather
-    than a score -- confounder accuracy's maximum marks the least robust model, and the
-    RI/MaRI difference is informative in its sign rather than ordered by its size. Bolding
-    either would assert a ranking the column does not carry.
+    than a score -- confounder accuracy's maximum marks the least robust model, and
+    bolding it would assert a ranking the column does not carry.
     """
 
     key: str
@@ -89,7 +88,6 @@ COHORT_COLUMNS: tuple[Column, ...] = (
     Column("conf_bacc", "conf bacc", "{:.3f}"),
     Column("ri", "``RI``", "{:.3f}", "max"),
     Column("mari", "``MaRI``", "{:.3f}", "max"),
-    Column("delta", "Δ", "{:+.3f}"),
     Column("croma", "``CRoMa``", "{:.2f}", "max"),
     Column("croma_f0", "*F*\\ (0)", "{:.3f}", "min"),
     Column("croma_ltm10", "LTM₁₀", "{:.2f}", "max"),

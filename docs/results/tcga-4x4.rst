@@ -64,3 +64,15 @@ and pick a second encoder under *Compare with* to overlay its shape.
    <div class="croma-explorer" data-cohort="tcga-4x4">
      <noscript>The distribution explorer needs JavaScript.</noscript>
    </div>
+
+Shortcut susceptibility
+-----------------------
+
+``nIPD`` for every encoder on this cohort, in domain (ID) and out of domain (OOD);
+higher is less degradation, and the natural-image control sits last. Biological classes:
+4; chance balanced accuracy: 0.250. :doc:`../shortcut-susceptibility` defines the
+measure and holds the interactive explorer.
+
+.. nipd-table:: tcga-4x4 id
+
+.. nipd-table:: tcga-4x4 ood

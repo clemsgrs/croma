@@ -46,9 +46,14 @@ class NipdTable(Directive):
             "     - Median CRoMa (m=5)",
             "     - ``nIPD``",
             "     - Baseline balanced accuracy",
-            "     - Baseline skill",
         ]
-        for model in cohort["models"]:
+        # Higher nIPD (less net degradation) first, matching the explorer's ordering;
+        # the unranked natural-image control sits last whatever its value.
+        models = sorted(
+            cohort["models"],
+            key=lambda model: (model["is_control"], -model["regimes"][regime]["nipd"]),
+        )
+        for model in models:
             result = model["regimes"][regime]
             mark = " †" if model["is_control"] else ""
             lines.extend(
@@ -57,7 +62,6 @@ class NipdTable(Directive):
                     f"     - {model['croma_median_m5']:.3f}",
                     f"     - {result['nipd']:.3f}",
                     f"     - {result['baseline_balanced_accuracy']:.3f}",
-                    f"     - {result['baseline_skill']:.3f}",
                 ]
             )
         container = nodes.container()

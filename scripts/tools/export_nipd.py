@@ -44,7 +44,7 @@ def _project_version() -> str:
     return match.group(1)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STUDY_REVISION = "expanded-panel-paired-repeat-v1"
 PUBLICATION_DATE = "2026-08-25"
 CROMA_VERSION = _project_version()
@@ -134,7 +134,6 @@ def _trajectory(accuracies: np.ndarray, chance: float) -> dict:
     half = student_t.ppf(0.975, df=n - 1) * paired.std(axis=1, ddof=1) / math.sqrt(n)
     return {
         "baseline_balanced_accuracy": _round(baseline),
-        "baseline_skill": _round(skill),
         "mean_normalized_trajectory": [_round(value) for value in mean],
         "ci95_low": [_round(value) for value in mean - half],
         "ci95_high": [_round(value) for value in mean + half],
@@ -303,16 +302,14 @@ def validate_payload(payload: dict) -> None:
             if set(model.get("regimes", {})) != {"id", "ood"}:
                 raise ValueError(f"{config.slug}/{model['model']} malformed regimes")
             for regime, result in model["regimes"].items():
-                scalar_keys = ("nipd", "baseline_balanced_accuracy", "baseline_skill")
+                scalar_keys = ("nipd", "baseline_balanced_accuracy")
                 if not all(math.isfinite(float(result.get(key, math.nan))) for key in scalar_keys):
                     raise ValueError(
                         f"{config.slug}/{model['model']}/{regime} values must be finite"
                     )
-                baseline = float(result["baseline_balanced_accuracy"])
-                skill = float(result["baseline_skill"])
-                if baseline <= chance or not math.isclose(skill, baseline - chance, abs_tol=2e-10):
+                if float(result["baseline_balanced_accuracy"]) <= chance:
                     raise ValueError(
-                        f"{config.slug}/{model['model']}/{regime} baseline skill/domain drift"
+                        f"{config.slug}/{model['model']}/{regime} baseline/domain drift"
                     )
                 arrays = [
                     result.get(key, [])
@@ -360,7 +357,6 @@ def summary_csv(payload: dict) -> str:
         "chance",
         "nipd",
         "baseline_balanced_accuracy",
-        "baseline_skill",
     ]
     stream = io.StringIO(newline="")
     writer = csv.DictWriter(stream, fieldnames=fields, lineterminator="\n")
@@ -381,7 +377,6 @@ def summary_csv(payload: dict) -> str:
                         "chance": cohort["chance"],
                         "nipd": result["nipd"],
                         "baseline_balanced_accuracy": result["baseline_balanced_accuracy"],
-                        "baseline_skill": result["baseline_skill"],
                     }
                 )
     return stream.getvalue()

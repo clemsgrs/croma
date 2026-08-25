@@ -34,7 +34,6 @@ FORMATS = {
     "conf_bacc": "{:.3f}",
     "ri": "{:.3f}",
     "mari": "{:.3f}",
-    "delta": "{:+.3f}",
     "croma": "{:.2f}",
     "croma_f0": "{:.3f}",
     "croma_ltm10": "{:.2f}",

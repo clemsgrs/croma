@@ -1,3 +1,7 @@
+:orphan:
+
+.. Reached through the sidebar's "Request a model evaluation" button, not the toctree.
+
 Request a model evaluation
 ==========================
 

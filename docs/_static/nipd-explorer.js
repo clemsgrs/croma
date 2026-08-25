@@ -28,7 +28,7 @@
   var ASSOCIATION_PAD = { top: 34, right: 30, bottom: 58, left: 64 };
 
   function createView(payload) {
-    if (!payload || payload.schema_version !== 1 || !Array.isArray(payload.cohorts)) {
+    if (!payload || payload.schema_version !== 2 || !Array.isArray(payload.cohorts)) {
       throw new Error("Unsupported nIPD publication payload");
     }
     var cohorts = payload.cohorts;
@@ -140,7 +140,6 @@
           nipd: result.nipd,
           baselineBalancedAccuracy: result.baseline_balanced_accuracy,
           chance: activeCohort.chance,
-          baselineSkill: result.baseline_skill,
         },
       };
     }
@@ -610,7 +609,6 @@
     metric(list, "nIPD from mean curve", percent(result.nipd));
     metric(list, "Baseline balanced accuracy", decimal(result.baseline_balanced_accuracy));
     metric(list, "Chance", decimal(state.cohort.chance));
-    metric(list, "Baseline skill", decimal(result.baseline_skill));
     return list;
   }
 

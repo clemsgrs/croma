@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "provenance": {
     "study_revision": "expanded-panel-paired-repeat-v1",
     "published": "2026-08-25",
@@ -63,7 +63,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9871875,
-              "baseline_skill": 0.4871875,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0013683985,
@@ -98,7 +97,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9949050135,
-              "baseline_skill": 0.4949050135,
               "mean_normalized_trajectory": [
                 0.0,
                 0.004885232,
@@ -143,7 +141,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9821458333,
-              "baseline_skill": 0.4821458333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0019012228,
@@ -178,7 +175,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9841009346,
-              "baseline_skill": 0.4841009346,
               "mean_normalized_trajectory": [
                 0.0,
                 0.009870751,
@@ -223,7 +219,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9856458333,
-              "baseline_skill": 0.4856458333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0190468019,
@@ -258,7 +253,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9850388978,
-              "baseline_skill": 0.4850388978,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0101016622,
@@ -303,7 +297,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.982625,
-              "baseline_skill": 0.482625,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0167918501,
@@ -338,7 +331,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9851933911,
-              "baseline_skill": 0.4851933911,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0107576984,
@@ -383,7 +375,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9690416667,
-              "baseline_skill": 0.4690416667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.000932753,
@@ -418,7 +409,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9793639126,
-              "baseline_skill": 0.4793639126,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0055281378,
@@ -463,7 +453,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9714166667,
-              "baseline_skill": 0.4714166667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.002519003,
@@ -498,7 +487,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9829370949,
-              "baseline_skill": 0.4829370949,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0066636774,
@@ -543,7 +531,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9913333333,
-              "baseline_skill": 0.4913333333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0072506784,
@@ -578,7 +565,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9947933352,
-              "baseline_skill": 0.4947933352,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0046949174,
@@ -623,7 +609,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9822916667,
-              "baseline_skill": 0.4822916667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0019438445,
@@ -658,7 +643,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9826939775,
-              "baseline_skill": 0.4826939775,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0018548456,
@@ -703,7 +687,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9800833333,
-              "baseline_skill": 0.4800833333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0019961812,
@@ -738,7 +721,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9864825322,
-              "baseline_skill": 0.4864825322,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0049796573,
@@ -783,7 +765,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9807708333,
-              "baseline_skill": 0.4807708333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0079299736,
@@ -818,7 +799,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9828030609,
-              "baseline_skill": 0.4828030609,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0035106148,
@@ -863,7 +843,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9778333333,
-              "baseline_skill": 0.4778333333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0052755494,
@@ -898,7 +877,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9752078624,
-              "baseline_skill": 0.4752078624,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0042829362,
@@ -943,7 +921,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9270416667,
-              "baseline_skill": 0.4270416667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0421016685,
@@ -978,7 +955,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8942678533,
-              "baseline_skill": 0.3942678533,
               "mean_normalized_trajectory": [
                 0.0,
                 0.1166040238,
@@ -1023,7 +999,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9597916667,
-              "baseline_skill": 0.4597916667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0043497961,
@@ -1058,7 +1033,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9554496325,
-              "baseline_skill": 0.4554496325,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0044140104,
@@ -1103,7 +1077,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9698958333,
-              "baseline_skill": 0.4698958333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0148082465,
@@ -1138,7 +1111,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.961945089,
-              "baseline_skill": 0.461945089,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0212271669,
@@ -1183,7 +1155,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9581666667,
-              "baseline_skill": 0.4581666667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0357402692,
@@ -1218,7 +1189,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9435671941,
-              "baseline_skill": 0.4435671941,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0291343632,
@@ -1263,7 +1233,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9669583333,
-              "baseline_skill": 0.4669583333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0037030427,
@@ -1298,7 +1267,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9641524823,
-              "baseline_skill": 0.4641524823,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0001222387,
@@ -1343,7 +1311,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9838333333,
-              "baseline_skill": 0.4838333333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0304426455,
@@ -1378,7 +1345,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9864642435,
-              "baseline_skill": 0.4864642435,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0027614742,
@@ -1423,7 +1389,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.967875,
-              "baseline_skill": 0.467875,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0044972838,
@@ -1458,7 +1423,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9656180731,
-              "baseline_skill": 0.4656180731,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0205524761,
@@ -1503,7 +1467,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9639583333,
-              "baseline_skill": 0.4639583333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0075437809,
@@ -1538,7 +1501,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9761487198,
-              "baseline_skill": 0.4761487198,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0032483125,
@@ -1583,7 +1545,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9855625,
-              "baseline_skill": 0.4855625,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0064358347,
@@ -1618,7 +1579,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9939236865,
-              "baseline_skill": 0.4939236865,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0023300473,
@@ -1663,7 +1623,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.990625,
-              "baseline_skill": 0.490625,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0076433121,
@@ -1698,7 +1657,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9960443021,
-              "baseline_skill": 0.4960443021,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0016127833,
@@ -1743,7 +1701,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9877083333,
-              "baseline_skill": 0.4877083333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.003630927,
@@ -1778,7 +1735,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9962486963,
-              "baseline_skill": 0.4962486963,
               "mean_normalized_trajectory": [
                 0.0,
                 0.000656482,
@@ -1823,7 +1779,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9855625,
-              "baseline_skill": 0.4855625,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.000300339,
@@ -1858,7 +1813,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9955826435,
-              "baseline_skill": 0.4955826435,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0034682675,
@@ -1903,7 +1857,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.97425,
-              "baseline_skill": 0.47425,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0072922158,
@@ -1938,7 +1891,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9880645419,
-              "baseline_skill": 0.4880645419,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0042295173,
@@ -1983,7 +1935,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9711875,
-              "baseline_skill": 0.4711875,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0056152452,
@@ -2018,7 +1969,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9767498515,
-              "baseline_skill": 0.4767498515,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0230116966,
@@ -2063,7 +2013,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9364791667,
-              "baseline_skill": 0.4364791667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0034843206,
@@ -2098,7 +2047,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9401448624,
-              "baseline_skill": 0.4401448624,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0290155595,
@@ -2184,7 +2132,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8167361111,
-              "baseline_skill": 0.5667361111,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0036147531,
@@ -2216,7 +2163,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.783,
-              "baseline_skill": 0.533,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.009967167,
@@ -2258,7 +2204,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7756944444,
-              "baseline_skill": 0.5256944444,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0055482166,
@@ -2290,7 +2235,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7382083333,
-              "baseline_skill": 0.4882083333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0009388069,
@@ -2332,7 +2276,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8357291667,
-              "baseline_skill": 0.5857291667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0134566364,
@@ -2364,7 +2307,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8440208333,
-              "baseline_skill": 0.5940208333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0139936169,
@@ -2406,7 +2348,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7974652778,
-              "baseline_skill": 0.5474652778,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0242278176,
@@ -2438,7 +2379,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7712708333,
-              "baseline_skill": 0.5212708333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0395267975,
@@ -2480,7 +2420,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7767013889,
-              "baseline_skill": 0.5267013889,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0004614675,
@@ -2512,7 +2451,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7413333333,
-              "baseline_skill": 0.4913333333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0284514925,
@@ -2554,7 +2492,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7528125,
-              "baseline_skill": 0.5028125,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.000759616,
@@ -2586,7 +2523,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7105416667,
-              "baseline_skill": 0.4605416667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0240658645,
@@ -2628,7 +2564,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8564930556,
-              "baseline_skill": 0.6064930556,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.023301082,
@@ -2660,7 +2595,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8352708333,
-              "baseline_skill": 0.5852708333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.018438757,
@@ -2702,7 +2636,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8123958333,
-              "baseline_skill": 0.5623958333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0097548929,
@@ -2734,7 +2667,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7903958333,
-              "baseline_skill": 0.5403958333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0143413393,
@@ -2776,7 +2708,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8088888889,
-              "baseline_skill": 0.5588888889,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0329895626,
@@ -2808,7 +2739,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7531875,
-              "baseline_skill": 0.5031875,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0078251149,
@@ -2850,7 +2780,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7954861111,
-              "baseline_skill": 0.5454861111,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0211330363,
@@ -2882,7 +2811,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7750208333,
-              "baseline_skill": 0.5250208333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0196420777,
@@ -2924,7 +2852,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8728125,
-              "baseline_skill": 0.6228125,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.005630819,
@@ -2956,7 +2883,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.755,
-              "baseline_skill": 0.505,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0122937294,
@@ -2998,7 +2924,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.6315972222,
-              "baseline_skill": 0.3815972222,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0282074613,
@@ -3030,7 +2955,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.5543958333,
-              "baseline_skill": 0.3043958333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.1068373144,
@@ -3072,7 +2996,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7876388889,
-              "baseline_skill": 0.5376388889,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0195685869,
@@ -3104,7 +3027,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.743875,
-              "baseline_skill": 0.493875,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.026828651,
@@ -3146,7 +3068,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7741319444,
-              "baseline_skill": 0.5241319444,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0010599536,
@@ -3178,7 +3099,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7115625,
-              "baseline_skill": 0.4615625,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0281200632,
@@ -3220,7 +3140,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7602777778,
-              "baseline_skill": 0.5102777778,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0066004355,
@@ -3252,7 +3171,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7315833333,
-              "baseline_skill": 0.4815833333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0101228586,
@@ -3294,7 +3212,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7565277778,
-              "baseline_skill": 0.5065277778,
               "mean_normalized_trajectory": [
                 0.0,
                 0.014601042,
@@ -3326,7 +3243,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7050416667,
-              "baseline_skill": 0.4550416667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0124530721,
@@ -3368,7 +3284,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8009722222,
-              "baseline_skill": 0.5509722222,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0121628435,
@@ -3400,7 +3315,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7843125,
-              "baseline_skill": 0.5343125,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0363395329,
@@ -3442,7 +3356,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7499652778,
-              "baseline_skill": 0.4999652778,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0175706646,
@@ -3474,7 +3387,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7085208333,
-              "baseline_skill": 0.4585208333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0428006725,
@@ -3516,7 +3428,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.6964930556,
-              "baseline_skill": 0.4464930556,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0125204137,
@@ -3548,7 +3459,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.6412708333,
-              "baseline_skill": 0.3912708333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0569192269,
@@ -3590,7 +3500,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8379861111,
-              "baseline_skill": 0.5879861111,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0015353726,
@@ -3622,7 +3531,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8383958333,
-              "baseline_skill": 0.5883958333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0209609461,
@@ -3664,7 +3572,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8481597222,
-              "baseline_skill": 0.5981597222,
               "mean_normalized_trajectory": [
                 0.0,
                 5.80484e-05,
@@ -3696,7 +3603,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8231041667,
-              "baseline_skill": 0.5731041667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.007815624,
@@ -3738,7 +3644,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8376388889,
-              "baseline_skill": 0.5876388889,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0002363507,
@@ -3770,7 +3675,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8149791667,
-              "baseline_skill": 0.5649791667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0106567351,
@@ -3812,7 +3716,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8274305556,
-              "baseline_skill": 0.5774305556,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0004810583,
@@ -3844,7 +3747,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8071875,
-              "baseline_skill": 0.5571875,
               "mean_normalized_trajectory": [
                 0.0,
                 0.005384184,
@@ -3886,7 +3788,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.86875,
-              "baseline_skill": 0.61875,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0071268238,
@@ -3918,7 +3819,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8202291667,
-              "baseline_skill": 0.5702291667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0011325856,
@@ -3960,7 +3860,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.7716666667,
-              "baseline_skill": 0.5216666667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.002329606,
@@ -3992,7 +3891,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7506458333,
-              "baseline_skill": 0.5006458333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0181848446,
@@ -4034,7 +3932,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.6165972222,
-              "baseline_skill": 0.3665972222,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0353286607,
@@ -4066,7 +3963,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.5597291667,
-              "baseline_skill": 0.3097291667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0447299388,
@@ -4146,7 +4042,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9839791667,
-              "baseline_skill": 0.8173125,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0039509572,
@@ -4169,7 +4064,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9745416667,
-              "baseline_skill": 0.807875,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0002063025,
@@ -4202,7 +4096,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9765625,
-              "baseline_skill": 0.8098958333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0012604502,
@@ -4225,7 +4118,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9673833333,
-              "baseline_skill": 0.8007166667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.000333035,
@@ -4258,7 +4150,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9718333333,
-              "baseline_skill": 0.8051666667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0029755744,
@@ -4281,7 +4172,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9715416667,
-              "baseline_skill": 0.804875,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0006419216,
@@ -4314,7 +4204,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9799791667,
-              "baseline_skill": 0.8133125,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0030738492,
@@ -4337,7 +4226,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9676833333,
-              "baseline_skill": 0.8010166667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0004369447,
@@ -4370,7 +4258,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9727708333,
-              "baseline_skill": 0.8061041667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0001292223,
@@ -4393,7 +4280,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9617916667,
-              "baseline_skill": 0.795125,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0027668606,
@@ -4426,7 +4312,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9728958333,
-              "baseline_skill": 0.8062291667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0009302566,
@@ -4449,7 +4334,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9639583333,
-              "baseline_skill": 0.7972916667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0019649856,
@@ -4482,7 +4366,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9734583333,
-              "baseline_skill": 0.8067916667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0008263182,
@@ -4505,7 +4388,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9706166667,
-              "baseline_skill": 0.80395,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0016273815,
@@ -4538,7 +4420,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.968125,
-              "baseline_skill": 0.8014583333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0010657655,
@@ -4561,7 +4442,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9617833333,
-              "baseline_skill": 0.7951166667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.000555474,
@@ -4594,7 +4474,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9697916667,
-              "baseline_skill": 0.803125,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0027496757,
@@ -4617,7 +4496,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9664416667,
-              "baseline_skill": 0.799775,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0023235702,
@@ -4650,7 +4528,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9691458333,
-              "baseline_skill": 0.8024791667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0110854384,
@@ -4673,7 +4550,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9676583333,
-              "baseline_skill": 0.8009916667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0015189505,
@@ -4706,7 +4582,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9738958333,
-              "baseline_skill": 0.8072291667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0026582703,
@@ -4729,7 +4604,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9659916667,
-              "baseline_skill": 0.799325,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0033361482,
@@ -4762,7 +4636,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.929125,
-              "baseline_skill": 0.7624583333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0093994207,
@@ -4785,7 +4658,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9225,
-              "baseline_skill": 0.7558333333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0044983462,
@@ -4818,7 +4690,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9694375,
-              "baseline_skill": 0.8027708333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0029585031,
@@ -4841,7 +4712,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9584833333,
-              "baseline_skill": 0.7918166667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0020732914,
@@ -4874,7 +4744,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.972625,
-              "baseline_skill": 0.8059583333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.007341157,
@@ -4897,7 +4766,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.96075,
-              "baseline_skill": 0.7940833333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0004827369,
@@ -4930,7 +4798,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.973375,
-              "baseline_skill": 0.8067083333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0024533857,
@@ -4953,7 +4820,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9637583333,
-              "baseline_skill": 0.7970916667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0040459587,
@@ -4986,7 +4852,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.972625,
-              "baseline_skill": 0.8059583333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0018352893,
@@ -5009,7 +4874,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.964525,
-              "baseline_skill": 0.7978583333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0035302842,
@@ -5042,7 +4906,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9774166667,
-              "baseline_skill": 0.81075,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0004368383,
@@ -5065,7 +4928,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9677416667,
-              "baseline_skill": 0.801075,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0010506715,
@@ -5098,7 +4960,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9715625,
-              "baseline_skill": 0.8048958333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0083344118,
@@ -5121,7 +4982,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9595833333,
-              "baseline_skill": 0.7929166667,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0018812401,
@@ -5154,7 +5014,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9677291667,
-              "baseline_skill": 0.8010625,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0007281995,
@@ -5177,7 +5036,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.958675,
-              "baseline_skill": 0.7920083333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0001367831,
@@ -5210,7 +5068,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.972125,
-              "baseline_skill": 0.8054583333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0027934406,
@@ -5233,7 +5090,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9703083333,
-              "baseline_skill": 0.8036416667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0012132273,
@@ -5266,7 +5122,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9834375,
-              "baseline_skill": 0.8167708333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0003060834,
@@ -5289,7 +5144,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9737333333,
-              "baseline_skill": 0.8070666667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0002065092,
@@ -5322,7 +5176,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9791041667,
-              "baseline_skill": 0.8124375,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0022052978,
@@ -5345,7 +5198,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9735,
-              "baseline_skill": 0.8068333333,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0008779178,
@@ -5378,7 +5230,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.976125,
-              "baseline_skill": 0.8094583333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0065372935,
@@ -5401,7 +5252,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9709,
-              "baseline_skill": 0.8042333333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0024039458,
@@ -5434,7 +5284,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9742291667,
-              "baseline_skill": 0.8075625,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0053659417,
@@ -5457,7 +5306,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.96915,
-              "baseline_skill": 0.8024833333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0001557665,
@@ -5490,7 +5338,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9656875,
-              "baseline_skill": 0.7990208333,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0023726957,
@@ -5513,7 +5360,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9584416667,
-              "baseline_skill": 0.791775,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0030943134,
@@ -5546,7 +5392,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9422291667,
-              "baseline_skill": 0.7755625,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0011282134,
@@ -5569,7 +5414,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9229083333,
-              "baseline_skill": 0.7562416667,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0017190272,
@@ -5637,7 +5481,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9530172414,
-              "baseline_skill": 0.4530172414,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0095147479,
@@ -5681,7 +5524,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9172839506,
-              "baseline_skill": 0.4172839506,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0110946746,
@@ -5735,7 +5577,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9573275862,
-              "baseline_skill": 0.4573275862,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0009425071,
@@ -5779,7 +5620,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.9449074074,
-              "baseline_skill": 0.4449074074,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0031217482,
@@ -5833,7 +5673,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9120689655,
-              "baseline_skill": 0.4120689655,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0230125523,
@@ -5877,7 +5716,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.8550925926,
-              "baseline_skill": 0.3550925926,
               "mean_normalized_trajectory": [
                 0.0,
                 -0.0304215558,
@@ -5931,7 +5769,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.8025862069,
-              "baseline_skill": 0.3025862069,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0356125356,
@@ -5975,7 +5812,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.5479938272,
-              "baseline_skill": 0.0479938272,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0610932476,
@@ -6029,7 +5865,6 @@
           "regimes": {
             "id": {
               "baseline_balanced_accuracy": 0.9668103448,
-              "baseline_skill": 0.4668103448,
               "mean_normalized_trajectory": [
                 0.0,
                 0.0166204986,
@@ -6073,7 +5908,6 @@
             },
             "ood": {
               "baseline_balanced_accuracy": 0.7898148148,
-              "baseline_skill": 0.2898148148,
               "mean_normalized_trajectory": [
                 0.0,
                 0.2651757188,
