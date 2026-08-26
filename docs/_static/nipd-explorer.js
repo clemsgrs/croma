@@ -184,12 +184,15 @@
     };
   }
 
+  /* Ranked on the endpoint rather than the pooled area. The signed area lets an early
+     gain pay for a late collapse, so a curve that ends at chance can outrank one that
+     never moved; the endpoint cannot cancel with itself. */
   function pathologyModels(cohort, regime) {
     return cohort.models
       .filter(function (model) { return model.ranked && !model.is_control; })
       .slice()
       .sort(function (left, right) {
-        return right.regimes[regime].nipd - left.regimes[regime].nipd ||
+        return endOfRange(right.regimes[regime]) - endOfRange(left.regimes[regime]) ||
           left.model.localeCompare(right.model);
       });
   }

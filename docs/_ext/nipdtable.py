@@ -29,6 +29,19 @@ def _end_of_range(result: dict) -> str:
     return f"{change:.3f}" + (" ≈ chance" if change <= COLLAPSE else "")
 
 
+def _leader(values: list[float]) -> float:
+    """The best value of a higher-is-better column, at printed precision.
+
+    Rounding before the comparison keeps ties visible: two rows that print the same
+    value are both marked, rather than one winning on invisible digits.
+    """
+    return max(round(value, 3) for value in values)
+
+
+def _mark(value: float, leader: float, text: str) -> str:
+    return f"**{text}**" if round(value, 3) == leader else text
+
+
 class NipdTable(Directive):
     """One complete cohort/regime view of the nIPD publication payload."""
 
@@ -53,25 +66,47 @@ class NipdTable(Directive):
             "",
             "   * - Model",
             "     - Median CRoMa (m=5)",
-            "     - ``nIPD``",
             "     - Change at ``V`` = 1",
+            "     - ``nIPD``",
             "     - Baseline balanced accuracy",
         ]
-        # Higher nIPD (less net degradation) first, matching the explorer's ordering;
-        # the unranked natural-image control sits last whatever its value.
+        # Ranked on the endpoint, not the pooled area, and matching the explorer's
+        # ordering. The signed area lets an early gain pay for a late collapse, so a curve
+        # ending at chance can outrank one that never moved; the endpoint cannot cancel
+        # with itself. The unranked natural-image control sits last whatever its value.
         models = sorted(
             cohort["models"],
-            key=lambda model: (model["is_control"], -model["regimes"][regime]["nipd"]),
+            key=lambda model: (
+                model["is_control"],
+                -model["regimes"][regime]["mean_normalized_trajectory"][-1],
+            ),
         )
+        # Bold the leader of each higher-is-better column over the ranked encoders, so a
+        # column that disagrees with the nIPD ordering shows it at a glance. Baseline
+        # balanced accuracy has no leader: a higher baseline is not a better one.
+        ranked = [model for model in models if not model["is_control"]]
+        leaders = {
+            "croma": _leader([model["croma_median_m5"] for model in ranked]),
+            "nipd": _leader([model["regimes"][regime]["nipd"] for model in ranked]),
+            "end": _leader(
+                [model["regimes"][regime]["mean_normalized_trajectory"][-1] for model in ranked]
+            ),
+        }
         for model in models:
             result = model["regimes"][regime]
-            mark = " †" if model["is_control"] else ""
+            control = model["is_control"]
+
+            def cell(column: str, value: float, text: str, control: bool = control) -> str:
+                return text if control else _mark(value, leaders[column], text)
+
+            end = result["mean_normalized_trajectory"][-1]
             lines.extend(
                 [
-                    f"   * - {model['model']}{mark}",
-                    f"     - {model['croma_median_m5']:.3f}",
-                    f"     - {result['nipd']:.3f}",
-                    f"     - {_end_of_range(result)}",
+                    f"   * - {model['model']}{' †' if control else ''}",
+                    "     - "
+                    + cell("croma", model["croma_median_m5"], f"{model['croma_median_m5']:.3f}"),
+                    "     - " + cell("end", end, _end_of_range(result)),
+                    "     - " + cell("nipd", result["nipd"], f"{result['nipd']:.3f}"),
                     f"     - {result['baseline_balanced_accuracy']:.3f}",
                 ]
             )

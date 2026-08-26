@@ -147,7 +147,7 @@ def test_page_explains_the_model_level_croma_nipd_association(rendered: Path) ->
     assert "n=5" in text and "descriptive" in text
 
 
-def test_cohort_pages_carry_the_static_tables_sorted_by_decreasing_nipd(rendered: Path) -> None:
+def test_cohort_pages_carry_the_static_tables_ranked_by_the_endpoint(rendered: Path) -> None:
     payload = _payload()
     for cohort in payload["cohorts"]:
         page = rendered / "results" / COHORT_PAGES[cohort["slug"]]
@@ -161,9 +161,11 @@ def test_cohort_pages_carry_the_static_tables_sorted_by_decreasing_nipd(rendered
         assert text.count("Baseline balanced accuracy") == 2
         assert "Baseline skill" not in text
         for regime, heading in (("id", "ID"), ("ood", "OOD")):
+            # The endpoint, not the pooled area: an early gain must not pay for a
+            # late collapse in the ordering the reader sees first.
             ranked = sorted(
                 (model for model in cohort["models"] if not model["is_control"]),
-                key=lambda model: -model["regimes"][regime]["nipd"],
+                key=lambda model: -model["regimes"][regime]["mean_normalized_trajectory"][-1],
             )
             control = [model for model in cohort["models"] if model["is_control"]]
             expected = [model["model"] for model in ranked] + [
@@ -184,3 +186,31 @@ def test_cohort_pages_carry_the_static_tables_sorted_by_decreasing_nipd(rendered
 
     assert (rendered / "nipd.json").read_bytes() == (ROOT / "results" / "nipd.json").read_bytes()
     assert (rendered / "nipd.csv").read_bytes() == (ROOT / "results" / "nipd.csv").read_bytes()
+
+
+def test_tables_bold_the_leader_of_every_higher_is_better_column(rendered: Path) -> None:
+    """PCaBiop OOD is the case the bolding exists for: nIPD leads on one encoder while
+    CRoMa and the endpoint lead on another, because MOOZY's early gain and late collapse
+    cancel inside the pooled area. The table is ranked on the endpoint, so PRISM2 leads
+    it and MOOZY keeps only the bold nIPD that motivated the change."""
+    html = (rendered / "results" / COHORT_PAGES["pcabiop"]).read_text(encoding="utf-8")
+    table = next(
+        chunk
+        for chunk in html.split("<table")[1:]
+        if "PCaBiop — OOD; Spearman" in re.sub(r"<[^>]+>", "", chunk[: chunk.index("</caption>")])
+    )
+    rows = {
+        re.search(r"<td><p>([^<]+)", row).group(1).strip(): row.split("</td>")
+        for row in table.split("<tr")[2:]
+    }
+    assert "<strong>0.048</strong>" in rows["MOOZY"][3]
+    assert "<strong>0.270</strong>" in rows["PRISM2"][1]
+    assert "<strong>-0.040</strong>" in rows["PRISM2"][2]
+    assert list(rows)[0] == "PRISM2"
+    # A higher baseline is not a better one, so that column has no leader.
+    assert "<strong>" not in "".join(row[4] for row in rows.values())
+    # The unranked control never carries a mark, whatever its values.
+    camelyon = (rendered / "results" / COHORT_PAGES["camelyon"]).read_text(encoding="utf-8")
+    for row in camelyon.split("<tr")[1:]:
+        if "†" in row.split("</td>")[0]:
+            assert "<strong>" not in row

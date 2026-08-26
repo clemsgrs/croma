@@ -109,9 +109,11 @@ test("opens with exactly four publication cohorts and ID selected", () => {
   assert.equal(state.regime, "id");
 });
 
-test("orders pathology models by descending nIPD without the control", () => {
+test("orders pathology models by descending endpoint without the control", () => {
   const state = explorer.createView(publicationFixture()).snapshot();
-  assert.deepEqual(state.pathology.map(({ model: name }) => name), ["Atlas", "Cygnus", "Borealis"]);
+  // By nIPD this would read Atlas, Cygnus, Borealis. Cygnus ends at -97% and drops
+  // behind Borealis, which ends at -20% -- the ranking is the endpoint, not the area.
+  assert.deepEqual(state.pathology.map(({ model: name }) => name), ["Atlas", "Borealis", "Cygnus"]);
   assert.equal(state.selected.model, "Atlas");
 });
 
@@ -261,7 +263,7 @@ test("boot renders controls and keyboard interaction updates focus and inspectio
   assert.match(mount.querySelector(".croma-nipd-association-description").textContent,
     /least-squares trend over ranked pathology encoders has slope 0\.237/);
   assert.equal(mount.querySelectorAll(".croma-nipd-model").length, 4);
-  mount.querySelectorAll(".croma-nipd-model")[2].dispatch("keydown", { key: "Enter" });
+  mount.querySelectorAll(".croma-nipd-model")[1].dispatch("keydown", { key: "Enter" });
   assert.match(document.activeElement.getAttribute("aria-label"), /^Borealis, nIPD/);
   assert.match(mount.querySelector(".croma-nipd-association-point.is-selected")
     .getAttribute("aria-label"), /^Borealis, pathology encoder/);
@@ -312,7 +314,7 @@ test("every association point carries a name, revealed on hover", async () => {
 test("a curve ending at chance is flagged wherever its nIPD is shown", async () => {
   const { mount } = await bootFixture();
   const rows = mount.querySelectorAll(".croma-nipd-model");
-  const [atlas, cygnus] = [rows[0], rows[1]];
+  const [atlas, cygnus] = [rows[0], rows[2]];
   assert.match(atlas.getAttribute("aria-label"), /nIPD -10.0%, normalized change at V = 1 -20.0%,/);
   assert.match(cygnus.getAttribute("aria-label"), /normalized change at V = 1 -97.0%, collapses to chance/);
   assert.equal(atlas.querySelectorAll(".croma-nipd-value.is-collapsed").length, 0);

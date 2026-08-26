@@ -15,11 +15,11 @@ Pick a second encoder under *Compare with* to overlay its trajectory on the same
 ``DINOv2-B`` is shown separately as a natural-image control where available; it is not
 ranked with the pathology encoders.
 
-Every row also carries the normalized change at ``V = 1``, the endpoint of its
-trajectory. nIPD averages over the whole confounding range, so an encoder can hold a
-moderate nIPD and still lose its entire above-chance margin at maximum confounding.
-Rows ending at or below -90% are marked ``≈ chance``, and panels whose scale reaches the
--100% floor draw it as the chance level.
+Rows are ranked by the normalized change at ``V = 1``, the endpoint of the trajectory,
+not by nIPD. nIPD averages over the whole confounding range, so an early gain can pay for
+a late collapse and a curve ending at chance can outrank one that never moved; an
+endpoint cannot cancel with itself. Rows ending at or below -90% are marked ``≈ chance``,
+and panels whose scale reaches the -100% floor draw it as the chance level.
 
 .. raw:: html
 
@@ -57,7 +57,7 @@ for the equation and input contract.
 Results
 -------
 
-Per-cohort nIPD tables, sorted from less to more degradation, live on the cohort pages:
+Per-cohort tables, ranked by the normalized change at ``V = 1``, live on the cohort pages:
 :ref:`Camelyon <camelyon>`, :ref:`TCGA-4×4 <tcga-4x4>`, :ref:`Tolkach-ESCA
 <tolkach-esca>` and :ref:`PCaBiop <pcabiop>`. Download the exact float basis as
 `JSON <nipd.json>`_ or the complete tabular view as `CSV <nipd.csv>`_.

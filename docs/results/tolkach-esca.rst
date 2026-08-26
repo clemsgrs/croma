@@ -59,14 +59,17 @@ lands and says nothing about the split, which is the case tail reporting exists 
 Shortcut susceptibility
 -----------------------
 
-``nIPD`` for every encoder on this cohort, in domain (ID) and out of domain (OOD);
-higher is less degradation, and the natural-image control sits last. ``Change at V = 1``
-is the endpoint of the same trajectory: nIPD averages over the whole confounding range,
-so an encoder can hold a moderate nIPD and still end at or below -0.900, marked
-``≈ chance``, where none of its above-chance margin survives.
+Shortcut susceptibility for every encoder on this cohort, in domain (ID) and out of
+domain (OOD); the natural-image control sits last. Rows are ranked by ``Change at V = 1``,
+the normalized change at maximum confounding, because ``nIPD`` averages over the whole
+range: an early gain there can pay for a late collapse, so a curve ending at chance can
+outrank one that never moved. Rows ending at or below -0.900 are marked ``≈ chance``,
+where none of the above-chance margin survives.
 
-Each caption reports Spearman ρ, the rank correlation between the ``CRoMa`` and ``nIPD``
-columns: how closely the two order the encoders the same way.
+Bold marks the leading ranked encoder in each column where higher is better, so a
+column that disagrees with the ranking shows it at a glance. Each caption reports
+Spearman ρ, the rank correlation between the ``CRoMa`` and ``nIPD`` columns: how closely
+the two order the encoders the same way.
 :doc:`../shortcut-susceptibility` defines the measure and holds the interactive explorer.
 
 .. nipd-table:: tolkach-esca id
