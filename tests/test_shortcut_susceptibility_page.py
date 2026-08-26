@@ -108,6 +108,10 @@ def test_page_explains_nipd_before_the_continuity_metric_and_public_api(rendered
     assert "can hide offsetting changes" in text
     assert "predicts the biological class" in text and "training composition" in text
     assert "margin over chance" in text
+    assert re.search(
+        r"<strong>nIPD measures\s+the share of above-chance performance that is lost</strong>",
+        html,
+    )
     assert "Baseline skill" not in text and "baseline skill" not in text
     assert "ID is the primary mechanistic endpoint" in text
     assert "OOD also includes transfer effects" in text
@@ -125,6 +129,8 @@ def test_page_mounts_an_accessible_interactive_evidence_browser(rendered: Path) 
     assert 'data-payload="nipd.json"' in html
     assert 'aria-label="Explore cohort-specific nIPD evidence"' in html
     assert "Interactive evidence browser" in text
+    assert "normalized change at V = 1" in text
+    assert "\u2248 chance" in text
     assert 'src="_static/nipd-explorer.js' in html
     for cohort_page in COHORT_PAGES.values():
         assert f'href="results/{cohort_page}"' in html
@@ -136,10 +142,8 @@ def test_page_explains_the_model_level_croma_nipd_association(rendered: Path) ->
 
     assert "CRoMa and downstream susceptibility" in text
     assert "median CRoMa at m=5" in text
-    assert "does not establish that CRoMa causes downstream performance" in text
-    assert "model-level comparison, not sample-level pairing" in text
     assert "ranked pathology encoders only" in text
-    assert "DINOv2-B" in text and "excluded from the fitted trend and Spearman" in text
+    assert "DINOv2-B is excluded from both" in text
     assert "n=5" in text and "descriptive" in text
 
 
@@ -150,8 +154,10 @@ def test_cohort_pages_carry_the_static_tables_sorted_by_decreasing_nipd(rendered
         html = page.read_text(encoding="utf-8")
         text = _text(page)
         assert "Shortcut susceptibility" in text
-        assert f"chance balanced accuracy: {cohort['chance']:.3f}" in text
+        assert "chance balanced accuracy" not in text
+        assert "Each caption reports Spearman \u03c1" in text
         assert text.count("Median CRoMa (m=5)") == 2
+        assert text.count("Change at V = 1") == 3  # both captions' column, plus the prose
         assert text.count("Baseline balanced accuracy") == 2
         assert "Baseline skill" not in text
         for regime, heading in (("id", "ID"), ("ood", "OOD")):
@@ -167,6 +173,14 @@ def test_cohort_pages_carry_the_static_tables_sorted_by_decreasing_nipd(rendered
             assert rows == expected, f"{cohort['slug']}/{regime} table order"
     pcabiop_text = _text(rendered / "results" / COHORT_PAGES["pcabiop"])
     assert "MOOZY" in pcabiop_text and "PAR" in pcabiop_text
+
+    # The endpoint column names the encoders whose curve reaches chance, which the
+    # pooled area hides: Phikon-v2 holds an nIPD of -0.199 and still ends at -0.971.
+    camelyon_text = _text(rendered / "results" / COHORT_PAGES["camelyon"])
+    assert "-0.971 \u2248 chance" in camelyon_text
+    assert camelyon_text.count("\u2248 chance") == 4  # the prose, plus three ID rows
+    # No Tolkach-ESCA curve comes near chance, so only the prose names the flag.
+    assert _text(rendered / "results" / COHORT_PAGES["tolkach-esca"]).count("\u2248 chance") == 1
 
     assert (rendered / "nipd.json").read_bytes() == (ROOT / "results" / "nipd.json").read_bytes()
     assert (rendered / "nipd.csv").read_bytes() == (ROOT / "results" / "nipd.csv").read_bytes()

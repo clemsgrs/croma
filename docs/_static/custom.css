@@ -543,6 +543,31 @@ table.croma-results tr.croma-exposure-exposed {
   font-variant-numeric: tabular-nums;
 }
 
+/* The end-of-range column: the collapse the pooled area can hide. */
+.croma-nipd-column-header {
+  fill: var(--color-foreground-secondary);
+  font-size: 10px;
+  font-weight: 650;
+  text-anchor: end;
+}
+
+.croma-nipd-value.is-collapsed {
+  fill: var(--croma-nipd-negative);
+  font-weight: 700;
+}
+
+.croma-nipd-floor {
+  stroke: var(--croma-nipd-negative);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+}
+
+.croma-nipd-floor-label {
+  fill: var(--croma-nipd-negative);
+  font-size: 10px;
+  text-anchor: end;
+}
+
 .croma-nipd-axis-label.is-middle,
 .croma-nipd-axis-title {
   text-anchor: middle;
@@ -597,7 +622,7 @@ table.croma-results tr.croma-exposure-exposed {
 
 .croma-nipd-model-metrics {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 0.35rem;
   margin: 0;
   padding: 0.45rem;
@@ -632,6 +657,14 @@ table.croma-results tr.croma-exposure-exposed {
 
 .croma-nipd-model-metric-name {
   grid-column: 1 / -1;
+}
+
+.croma-nipd-model-metrics div.is-collapsed {
+  border-color: var(--croma-nipd-negative);
+}
+
+.croma-nipd-model-metrics div.is-collapsed dd {
+  color: var(--croma-nipd-negative);
 }
 
 .croma-nipd-interval {
@@ -772,10 +805,24 @@ table.croma-results tr.croma-exposure-exposed {
   fill: var(--croma-nipd-positive);
 }
 
+/* Names would collide at 25 encoders, so only the pinned points keep theirs;
+   the rest appear under the pointer or on keyboard focus. */
 .croma-nipd-association-label {
   fill: var(--color-foreground-primary);
   font-size: 10px;
   font-weight: 650;
+  opacity: 0;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--color-background-primary);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.croma-nipd-association-label.is-pinned,
+.croma-nipd-association-point:hover .croma-nipd-association-label,
+.croma-nipd-association-point:focus .croma-nipd-association-label {
+  opacity: 1;
 }
 
 @media (max-width: 42rem) {

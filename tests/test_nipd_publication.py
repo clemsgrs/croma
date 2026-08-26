@@ -149,6 +149,7 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
         "croma_median_m5",
         "chance",
         "nipd",
+        "normalized_change_at_max_v",
         "baseline_balanced_accuracy",
     ]
 

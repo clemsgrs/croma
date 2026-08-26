@@ -18,14 +18,19 @@
   var SVG_NS = "http://www.w3.org/2000/svg";
   var OVERVIEW_WIDTH = 720;
   var OVERVIEW_LEFT = 154;
-  var OVERVIEW_RIGHT = 38;
+  var OVERVIEW_RIGHT = 200;
   var OVERVIEW_ROW = 44;
+  var OVERVIEW_NIPD_COLUMN = 578;
+  var OVERVIEW_END_COLUMN = OVERVIEW_WIDTH - 2;
   var DETAIL_WIDTH = 720;
   var DETAIL_HEIGHT = 360;
   var DETAIL_PAD = { top: 26, right: 24, bottom: 55, left: 62 };
   var ASSOCIATION_WIDTH = 720;
   var ASSOCIATION_HEIGHT = 410;
   var ASSOCIATION_PAD = { top: 34, right: 30, bottom: 58, left: 64 };
+  // A normalized change of -1 is chance level: the probe has lost its whole
+  // above-chance margin. Curves ending at or below this are reported as a collapse.
+  var COLLAPSE = -0.9;
 
   function createView(payload) {
     if (!payload || payload.schema_version !== 2 || !Array.isArray(payload.cohorts)) {
@@ -138,8 +143,9 @@
         yDomain: contextYDomain(activeCohort, state.regime),
         readout: {
           nipd: result.nipd,
+          normalizedChangeAtMaxV: endOfRange(result),
+          collapsesToChance: collapses(result),
           baselineBalancedAccuracy: result.baseline_balanced_accuracy,
-          chance: activeCohort.chance,
         },
       };
     }
@@ -445,13 +451,24 @@
           cx: x(point.x), cy: y(point.y), r: 5, class: "croma-nipd-association-mark",
         }));
       }
-      if (selected || point.isControl) {
-        group.appendChild(svgText(x(point.x) + 9, y(point.y) - 9, point.model,
-          "croma-nipd-association-label"));
-      }
+      // Every point is named on hover or focus; the selected model and the control
+      // keep their name on permanently.
+      group.appendChild(svgText(x(point.x) + 9, y(point.y) - 9, point.model,
+        "croma-nipd-association-label" + (selected || point.isControl ? " is-pinned" : "")));
+      var title = svgEl("title");
+      title.textContent = point.model;
+      group.appendChild(title);
       activate(group, function () { choose(point.model); });
-      group.addEventListener("click", function () { inspection.textContent = associationInspection(point); });
-      group.addEventListener("focus", function () { inspection.textContent = associationInspection(point); });
+      function name() { inspection.textContent = associationInspection(point); }
+      group.addEventListener("click", name);
+      group.addEventListener("focus", name);
+      group.addEventListener("mouseenter", name);
+      group.addEventListener("mouseleave", function () {
+        var active = points.find(function (candidate) {
+          return candidate.model === state.selected.model;
+        });
+        if (active) inspection.textContent = associationInspection(active);
+      });
       svg.appendChild(group);
       if (selected) inspection.textContent = associationInspection(point);
     });
@@ -496,22 +513,25 @@
     low -= padding;
     high += padding;
     var controlGap = state.control.length ? 24 : 0;
-    var height = 48 + rows.length * OVERVIEW_ROW + controlGap;
+    var height = 64 + rows.length * OVERVIEW_ROW + controlGap;
     var svg = svgEl("svg", {
       class: "croma-nipd-overview",
       viewBox: "0 0 " + OVERVIEW_WIDTH + " " + height,
       role: "group",
-      "aria-label": "Pathology encoders ordered from higher to lower nIPD; natural-image control separated",
+      "aria-label": "Pathology encoders ordered from higher to lower nIPD, with the normalized " +
+        "change at V = 1 beside it; natural-image control separated",
     });
     var x = linear(low, high, OVERVIEW_LEFT, OVERVIEW_WIDTH - OVERVIEW_RIGHT);
     var zero = svgEl("line", {
-      x1: x(0), x2: x(0), y1: 12, y2: height - 20, class: "croma-nipd-zero",
+      x1: x(0), x2: x(0), y1: 28, y2: height - 20, class: "croma-nipd-zero",
     });
     svg.appendChild(zero);
+    svg.appendChild(svgText(OVERVIEW_NIPD_COLUMN, 16, "nIPD", "croma-nipd-column-header"));
+    svg.appendChild(svgText(OVERVIEW_END_COLUMN, 16, "at V = 1", "croma-nipd-column-header"));
     var pathologyCount = state.pathology.length;
     rows.forEach(function (model, index) {
       var offset = index >= pathologyCount ? controlGap : 0;
-      var y = 26 + index * OVERVIEW_ROW + offset;
+      var y = 42 + index * OVERVIEW_ROW + offset;
       if (index === pathologyCount && state.control.length) {
         svg.appendChild(svgText(8, y - 15, "Natural-image control (not ranked)", "croma-nipd-control-label"));
         svg.appendChild(svgEl("line", {
@@ -527,6 +547,8 @@
         role: "button",
         tabindex: "0",
         "aria-label": model.model + ", nIPD " + percent(result.nipd) +
+          ", normalized change at V = 1 " + percent(endOfRange(result)) +
+          (collapses(result) ? ", collapses to chance" : "") +
           (state.comparison && model.model === state.comparison.model ? ", comparison model" : "") +
           (model.is_control ? ", natural-image control, not ranked" : ", pathology encoder"),
       });
@@ -535,7 +557,9 @@
       }));
       group.appendChild(svgText(OVERVIEW_LEFT - 10, y + 4, model.model, "croma-nipd-model-label"));
       group.appendChild(svgEl("circle", { cx: x(result.nipd), cy: y, r: 5, class: "croma-nipd-dot" }));
-      group.appendChild(svgText(OVERVIEW_WIDTH - 2, y + 4, percent(result.nipd), "croma-nipd-value"));
+      group.appendChild(svgText(OVERVIEW_NIPD_COLUMN, y + 4, percent(result.nipd), "croma-nipd-value"));
+      group.appendChild(svgText(OVERVIEW_END_COLUMN, y + 4, endOfRangeText(result),
+        "croma-nipd-value" + (collapses(result) ? " is-collapsed" : "")));
       activate(group, function () { choose(model.model); });
       svg.appendChild(group);
     });
@@ -580,7 +604,10 @@
     description.textContent = "Active and optional comparison normalized performance-change trajectories " +
       "with real sampled Cramér's V points, paired-repeat 95% t-intervals, and a zero reference. " +
       "Only the active model has patterned positive and negative signed-area lobes; the comparison " +
-      "uses a dashed line and square points.";
+      "uses a dashed line and square points." +
+      (state.yDomain[0] <= -1
+        ? " A chance-level reference at minus 100% marks the loss of the whole above-chance margin."
+        : "");
     section.appendChild(description);
     var inspection = htmlEl("p", "croma-nipd-inspection");
     inspection.setAttribute("aria-live", "polite");
@@ -588,8 +615,9 @@
     updateInspection(inspection, view.inspectPoint(0));
     section.appendChild(inspection);
     var interpretation = htmlEl("p", "croma-nipd-cancellation");
-    interpretation.textContent = "This signed area reports net change. Positive and negative lobes can cancel, " +
-      "so a value near zero does not show that the trajectory changed little at every point.";
+    interpretation.textContent = "This signed area reports net change over the whole range. Positive and " +
+      "negative lobes can cancel, and a model can hold a moderate area yet still fall to chance at V = 1, " +
+      "so read the area together with the normalized change at V = 1 above.";
     section.appendChild(interpretation);
     return section;
   }
@@ -607,9 +635,24 @@
     name.appendChild(description);
     list.appendChild(name);
     metric(list, "nIPD from mean curve", percent(result.nipd));
+    metric(list, "Normalized change at V = 1", endOfRangeText(result), collapses(result));
     metric(list, "Baseline balanced accuracy", decimal(result.baseline_balanced_accuracy));
-    metric(list, "Chance", decimal(state.cohort.chance));
     return list;
+  }
+
+  /* The endpoint the pooled area hides: at -100% the probe keeps none of its
+     above-chance margin, so a near-100% fall is a collapse to chance. */
+  function endOfRange(result) {
+    var trajectory = result.mean_normalized_trajectory;
+    return trajectory[trajectory.length - 1];
+  }
+
+  function collapses(result) {
+    return endOfRange(result) <= COLLAPSE;
+  }
+
+  function endOfRangeText(result) {
+    return percent(endOfRange(result)) + (collapses(result) ? " ≈ chance" : "");
   }
 
   function renderTrajectory(state, view, inspection, descriptionId) {
@@ -632,6 +675,15 @@
       x1: DETAIL_PAD.left, x2: DETAIL_WIDTH - DETAIL_PAD.right,
       y1: y(0), y2: y(0), class: "croma-nipd-zero",
     }));
+    // Absolute floor: a curve reaching it has lost the whole above-chance margin.
+    if (yDomain[0] <= -1) {
+      svg.appendChild(svgEl("line", {
+        x1: DETAIL_PAD.left, x2: DETAIL_WIDTH - DETAIL_PAD.right,
+        y1: y(-1), y2: y(-1), class: "croma-nipd-floor",
+      }));
+      svg.appendChild(svgText(DETAIL_WIDTH - DETAIL_PAD.right, y(-1) - 6,
+        "chance level", "croma-nipd-floor-label"));
+    }
     if (state.comparison) {
       svg.appendChild(renderSeries(state.comparison, "comparison", false));
     }
@@ -736,8 +788,8 @@
     });
   }
 
-  function metric(list, label, value) {
-    var wrapper = htmlEl("div");
+  function metric(list, label, value, flagged) {
+    var wrapper = htmlEl("div", flagged ? "is-collapsed" : null);
     var term = htmlEl("dt");
     var description = htmlEl("dd");
     term.textContent = label;
