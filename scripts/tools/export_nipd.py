@@ -356,6 +356,7 @@ def summary_csv(payload: dict) -> str:
         "croma_median_m5",
         "chance",
         "nipd",
+        "normalized_change_at_max_v",
         "baseline_balanced_accuracy",
     ]
     stream = io.StringIO(newline="")
@@ -376,6 +377,7 @@ def summary_csv(payload: dict) -> str:
                         "croma_median_m5": model["croma_median_m5"],
                         "chance": cohort["chance"],
                         "nipd": result["nipd"],
+                        "normalized_change_at_max_v": result["mean_normalized_trajectory"][-1],
                         "baseline_balanced_accuracy": result["baseline_balanced_accuracy"],
                     }
                 )

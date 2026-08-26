@@ -10,6 +10,9 @@ from docutils.parsers.rst import Directive
 from docutils.statemachine import StringList
 
 RESULT = Path(__file__).resolve().parents[2] / "results" / "nipd.json"
+# A normalized change of -1 is chance level: the probe has lost its whole above-chance
+# margin. Curves ending at or below this are named as a collapse, as in the explorer.
+COLLAPSE = -0.9
 
 
 def _payload() -> dict:
@@ -18,6 +21,12 @@ def _payload() -> dict:
             f"{RESULT} is missing; publish results/nipd.json before building the docs"
         )
     return json.loads(RESULT.read_text(encoding="utf-8"))
+
+
+def _end_of_range(result: dict) -> str:
+    """The trajectory endpoint, named when it reaches chance level."""
+    change = result["mean_normalized_trajectory"][-1]
+    return f"{change:.3f}" + (" ≈ chance" if change <= COLLAPSE else "")
 
 
 class NipdTable(Directive):
@@ -45,6 +54,7 @@ class NipdTable(Directive):
             "   * - Model",
             "     - Median CRoMa (m=5)",
             "     - ``nIPD``",
+            "     - Change at ``V`` = 1",
             "     - Baseline balanced accuracy",
         ]
         # Higher nIPD (less net degradation) first, matching the explorer's ordering;
@@ -61,6 +71,7 @@ class NipdTable(Directive):
                     f"   * - {model['model']}{mark}",
                     f"     - {model['croma_median_m5']:.3f}",
                     f"     - {result['nipd']:.3f}",
+                    f"     - {_end_of_range(result)}",
                     f"     - {result['baseline_balanced_accuracy']:.3f}",
                 ]
             )

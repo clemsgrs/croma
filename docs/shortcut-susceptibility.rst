@@ -11,10 +11,15 @@ Interactive evidence browser
 ----------------------------
 
 Select a cohort, then an encoder, to open the sampled trajectory behind its nIPD value.
-ID is the default view; OOD also reflects transfer effects from acquisition groups
-unseen during training. Pick a second encoder under *Compare with* to overlay its
-trajectory on the same scale. ``DINOv2-B`` is shown separately as a natural-image
-control where available; it is not ranked with the pathology encoders.
+Pick a second encoder under *Compare with* to overlay its trajectory on the same scale.
+``DINOv2-B`` is shown separately as a natural-image control where available; it is not
+ranked with the pathology encoders.
+
+Every row also carries the normalized change at ``V = 1``, the endpoint of its
+trajectory. nIPD averages over the whole confounding range, so an encoder can hold a
+moderate nIPD and still lose its entire above-chance margin at maximum confounding.
+Rows ending at or below -90% are marked ``≈ chance``, and panels whose scale reaches the
+-100% floor draw it as the chance level.
 
 .. raw:: html
 
@@ -31,12 +36,10 @@ control where available; it is not ranked with the pathology encoders.
    </noscript>
 
 The **CRoMa and downstream susceptibility** scatter below the trajectory pairs each
-encoder's median CRoMa at ``m=5`` with its nIPD. Higher CRoMa is associated with nIPD in
-these panels, but this is a model-level comparison, not sample-level pairing, and it
-does not establish that CRoMa causes downstream performance. The fitted trend and
-Spearman coefficient use ranked pathology encoders only; ``DINOv2-B`` is excluded from
-the fitted trend and Spearman correlation. PCaBiop contains ``n=5`` encoders, so its
-Spearman coefficient is descriptive and no trend is fitted.
+encoder's median CRoMa at ``m=5`` with its nIPD. Hover or tab to any point to name it
+with its two values. The fitted trend and the Spearman coefficient use ranked pathology
+encoders only, so ``DINOv2-B`` is excluded from both. PCaBiop holds ``n=5`` encoders,
+so its coefficient is descriptive and no trend is fitted.
 
 How nIPD is computed
 --------------------
@@ -44,8 +47,8 @@ How nIPD is computed
 A logistic probe predicts the biological class from frozen embeddings. Its training
 composition moves from balanced to fully confounded while the test rows stay fixed, and
 at each Cramér's-``V`` value nIPD compares mean balanced accuracy with the balanced
-baseline. The change is divided by the baseline's margin over chance, so nIPD measures
-the share of above-chance performance that is lost. **ID is the primary mechanistic
+baseline. The change is divided by the baseline's margin over chance, so **nIPD measures
+the share of above-chance performance that is lost**. **ID is the primary mechanistic
 endpoint**: its acquisition groups remain represented in training, isolating
 susceptibility to the shortcut. **OOD also includes transfer effects** because its
 acquisition groups were unseen during training. See the :ref:`API definition <nipd-api>`

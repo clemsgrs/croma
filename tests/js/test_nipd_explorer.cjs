@@ -54,7 +54,7 @@ function publicationFixture() {
         models: [
           model("Atlas", -0.1, -0.15, { croma: 0.1 }),
           model("Borealis", -0.3, -0.05, { croma: -0.2, idBaseline: 0.75 }),
-          model("Cygnus", -0.2, -0.35, { croma: 0.3 }),
+          model("Cygnus", -0.2, -0.35, { croma: 0.3, idMean: [0, 0.2, -0.97] }),
           model("DINOv2-B", -0.2, -0.25, { control: true, croma: 0.4 }),
         ],
       },
@@ -287,6 +287,58 @@ test("boot renders controls and keyboard interaction updates focus and inspectio
   assert.match(mount.querySelector(".croma-nipd-context").textContent, /transfer effects/);
 });
 
+test("every association point carries a name, revealed on hover", async () => {
+  const { mount } = await bootFixture();
+  const points = mount.querySelectorAll(".croma-nipd-association-point");
+  assert.deepEqual(
+    points.map((point) => point.querySelector(".croma-nipd-association-label").textContent),
+    ["Atlas", "Borealis", "Cygnus", "DINOv2-B"],
+  );
+  // Only the selected model and the control keep their name on permanently.
+  assert.deepEqual(
+    points.map((point) =>
+      point.querySelector(".croma-nipd-association-label").classList.contains("is-pinned")),
+    [true, false, false, true],
+  );
+
+  const inspection = mount.querySelector(".croma-nipd-association-inspection");
+  assert.match(inspection.textContent, /^Atlas,/);
+  points[1].dispatch("mouseenter");
+  assert.match(inspection.textContent, /^Borealis, pathology encoder, median CRoMa -0.200, nIPD -30.0%/);
+  points[1].dispatch("mouseleave");
+  assert.match(inspection.textContent, /^Atlas,/);
+});
+
+test("a curve ending at chance is flagged wherever its nIPD is shown", async () => {
+  const { mount } = await bootFixture();
+  const rows = mount.querySelectorAll(".croma-nipd-model");
+  const [atlas, cygnus] = [rows[0], rows[1]];
+  assert.match(atlas.getAttribute("aria-label"), /nIPD -10.0%, normalized change at V = 1 -20.0%,/);
+  assert.match(cygnus.getAttribute("aria-label"), /normalized change at V = 1 -97.0%, collapses to chance/);
+  assert.equal(atlas.querySelectorAll(".croma-nipd-value.is-collapsed").length, 0);
+  assert.match(
+    cygnus.querySelector(".croma-nipd-value.is-collapsed").textContent,
+    /^-97.0% ≈ chance$/,
+  );
+
+  cygnus.dispatch("keydown", { key: "Enter" });
+  assert.match(
+    mount.querySelector(".croma-nipd-model-metrics").querySelector(".is-collapsed").textContent,
+    /Normalized change at V = 1-97.0% ≈ chance/,
+  );
+  assert.equal(mount.querySelectorAll(".croma-nipd-floor").length, 1);
+  assert.equal(mount.querySelector(".croma-nipd-floor-label").textContent, "chance level");
+});
+
+test("panels that stay far from chance draw no chance-level reference", async () => {
+  const { mount } = await bootFixture();
+  const regime = mount.querySelectorAll("select")[1];
+  regime.value = "ood";
+  regime.dispatch("change");
+  assert.equal(mount.querySelectorAll(".croma-nipd-floor").length, 0);
+  assert.equal(mount.querySelectorAll(".croma-nipd-value.is-collapsed").length, 0);
+});
+
 test("rendered comparison shows two series and shades only the active area", async () => {
   const { mount } = await bootFixture();
   addBorealisComparison(mount);
@@ -322,8 +374,10 @@ test("rendered comparison associates readouts and inspected points with each mod
     mount.querySelectorAll(".croma-nipd-model-metrics").map((node) => node.getAttribute("aria-label")),
     ["Active model Atlas", "Comparison model Borealis"],
   );
-  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[0].textContent, /0.800.*Chance0.500/);
-  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[1].textContent, /0.750.*Chance0.500/);
+  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[0].textContent,
+    /Normalized change at V = 1-20.0%Baseline balanced accuracy0.800/);
+  assert.match(mount.querySelectorAll(".croma-nipd-model-metrics")[1].textContent,
+    /Normalized change at V = 1-20.0%Baseline balanced accuracy0.750/);
   mount.querySelector(".croma-nipd-sample.is-comparison").dispatch("keydown", { key: "Enter" });
   assert.match(mount.querySelector(".croma-nipd-inspection").textContent, /^Borealis:/);
 });
