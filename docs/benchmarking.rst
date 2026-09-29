@@ -83,3 +83,8 @@ a dedicated venv built from its own requirements file under ``scripts/bench/``
 gated-weight smoke test (``CROMA_RUN_WAIV_SMOKE=1`` / ``CROMA_RUN_RUDOLFV2_SMOKE=1``) that
 the default offline suite skips. Exact preprocessing contracts and immutable checkpoint
 revisions live in the model registry.
+
+Mettle is also a remote-code checkpoint, but its pins (``transformers>=4.48``,
+``timm>=1.0.15``) fit the shared environment, so it needs no venv of its own. Its loader
+refuses weights whose SHA-256 differs from the model card's, and its opt-in smoke test is
+``CROMA_RUN_METTLE_SMOKE=1``.

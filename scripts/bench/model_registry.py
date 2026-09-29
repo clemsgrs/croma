@@ -113,6 +113,13 @@ def _build_model_registry():
             timm_kwargs={"init_values": 1e-5, "dynamic_img_size": False},
             mixed_precision=True,
         ),
+        "Mettle": ModelSpec(
+            backend="mettle",
+            model_id="slideflow-labs/Mettle",
+            extract="raw",
+            checkpoint_revision="8270e5d5a7749c117fff91051111cace6c6baa51",
+            embedding_dim=3072,
+        ),
         "H0-mini": ModelSpec(
             backend="timm",
             model_id="hf-hub:bioptimus/H0-mini",

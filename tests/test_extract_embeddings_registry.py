@@ -1,4 +1,5 @@
 import contextlib
+import hashlib
 import sys
 import types
 from pathlib import Path
@@ -532,6 +533,220 @@ def test_waiv_embedding_extraction_publishes_finite_fp32_vectors(
     assert embeddings.dtype == np.float32
     assert np.isfinite(embeddings).all()
     np.testing.assert_array_equal(np.linalg.norm(embeddings, axis=1), [1.0, 1.0])
+
+
+_METTLE_REVISION = "8270e5d5a7749c117fff91051111cace6c6baa51"
+_METTLE_SHA256 = "7754ef463e79dd13b072247b56db39791c884db10774e354d76f76367093ce4a"
+
+
+def _mettle_processor(**overrides):
+    """The released preprocessor_config.json of the pinned Mettle revision."""
+    fields = {
+        "do_resize": True,
+        "size": {"height": 224, "width": 224},
+        "resample": 3,
+        "do_rescale": True,
+        "rescale_factor": 1 / 255,
+        "do_normalize": True,
+        "image_mean": [0.707223, 0.578729, 0.703617],
+        "image_std": [0.211883, 0.230117, 0.177517],
+    }
+    fields.update(overrides)
+    return types.SimpleNamespace(**fields)
+
+
+def _patch_mettle_boundaries(monkeypatch, ee, tmp_path, *, processor, weights, calls):
+    import huggingface_hub
+
+    weights_path = tmp_path / "model.safetensors"
+    weights_path.write_bytes(weights)
+
+    class FakeMettle:
+        def eval(self):
+            calls.append(("eval",))
+            return self
+
+        def to(self, device):
+            calls.append(("to", device))
+            return self
+
+        def encode(self, pixel_values, feature_view=None):
+            calls.append(("encode", pixel_values, feature_view))
+            return ("embedding", feature_view)
+
+    monkeypatch.setattr(
+        huggingface_hub,
+        "hf_hub_download",
+        lambda **kwargs: calls.append(("download", kwargs)) or str(weights_path),
+    )
+    monkeypatch.setattr(
+        ee,
+        "AutoImageProcessor",
+        types.SimpleNamespace(
+            from_pretrained=lambda model_id, **kwargs: (
+                calls.append(("processor", model_id, kwargs)) or processor
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        ee,
+        "AutoModel",
+        types.SimpleNamespace(
+            from_pretrained=lambda model_id, **kwargs: (
+                calls.append(("model", model_id, kwargs)) or FakeMettle()
+            )
+        ),
+    )
+
+
+def test_registry_includes_pinned_fp32_mettle() -> None:
+    spec = mr._build_model_registry()["Mettle"]
+
+    assert spec == mr.ModelSpec(
+        backend="mettle",
+        model_id="slideflow-labs/Mettle",
+        extract="raw",
+        mixed_precision=False,
+        checkpoint_revision=_METTLE_REVISION,
+        embedding_dim=3072,
+    )
+
+
+def test_mettle_loader_verifies_pinned_weights_then_encodes_cls_mean(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extraction_module
+) -> None:
+    ee = extraction_module
+    spec = mr._build_model_registry()["Mettle"]
+    calls: list[tuple] = []
+    processor = _mettle_processor()
+    _patch_mettle_boundaries(
+        monkeypatch, ee, tmp_path, processor=processor, weights=b"weights", calls=calls
+    )
+    monkeypatch.setattr(ee, "_METTLE_WEIGHTS_SHA256", hashlib.sha256(b"weights").hexdigest())
+    batch = object()
+
+    _model, _transform, embed_fn = ee._load_model_and_transform(spec, "cpu")
+    embedding = embed_fn(batch)
+
+    pinned = {"trust_remote_code": True, "revision": _METTLE_REVISION}
+    assert embedding == ("embedding", "cls_mean")
+    assert calls == [
+        (
+            "download",
+            {
+                "repo_id": "slideflow-labs/Mettle",
+                "filename": "model.safetensors",
+                "revision": _METTLE_REVISION,
+            },
+        ),
+        ("processor", "slideflow-labs/Mettle", pinned),
+        ("model", "slideflow-labs/Mettle", pinned),
+        ("eval",),
+        ("to", "cpu"),
+        ("encode", batch, "cls_mean"),
+    ]
+
+
+def test_mettle_registry_pins_the_model_card_weights_hash(extraction_module) -> None:
+    assert extraction_module._METTLE_WEIGHTS_SHA256 == _METTLE_SHA256
+
+
+def test_mettle_loader_refuses_weights_that_do_not_match_the_pinned_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extraction_module
+) -> None:
+    ee = extraction_module
+    calls: list[tuple] = []
+    _patch_mettle_boundaries(
+        monkeypatch,
+        ee,
+        tmp_path,
+        processor=_mettle_processor(),
+        weights=b"tampered",
+        calls=calls,
+    )
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        ee._load_model_and_transform(mr._build_model_registry()["Mettle"], "cpu")
+    assert [call[0] for call in calls] == ["download"]
+
+
+@pytest.mark.parametrize(
+    "override",
+    [
+        {"image_mean": [0.5, 0.5, 0.5]},
+        {"size": {"shortest_edge": 224}},
+        {"resample": 2},
+        {"do_normalize": False},
+    ],
+)
+def test_mettle_loader_refuses_a_processor_that_departs_from_the_recorded_contract(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, override: dict, extraction_module
+) -> None:
+    ee = extraction_module
+    calls: list[tuple] = []
+    _patch_mettle_boundaries(
+        monkeypatch,
+        ee,
+        tmp_path,
+        processor=_mettle_processor(**override),
+        weights=b"weights",
+        calls=calls,
+    )
+    monkeypatch.setattr(ee, "_METTLE_WEIGHTS_SHA256", hashlib.sha256(b"weights").hexdigest())
+
+    with pytest.raises(ValueError, match="preprocessor"):
+        ee._load_model_and_transform(mr._build_model_registry()["Mettle"], "cpu")
+
+
+def test_mettle_artifact_contract_is_fp32_3072_with_checkpoint_native_pooling(
+    tmp_path: Path, extraction_module
+) -> None:
+    ee = extraction_module
+    manifest_path = tmp_path / "manifest.csv"
+    pd.DataFrame(
+        {
+            "sample_id": ["a", "b"],
+            "image_path": ["a.png", "b.png"],
+            "label": ["x", "y"],
+            "confounder": ["c", "d"],
+            "group_id": ["a", "b"],
+        }
+    ).to_csv(manifest_path, index=False)
+
+    contract = ee.build_embedding_artifact_contract(
+        manifest_path=manifest_path,
+        spec=mr._build_model_registry()["Mettle"],
+        batch_size=64,
+        device_arg="cuda",
+    )
+
+    assert contract.precision == "float32"
+    assert contract.output_shape == (2, 3072)
+    assert contract.checkpoint_revision == _METTLE_REVISION
+    extraction = contract.extraction_contract
+    assert extraction["weights_sha256"] == _METTLE_SHA256
+    assert extraction["pooling"] == {
+        "method": "checkpoint-native:model.encode",
+        "feature_view": "cls_mean",
+        "register_tokens_excluded": 4,
+        "output_normalization": "none",
+    }
+    assert extraction["preprocessing"] == {
+        "source": "checkpoint-processor",
+        "resize": [224, 224],
+        "resize_interpolation": "bicubic",
+        "center_crop": None,
+        "input_scaling": "uint8-to-unit-float",
+        "normalization_mean": [0.707223, 0.578729, 0.703617],
+        "normalization_std": [0.211883, 0.230117, 0.177517],
+    }
+
+
+def test_mettle_rejects_explicit_alternative_pooling(tmp_path: Path, extraction_module) -> None:
+    with pytest.raises(ValueError, match="pooling"):
+        extraction_module._model_extraction_details(
+            mr._build_model_registry()["Mettle"], "cls-only"
+        )
 
 
 def test_parse_models_rejects_empty_and_duplicates() -> None:
