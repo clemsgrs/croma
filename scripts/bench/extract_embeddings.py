@@ -1,6 +1,7 @@
 import argparse
 import contextlib
 import dataclasses
+import hashlib
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -62,6 +63,16 @@ _RUDOLFV2_NUM_REGISTERS = 8
 _RUDOLFV2_NUM_PATCHES = 784
 _RUDOLFV2_MEAN = (0.7072, 0.5787, 0.7036)
 _RUDOLFV2_STD = (0.2119, 0.2301, 0.1775)
+
+_METTLE_INPUT_SIZE = 224
+_METTLE_NUM_REGISTERS = 4
+_METTLE_MEAN = (0.707223, 0.578729, 0.703617)
+_METTLE_STD = (0.211883, 0.230117, 0.177517)
+_METTLE_PIL_BICUBIC = 3
+_METTLE_FEATURE_VIEW = "cls_mean"
+_METTLE_WEIGHTS_FILE = "model.safetensors"
+# From the model card; the pinned revision's weights must hash to exactly this.
+_METTLE_WEIGHTS_SHA256 = "7754ef463e79dd13b072247b56db39791c884db10774e354d76f76367093ce4a"
 
 _WAIV_POOLING_CONTRACTS = ("canonical", "cls-mean-patch", "cls-only")
 _RUDOLFV2_POOLING_CONTRACTS = ("canonical", "cls-only")
@@ -244,9 +255,87 @@ class _RudolfV2ExtractionConfig:
         )
 
 
+@dataclasses.dataclass(frozen=True)
+class _MettleExtractionConfig:
+    """Mettle's released contract: its own processor, and ``model.encode`` at ``cls_mean``.
+
+    ``cls_mean`` is the 3072-d representation the model card benchmarks with: the headed
+    CLS embedding concatenated with the unheaded mean of the spatial patch tokens (CLS and
+    the four registers excluded). The checkpoint's default view is the 1536-d ``cls``, so
+    the view is always passed explicitly rather than inherited from ``config.json``.
+    """
+
+    input_size: int = _METTLE_INPUT_SIZE
+    normalization_mean: tuple[float, float, float] = _METTLE_MEAN
+    normalization_std: tuple[float, float, float] = _METTLE_STD
+    register_tokens: int = _METTLE_NUM_REGISTERS
+    feature_view: str = _METTLE_FEATURE_VIEW
+
+    def details(self, pooling: str = "canonical") -> dict:
+        if pooling != "canonical":
+            raise ValueError(
+                f"unknown Mettle pooling contract {pooling!r}; expected ['canonical']"
+            )
+        return {
+            "weights_sha256": _METTLE_WEIGHTS_SHA256,
+            "preprocessing": {
+                "source": "checkpoint-processor",
+                "resize": [self.input_size, self.input_size],
+                "resize_interpolation": "bicubic",
+                "center_crop": None,
+                "input_scaling": "uint8-to-unit-float",
+                "normalization_mean": list(self.normalization_mean),
+                "normalization_std": list(self.normalization_std),
+            },
+            "pooling": {
+                "method": "checkpoint-native:model.encode",
+                "feature_view": self.feature_view,
+                "register_tokens_excluded": self.register_tokens,
+                "output_normalization": "none",
+            },
+        }
+
+    def check_processor(self, processor) -> None:
+        """Refuse a checkpoint processor that departs from the contract recorded above."""
+        expected = {
+            "do_resize": True,
+            "size": {"height": self.input_size, "width": self.input_size},
+            "resample": _METTLE_PIL_BICUBIC,
+            "do_rescale": True,
+            "rescale_factor": 1 / 255,
+            "do_normalize": True,
+            "image_mean": list(self.normalization_mean),
+            "image_std": list(self.normalization_std),
+        }
+        actual = {key: getattr(processor, key, None) for key in expected}
+        actual["size"] = dict(actual["size"] or {})
+        actual["image_mean"] = [float(v) for v in actual["image_mean"] or []]
+        actual["image_std"] = [float(v) for v in actual["image_std"] or []]
+        if actual != expected:
+            raise ValueError(
+                "Mettle preprocessor departs from the recorded extraction contract: "
+                f"expected {expected}, got {actual}"
+            )
+
+    def embed(self, model, batch):
+        return model.encode(batch, feature_view=self.feature_view)
+
+
+def _verify_sha256(path: str | Path, expected: str) -> None:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 24), b""):
+            digest.update(chunk)
+    if digest.hexdigest() != expected:
+        raise ValueError(
+            f"checkpoint {path} has SHA-256 {digest.hexdigest()}, expected {expected}"
+        )
+
+
 _BACKEND_EXTRACTION_CONFIGS = {
     "waiv": _WaivExtractionConfig(),
     "rudolfv2": _RudolfV2ExtractionConfig(),
+    "mettle": _MettleExtractionConfig(),
 }
 
 
@@ -374,7 +463,7 @@ def _model_extraction_details(spec: ModelSpec, pooling: str = "canonical") -> di
         return {}
     if spec.backend == "waiv":
         return _waiv_extraction_config(spec).details(pooling)
-    if spec.backend == "rudolfv2":
+    if spec.backend in ("rudolfv2", "mettle"):
         return config.details(pooling)
     if pooling != "canonical":
         raise ValueError(
@@ -554,6 +643,33 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
 
         def embed_fn(batch):
             return config.embed(model, batch, pooling)
+
+        return model, transform, embed_fn
+
+    if spec.backend == "mettle":
+        from huggingface_hub import hf_hub_download
+
+        config = _BACKEND_EXTRACTION_CONFIGS["mettle"]
+        config.details(pooling)
+        pinned = {"trust_remote_code": True, "revision": spec.checkpoint_revision}
+        _verify_sha256(
+            hf_hub_download(
+                repo_id=spec.model_id,
+                filename=_METTLE_WEIGHTS_FILE,
+                revision=spec.checkpoint_revision,
+            ),
+            _METTLE_WEIGHTS_SHA256,
+        )
+        processor = AutoImageProcessor.from_pretrained(spec.model_id, **pinned)
+        config.check_processor(processor)
+        model = AutoModel.from_pretrained(spec.model_id, **pinned)
+        model.eval().to(device)
+        transform = lambda img: processor(img, return_tensors="pt")[
+            "pixel_values"
+        ].squeeze(0)
+
+        def embed_fn(batch):
+            return config.embed(model, batch)
 
         return model, transform, embed_fn
 
