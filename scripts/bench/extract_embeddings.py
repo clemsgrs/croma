@@ -888,7 +888,9 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
 
         recipe = _tile_transform_recipe(spec)
         if recipe is None:
-            raise ValueError(f"no authors' transform recipe for GPFM checkpoint {spec.model_id!r}")
+            raise ValueError(
+                f"no authors' transform recipe for GPFM checkpoint {spec.model_id!r}"
+            )
         model = timm.create_model(
             _GPFM_ARCH,
             pretrained=False,
