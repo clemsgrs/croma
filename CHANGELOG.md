@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Six tile encoders (DINOv2-B, H-optimus-0, H-optimus-1, Prov-GigaPath, GPFM and mSTAR)
+  are now extracted with their authors' preprocessing recipes, the ones slide2vec uses, in
+  place of the transform timm resolved from each checkpoint's hub config. The hub configs
+  held timm's defaults or the checkpoint's native resolution: DINOv2-B and GPFM upsampled
+  every 256-px tile to 518, H-optimus-0/1 kept the central 224 instead of the whole tile,
+  Prov-GigaPath squashed the whole tile instead of taking its central 224, and mSTAR used
+  a 224/248 crop with mean/std 0.5 instead of the whole tile with ImageNet statistics. All
+  six were re-extracted and re-scored on Camelyon, TCGA-4×4 and Tolkach-ESCA, and their nIPD
+  cells re-run. The DINOv2-B Camelyon row now agrees with the FMTF benchmark's slide2vec
+  6.3.3 run (median 0.0282 vs 0.0283, F(0) 0.401 vs 0.401, LTM₁₀ −0.1784 vs −0.1784).
+  Median CRoMa (m = 5), old → new:
+
+  | Encoder | Camelyon | TCGA-4×4 | Tolkach-ESCA |
+  | --- | --- | --- | --- |
+  | DINOv2-B | 0.0497 → 0.0282 | 0.0061 → 0.0139 | 0.1754 → 0.1517 |
+  | H-optimus-0 | 0.0450 → 0.0520 | 0.0541 → 0.0609 | 0.2318 → 0.2413 |
+  | H-optimus-1 | 0.0818 → 0.0699 | 0.0879 → 0.0962 | 0.2600 → 0.2604 |
+  | Prov-GigaPath | 0.0087 → 0.0079 | 0.0510 → 0.0472 | 0.1317 → 0.1400 |
+  | GPFM | −0.1038 → −0.0540 | 0.0373 → 0.0477 | 0.2406 → 0.2029 |
+  | mSTAR | 0.0225 → −0.0390 | 0.0594 → 0.0610 | 0.1869 → 0.1836 |
+
+  mSTAR's Camelyon margin turns negative: its biological kNN accuracy is unchanged
+  (0.979 → 0.981) while the centre becomes almost perfectly recoverable (0.984 → 0.999).
+  The other encoders' CRoMa is unchanged. F(0), LTM₁₀, RI and MaRI are in `results/`.
+- Re-scoring moved two cohorts' shared operating point, the lower median of the per-model
+  `k*`: TCGA-4×4 from `k = 71` to `k = 81` (the published 71 already disagreed with a local
+  re-run, which resolved 91), and Tolkach-ESCA from `k = 61` to `k = 71`. Every encoder's
+  RI and MaRI on those two cohorts moves with it; CRoMa does not depend on `k`. Camelyon
+  stays at `k = 11`.
+- The published confounder kNN accuracies (`conf_bacc`) predated the shared-support
+  benchmark changes and differed from what the current benchmark computes by up to 0.007
+  on the tile cohorts and 0.005 on PCaBiop (PRISM 0.992 → 0.987, MOOZY 1.000 → 0.995).
+  They are now the current values. No other PCaBiop column changed.
+
 - The paper dropped the "Beyond counts:" prefix from its title in the arXiv v2 revision;
   it is now *A distributional robustness margin for pathology foundation models*. The
   README, the documentation site and the `preferred-citation` in `CITATION.cff` cite the

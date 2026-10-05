@@ -1,6 +1,6 @@
 {
-  "croma_version": "0.3.0",
-  "exported": "2026-08-13",
+  "croma_version": "1.0.0",
+  "exported": "2026-10-05",
   "protocol": "median-k",
   "croma_m": 5,
   "tail_alpha": 0.1,
@@ -24,7 +24,7 @@
       "panel": "tile",
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tcga-4x4",
-      "k": 71,
+      "k": 81,
       "n_models": 26,
       "confounder": "Medical Center",
       "evaluation_design": "all"
@@ -35,7 +35,7 @@
       "panel": "tile",
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tolkach-esca",
-      "k": 61,
+      "k": 71,
       "n_models": 26,
       "confounder": "Medical Center",
       "evaluation_design": "all"
@@ -59,13 +59,13 @@
     }
   },
   "files": {
-    "results/camelyon.csv": "9a1c689ceff74571d28400264754f32d318d957a440d50ee04c4ee21987a63b7",
-    "results/cross_benchmark.csv": "a1c3574667ef7d2e6a125e6ca7c57f16598697b023b80db977a43021c7aaa16f",
-    "results/distributions.json": "8edddfa380a0846f05f2912dcccd0e6f7d9f6bee6096337ca1f04149a4773c52",
-    "results/nipd.csv": "8d20b62a4b5250e1bdeb3429b39b7f0933f8bf88438fdadbe76ee46b30ff2d85",
-    "results/nipd.json": "26560ea723ec18b188f57247e97f71816d885be08ff029ed99d605cc5b066ddc",
-    "results/pcabiop.csv": "2634d9e54744d746b1815576ae9b3c450837af5d8ff99a66cf39ab952f00ad90",
-    "results/tcga-4x4.csv": "86fb3f37848fda79a84a01f75fcd891da5c4d5d0772b224103655d4e13e1ee14",
-    "results/tolkach-esca.csv": "3ee6b45181540785f248e1ee091ac8d7300a205fb44f694bad4b009ecc3e83d5"
+    "results/camelyon.csv": "16ed8b8cbc7f1ca0bc64d088abd01d5afee10c953c45b78acdce652c63979a71",
+    "results/cross_benchmark.csv": "13ad339b9f4847dd03ef14661d4d3e92c66d13b0892884f6340d6578b63be669",
+    "results/distributions.json": "a5a084a5aa533377509d10743c95c80d6359ce27b7ee2591aad60c801dc02bc2",
+    "results/nipd.csv": "dd8dcee90bb7dd8777504bf7d65d5fb604fa78912cb95a628dd379b63b8855df",
+    "results/nipd.json": "8f470451c4ab7415909626852c80b36b6aec90c89745c29e35bb00d21304b757",
+    "results/pcabiop.csv": "abe08ad2d022b13da29563b1bd59787855bc1e37b0431569fc2eb37ae41fb37a",
+    "results/tcga-4x4.csv": "e50d7f4b257397cb3cf8e598263cd0f7a54bf23b65a41e232d89bc518a6f19e2",
+    "results/tolkach-esca.csv": "479d6cb34912ccf700fae4e46310329bce2f2609be71b3d8022d5f5fbed9df02"
   }
 }
