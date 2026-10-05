@@ -12,7 +12,7 @@ outside TCGA.
 .. results-table:: tolkach-esca
    :caption: Tolkach-ESCA, sorted by median ``CRoMa``. Columns are explained under
              :ref:`result-columns`; † marks the natural-image control
-             (:ref:`the-control`).
+             (:ref:`the-control`), and row shading is explained beneath the table.
 
 One provenance caveat: the ``RudolfV-2`` family's disclosed Charité/LMU institutional
 corpus creates a possible institutional/source-domain overlap with this cohort's CHA

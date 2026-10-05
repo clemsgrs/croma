@@ -8,6 +8,7 @@ from pathlib import Path
 from docutils import nodes
 from docutils.parsers.rst import Directive
 from docutils.statemachine import StringList
+from resultstable import shade_cohort_table
 
 RESULT = Path(__file__).resolve().parents[2] / "results" / "nipd.json"
 # A normalized change of -1 is chance level: the probe has lost its whole above-chance
@@ -114,7 +115,9 @@ class NipdTable(Directive):
         self.state.nested_parse(
             StringList(lines, source=str(RESULT)), self.content_offset, container
         )
-        return container.children
+        rendered = list(container.children)
+        # The same row shading as the cohort's results table above it.
+        return rendered + shade_cohort_table(rendered, slug, [model["model"] for model in models])
 
 
 def setup(app):

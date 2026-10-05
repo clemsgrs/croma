@@ -186,11 +186,49 @@ table.croma-results th code {
   padding: 0;
 }
 
-/* TCGA-exposure tint (aggregate + TCGA-4×4 tables), the paper's dagger convention as a
-   row shade. Translucent, so one declaration reads on both themes with no data-theme
-   block; reuses the compare hue. The legend lives on the TCGA-4×4 page. */
+/* Row shading: orange where an encoder's disclosed pretraining overlaps the cohort's
+   source, yellow where its authors used PathoROB RI during development. Translucent, so
+   one declaration reads on both themes with no data-theme block. A row carrying both is
+   split between the two. Each table showing a tint is followed by its legend. */
+:root {
+  --croma-tint-exposed: rgba(208, 101, 63, 0.16);
+  --croma-tint-selected: rgba(222, 178, 20, 0.24);
+}
+
 table.croma-results tr.croma-exposure-exposed {
-  background: rgba(208, 101, 63, 0.16);
+  background: var(--croma-tint-exposed);
+}
+
+table.croma-results tr.croma-selection-flagged {
+  background: var(--croma-tint-selected);
+}
+
+table.croma-results tr.croma-exposure-exposed.croma-selection-flagged {
+  background: linear-gradient(90deg, var(--croma-tint-exposed) 50%, var(--croma-tint-selected) 50%);
+}
+
+ul.croma-legend {
+  list-style: none;
+  padding-left: 0;
+  font-size: 0.9em;
+}
+
+.croma-swatch {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.4em;
+  vertical-align: -0.1em;
+  border: 1px solid var(--color-foreground-border);
+  border-radius: 2px;
+}
+
+.croma-swatch-exposed {
+  background: var(--croma-tint-exposed);
+}
+
+.croma-swatch-selected {
+  background: var(--croma-tint-selected);
 }
 
 /* Visually hidden, present for screen readers, print, and copy-paste: the tint's text

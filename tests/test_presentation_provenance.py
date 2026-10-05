@@ -229,6 +229,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "RudolfV 2-S": ("rudolfv2", 2, 26),
         "Mascaret": ("waiv", 0, 27),
         "Phaet": ("waiv", 1, 28),
+        "Mettle": ("hoptimus", 3, 29),
     }
     actual_identity = {
         model: (
@@ -269,6 +270,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "RudolfV 2-S",
         "Mascaret",
         "Phaet",
+        "Mettle",
         "DINOv2-B",
     ]
     assert {model: style.MODEL_FAMILY_MAP[model] for model in expected_identity} == {
@@ -277,6 +279,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "RudolfV 2-S": "rudolfv2",
         "Mascaret": "waiv",
         "Phaet": "waiv",
+        "Mettle": "hoptimus",
     }
     assert {model: style.MODEL_TONE_INDEX[model] for model in expected_identity} == {
         "RudolfV 2": 0,
@@ -284,8 +287,12 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "RudolfV 2-S": 2,
         "Mascaret": 0,
         "Phaet": 1,
+        "Mettle": 3,
     }
     assert len({style.color_for_model(model) for model in ["Mascaret", "Phaet"]}) == 2
+    # Mettle is the hoptimus family's fourth member: its own tone, not H-optimus-1's.
+    hoptimus = ["H-optimus-1", "H-optimus-0", "H0-mini", "Mettle"]
+    assert len({style.color_for_model(model) for model in hoptimus}) == 4
     assert (
         len({style.color_for_model(model) for model in ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"]})
         == 3

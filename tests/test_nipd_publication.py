@@ -65,16 +65,16 @@ def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
     published = _payload()
     expected = {
         "camelyon": {
-            "id": (25, 0.9415384615, 0.2986498962),
-            "ood": (25, 0.73, 0.1129132628),
+            "id": (26, 0.945982906, 0.3039544444),
+            "ood": (26, 0.7442735043, 0.1144040624),
         },
         "tcga-4x4": {
-            "id": (25, 0.9069230769, 0.2395827872),
-            "ood": (25, 0.88, 0.3938473958),
+            "id": (26, 0.9042735043, 0.2402571277),
+            "ood": (26, 0.8851282051, 0.3945676619),
         },
         "tolkach-esca": {
-            "id": (25, 0.9546153846, 0.0946881816),
-            "ood": (25, 0.7523076923, 0.028176137),
+            "id": (26, 0.9309401709, 0.0957444143),
+            "ood": (26, 0.7285470085, 0.0285616383),
         },
     }
     for cohort in published["cohorts"][:3]:
@@ -138,7 +138,7 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
         rows = list(csv.DictReader(handle))
 
     expected_rows = 2 * sum(len(cohort["models"]) for cohort in payload["cohorts"])
-    assert len(rows) == expected_rows == 166
+    assert len(rows) == expected_rows == 172
     assert list(rows[0]) == [
         "cohort",
         "regime",

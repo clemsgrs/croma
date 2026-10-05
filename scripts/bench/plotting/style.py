@@ -119,7 +119,7 @@ FAMILY_PALETTE: dict[str, list[str]] = {
     "uni": ["#4cc183", "#1f9d55"],  # green
     "conch": ["#ee4d5a", "#c2222f"],  # red (cooler, away from orange)
     "phikon": ["#9b80e6", "#5b3fc4"],  # violet
-    "hoptimus": ["#67b0d0", "#2f86b8", "#1f5f88"],  # steel blue (3 tones)
+    "hoptimus": ["#67b0d0", "#2f86b8", "#1f5f88", "#123f60"],  # steel blue (4 tones)
     "gigapath": ["#e0a01a"],  # gold / amber
     "midnight": ["#16b6c4"],  # cyan / teal
     "hibou": ["#e07ad0", "#b1318f"],  # magenta

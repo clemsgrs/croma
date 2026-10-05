@@ -92,6 +92,11 @@ class Cohort:
     label: str
     protocol: str = PROTOCOL
     panel: str = "tile"
+    #: The provenance domain the cohort's tiles come from, matched against each model's
+    #: corpus and institutional domain tags to publish its ``exposed`` column. Mirrors the
+    #: paper manifest's ``exposure_domain``; ``charite`` is an institutional/source-domain
+    #: overlap, not an assertion that any scored slide was seen in pretraining.
+    exposure_domain: str = ""
 
     @property
     def run_dir(self) -> Path:
@@ -113,9 +118,9 @@ class Cohort:
 #: it is the same corpus as TCGA-4x4 at a coarser confounder split, and two near-duplicate
 #: cohorts crowd the aggregate.
 COHORTS: tuple[Cohort, ...] = (
-    Cohort("camelyon", "pathorob-camelyon", "Camelyon"),
-    Cohort("tcga-4x4", "pathorob-tcga-4x4", "TCGA-4×4"),
-    Cohort("tolkach-esca", "pathorob-tolkach-esca", "Tolkach-ESCA"),
+    Cohort("camelyon", "pathorob-camelyon", "Camelyon", exposure_domain="camelyon"),
+    Cohort("tcga-4x4", "pathorob-tcga-4x4", "TCGA-4×4", exposure_domain="tcga"),
+    Cohort("tolkach-esca", "pathorob-tolkach-esca", "Tolkach-ESCA", exposure_domain="charite"),
 )
 
 #: The slide-level cohort: PCaBiop, five whole-slide encoders over 1,000 PANDA biopsy
@@ -125,7 +130,9 @@ COHORTS: tuple[Cohort, ...] = (
 #: dominated by panel composition -- adding one encoder moved the would-be shared k from
 #: 3 to 9.
 SLIDE_COHORTS: tuple[Cohort, ...] = (
-    Cohort("pcabiop", "panda", "PCaBiop", protocol="k-star", panel="slide"),
+    Cohort(
+        "pcabiop", "panda", "PCaBiop", protocol="k-star", panel="slide", exposure_domain="panda"
+    ),
 )
 
 #: Everything the exporter publishes a cohort table and distributions for.
@@ -137,6 +144,7 @@ ALL_COHORTS: tuple[Cohort, ...] = COHORTS + SLIDE_COHORTS
 COHORT_COLUMNS = [
     "model",
     "is_control",
+    "exposed",
     "bio_bacc",
     "conf_bacc",
     "ri",
@@ -222,6 +230,8 @@ def build_cohort_table(metrics: pd.DataFrame) -> pd.DataFrame:
         {
             "model": metrics["model"].astype(str),
             "is_control": metrics["model"].astype(str) == CONTROL_MODEL,
+            # Provenance, not measurement: filled by `with_cohort_exposure` after the build.
+            "exposed": False,
             "bio_bacc": metrics["bio_knn_bacc"].astype(float),
             "conf_bacc": metrics["confounder_knn_bacc"].astype(float),
             "ri": metrics["ri"].astype(float),
@@ -348,7 +358,9 @@ def _domain_tags(cell: object) -> set[str]:
     return {token.strip() for token in cell.split(";") if token.strip()}
 
 
-def exposed_models(metadata: pd.DataFrame, domain: str, roster: set[str]) -> dict[str, bool]:
+def exposed_models(
+    metadata: pd.DataFrame, domain: str, roster: set[str], panel: str = "tile"
+) -> dict[str, bool]:
     """Whether each roster model's pretraining overlaps ``domain``, from its domain tags.
 
     Binary on purpose, matching the paper's dagger convention: a model is exposed iff the
@@ -358,10 +370,10 @@ def exposed_models(metadata: pd.DataFrame, domain: str, roster: set[str]) -> dic
     that caveat rather than a third state here. The paper's ``exposed_models_for_domain``
     is the reference derivation, and a test pins the two to the same answer without this
     public artifact importing the private one. Raises ``KeyError`` on a roster member
-    with no tile-panel metadata row rather than letting a missing state fall through.
+    with no metadata row in ``panel`` rather than letting a missing state fall through.
     """
     flags: dict[str, bool] = {}
-    for _, row in metadata[metadata["panel"] == "tile"].iterrows():
+    for _, row in metadata[metadata["panel"] == panel].iterrows():
         model = str(row["model"])
         if model not in roster:
             continue
@@ -371,8 +383,21 @@ def exposed_models(metadata: pd.DataFrame, domain: str, roster: set[str]) -> dic
         flags[model] = domain in tags
     missing = sorted(roster - flags.keys())
     if missing:
-        raise KeyError(f"no tile-panel metadata row for roster model(s): {', '.join(missing)}")
+        raise KeyError(f"no {panel}-panel metadata row for roster model(s): {', '.join(missing)}")
     return flags
+
+
+def with_cohort_exposure(table: pd.DataFrame, exposed: dict[str, bool]) -> pd.DataFrame:
+    """A cohort table with its ``exposed`` column filled from the cohort's own domain.
+
+    The cohort pages shade these rows, so a reader sees on each cohort which encoders'
+    disclosed pretraining overlaps *that* cohort's source -- GPFM on Camelyon, the
+    TCGA-trained encoders on TCGA-4×4 -- rather than one TCGA flag carried everywhere.
+    """
+    missing = sorted(set(table["model"]) - exposed.keys())
+    if missing:
+        raise KeyError(f"no exposure state for cohort model(s): {', '.join(missing)}")
+    return table.assign(exposed=[exposed[m] for m in table["model"]])
 
 
 def with_exposure(aggregate: pd.DataFrame, exposed: dict[str, bool]) -> pd.DataFrame:
@@ -390,6 +415,54 @@ def with_exposure(aggregate: pd.DataFrame, exposed: dict[str, bool]) -> pd.DataF
         out.columns.get_loc("on_frontier") + 1,
         "tcga_exposed",
         [exposed[m] for m in out["model"]],
+    )
+    return out
+
+
+# --------------------------------------------------------------------------------------
+# Benchmark selection: an author-disclosed fact, published beside the ranks
+# --------------------------------------------------------------------------------------
+
+
+#: The README's text stand-in for the site's yellow row shading, which Markdown cannot draw.
+#: The docs extensions word their legend the same way.
+SELECTION_LEGEND = (
+    "‡ PathoROB RI on these cohorts was used during the encoder's development, e.g. in "
+    "checkpoint selection, as disclosed by its authors. Ranks are shown unadjusted."
+)
+
+
+def selected_models(metadata: pd.DataFrame, roster: set[str]) -> dict[str, bool]:
+    """Whether each roster model's authors disclosed selecting it on these cohorts.
+
+    Read from the ``benchmark_selection`` column, which names *what* was selected on (e.g.
+    ``pathorob-ri``). Published as a flag, never a rank adjustment: the site cannot
+    measure how much a disclosed selection helped, only report that it happened. An
+    empty cell means *not disclosed*, not an audited absence (ADR-0020). Raises on a
+    roster member with no tile-panel row, as :func:`exposed_models` does.
+    """
+    tile = metadata[metadata["panel"] == "tile"]
+    flags = {
+        str(row["model"]): bool(str(row.get("benchmark_selection", "") or "").strip())
+        for _, row in tile.iterrows()
+        if str(row["model"]) in roster
+    }
+    missing = sorted(roster - flags.keys())
+    if missing:
+        raise KeyError(f"no tile-panel metadata row for roster model(s): {', '.join(missing)}")
+    return flags
+
+
+def with_selection(aggregate: pd.DataFrame, selected: dict[str, bool]) -> pd.DataFrame:
+    """The aggregate with a boolean ``benchmark_selected`` column after ``tcga_exposed``."""
+    missing = sorted(set(aggregate["model"]) - selected.keys())
+    if missing:
+        raise KeyError(f"no selection state for aggregate model(s): {', '.join(missing)}")
+    out = aggregate.copy()
+    out.insert(
+        out.columns.get_loc("tcga_exposed") + 1,
+        "benchmark_selected",
+        [selected[m] for m in out["model"]],
     )
     return out
 
@@ -487,14 +560,21 @@ def export(cohorts: tuple[Cohort, ...] = ALL_COHORTS) -> dict[str, str]:
         tables[cohort.slug] = build_cohort_table(metrics)
         meta[cohort.slug] = _cohort_provenance(cohort, metrics)
 
+    metadata = published(pd.read_csv(METADATA, keep_default_na=False, na_values=[]))
+    for cohort in cohorts:
+        table = tables[cohort.slug]
+        tables[cohort.slug] = with_cohort_exposure(
+            table,
+            exposed_models(metadata, cohort.exposure_domain, set(table["model"]), cohort.panel),
+        )
+
     # The aggregate ranks are a tile-panel claim: the slide cohort's five-encoder roster
     # shares no comparable rank with the 26-model panel, so it never enters here.
     tile_slugs = [c.slug for c in cohorts if c.panel == "tile"]
     aggregate = build_aggregate_table({slug: tables[slug] for slug in tile_slugs})
-    aggregate = with_exposure(
-        aggregate,
-        exposed_models(published(pd.read_csv(METADATA)), TCGA_DOMAIN, set(aggregate["model"])),
-    )
+    roster = set(aggregate["model"])
+    aggregate = with_exposure(aggregate, exposed_models(metadata, TCGA_DOMAIN, roster))
+    aggregate = with_selection(aggregate, selected_models(metadata, roster))
     distributions = build_distributions(per_sample, cohorts)
 
     rendered = {f"results/{slug}.csv": _to_csv(df) for slug, df in tables.items()}
@@ -553,10 +633,13 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
         "| " + " | ".join(headers) + " |",
         "| --- |" + " ---: |" * (len(headers) - 1),
     ]
-    for _, row in aggregate.head(README_TOP).iterrows():
+    shown = aggregate.head(README_TOP)
+    for _, row in shown.iterrows():
         name = f"**{row['model']}**" if row["on_frontier"] else str(row["model"])
         if row["is_control"]:
             name += " †"
+        if row["benchmark_selected"]:
+            name += " ‡"
         cells = [
             name,
             f"{row['mean_rank']:.1f}",
@@ -580,6 +663,10 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
         f"cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the "
         f"Pareto frontier: the encoders no other pathology encoder beats on both axes at "
         f"once.",
+    ]
+    if shown["benchmark_selected"].any():
+        lines[-1] += f" {SELECTION_LEGEND}"
+    lines += [
         "",
         f"📊 **[Full panel, per-cohort detail and the distributions]({DOCS}/results/)**",
         "",

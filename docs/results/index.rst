@@ -26,7 +26,10 @@ Two rankings, one frontier
 **Bold** marks the Pareto frontier: the encoders no other pathology encoder beats on *both*
 rankings at once. † marks the unranked natural-image control (see :ref:`the-control`).
 Orange rows mark encoders whose disclosed pretraining overlaps TCGA — one of the three
-cohorts behind these ranks (:ref:`legend <exposure-legend>`).
+cohorts behind these ranks (:ref:`legend <exposure-legend>`). Yellow rows mark encoders
+whose authors used PathoROB ``RI`` on these cohorts during development
+(:ref:`benchmark-selection`). Each cohort page shades its tables by that cohort's own
+source.
 
 The ``CRoMa`` and tail ranks are each encoder's mean rank across the three cohorts — by
 median ``CRoMa`` and by tail severity LTM₁₀ respectively — and the mean rank averages the
@@ -155,6 +158,19 @@ can score positively simply by having no strong confounder structure either. Tha
 precisely what makes it useful — it calibrates what a positive margin is worth on a poor
 representation.
 
+.. _benchmark-selection:
+
+Benchmark selection
+-------------------
+
+A yellow row is an encoder whose authors have told us that PathoROB ``RI`` on these
+cohorts was used during its development — for example, as one of the criteria for choosing
+the released checkpoint. Developing against the benchmark a model is later ranked on can
+flatter its rank by an amount no one can measure from the outside, so the row is shaded in
+every table on the aggregate and cohort pages, with its legend beneath the table. The ranks
+themselves are not adjusted. An unshaded row means *not disclosed*, not an audited
+absence.
+
 .. _cohort-caveats:
 
 Scope
@@ -173,6 +189,13 @@ The three tile cohorts are reported under the **median-k** protocol: one shared 
 the cohort median of the per-model biological ``k*``. A single operating point is what makes
 a rank across encoders meaningful — comparing a model evaluated at ``k = 5`` against one at
 ``k = 91`` compares two different questions.
+
+Because that median is taken over the current panel, the shared ``k`` can move when an
+encoder joins, and every ``k``-dependent number on the cohort moves with it: the two kNN
+accuracies, ``RI``, ``MaRI`` and support. Each cohort table's caption states the ``k`` they
+are read at, and the
+`changelog <https://github.com/clemsgrs/croma/blob/main/CHANGELOG.md>`_ records every move.
+``CRoMa``, *F*\ (0) and LTM₁₀ do not depend on ``k``, so the ranks never do.
 
 ``tau`` is never pinned. Each encoder gets the median typed-neighbour distance of its own
 embedding at that ``k``, which is the only setting under which ``MaRI`` is comparable across

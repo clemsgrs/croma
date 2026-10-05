@@ -212,5 +212,6 @@ def test_tables_bold_the_leader_of_every_higher_is_better_column(rendered: Path)
     # The unranked control never carries a mark, whatever its values.
     camelyon = (rendered / "results" / COHORT_PAGES["camelyon"]).read_text(encoding="utf-8")
     for row in camelyon.split("<tr")[1:]:
+        row = row.split("</tr>")[0]
         if "†" in row.split("</td>")[0]:
             assert "<strong>" not in row

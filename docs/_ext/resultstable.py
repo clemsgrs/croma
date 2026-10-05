@@ -22,6 +22,7 @@ hand, and ``sphinx -W`` reports a malformed table against the page that used it.
 from __future__ import annotations
 
 import csv
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -103,56 +104,149 @@ AGGREGATE_RANKS: tuple[Column, ...] = (
 )
 
 
-#: The tint is binary, matching the paper's dagger convention: exposed rows are marked,
-#: everything else is the unmarked default -- and colour alone carries no text, so the
-#: tinted class pairs with a visually-hidden label for screen readers, print, and
-#: copy-paste. Untinted means *no disclosed overlap*, not an audited absence; the legend
-#: beside the TCGA-4×4 table carries that caveat.
+#: Row shading carries what a reader should discount a row for. Each tint is binary --
+#: shaded or the unshaded default -- and colour alone carries no text, so every shaded row
+#: also gets a visually-hidden label for screen readers, print and copy-paste, and every
+#: table showing a tint is followed by a legend naming it. Unshaded means *not disclosed*,
+#: not an audited absence; the legends say so.
+#:
+#: Orange: the encoder's disclosed pretraining corpus or institutional provenance overlaps
+#: the cohort's source (per cohort: CAMELYON, TCGA, Charité, PANDA; TCGA on the aggregate).
 EXPOSED_CLASS = "croma-exposure-exposed"
+#: Yellow: the encoder's authors disclosed using PathoROB RI on these cohorts during its
+#: development, e.g. in checkpoint selection (ADR-0020). Never a rank adjustment.
+SELECTED_CLASS = "croma-selection-flagged"
 
-EXPOSURE_LABELS = {EXPOSED_CLASS: " (TCGA-exposed pretraining)"}
+EXPOSURE_LABELS = {EXPOSED_CLASS: " (pretraining overlaps this cohort's source)"}
+SELECTION_LABEL = " (PathoROB RI used during development)"
+
+#: What the orange tint asserts on each table, in the legend beneath it.
+EXPOSURE_LEGENDS = {
+    "aggregate": "disclosed pretraining overlaps TCGA, the source of TCGA-4×4.",
+    "camelyon": "disclosed pretraining includes CAMELYON data.",
+    "tcga-4x4": "disclosed pretraining or institutional provenance includes TCGA.",
+    "tolkach-esca": (
+        "institutional provenance overlaps Charité, one of the cohort's sources — a "
+        "source-domain overlap, not evidence that any scored slide was seen in pretraining."
+    ),
+    "pcabiop": "disclosed pretraining includes PANDA data.",
+}
+SELECTION_LEGEND = (
+    "PathoROB RI on these cohorts was used during the encoder's development, e.g. in "
+    "checkpoint selection, as disclosed by its authors. Ranks are shown unadjusted."
+)
 
 
-def _parse_exposed(value: str) -> bool:
-    """Strict boolean parse: a corrupted cell must fail the build, not render unmarked."""
+def _parse_flag(value: str, column: str) -> bool:
+    """Strict boolean parse: a corrupted cell must fail the build, not render unshaded."""
     if value not in ("True", "False"):
-        raise ValueError(f"tcga_exposed must be True or False, got {value!r}")
+        raise ValueError(f"{column} must be True or False, got {value!r}")
     return value == "True"
 
 
 def _exposure_map() -> dict[str, bool]:
-    """Model -> exposed flag, from the model-level export."""
+    """Model -> TCGA exposure, from the model-level export (the aggregate's tint)."""
     return {
-        row["model"]: _parse_exposed(row["tcga_exposed"]) for row in _read("cross_benchmark.csv")
+        row["model"]: _parse_flag(row["tcga_exposed"], "tcga_exposed")
+        for row in _read("cross_benchmark.csv")
+    }
+
+
+def cohort_exposure_map(slug: str) -> dict[str, bool]:
+    """Model -> exposure to *this* cohort's source, from the cohort's own export."""
+    return {row["model"]: _parse_flag(row["exposed"], "exposed") for row in _read(f"{slug}.csv")}
+
+
+def selection_map() -> dict[str, bool]:
+    """Model -> author-disclosed use of PathoROB RI in development, model-level.
+
+    The slide cohort's encoders are not in that export; nothing was disclosed for them, so
+    a lookup there falls back to ``False``.
+    """
+    return {
+        row["model"]: _parse_flag(row["benchmark_selected"], "benchmark_selected")
+        for row in _read("cross_benchmark.csv")
     }
 
 
 def exposure_row_classes(models: list[str], exposure: dict[str, bool]) -> list[str | None]:
-    """The row class (or ``None``) for each model, in table order.
+    """The exposure class (or ``None``) for each model, in table order.
 
-    Raises on a model without a state: it means the cohort CSV and the model-level
-    export disagree, which should fail the ``-W`` build rather than publish an
-    unmarked row.
+    Raises on a model without a state: it means the table and its export disagree, which
+    should fail the ``-W`` build rather than publish an unshaded row.
     """
     return [EXPOSED_CLASS if exposure[model] else None for model in models]
 
 
-def _tint_rows(rendered: list[nodes.Node], models: list[str], exposure: dict[str, bool]) -> None:
-    """Apply the exposure classes and screen-reader labels to a rendered table's body."""
+def _body_rows(rendered: list[nodes.Node], n_models: int) -> list[nodes.row]:
+    """The body rows of the one table in ``rendered``, checked against the model count."""
     tables = [n for node in rendered for n in node.findall(nodes.table)]
     if len(tables) != 1:
         raise ValueError(f"expected one rendered table, found {len(tables)}")
     body = next(tables[0].findall(nodes.tbody))
     row_nodes = list(body.findall(nodes.row))
-    if len(row_nodes) != len(models):
-        raise ValueError(f"{len(models)} models but {len(row_nodes)} body rows")
-    for row_node, row_class in zip(row_nodes, exposure_row_classes(models, exposure)):
-        if row_class is None:
-            continue
-        row_node["classes"].append(row_class)
-        first_cell = next(row_node.findall(nodes.entry))
-        label = EXPOSURE_LABELS[row_class]
-        first_cell += nodes.inline(label, label, classes=["croma-sr-only"])
+    if len(row_nodes) != n_models:
+        raise ValueError(f"{n_models} models but {len(row_nodes)} body rows")
+    return row_nodes
+
+
+def _append_hidden_label(row_node: nodes.row, label: str) -> None:
+    first_cell = next(row_node.findall(nodes.entry))
+    first_cell += nodes.inline(label, label, classes=["croma-sr-only"])
+
+
+def shade_rows(
+    rendered: list[nodes.Node],
+    models: list[str],
+    exposure: dict[str, bool],
+    selected: dict[str, bool],
+    legend: str,
+) -> list[nodes.Node]:
+    """Shade a rendered table's rows and return the legend for the tints it shows.
+
+    ``legend`` keys :data:`EXPOSURE_LEGENDS`. A row can carry both tints; the stylesheet
+    splits it between the two colours.
+    """
+    row_nodes = _body_rows(rendered, len(models))
+    shown = {EXPOSED_CLASS: False, SELECTED_CLASS: False}
+    for row_node, model, exposed_class in zip(
+        row_nodes, models, exposure_row_classes(models, exposure)
+    ):
+        if exposed_class is not None:
+            row_node["classes"].append(exposed_class)
+            _append_hidden_label(row_node, EXPOSURE_LABELS[exposed_class])
+            shown[EXPOSED_CLASS] = True
+        if selected.get(model, False):
+            row_node["classes"].append(SELECTED_CLASS)
+            _append_hidden_label(row_node, SELECTION_LABEL)
+            shown[SELECTED_CLASS] = True
+    return _legend(shown, EXPOSURE_LEGENDS[legend])
+
+
+def _legend(shown: dict[str, bool], exposure_text: str) -> list[nodes.Node]:
+    items = []
+    if shown[EXPOSED_CLASS]:
+        items.append(
+            ("croma-swatch-exposed", "Orange", f"{exposure_text} Unshaded means no disclosed "
+             "overlap, not an audited absence.")
+        )
+    if shown[SELECTED_CLASS]:
+        items.append(("croma-swatch-selected", "Yellow", SELECTION_LEGEND))
+    if not items:
+        return []
+    legend = nodes.bullet_list(classes=["croma-legend"])
+    for swatch, name, text in items:
+        paragraph = nodes.paragraph()
+        paragraph += nodes.inline("", "", classes=["croma-swatch", swatch])
+        paragraph += nodes.strong(name, name)
+        paragraph += nodes.Text(f" — {text}")
+        legend += nodes.list_item("", paragraph)
+    return [legend]
+
+
+def shade_cohort_table(rendered: list[nodes.Node], slug: str, models: list[str]) -> list[nodes.Node]:
+    """Shade a table of one cohort's encoders by that cohort's exposure and selection."""
+    return shade_rows(rendered, models, cohort_exposure_map(slug), selection_map(), slug)
 
 
 def _read(name: str) -> list[dict[str, str]]:
@@ -216,6 +310,23 @@ def _model_cell(row: dict[str, str], *, emphasise: bool = False) -> str:
     return name + (CONTROL_MARK if _is_true(row["is_control"]) else "")
 
 
+def operating_point(slug: str) -> str:
+    """The sentence naming the ``k`` a cohort's k-dependent columns are read at.
+
+    Under ``median-k`` that ``k`` is the lower median of every encoder's own best ``k``,
+    so it can move whenever an encoder joins the panel; it is stated beside the numbers
+    it shapes rather than left for a reader to look up. The two kNN accuracies, ``RI``,
+    ``MaRI`` and support are read at it; ``CRoMa``, *F*\ (0) and LTM₁₀ do not depend on it.
+    """
+    with (RESULTS / "PROVENANCE.json").open() as handle:
+        cohort = json.load(handle)["cohorts"][slug]
+    k = cohort["k"]
+    scope = "every column except ``CRoMa``, *F*\\ (0) and LTM₁₀"
+    if isinstance(k, dict):
+        return f"Each encoder's own best ``k`` for {scope}."
+    return f"``k`` = {k}, the median of the {cohort['n_models']} encoders' best ``k``, for {scope}."
+
+
 def _list_table(headers: list[str], body: list[list[str]], *, name: str) -> list[str]:
     lines = [f".. list-table:: {name}", "   :header-rows: 1", "   :class: croma-results", ""]
     for record in [headers, *body]:
@@ -249,12 +360,11 @@ class ResultsTable(_TableDirective):
         headers = ["Model", *(c.header for c in COHORT_COLUMNS)]
         body = [[_model_cell(row), *_render_row(row, COHORT_COLUMNS, best)] for row in rows]
         title = self.options.get("caption", f"{slug} — {len(rows)} encoders")
+        title = f"{title} {operating_point(slug)}"
         rendered = self._render(_list_table(headers, body, name=title))
-        # Only the cohort whose scored domain the exposure states are derived for; on the
-        # TCGA-free cohorts the tint would imply a caveat their scores do not carry.
-        if slug == "tcga-4x4":
-            _tint_rows(rendered, [row["model"] for row in rows], _exposure_map())
-        return rendered
+        # Every cohort shades by its own source: GPFM on Camelyon, the TCGA-trained
+        # encoders on TCGA-4×4, and so on.
+        return rendered + shade_cohort_table(rendered, slug, [row["model"] for row in rows])
 
 
 class AggregateTable(_TableDirective):
@@ -297,10 +407,16 @@ class AggregateTable(_TableDirective):
         rendered = self._render(
             _list_table(headers, body, name=self.options.get("caption", default))
         )
-        # Tinted wherever the aggregate renders (results page and landing page): one of
+        # Shaded wherever the aggregate renders (results page and landing page): one of
         # its three cohorts is TCGA, so the caveat travels with the ranks.
-        _tint_rows(rendered, [row["model"] for row in shown], _exposure_map())
-        return rendered
+        legend = shade_rows(
+            rendered,
+            [row["model"] for row in shown],
+            _exposure_map(),
+            selection_map(),
+            "aggregate",
+        )
+        return rendered + legend
 
 
 def _cohort_header(key: str) -> str:

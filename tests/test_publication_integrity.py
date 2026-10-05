@@ -41,6 +41,7 @@ EXPECTED_PANEL = {
     "Hibou-L",
     "MUSK",
     "Mascaret",
+    "Mettle",
     "Midnight-12k",
     "Phaet",
     "Phikon",
@@ -58,6 +59,7 @@ EXPECTED_PANEL = {
 }
 EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
     "Mascaret",
+    "Mettle",
     "Phaet",
     "RudolfV-2",
     "RudolfV-2-B",
@@ -86,7 +88,7 @@ def test_paper_value_macros_read_positive_shared_support_directly() -> None:
 
 
 def test_public_export_is_three_tile_cohorts_plus_the_slide_cohort() -> None:
-    """The tile aggregate stays 25 ranked encoders plus the control over exactly the
+    """The tile aggregate stays 26 ranked encoders plus the control over exactly the
     three tile cohorts; the slide cohort is published beside them -- five whole-slide
     encoders at k-star -- and never contributes a rank."""
     provenance = json.loads((ROOT / "results/PROVENANCE.json").read_text())
@@ -96,7 +98,7 @@ def test_public_export_is_three_tile_cohorts_plus_the_slide_cohort() -> None:
     assert {
         slug for slug, meta in provenance["cohorts"].items() if meta["panel"] == "tile"
     } == EXPECTED_TILE_COHORTS
-    assert provenance["roster"] == 26
+    assert provenance["roster"] == 27
 
     pcabiop = provenance["cohorts"]["pcabiop"]
     assert pcabiop["panel"] == "slide"
@@ -107,7 +109,7 @@ def test_public_export_is_three_tile_cohorts_plus_the_slide_cohort() -> None:
     assert not slide["is_control"].any()
     assert set(aggregate["model"]) == EXPECTED_PANEL
     assert aggregate.loc[aggregate["is_control"], "model"].tolist() == ["DINOv2-B"]
-    assert len(aggregate.loc[~aggregate["is_control"]]) == 25
+    assert len(aggregate.loc[~aggregate["is_control"]]) == 26
     assert (
         aggregate.loc[aggregate["is_control"], ["mean_rank", "croma_rank", "ltm_rank"]]
         .isna()
@@ -115,8 +117,8 @@ def test_public_export_is_three_tile_cohorts_plus_the_slide_cohort() -> None:
         .all()
     )
     assert not aggregate.loc[aggregate["is_control"], "on_frontier"].any()
-    assert aggregate.loc[~aggregate["is_control"], "croma_rank"].max() <= 25
-    assert aggregate.loc[~aggregate["is_control"], "ltm_rank"].max() <= 25
+    assert aggregate.loc[~aggregate["is_control"], "croma_rank"].max() <= 26
+    assert aggregate.loc[~aggregate["is_control"], "ltm_rank"].max() <= 26
     assert "tcga-2x2" not in provenance["files"]
 
 

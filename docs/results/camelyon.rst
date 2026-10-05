@@ -14,7 +14,7 @@ a same-biology tile from another.
 .. results-table:: camelyon
    :caption: Camelyon, sorted by median ``CRoMa``. Columns are explained under
              :ref:`result-columns`; † marks the natural-image control
-             (:ref:`the-control`).
+             (:ref:`the-control`), and row shading is explained beneath the table.
 
 Read the support column carefully here. Two biological classes across two centers is a
 sparse neighbourhood: no encoder's support fraction clears

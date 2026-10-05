@@ -51,9 +51,9 @@ CROMA_VERSION = _project_version()
 MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
-    "apd_summary_sha256": "8d7fc88cfb2cecb3939a226c92eea3d42247a788c0120c089578e02c0641b40e",
-    "joined_summary_sha256": "14e11e750f618abeeaf621eae908bc302ff59557cb757bb43ffe9bce900d1c40",
-    "raw_cells_sha256": "cc5ca0ad6afae4828f5688d8d61b695f835c7385affb820d874bc8b52efc574e",
+    "apd_summary_sha256": "545118ececa707236155489337c1615602abda312c70d74628e4ced53733cffc",
+    "joined_summary_sha256": "55c1abdd7cefb3038ce1e0cd2b093c88bc1b31c127ce01b7870b3b39a3b68aeb",
+    "raw_cells_sha256": "5aa68e6a419854d2cac877628dc5bfdb8dfb077e2fddd67741faca0bf4f9a85b",
 }
 FLOAT_DIGITS = 10
 
