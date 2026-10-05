@@ -46,14 +46,14 @@ def _project_version() -> str:
 
 SCHEMA_VERSION = 2
 STUDY_REVISION = "expanded-panel-paired-repeat-v1"
-PUBLICATION_DATE = "2026-08-25"
+PUBLICATION_DATE = "2026-10-05"
 CROMA_VERSION = _project_version()
 MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
-    "apd_summary_sha256": "76d4cc240ea20f772da1c8b293549e7af5d12140dede33fbb1d55ab033d4a25a",
-    "joined_summary_sha256": "aec4dc6b4f4ff3fa2b91441ea7edf85f34564a6f43134360304118c719c965ba",
-    "raw_cells_sha256": "5429312ba08f4934b958429ade68d8f6b97025ad23d7a52468627515b2abf0da",
+    "apd_summary_sha256": "8d7fc88cfb2cecb3939a226c92eea3d42247a788c0120c089578e02c0641b40e",
+    "joined_summary_sha256": "14e11e750f618abeeaf621eae908bc302ff59557cb757bb43ffe9bce900d1c40",
+    "raw_cells_sha256": "cc5ca0ad6afae4828f5688d8d61b695f835c7385affb820d874bc8b52efc574e",
 }
 FLOAT_DIGITS = 10
 
