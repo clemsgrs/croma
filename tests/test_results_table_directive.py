@@ -27,7 +27,9 @@ def test_exposure_row_classes_tints_exposed_rows_only():
     pairs with a screen-reader label."""
     exposure = {"A": True, "B": False}
     assert rt.exposure_row_classes(["A", "B"], exposure) == ["croma-exposure-exposed", None]
-    assert rt.EXPOSURE_LABELS == {"croma-exposure-exposed": " (TCGA-exposed pretraining)"}
+    assert rt.EXPOSURE_LABELS == {
+        "croma-exposure-exposed": " (pretraining overlaps this cohort's source)"
+    }
 
 
 def test_exposure_row_classes_raises_on_a_model_without_a_state():
@@ -40,7 +42,7 @@ def test_exposure_map_raises_on_a_value_that_is_not_a_boolean():
     """A corrupted ``tcga_exposed`` cell must fail the ``-W`` build, not silently
     render as unmarked."""
     with pytest.raises(ValueError):
-        rt._parse_exposed("maybe")
+        rt._parse_flag("maybe", "tcga_exposed")
 
 
 def test_the_published_export_covers_every_cohort_table_row():
@@ -49,3 +51,26 @@ def test_the_published_export_covers_every_cohort_table_row():
     for slug in ("camelyon", "tcga-4x4", "tolkach-esca"):
         models = [row["model"] for row in rt._read(f"{slug}.csv")]
         assert rt.exposure_row_classes(models, exposure) is not None
+
+
+def test_every_cohort_table_has_an_exposure_legend_and_a_selection_state():
+    """Each cohort page shades by its own source; the join with the model-level selection
+    flag must be total for every tile cohort, and every cohort needs a legend wording."""
+    selected = rt.selection_map()
+    assert {model for model, flag in selected.items() if flag} == {"Mettle"}
+    for slug in ("camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"):
+        assert slug in rt.EXPOSURE_LEGENDS
+        exposure = rt.cohort_exposure_map(slug)
+        models = [row["model"] for row in rt._read(f"{slug}.csv")]
+        assert len(rt.exposure_row_classes(models, exposure)) == len(models)
+    assert "aggregate" in rt.EXPOSURE_LEGENDS
+
+
+def test_the_site_and_readme_word_the_selection_legend_alike():
+    """The README marks with ‡ what the site shades yellow; the sentence is the same."""
+    tools = str(ROOT / "scripts" / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import export_results as er
+
+    assert er.SELECTION_LEGEND == f"‡ {rt.SELECTION_LEGEND}"

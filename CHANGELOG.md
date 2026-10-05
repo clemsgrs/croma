@@ -42,6 +42,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   benchmark changes and differed from what the current benchmark computes by up to 0.007
   on the tile cohorts and 0.005 on PCaBiop (PRISM 0.992 → 0.987, MOOZY 1.000 → 0.995).
   They are now the current values. No other PCaBiop column changed.
+- Adding Mettle to the tile panel left every cohort's shared operating point where it was:
+  Camelyon `k = 11`, TCGA-4×4 `k = 81`, Tolkach-ESCA `k = 71`, now the lower median over 27
+  encoders. No other encoder's published value changed.
+- Each cohort table's caption now states the `k` its k-dependent columns are read at and the
+  roster it is the median of. The shared `k` is recomputed over the current panel, so it
+  can move when an encoder joins; this file records every move (ADR-0021).
+- Every cohort page now shades its tables, including the nIPD tables, by that cohort's own
+  source: orange where an encoder's disclosed pretraining or institutional provenance
+  overlaps it (GPFM on Camelyon, the TCGA-trained encoders on TCGA-4×4, the RudolfV-2
+  family's Charité overlap on Tolkach-ESCA, MOOZY on PCaBiop). Only the aggregate and
+  TCGA-4×4 were shaded before. Each cohort CSV gains an `exposed` column, and a legend now
+  follows every shaded table.
 
 - The paper dropped the "Beyond counts:" prefix from its title in the arXiv v2 revision;
   it is now *A distributional robustness margin for pathology foundation models*. The
@@ -62,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cross-cohort mount.
 
 ### Added
+
+- Mettle (`slideflow-labs/Mettle`), a scanner-robustness fine-tune of H-optimus-0, joins the
+  tile panel on Camelyon, TCGA-4×4 and Tolkach-ESCA, with its nIPD cells. Median CRoMa
+  (m = 5) 0.204 / 0.114 / 0.367; mean rank 6.3, fifth of 26 ranked encoders.
+- Yellow row shading for encoders whose authors disclosed using PathoROB RI on these
+  cohorts during development, e.g. in checkpoint selection, with its legend beneath every
+  table that shows it (‡ in the README, which cannot shade). Mettle's authors used
+  PathoROB RI as one of several criteria to choose the released checkpoint. Ranks are not
+  adjusted (ADR-0020). The fact is the new `benchmark_selection` column of
+  `model_metadata.csv`, published as `benchmark_selected` in `cross_benchmark.csv`.
 
 - Link-preview metadata (Open Graph) on every documentation page, via
   `sphinxext-opengraph` in the `docs` extra: sharing a docs URL now renders a title, a

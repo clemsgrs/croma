@@ -37,9 +37,10 @@ from plotting.style import CONTROL_MODEL  # noqa: E402
 #: PCaBiop are separate studies and are deliberately outside the expanded tile panel.
 PATHOROB_DOWNSTREAM_DATASETS = ("camelyon", "tcga_4x4", "tolkach")
 
-#: Fixed panel cardinality after issue #132: 25 pathology encoders plus one natural-image
-#: floor. Model identity and relationships themselves remain owned by model_metadata.csv.
-PATHOROB_PATHOLOGY_MODELS = 25
+#: Fixed panel cardinality: 26 pathology encoders plus one natural-image floor (25 after
+#: issue #132, plus Mettle). Model identity and relationships themselves remain owned by
+#: model_metadata.csv.
+PATHOROB_PATHOLOGY_MODELS = 26
 PATHOROB_PANEL_MODELS = PATHOROB_PATHOLOGY_MODELS + 1
 
 
@@ -72,8 +73,8 @@ def pathorob_tile_panel(metadata_path: Path | None = None) -> pd.DataFrame:
     controls = panel["model"] == CONTROL_MODEL
     if controls.sum() != 1 or int((~controls).sum()) != PATHOROB_PATHOLOGY_MODELS:
         raise ValueError(
-            "expanded PathoROB panel must contain 25 pathology encoders and exactly "
-            f"one {CONTROL_MODEL} control"
+            f"expanded PathoROB panel must contain {PATHOROB_PATHOLOGY_MODELS} pathology "
+            f"encoders and exactly one {CONTROL_MODEL} control"
         )
     panel["ranked"] = ~controls
     return panel[["model", "parent_model", "variant_role", "ranked"]]

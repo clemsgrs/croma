@@ -343,6 +343,7 @@ EXPANDED_PATHOROB_MODELS = [
     "RudolfV 2-S",
     "Mascaret",
     "Phaet",
+    "Mettle",
     "DINOv2-B",
 ]
 

@@ -372,11 +372,18 @@ def test_the_readme_carries_the_generated_results_region():
     assert "| Model | mean rank | CRoMa rank | tail rank |" in block
 
 
+def _published_aggregate(aggregate, *, selected=()):
+    """An aggregate carrying the provenance columns the real export joins after the build."""
+    models = list(aggregate["model"])
+    out = er.with_exposure(aggregate, dict.fromkeys(models, False))
+    return er.with_selection(out, {model: model in selected for model in models})
+
+
 def test_the_readme_cohort_cells_carry_the_tail_beside_the_margin():
     """Same pairing as the site: a caption about hidden tails over a margin-only table
     would leave its own point unillustrated."""
-    aggregate = er.build_aggregate_table(
-        {"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])}
+    aggregate = _published_aggregate(
+        er.build_aggregate_table({"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
     )
     block = er.render_readme(aggregate, {"camelyon": {"label": "Camelyon"}})
     block = block.split(er.README_START)[1].split(er.README_END)[0]
@@ -388,7 +395,7 @@ def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
     """Cutting the panel at eight is a judgement call. Stating it mechanically -- with the
     total, and a link to the rest -- is what keeps it a rule rather than a shortlist."""
     block = (ROOT / "README.md").read_text().split(er.README_START)[1]
-    assert f"Top {er.README_TOP} of 25 ranked pathology encoders" in block
+    assert f"Top {er.README_TOP} of 26 ranked pathology encoders" in block
     assert "DINOv2-B control is shown unranked" in block
     assert "/results/" in block
 
@@ -401,8 +408,8 @@ def test_the_readme_region_is_replaced_without_touching_the_prose_around_it():
     """The exporter owns the block, never the file. Everything outside the markers has to
     survive an export byte for byte, or a rewrite would quietly eat hand-written text."""
     readme = (ROOT / "README.md").read_text()
-    aggregate = er.build_aggregate_table(
-        {"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])}
+    aggregate = _published_aggregate(
+        er.build_aggregate_table({"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
     )
     rewritten = er.render_readme(aggregate, {"camelyon": {"label": "Camelyon"}})
     assert rewritten.split(er.README_START)[0] == readme.split(er.README_START)[0]
@@ -574,6 +581,81 @@ def test_with_exposure_inserts_the_column_after_on_frontier():
     out = er.with_exposure(aggregate, {"A": True, "B": False})
     assert list(out.columns[:4]) == ["model", "is_control", "on_frontier", "tcga_exposed"]
     assert out.set_index("model")["tcga_exposed"].to_dict() == {"A": True, "B": False}
+
+
+def test_the_readme_marks_a_selected_encoder_and_prints_the_legend_only_then():
+    """Markdown cannot shade a row, so the README stands in for the site's yellow tint
+    with a mark -- and its legend appears only when a shown row carries it."""
+    aggregate = er.build_aggregate_table(
+        {"camelyon": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])}
+    )
+    meta = {"camelyon": {"label": "Camelyon"}}
+
+    flagged = er.render_readme(_published_aggregate(aggregate, selected={"B"}), meta)
+    assert "| B ‡ |" in flagged and er.SELECTION_LEGEND in flagged
+
+    plain = er.render_readme(_published_aggregate(aggregate), meta)
+    assert "‡" not in plain.split(er.README_START)[1].split(er.README_END)[0]
+
+
+def test_selected_models_reads_the_disclosed_selection_column():
+    metadata = pd.DataFrame(
+        {
+            "model": ["A", "B", "A"],
+            "panel": ["tile", "tile", "slide"],
+            "benchmark_selection": ["pathorob-ri", "", ""],
+        }
+    )
+    assert er.selected_models(metadata, roster={"A", "B"}) == {"A": True, "B": False}
+    with pytest.raises(KeyError):
+        er.selected_models(metadata, roster={"A", "unknown"})
+
+
+def test_with_selection_inserts_the_column_after_tcga_exposed():
+    aggregate = er.build_aggregate_table({"one": _cohort(["A", "B"], [0.9, 0.1], [-0.1, -0.9])})
+    out = _published_aggregate(aggregate, selected={"A"})
+    assert list(out.columns[:5]) == [
+        "model",
+        "is_control",
+        "on_frontier",
+        "tcga_exposed",
+        "benchmark_selected",
+    ]
+    assert out.set_index("model")["benchmark_selected"].to_dict() == {"A": True, "B": False}
+    with pytest.raises(KeyError):
+        er.with_selection(er.with_exposure(aggregate, {"A": True, "B": False}), {"A": True})
+
+
+def test_only_mettle_is_published_as_benchmark_selected():
+    """The one disclosure on record (ADR-0020). A second needs its own review."""
+    aggregate = pd.read_csv(RESULTS / "cross_benchmark.csv")
+    assert aggregate.loc[aggregate["benchmark_selected"], "model"].tolist() == ["Mettle"]
+
+
+def test_each_cohort_publishes_exposure_to_its_own_source():
+    """Each cohort page shades by its own source, so each cohort CSV carries the flag
+    derived from that cohort's domain -- the same membership the paper's figures mark."""
+    expected = {
+        "camelyon": {"GPFM"},
+        "tolkach-esca": {"RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"},
+        "pcabiop": {"MOOZY"},
+    }
+    for slug, models in expected.items():
+        table = pd.read_csv(RESULTS / f"{slug}.csv")
+        assert set(table.loc[table["exposed"], "model"]) == models, slug
+    tcga = pd.read_csv(RESULTS / "tcga-4x4.csv").set_index("model")["exposed"]
+    aggregate = pd.read_csv(RESULTS / "cross_benchmark.csv").set_index("model")["tcga_exposed"]
+    assert tcga.to_dict() == aggregate.loc[tcga.index].to_dict()
+
+
+def test_with_cohort_exposure_raises_rather_than_publishing_a_blank_state():
+    table = pd.DataFrame({"model": ["A", "B"], "exposed": [False, False]})
+    assert er.with_cohort_exposure(table, {"A": True, "B": False})["exposed"].tolist() == [
+        True,
+        False,
+    ]
+    with pytest.raises(KeyError):
+        er.with_cohort_exposure(table, {"A": True})
 
 
 def test_with_exposure_raises_rather_than_publishing_a_blank_state():

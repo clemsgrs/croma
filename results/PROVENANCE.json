@@ -5,7 +5,7 @@
   "croma_m": 5,
   "tail_alpha": 0.1,
   "tau_policy": "auto (per-model median typed-neighbour distance at k)",
-  "roster": 26,
+  "roster": 27,
   "cohorts": {
     "camelyon": {
       "benchmark": "pathorob-camelyon",
@@ -14,7 +14,7 @@
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-camelyon",
       "k": 11,
-      "n_models": 26,
+      "n_models": 27,
       "confounder": "Medical Center",
       "evaluation_design": "all"
     },
@@ -25,7 +25,7 @@
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tcga-4x4",
       "k": 81,
-      "n_models": 26,
+      "n_models": 27,
       "confounder": "Medical Center",
       "evaluation_design": "all"
     },
@@ -36,7 +36,7 @@
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tolkach-esca",
       "k": 71,
-      "n_models": 26,
+      "n_models": 27,
       "confounder": "Medical Center",
       "evaluation_design": "all"
     },
@@ -59,13 +59,13 @@
     }
   },
   "files": {
-    "results/camelyon.csv": "16ed8b8cbc7f1ca0bc64d088abd01d5afee10c953c45b78acdce652c63979a71",
-    "results/cross_benchmark.csv": "13ad339b9f4847dd03ef14661d4d3e92c66d13b0892884f6340d6578b63be669",
-    "results/distributions.json": "a5a084a5aa533377509d10743c95c80d6359ce27b7ee2591aad60c801dc02bc2",
-    "results/nipd.csv": "dd8dcee90bb7dd8777504bf7d65d5fb604fa78912cb95a628dd379b63b8855df",
-    "results/nipd.json": "8f470451c4ab7415909626852c80b36b6aec90c89745c29e35bb00d21304b757",
-    "results/pcabiop.csv": "abe08ad2d022b13da29563b1bd59787855bc1e37b0431569fc2eb37ae41fb37a",
-    "results/tcga-4x4.csv": "e50d7f4b257397cb3cf8e598263cd0f7a54bf23b65a41e232d89bc518a6f19e2",
-    "results/tolkach-esca.csv": "479d6cb34912ccf700fae4e46310329bce2f2609be71b3d8022d5f5fbed9df02"
+    "results/camelyon.csv": "2c205add73b43d71dda265a83eba8fc5e8a826e85c68cb991fe0d96517d73308",
+    "results/cross_benchmark.csv": "392a08ac2fdfda027ea0be35d7737974ecfcf6dbafe6c85b1f6c2888b4cfbb04",
+    "results/distributions.json": "8711ee85cb2969d2ea5587133376bd83a36c573cc1d642a1ffa2807fa2607fc5",
+    "results/nipd.csv": "942606695224c529a2e921dba677a5427638735ddb972621cfd3f30a0466d2ef",
+    "results/nipd.json": "128b7108297c1a33699757980ee0624a421b4e667ee59a10781a93c7364af65a",
+    "results/pcabiop.csv": "681915b2718a8ff579a29848fdef8691532ee8fca57b5a78d73c1360b31e8d61",
+    "results/tcga-4x4.csv": "d1b95313961f4a23fb1da7e209323c19ad30517eec82efb66d41ffd67bca4944",
+    "results/tolkach-esca.csv": "a97b9748a5fda23db5bb8902022e89ccf29174ebfc425113abc1c2cb04e3fd4c"
   }
 }

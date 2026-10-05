@@ -18,17 +18,13 @@ pretrained on TCGA and on nothing else.
 .. results-table:: tcga-4x4
    :caption: TCGA-4×4, sorted by median ``CRoMa``. Columns are explained under
              :ref:`result-columns`; † marks the natural-image control
-             (:ref:`the-control`); row tint marks pretraining overlap (legend below).
+             (:ref:`the-control`), and row shading is explained beneath the table.
 
 .. _exposure-legend:
 
-The row tint is that overlap, made visible — the same convention as the paper's dagger:
-
-- **Orange — TCGA-exposed.** TCGA appears in the encoder's disclosed pretraining corpus
-  or institutional provenance. Discount an advantage here.
-- **Untinted — no disclosed overlap.** No TCGA in the encoder's disclosed corpus. For
-  the proprietary corpora this reflects the paper's description, not an independent
-  audit.
+The orange rows are that overlap, made visible — the same convention as the paper's
+dagger. Discount an advantage there. For the proprietary corpora, an unshaded row reflects
+the paper's description of the corpus, not an independent audit.
 
 Only :results-value:`below_zero(tcga-4x4)` encoder falls below zero, and support is
 near-total — every model sits at :results-value:`support_min(tcga-4x4)` or above, so ``RI``
