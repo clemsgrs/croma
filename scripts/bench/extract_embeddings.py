@@ -350,6 +350,131 @@ def _waiv_extraction_config(spec: ModelSpec) -> _WaivExtractionConfig:
     )
 
 
+_IMAGENET_MEAN = (0.485, 0.456, 0.406)
+_IMAGENET_STD = (0.229, 0.224, 0.225)
+_HOPTIMUS_MEAN = (0.707223, 0.578729, 0.703617)
+_HOPTIMUS_STD = (0.211883, 0.230117, 0.177517)
+
+
+@dataclasses.dataclass(frozen=True)
+class _TileTransformRecipe:
+    """An authors' tile preprocessing recipe, built explicitly (as slide2vec does).
+
+    timm's hub config for these checkpoints holds timm's defaults or the checkpoint's
+    native resolution rather than the recipe the authors evaluate with, so the transform
+    is spelled out here instead of resolved with ``resolve_data_config``.
+
+    ``resize`` is an int (shorter edge, aspect kept) or an ``(h, w)`` pair (the whole tile
+    squashed to that size); ``center_crop`` of ``None`` keeps the whole resized tile.
+    ``resize_input`` follows slide2vec's op order, which decides the resampling kernel:
+    ``"uint8-tensor"`` resizes after ``ToImage`` (torch bicubic), ``"pil-image"`` resizes
+    the PIL tile before it (PIL bicubic, i.e. ``Resize`` -> ``ToTensor``).
+    """
+
+    resize: int | tuple[int, int]
+    center_crop: int | None
+    normalization_mean: tuple[float, float, float]
+    normalization_std: tuple[float, float, float]
+    resize_input: str = "uint8-tensor"
+    interpolation: str = "bicubic"
+    antialias: bool = True
+    input_dtype: str = "float32"
+
+    def details(self) -> dict:
+        return {
+            "preprocessing": {
+                "source": "authors-recipe",
+                "resize": (
+                    self.resize if isinstance(self.resize, int) else list(self.resize)
+                ),
+                "resize_input": self.resize_input,
+                "resize_interpolation": self.interpolation,
+                "resize_antialias": self.antialias,
+                "center_crop": self.center_crop,
+                "input_dtype": self.input_dtype,
+                "input_scaling": "uint8-to-unit-float",
+                "normalization_mean": list(self.normalization_mean),
+                "normalization_std": list(self.normalization_std),
+            },
+        }
+
+    def build_transform(self, v2):
+        resize = v2.Resize(
+            self.resize,
+            interpolation=getattr(v2.InterpolationMode, self.interpolation.upper()),
+            antialias=self.antialias,
+        )
+        if self.resize_input == "pil-image":
+            operations = [resize, v2.ToImage()]
+        elif self.resize_input == "uint8-tensor":
+            operations = [v2.ToImage(), resize]
+        else:
+            raise ValueError(f"unknown resize input {self.resize_input!r}")
+        if self.center_crop is not None:
+            operations.append(v2.CenterCrop(self.center_crop))
+        operations += [
+            v2.ToDtype(getattr(torch, self.input_dtype), scale=True),
+            v2.Normalize(mean=self.normalization_mean, std=self.normalization_std),
+        ]
+        return v2.Compose(operations)
+
+
+_TILE_TRANSFORM_RECIPES = {
+    # Meta's DINOv2 eval recipe; the hub config would Resize 518 -> CenterCrop 518.
+    "vit_base_patch14_dinov2.lvd142m": _TileTransformRecipe(
+        resize=256,
+        center_crop=224,
+        normalization_mean=_IMAGENET_MEAN,
+        normalization_std=_IMAGENET_STD,
+    ),
+    # The whole tile at 224; the hub config's crop_pct 0.875 would keep the central 224.
+    "hf-hub:bioptimus/H-optimus-0": _TileTransformRecipe(
+        resize=224,
+        center_crop=224,
+        normalization_mean=_HOPTIMUS_MEAN,
+        normalization_std=_HOPTIMUS_STD,
+    ),
+    "hf-hub:bioptimus/H-optimus-1": _TileTransformRecipe(
+        resize=224,
+        center_crop=224,
+        normalization_mean=_HOPTIMUS_MEAN,
+        normalization_std=_HOPTIMUS_STD,
+    ),
+    # The GigaPath README: the central 224 of a 256 tile; the hub config's crop_pct 1.0
+    # would downscale the whole tile to 224.
+    "hf-hub:prov-gigapath/prov-gigapath": _TileTransformRecipe(
+        resize=256,
+        center_crop=224,
+        normalization_mean=_IMAGENET_MEAN,
+        normalization_std=_IMAGENET_STD,
+    ),
+    # GPFM's published recipe; the vit_large_patch14_dinov2 config would use 518.
+    "majiabo/GPFM": _TileTransformRecipe(
+        resize=(224, 224),
+        center_crop=None,
+        normalization_mean=_IMAGENET_MEAN,
+        normalization_std=_IMAGENET_STD,
+        resize_input="pil-image",
+    ),
+    # The authors' recipe (Innse/mSTAR); the hub carries timm's stock
+    # vit_large_patch16_224 config (crop_pct 0.9, mean/std 0.5).
+    "hf-hub:Wangyh/mSTAR": _TileTransformRecipe(
+        resize=(224, 224),
+        center_crop=None,
+        normalization_mean=_IMAGENET_MEAN,
+        normalization_std=_IMAGENET_STD,
+        resize_input="pil-image",
+    ),
+}
+
+
+def _tile_transform_recipe(spec: ModelSpec) -> _TileTransformRecipe | None:
+    """Return the explicit authors' recipe for ``spec``, or ``None`` to keep its transform."""
+    if spec.backend not in ("timm", "gpfm"):
+        return None
+    return _TILE_TRANSFORM_RECIPES.get(spec.model_id)
+
+
 def _extract_timm_features(out, extract: str):
     if extract == "cls":
         return out[:, 0] if out.ndim == 3 else out
@@ -460,7 +585,8 @@ def _model_extraction_details(spec: ModelSpec, pooling: str = "canonical") -> di
             raise ValueError(
                 f"explicit pooling is unsupported for backend {spec.backend!r}"
             )
-        return {}
+        recipe = _tile_transform_recipe(spec)
+        return recipe.details() if recipe is not None else {}
     if spec.backend == "waiv":
         return _waiv_extraction_config(spec).details(pooling)
     if spec.backend in ("rudolfv2", "mettle"):
@@ -570,9 +696,15 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
 
         model = timm.create_model(model_id, pretrained=True, **timm_kwargs)
         model.eval().to(device)
-        transform = create_transform(
-            **resolve_data_config(model.pretrained_cfg, model=model)
-        )
+        recipe = _tile_transform_recipe(spec)
+        if recipe is not None:
+            from torchvision.transforms import v2
+
+            transform = recipe.build_transform(v2)
+        else:
+            transform = create_transform(
+                **resolve_data_config(model.pretrained_cfg, model=model)
+            )
 
         def embed_fn(batch):
             out = model.forward_features(batch)
@@ -752,7 +884,13 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
 
     if spec.backend == "gpfm":
         from huggingface_hub import hf_hub_download
+        from torchvision.transforms import v2
 
+        recipe = _tile_transform_recipe(spec)
+        if recipe is None:
+            raise ValueError(
+                f"no authors' transform recipe for GPFM checkpoint {spec.model_id!r}"
+            )
         model = timm.create_model(
             _GPFM_ARCH,
             pretrained=False,
@@ -779,9 +917,7 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
             )
         model.load_state_dict(_unwrap_gpfm_state_dict(payload), strict=True)
         model.eval().to(device)
-        transform = create_transform(
-            **resolve_data_config(model.pretrained_cfg, model=model)
-        )
+        transform = recipe.build_transform(v2)
 
         def embed_fn(batch):
             out = model.forward_features(batch)
