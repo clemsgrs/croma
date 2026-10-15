@@ -97,6 +97,8 @@ publication artifacts, whereas `scripts/repro/` writes the ignored paper assembl
 - **Republishing is an explicit step.** Re-running a benchmark does not update the site.
   Someone must run the exporter and commit the diff — which is the point: the diff is
   the review surface for changing a public claim.
+  The nIPD publication's producer version is pinned alongside its date, study revision,
+  and source hashes; later package releases do not change that historical identity.
 
 ## When this changes
 

@@ -9,7 +9,6 @@ import hashlib
 import io
 import json
 import math
-import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,20 +33,12 @@ sys.path.insert(0, str(LOCAL_SRC))
 from croma import nipd  # noqa: E402
 
 
-def _project_version() -> str:
-    match = re.search(
-        r'(?ms)^\[project\]\s*$.*?^version\s*=\s*"([^"]+)"',
-        (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
-    )
-    if match is None:
-        raise ValueError("pyproject.toml has no [project] version")
-    return match.group(1)
-
-
 SCHEMA_VERSION = 2
 STUDY_REVISION = "expanded-panel-paired-repeat-v1"
 PUBLICATION_DATE = "2026-10-05"
-CROMA_VERSION = _project_version()
+# Historical producer identity, updated only when deliberately republishing the study
+# alongside its date/revision/source hashes. A package release does not republish it.
+PUBLICATION_CROMA_VERSION = "1.0.0"
 MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
@@ -232,7 +223,7 @@ def build_payload(source: Path) -> dict:
         "provenance": {
             "study_revision": STUDY_REVISION,
             "published": PUBLICATION_DATE,
-            "croma_version": CROMA_VERSION,
+            "croma_version": PUBLICATION_CROMA_VERSION,
             "source": "output/studies/apd",
             **source_provenance,
             "repeats": 20,
@@ -259,7 +250,7 @@ def validate_payload(payload: dict) -> None:
         raise ValueError("stale provenance: study revision does not match")
     if (
         provenance.get("published") != PUBLICATION_DATE
-        or provenance.get("croma_version") != CROMA_VERSION
+        or provenance.get("croma_version") != PUBLICATION_CROMA_VERSION
     ):
         raise ValueError("stale provenance: publication identity does not match")
     observed_source_provenance = {key: provenance.get(key) for key in EXPECTED_SOURCE_PROVENANCE}
