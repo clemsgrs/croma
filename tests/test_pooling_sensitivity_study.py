@@ -792,7 +792,10 @@ def test_benchmark_view_accepts_explicit_embedding_and_manifest_roots(
     np.testing.assert_array_equal(view.features("Mascaret"), [[4, 5], [0, 1]])
 
 
-def test_rendered_study_bundle_has_required_layout_and_reproducible_bootstrap() -> None:
+def test_rendered_study_bundle_has_required_layout_and_reproducible_bootstrap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(study, "croma_version", "9.9.9")
     manifest = pd.DataFrame(
         {
             "sample_id": ["tile-a", "tile-b"],
@@ -847,7 +850,7 @@ def test_rendered_study_bundle_has_required_layout_and_reproducible_bootstrap() 
         Path("report.md"),
     }
     provenance = json.loads(first[Path("run-provenance.json")])
-    assert provenance["croma_version"] == "1.0.0"
+    assert provenance["croma_version"] == "9.9.9"
     assert provenance["bootstrap"] == {
         "grouping": "shared-group_id",
         "level": 0.95,

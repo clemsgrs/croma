@@ -61,6 +61,25 @@ def test_committed_payload_is_complete_and_valid() -> None:
     assert all(model["model"] != "DINOv2-B" for model in published["cohorts"][3]["models"])
 
 
+def test_package_release_preserves_publication_provenance(monkeypatch: pytest.MonkeyPatch) -> None:
+    import croma
+
+    read_text = Path.read_text
+
+    def released_project(path, *args, **kwargs):
+        if path == ROOT / "pyproject.toml":
+            return '[project]\nname = "croma"\nversion = "9.9.9"\n'
+        return read_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", released_project)
+    monkeypatch.setattr(croma, "__version__", "9.9.9")
+    published = _payload()
+
+    _exporter().validate_payload(published)
+
+    assert published["provenance"]["croma_version"] == "1.0.0"
+
+
 def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
     published = _payload()
     expected = {
@@ -174,6 +193,8 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
             "shape",
         ),
         (lambda p: p["provenance"].update(study_revision="stale"), "provenance"),
+        (lambda p: p["provenance"].update(croma_version="9.9.9"), "publication identity"),
+        (lambda p: p["provenance"].update(published="2099-01-01"), "publication identity"),
         (
             lambda p: p["provenance"].update(apd_summary_sha256="0" * 64),
             "provenance",
