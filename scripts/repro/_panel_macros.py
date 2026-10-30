@@ -245,6 +245,9 @@ def panel_macros(root: Path) -> list[str]:
         lines += operating_point_macros(prefix, frames[prefix])
     lines.append("% Cohort composition and per-cell counts (each benchmark's view)")
     lines += cardinality_macros({p: _view_manifest(p) for p in CARDINALITY_PREFIXES})
+    from _acquisition import acquisition_macros
+
+    lines += acquisition_macros()
     lines.append("% TCGA-2x2 rank agreement with the other cohorts")
     croma = {
         prefix: pd.Series(croma_as_margin(df["croma"]).to_numpy(float), index=df["model"])

@@ -47,6 +47,9 @@ CORE = [
     # Reads the APD metadata under data/ through the study's own schedule and the library
     # sweep's slicing; it fails, rather than skips, when that metadata is missing.
     ("generate_split_schedule_table.py", None, ""),
+    # Reads every listed benchmark's view, APD metadata and tileset manifest, one tile image
+    # per slide, and the committed acquisition.csv of curated scanner facts.
+    ("generate_acquisition_table.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that
