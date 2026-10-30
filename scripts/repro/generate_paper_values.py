@@ -584,68 +584,29 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
 # may enter it.
 CROSS_COHORT_BENCHMARKS = ["Camelyon", "Tolkach", "TcgaFourByFour"]
 SLIDE_PANEL_BENCHMARK = "Panda"
-EXPANDED_ENCODERS = frozenset(
-    # Published spellings: the frames this set is compared against are restyled at load.
-    {"Mascaret", "Phaet", "RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"}
-)
 
 
-def _historical_rank_pareto(current: "RankPareto") -> "RankPareto":
-    """Re-rank the current panel after removing exactly the five issue #133 additions."""
-    from _rank_pareto import RankPareto
+def _rank_frontier_macros(current: "RankPareto") -> list[str]:
+    """Name the cross-benchmark mean-rank Pareto frontier the overview figure rings.
 
-    missing = EXPANDED_ENCODERS - set(current.models)
-    if missing:
-        raise CaptionClaimError(
-            f"Discussion frontier guard is missing issue #133 encoders: {sorted(missing)}"
-        )
-
-    prior_models = [model for model in current.models if model not in EXPANDED_ENCODERS]
-    return RankPareto(
-        medians=current.medians.loc[prior_models],
-        median_ranks=current.median_ranks.loc[prior_models]
-        .rank(ascending=True, method="first")
-        .astype(int),
-        tail_ranks=current.tail_ranks.loc[prior_models]
-        .rank(ascending=True, method="first")
-        .astype(int),
-        exposed=frozenset(current.exposed & set(prior_models)),
-        adversarial=current.adversarial,
-    )
-
-
-def _rank_frontier_change_macros(
-    historical: "RankPareto", current: "RankPareto"
-) -> list[str]:
-    """Guard the Discussion claim from two explicit rank-Pareto inputs.
-
-    This comparison is deliberately I/O-free so committed tests can exercise the exact
-    claim without the git-ignored benchmark tree. Both inputs use ``RankPareto.frontier``,
-    the same property that rings the generated figure.
+    I/O-free so committed tests can exercise it without the git-ignored benchmark tree; it
+    reads ``RankPareto.frontier``, the same property that rings the generated figure. An
+    empty frontier is a broken input, never a sentence.
     """
-    current_frontier = frozenset(current.frontier)
-    prior_frontier = frozenset(historical.frontier)
-    if not current_frontier or not prior_frontier:
-        raise CaptionClaimError("Discussion frontier guard produced an empty frontier.")
-    if current_frontier == prior_frontier:
-        raise CaptionClaimError(
-            "Discussion says frontier membership changed after issue #133, but the "
-            f"historical and expanded sets are both {sorted(current_frontier)}."
-        )
-
+    frontier = sorted(current.frontier)
+    if not frontier:
+        raise CaptionClaimError("the cross-benchmark rank frontier is empty.")
     return [
-        rf"\newcommand{{\TilePriorRankFrontierNModels}}{{{len(prior_frontier)}}}",
-        rf"\newcommand{{\TileRankFrontierNModels}}{{{len(current_frontier)}}}",
-        rf"\newcommand{{\TileRankFrontierModels}}{{{', '.join(sorted(current_frontier))}}}",
+        rf"\newcommand{{\TileRankFrontierNModels}}{{{len(frontier)}}}",
+        rf"\newcommand{{\TileRankFrontierModels}}{{{', '.join(frontier)}}}",
     ]
 
 
-def _load_rank_frontier_change_macros() -> list[str]:
+def _load_rank_frontier_macros() -> list[str]:
     """Load live benchmark ranks for the canonical local paper build."""
     from _rank_pareto import load as load_rank_pareto
 
-    current = load_rank_pareto()
-    return _rank_frontier_change_macros(_historical_rank_pareto(current), current)
+    return _rank_frontier_macros(load_rank_pareto())
 
 
 def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
@@ -738,8 +699,15 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         out.append(rf"\newcommand{{\ProbePooledRhoRange}}{{{_span(lo, hi)}}}")
 
     out.extend(_cross_cohort_macros(croma_by_prefix, panel_sizes))
-    out.append("% Expanded-panel frontier guard (Discussion)")
-    out.extend(_load_rank_frontier_change_macros())
+    out.append("% Cross-benchmark mean-rank Pareto frontier (fig:croma-pareto-rank)")
+    out.extend(_load_rank_frontier_macros())
+
+    # Numbers the text quotes from the typed-neighbour coverage table. Unlike the study
+    # blocks below, these never warn and skip -- a missing input raises.
+    from generate_supp_rank_table import macros as typed_neighbour_macros
+
+    out.append("% Typed-neighbour coverage (tab:typed-neighbour-coverage)")
+    out.extend(typed_neighbour_macros(root))
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel

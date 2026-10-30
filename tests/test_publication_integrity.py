@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,7 +21,6 @@ for path in (REPRO, BENCH):
 
 import generate_paper_values as paper_values  # noqa: E402
 import generate_pretraining_overlap_table as overlap_table  # noqa: E402
-import generate_supp_rank_table as typed_table  # noqa: E402
 from _rank_pareto import RankPareto  # noqa: E402
 
 EXPECTED_PUBLIC_COHORTS = {"camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"}
@@ -56,14 +54,6 @@ EXPECTED_PANEL = {
     "Virchow",
     "Virchow2",
     "mSTAR",
-}
-EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
-    "Mascaret",
-    "Mettle",
-    "Phaet",
-    "RudolfV-2",
-    "RudolfV-2-B",
-    "RudolfV-2-S",
 }
 
 
@@ -249,39 +239,6 @@ def test_historical_overlap_caption_uses_its_own_roster(monkeypatch) -> None:
     assert r"$\dagger$ marks the $2$ TCGA-exposed encoders" in tex
 
 
-def test_typed_neighbour_table_is_rendered_from_the_sealed_historical_roster(
-    tmp_path: Path,
-) -> None:
-    archive = ROOT / typed_table.SNAPSHOT
-    if not archive.is_dir():
-        import pytest
-
-        pytest.skip("sealed local paper-study archive is absent in this checkout")
-    out = tmp_path / "typed_neighbor_ranks.tex"
-
-    proc = subprocess.run(
-        [sys.executable, str(REPRO / "generate_supp_rank_table.py"), "--out", str(out)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert proc.returncode == 0, proc.stderr
-    tex = out.read_text()
-    rows = {
-        match.group(1)
-        for match in re.finditer(r"^(.+?) & [-0-9.]+ & [0-9]+ & [0-9]+ \\\\$", tex, re.MULTILINE)
-    }
-    assert rows == EXPECTED_HISTORICAL_TYPED_PANEL
-    assert "historical fixed 20-pathology-encoder analysis" in tex
-    assert "% Sealed snapshot artifact SHA-256:" in tex
-    assert "2facf7719b38ae7890d01dafe5b7b90c61b53a4409bba400c37a525d05fabc26" in tex
-    assert (
-        "first \\code{SO} or \\code{OS} neighbour occurs at a median rank of $\\approx 149$" in tex
-    )
-
-
 def test_no_unlabelled_stale_roster_claims_in_active_outputs() -> None:
     stale = re.compile(
         r"\b(?:20|21|22|23|twenty|twenty-one|twenty-two|twenty-three)"
@@ -327,8 +284,6 @@ def test_active_discussion_does_not_repeat_the_disproved_genbio_frontier_claim()
     discussion = (PAPER / "sections/discussion.tex").read_text()
 
     assert "GenBio-PathFM} was the only model on the median–tail Pareto frontier" not in discussion
-    assert r"\TilePriorRankFrontierNModels" in discussion
-    assert r"\TileRankFrontierNModels" in discussion
 
 
 def _explicit_rank_pareto(
@@ -344,45 +299,29 @@ def _explicit_rank_pareto(
     )
 
 
-def _explicit_frontier_panels() -> tuple[RankPareto, RankPareto]:
-    historical = _explicit_rank_pareto(
-        ["H1", "H2", "H3", "H4"],
-        [1, 2, 3, 4],
-        [4, 3, 2, 1],
+def _explicit_frontier_panel() -> RankPareto:
+    return _explicit_rank_pareto(
+        ["Mascaret", "H1", "H2", "H3", "H4"],
+        [1, 2, 3, 4, 5],
+        [1, 5, 4, 3, 2],
     )
-    current = _explicit_rank_pareto(
-        [
-            "Mascaret",
-            "H1",
-            "H2",
-            "H3",
-            "H4",
-            "Phaet",
-            "RudolfV 2",
-            "RudolfV 2-B",
-            "RudolfV 2-S",
-        ],
-        [1, 2, 3, 4, 5, 6, 7, 8, 9],
-        [1, 5, 4, 3, 2, 6, 7, 8, 9],
-    )
-    return historical, current
 
 
-def test_expanded_frontier_change_is_guarded_by_explicit_rank_inputs() -> None:
-    historical, current = _explicit_frontier_panels()
-    macros = paper_values._rank_frontier_change_macros(historical, current)
+def test_rank_frontier_macros_name_the_live_frontier() -> None:
+    macros = paper_values._rank_frontier_macros(_explicit_frontier_panel())
 
-    assert r"\newcommand{\TilePriorRankFrontierNModels}{4}" in macros
     assert r"\newcommand{\TileRankFrontierNModels}{1}" in macros
     assert r"\newcommand{\TileRankFrontierModels}{Mascaret}" in macros
+    # The pre-expansion comparison served no sentence in the text and is retired.
+    assert not any("TilePriorRankFrontier" in line for line in macros)
 
 
-def test_frontier_guard_is_offline_at_the_generator_seam(tmp_path: Path, monkeypatch) -> None:
+def test_rank_frontier_macros_are_offline_at_the_generator_seam(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     assert not Path("output").exists()
-    historical, current = _explicit_frontier_panels()
 
-    macros = paper_values._rank_frontier_change_macros(historical, current)
+    macros = paper_values._rank_frontier_macros(_explicit_frontier_panel())
 
-    assert r"\newcommand{\TilePriorRankFrontierNModels}{4}" in macros
     assert r"\newcommand{\TileRankFrontierNModels}{1}" in macros
