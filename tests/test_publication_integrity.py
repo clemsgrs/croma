@@ -222,6 +222,28 @@ def test_provenance_guard_accepts_the_expanded_family_relationships() -> None:
     assert r"\newcommand{\ProvenanceFineTuneCroma}{$0.27$}" in macros
 
 
+def test_provenance_twin_is_the_live_nearest_neighbour_not_a_pinned_name() -> None:
+    # Mettle joins with a differenced-probe gap (0.880 - 0.556 = 0.324) one thousandth from
+    # Midnight-12k's (0.323), closer than CONCHv1.5 (0.319). The twin macro follows it, and
+    # the wide-margin claim is checked against Mettle: 0.396 / 0.114 = 3.5x.
+    rows = [
+        ("Midnight-12k", 0.882, 0.559, 0.396),
+        ("Mascaret", 0.876, 0.434, 0.270),
+        ("Mettle", 0.880, 0.556, 0.114),
+        ("CONCHv1.5", 0.811, 0.492, 0.153),
+        ("CONCH", 0.790, 0.487, 0.146),
+        ("H-optimus-1", 0.878, 0.676, 0.088),
+        ("DINOv2-B", 0.607, 0.579, 0.006),
+    ]
+    frame = pd.DataFrame(rows, columns=["model", "bio_knn_bacc", "confounder_knn_bacc", "croma"])
+
+    macros = "\n".join(paper_values._provenance_macros(frame))
+
+    assert r"\newcommand{\ProvenanceTwinModel}{Mettle}" in macros
+    assert r"\newcommand{\ProvenanceTwinCroma}{$0.11$}" in macros
+    assert r"\newcommand{\ProvenanceCromaFold}{$3.5\times$}" in macros
+
+
 def test_historical_overlap_caption_uses_its_own_roster(monkeypatch) -> None:
     frame = pd.DataFrame(
         [

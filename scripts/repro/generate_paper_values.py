@@ -105,15 +105,14 @@ SATURATION_PAIR = ("Camelyon", "Hibou-B", "Hibou-L")
 # and its twin, so both are fixed here and every ordinal claim the paragraph makes is
 # asserted below rather than assumed.
 #
-# `twin` is the encoder nearest to `model` in probe space once the two k-NN accuracies are
-# differenced: it is the TCGA analogue of the Camelyon saturation pair, showing that the
-# pooled probes rank-predict CRoMa without setting its scale. Pinned, but cross-checked to
-# still *be* the nearest -- the paragraph rotted once already by asserting an ordering that
-# had silently inverted (the run moved from 8 medical centres to PathoROB's 4 in-domain
-# ones, and with it every TCGA probe accuracy).
+# The twin is the encoder nearest to `model` in probe space once the two k-NN accuracies are
+# differenced: the TCGA analogue of the Camelyon saturation pair, showing that the pooled
+# probes rank-predict CRoMa without setting its scale. It is derived, not pinned, and
+# emitted as \ProvenanceTwinModel: a pinned name went stale twice as the panel grew (the
+# run moved from 8 medical centres to PathoROB's 4, then Mettle joined nearer than
+# CONCHv1.5). The wide-margin claim is still asserted against whichever encoder it is.
 PROVENANCE_PREFIX = "TcgaFourByFour"
 PROVENANCE_MODEL = "Midnight-12k"
-PROVENANCE_TWIN = "CONCHv1.5"
 PROVENANCE_TOP_BIO_DEPTH = 5
 PROVENANCE_MIN_FOLD = 2.0  # the twin's CRoMa must be at least this many times smaller
 MODEL_METADATA_CSV = Path(__file__).resolve().parent.parent / "bench" / "model_metadata.csv"
@@ -378,7 +377,7 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
     d["gap"] = d["bio_knn_bacc"].astype(float) - d["confounder_knn_bacc"].astype(float)
     d = d.set_index("model")
 
-    model, twin = PROVENANCE_MODEL, PROVENANCE_TWIN
+    model = PROVENANCE_MODEL
     metadata = pd.read_csv(MODEL_METADATA_CSV, keep_default_na=False, na_values=[])
     fine_tunes = metadata[
         (metadata["parent_model"] == model)
@@ -390,9 +389,8 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
             f"{MODEL_METADATA_CSV}; got {fine_tunes}."
         )
     fine_tune = str(fine_tunes[0])
-    for name in (model, twin):
-        if name not in d.index:
-            raise CaptionClaimError(f"Sec 3.4 names {name!r}, absent from the ranked panel.")
+    if model not in d.index:
+        raise CaptionClaimError(f"Sec 3.4 names {model!r}, absent from the ranked panel.")
     others = d.drop(index=model)
 
     if d["croma"].idxmax() != model:
@@ -423,12 +421,7 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
             f"centre-decodable among the top {PROVENANCE_TOP_BIO_DEPTH} biological "
             f"encoders ({top_bio_least_conf} is)."
         )
-    nearest = (others["gap"] - d.loc[model, "gap"]).abs().idxmin()
-    if nearest != twin:
-        raise CaptionClaimError(
-            f"Sec 3.4 names {twin} as {model}'s nearest neighbour in differenced-probe "
-            f"space; it is now {nearest}."
-        )
+    twin = str((others["gap"] - d.loc[model, "gap"]).abs().idxmin())
     fold = float(d.loc[model, "croma"] / d.loc[twin, "croma"])
     if fold < PROVENANCE_MIN_FOLD:
         raise CaptionClaimError(
