@@ -65,8 +65,11 @@ from run_config import (  # noqa: E402
 #: (``generate_mari_vs_ri_tables.py``) and the ``generate_paper_values.py`` macros. Invoked
 #: bare on purpose: each already defaults to the settings the paper used (``n_boot=2000``
 #: with a fixed seed; ``--iterations 20``), and re-declaring those here would be one more
-#: list to drift. ``--jobs`` is the exception -- it is a property of the machine, not of the
-#: protocol.
+#: list to drift. ``--jobs`` and the subsampling sweep's required ``--scratch-root`` are the
+#: exceptions -- properties of the machine, not of the protocol. That scratch root holds
+#: only each driver run's working tree (deleted once the run is recorded) and the per-task
+#: logs; the records go under ``output/studies/``, so resuming the sweep does not depend on
+#: it.
 STUDIES: list[tuple[str, str, list[str]]] = [
     ("pretraining-overlap", "scripts/studies/pretraining_overlap.py", []),
     ("typed-neighbour-ranks", "scripts/repro/figures/typed_neighbor_rank_experiment.py", []),
@@ -74,12 +77,22 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # live Camelyon run).
     ("contested-fraction", "scripts/studies/contested_fraction_experiment.py", []),
     ("bootstrap-uncertainty", "scripts/studies/bootstrap_uncertainty.py", []),
-    # Last because it is far and away the longest: a full probe sweep over every
+    # The two sweeps go last because they are far and away the longest, the APD sweep with
+    # the two studies that read it. The APD sweep is a full probe sweep over every
     # model-dataset pair, hours rather than minutes.
     ("apd-sweep", "scripts/studies/apd/apd_experiment.py", ["--overwrite"]),
     ("apd-correlation", "scripts/studies/apd/apd_croma_correlation.py", []),
     # After apd-correlation: it reads apd_metrics_joined.csv and apd_correlation.csv.
     ("mari-vs-ri", "scripts/studies/mari_vs_ri.py", []),
+    # Reads only the benchmark runs above: a 100% reproduction check of each tile cohort's
+    # metrics.csv, then 180 subsampled replicates, about 90 CPU-hours (a day on its default
+    # 4 workers). It resumes rather than overwrites -- finished replicates are kept -- so
+    # move output/studies/subsampling-stability/ aside to recompute it from scratch.
+    (
+        "subsampling-stability",
+        "scripts/studies/subsampling_stability.py",
+        ["sweep", "--scratch-root", "/var/tmp/croma-subsampling-stability"],
+    ),
 ]
 
 
