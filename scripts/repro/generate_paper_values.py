@@ -702,10 +702,13 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append("% Cross-benchmark mean-rank Pareto frontier (fig:croma-pareto-rank)")
     out.extend(_load_rank_frontier_macros())
 
-    # Numbers the text quotes from the typed-neighbour coverage table. Unlike the study
-    # blocks below, these never warn and skip -- a missing input raises.
+    # Roster-dependent numbers the text quotes: per-benchmark frontiers, counts and leaders,
+    # operating k, the control, TCGA-2x2, APD vs nIPD, and the typed-neighbour coverage.
+    # Unlike the study blocks below, these never warn and skip -- a missing input raises.
+    from _panel_macros import panel_macros
     from generate_supp_rank_table import macros as typed_neighbour_macros
 
+    out.extend(panel_macros(root))
     out.append("% Typed-neighbour coverage (tab:typed-neighbour-coverage)")
     out.extend(typed_neighbour_macros(root))
 
