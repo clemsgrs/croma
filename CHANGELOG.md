@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Stratified cluster resampling in `croma.metrics.bootstrap`. `bootstrap_pooled_median` and
+  `paired_rank_stability` take an optional `strata` (one label per row) and then resample
+  clusters within each stratum, so every replicate keeps each stratum's cluster count;
+  without it they draw exactly as before. `cluster_bootstrap_draws` exposes the draw.
+- `shared_draw_tail_statistics`: each encoder's pooled median, F(0) and LTM₁₀ with
+  percentile CIs, the median's rank interval, mean rank and pairwise win probabilities, all
+  on one shared draw per replicate, plus paired differences between encoders.
+- Correlation inference across encoders: `spearman_inference` and
+  `partial_spearman_inference` (ranks residualised on the covariate, Freedman–Lane p),
+  each with an encoder-bootstrap CI and a two-sided permutation p (exact for n ≤ 8, else
+  10,000 seeded permutations), and `benjamini_hochberg` q values.
+
 ### Changed
 
 - Six tile encoders (DINOv2-B, H-optimus-0, H-optimus-1, Prov-GigaPath, GPFM and mSTAR)
