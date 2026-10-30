@@ -159,6 +159,7 @@ exclude = [
   "/tests/test_typed_neighbour_table.py",
   "/tests/test_dataset_montage.py",
   "/tests/test_scale_scatter.py",
+  "/tests/test_mari_vs_ri_tables.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
