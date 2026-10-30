@@ -667,17 +667,21 @@ def _differing_columns(new: pd.DataFrame, published: pd.DataFrame) -> list[str]:
 def assign_kernels(
     trials: dict[str, dict[str, pd.DataFrame]], published: pd.DataFrame
 ) -> dict[str, str]:
-    """Each model's kernel: the first candidate under which *both* protocols reproduce its
-    published row exactly. A model no candidate reproduces fails the check."""
+    """Each model's kernel: the first candidate under which its fixed-k row reproduces the
+    published row exactly. A model no candidate reproduces fails the check.
+
+    Only the fixed-k rows sit at the published operating point. A trial runs the whole
+    roster under one kernel, so its re-selected shared k is the median of single-kernel k*,
+    not the published mixed-kernel one; at equal k its re-selected rows are the fixed-k rows.
+    The record run under the assignment is then checked end to end, on both protocols.
+    """
     assignment: dict[str, str] = {}
     unmatched: list[str] = []
     for model in published["model"]:
         row = published[published["model"] == model]
         for kernel, frames in trials.items():
-            if all(
-                not _differing_columns(frames[v][frames[v]["model"] == model], row)
-                for v in VARIANTS
-            ):
+            fixed = frames[FIXED_K]
+            if not _differing_columns(fixed[fixed["model"] == model], row):
                 assignment[str(model)] = kernel
                 break
         else:
@@ -972,7 +976,9 @@ def main(argv: list[str] | None = None) -> int:
             dest=args.dest,
         )
         return 0
-    root = args.root if args.root is not None else study_root()
+    # Workers run from the repository, so a relative path is fixed to the caller's directory
+    # first -- made absolute, not resolved, so a symlinked output/ keeps its own name.
+    root = (args.root if args.root is not None else study_root()).absolute()
     record = design()
     if args.command == "status":
         table = status(root, record)
@@ -980,11 +986,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"finished {int(table['finished'].sum())} / {int(table['expected'].sum())}")
         return 0
     if args.command == "replicate":
-        run_task(root, (args.cohort, args.fraction, args.replicate), args.scratch_root)
+        run_task(root, (args.cohort, args.fraction, args.replicate), args.scratch_root.absolute())
         return 0
     if not 1 <= args.workers <= 4:
         parser.error("--workers must be between 1 and 4")
-    return sweep(root, record, workers=args.workers, scratch_root=args.scratch_root)
+    return sweep(root, record, workers=args.workers, scratch_root=args.scratch_root.absolute())
 
 
 if __name__ == "__main__":

@@ -254,6 +254,19 @@ class TestReplicates:
         with pytest.raises(study.ReproductionError, match=r"\['B'\]"):
             study.assign_kernels(candidates, published)
 
+    def test_a_kernel_is_recovered_at_the_fixed_k_alone(self):
+        # A single-kernel trial re-selects its shared k from that kernel's k* alone, which
+        # can differ from the published mixed-kernel k: every re-selected row then differs,
+        # while the fixed-k rows sit at the published operating point and still match.
+        published = _text_metrics({"A": "0.25", "B": "0.5"})
+        exact = _text_metrics({"A": "0.25", "B": "0.5"})
+        elsewhere = _text_metrics({"A": "0.3", "B": "0.6"})
+        candidates = {"Cooperlake": {study.RESELECTED: elsewhere, study.FIXED_K: exact}}
+        assert study.assign_kernels(candidates, published) == {
+            "A": "Cooperlake",
+            "B": "Cooperlake",
+        }
+
     def test_a_replicate_records_its_shared_k_every_k_star_and_ri_support(
         self, toy_production, tmp_path
     ):
@@ -732,3 +745,42 @@ class TestSweepPlan:
         _finish(tmp_path, *tasks[-1])
         assert study.mark_complete(tmp_path, record) is True
         assert (tmp_path / study.COMPLETE).exists()
+
+
+class TestCommandLine:
+    """Workers run from the repository, so a relative path must mean the caller's."""
+
+    @pytest.fixture
+    def received(self, tmp_path, monkeypatch):
+        # Launched outside the repository, with the study root reached through a symlink
+        # (as output/ is): the path is made absolute, never resolved through the link.
+        (tmp_path / "shared").mkdir()
+        (tmp_path / "output").symlink_to(tmp_path / "shared", target_is_directory=True)
+        monkeypatch.chdir(tmp_path)
+        calls: dict = {}
+
+        def sweep(root, record, *, workers, scratch_root):
+            calls.update(root=root, scratch_root=scratch_root)
+            return 0
+
+        def run_task(root, task, scratch_root):
+            calls.update(root=root, scratch_root=scratch_root)
+
+        monkeypatch.setattr(study, "sweep", sweep)
+        monkeypatch.setattr(study, "run_task", run_task)
+        return calls
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            ["sweep"],
+            ["replicate", "--cohort", "pathorob-camelyon", "--fraction", "25", "--replicate", "0"],
+        ],
+    )
+    def test_relative_root_and_scratch_are_taken_from_the_caller_s_directory(
+        self, received, command
+    ):
+        argv = [*command, "--root", "output/study", "--scratch-root", "scratch"]
+        assert study.main(argv) == 0
+        assert received["root"] == Path.cwd() / "output" / "study"
+        assert received["scratch_root"] == Path.cwd() / "scratch"
