@@ -67,6 +67,9 @@ from run_config import (  # noqa: E402
 STUDIES: list[tuple[str, str, list[str]]] = [
     ("pretraining-overlap", "scripts/studies/pretraining_overlap.py", []),
     ("typed-neighbour-ranks", "scripts/repro/figures/typed_neighbor_rank_experiment.py", []),
+    # With typed-neighbour-ranks, the input of tab:typed-neighbour-coverage (both beside the
+    # live Camelyon run).
+    ("contested-fraction", "scripts/studies/contested_fraction_experiment.py", []),
     ("bootstrap-uncertainty", "scripts/studies/bootstrap_uncertainty.py", []),
     # Last because it is far and away the longest: a full probe sweep over every
     # model-dataset pair, hours rather than minutes.
