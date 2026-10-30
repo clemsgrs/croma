@@ -97,6 +97,10 @@ STUDIES = [
         f"{_CAMELYON.run_rel}/results/croma_m_sweep_metrics.csv",
         "re-run the benchmark with the CRoMa m-sweep enabled",
     ),
+    # tab:grade-matched (grade-matched SO pools on PCaBiop). No required input: it is never
+    # skipped, so a missing or stale study fails the build -- _grade_matched.load raises,
+    # and generate_paper_values.py fails on the same study for its macros.
+    ("generate_grade_matched_table.py", None, "run scripts/studies/grade_matched_pools.py"),
 ]
 
 

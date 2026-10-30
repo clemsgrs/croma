@@ -532,6 +532,31 @@ def _apd_macros(df: pd.DataFrame) -> list[str]:
     return lines
 
 
+def _grade_matched_macros(study) -> list[str]:
+    """PCaBiop grade-matched SO pools: per-encoder grade effect and pool medians, and the
+    cancer slides per ISUP grade per provider. Numbers only; no verdicts."""
+    from _grade_matched import macro_suffix
+
+    lines = []
+    for model, row in study.pooled.iterrows():
+        suffix = macro_suffix(str(model))
+        for column, name in (
+            ("delta_grade", "Delta"),
+            ("matched_median", "MatchedMedian"),
+            ("random_median", "RandomMedian"),
+        ):
+            lines.append(
+                rf"\newcommand{{\GradeMatched{suffix}{name}}}{{{_num(float(row[column]), 3)}}}"
+            )
+    for provider, by_grade in study.meta["cancer_slides_per_grade"].items():
+        for grade, count in by_grade.items():
+            lines.append(
+                rf"\newcommand{{\GradeMatched{macro_suffix(provider)}"
+                rf"Grade{macro_suffix(grade)}Slides}}{{{int(count)}}}"
+            )
+    return lines
+
+
 def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     """Model-level PCaBiop/PAR values cited in the external-validation paragraph."""
     rows = df[df["dataset"] == "pcabiop"].set_index("model")
@@ -756,6 +781,15 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
             f"warning: missing {apd_path} or {apd_study_path}, skipping APD macros",
             file=sys.stderr,
         )
+
+    # Grade-matched SO pools on PCaBiop. Unlike the blocks above, a missing or stale study
+    # fails the build: _grade_matched.load raises rather than letting a macro vanish.
+    from _grade_matched import STUDY_REL as GRADE_MATCHED_REL, load as load_grade_matched
+
+    gm_lines = _grade_matched_macros(load_grade_matched(root))
+    out.append(f"% Grade-matched SO pools on PCaBiop: {GRADE_MATCHED_REL}")
+    out.extend(gm_lines)
+    print(f"{'grade-matched':16s}        -> {len(gm_lines)} macros", file=sys.stderr)
     return "\n".join(out) + "\n"
 
 
