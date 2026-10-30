@@ -494,6 +494,36 @@ class TestMeasures:
         assert row["support_median"] == pytest.approx(0.5)
         assert row["full_support_median"] == pytest.approx(0.65)
 
+    def test_scores_one_ulp_apart_load_exactly_and_keep_their_order(self, tmp_path):
+        # The sweep writes shortest round-trip floats. pandas' default parser can read two
+        # adjacent doubles back as one value, which would turn this swap into a tie.
+        lo, hi = 0.1, float(np.nextafter(0.1, 1.0))
+        cohort = "pathorob-camelyon"
+        root = tmp_path / "subsampling-stability"
+        design = study.design(cohorts=(cohort,), fractions=(25,), n_replicates=1)
+        study.write_design(root, design)
+        common = {"support": _scores((0.5,) * 4, 0.0), "k_star": _scores((11,) * 4, 1)}
+        full_dir = study.replicate_dir(root, cohort, study.FULL, 0)
+        full_scores = _scores((0.3, lo, hi, 0.001), 0.0)
+        _record(full_dir, {**{c: full_scores for c in METRIC_COLUMNS}, **common}, shared_k=11)
+        (full_dir / study.REPRODUCTION).write_text('{"identical": true}\n')
+        swapped = _scores((0.3, hi, lo, 0.001), 0.0)  # B and C swap
+        _record(
+            study.replicate_dir(root, cohort, 25, 0),
+            {**{c: swapped for c in METRIC_COLUMNS}, **common},
+            shared_k=11,
+        )
+
+        data = measures.load(root, expected=design)
+        replicate = data.scores[data.scores["fraction"] == 25].set_index("model")
+        for metric in measures.METRICS:
+            assert (replicate.loc["B", metric], replicate.loc["C", metric]) == (hi, lo)
+        tau = measures.kendall_tau_k(data)
+        for metric in measures.METRICS:
+            # One discordant pair of six.
+            row = _row(tau, cohort=cohort, fraction=25, metric=metric)
+            assert row["tau_k"] == pytest.approx(2 / 3)
+
     def test_a_missing_replicate_fails_the_load(self, small_study):
         root, design = small_study
         (study.replicate_dir(root, "pathorob-camelyon", 25, 1) / study.SCORES).unlink()

@@ -130,7 +130,9 @@ def load(root: Path | None = None, *, expected: dict | None = None) -> Study:
                 f"{where}: the control {CONTROL_MODEL} is not in the roster the shared k "
                 "was selected over"
             )
-        frame = pd.read_csv(where / study.SCORES)
+        # Round-trip exact, as the scores were written: the default parser can read two
+        # adjacent doubles back as one value and turn a near-tie into a tie.
+        frame = pd.read_csv(where / study.SCORES, float_precision="round_trip")
         frame = frame[frame["model"] != CONTROL_MODEL]
         frames.append(frame.assign(cohort=cohort, fraction=fraction, replicate=replicate))
         metas.append(
