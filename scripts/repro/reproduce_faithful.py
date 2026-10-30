@@ -82,6 +82,10 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("apd-correlation", "scripts/studies/apd/apd_croma_correlation.py", []),
     # After apd-correlation: it reads apd_metrics_joined.csv and apd_correlation.csv.
     ("mari-vs-ri", "scripts/studies/mari_vs_ri.py", []),
+    # After the APD steps: it joins their nIPD and is checked against their correlation
+    # table. It imports scib-metrics, which the `repro` extra pins, so this runs in the same
+    # interpreter as every other step once croma[repro] is installed; no separate venv.
+    ("silhouette-baselines", "scripts/studies/silhouette_baselines.py", []),
 ]
 
 #: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.

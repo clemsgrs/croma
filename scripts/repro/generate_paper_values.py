@@ -557,6 +557,27 @@ def _grade_matched_macros(study) -> list[str]:
     return lines
 
 
+#: Batch-mixing baselines (tab:silhouette-baselines): rho with in-domain nIPD for CRoMa and
+#: each baseline, and the head-to-head differences, each with its CI bounds.
+SILHOUETTE_METRIC_MACRO = {"croma": "Croma", "batch_asw": "BatchAsw", "ilisi": "Ilisi"}
+
+
+def _silhouette_baseline_macros(baselines) -> list[str]:
+    """``\\BaselinesNipdId<Metric><Scope>`` and ``\\BaselinesDelta<Baseline><Scope>``, each
+    with ``Lo``/``Hi`` bounds, from the study table the float is rendered from."""
+    specs = [("downstream", "BaselinesNipdId", m) for m in SILHOUETTE_METRIC_MACRO]
+    specs += [("head_to_head", "BaselinesDelta", m) for m in ("batch_asw", "ilisi")]
+    lines = []
+    for dataset in baselines.cohorts:
+        scope = APD_SCOPE_MACRO[dataset]
+        for kind, family, metric in specs:
+            row = baselines.row(dataset, kind, metric)
+            name = f"{family}{SILHOUETTE_METRIC_MACRO[metric]}{scope}"
+            for column, suffix in (("estimate", ""), ("ci_lo", "Lo"), ("ci_hi", "Hi")):
+                lines.append(rf"\newcommand{{\{name}{suffix}}}{{{_apd_bare(float(row[column]))}}}")
+    return lines
+
+
 def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     """Model-level PCaBiop/PAR values cited in the external-validation paragraph."""
     rows = df[df["dataset"] == "pcabiop"].set_index("model")
@@ -790,6 +811,16 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append(f"% Grade-matched SO pools on PCaBiop: {GRADE_MATCHED_REL}")
     out.extend(gm_lines)
     print(f"{'grade-matched':16s}        -> {len(gm_lines)} macros", file=sys.stderr)
+
+    # Never warns-and-skips: a missing study artifact raises here and fails the build.
+    import generate_silhouette_baselines_table as _silhouette
+
+    silhouette = _silhouette.load()
+    silhouette.assert_croma_matches_apd_correlation()
+    sil_lines = _silhouette_baseline_macros(silhouette)
+    out.append("% Batch-mixing baselines (tab:silhouette-baselines)")
+    out.extend(sil_lines)
+    print(f"{'batch-mixing':16s}        -> {len(sil_lines)} macros", file=sys.stderr)
     return "\n".join(out) + "\n"
 
 

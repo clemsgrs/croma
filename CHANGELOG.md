@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `partial_spearman_inference` (ranks residualised on the covariate, Freedman–Lane p),
   each with an encoder-bootstrap CI and a two-sided permutation p (exact for n ≤ 8, else
   10,000 seeded permutations), and `benjamini_hochberg` q values.
+- `CorrelationInference.difference_ci`: the paired percentile CI of `rho_a - rho_b` for two
+  correlations computed on one encoder draw, e.g. two metrics against the same endpoint.
+- The `repro` extra pins `scib-metrics==0.5.10`, the reference batch-ASW and iLISI that the
+  batch-mixing baselines study (`scripts/studies/silhouette_baselines.py`) compares with CRoMa.
 
 ### Changed
 
