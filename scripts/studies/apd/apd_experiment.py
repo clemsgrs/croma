@@ -44,9 +44,11 @@ from loaders import (  # noqa: E402
     DATASETS,
     PATHOROB_DOWNSTREAM_DATASETS,
     REPO,
+    SLIDE_PANEL_DATASETS,
     arrangement_for,
     load_data,
     pathorob_tile_panel,
+    slide_panel,
     split_schedule,
     training_correlations,
 )
@@ -147,6 +149,14 @@ def _reductions(res, *, chance, cramers_v):
 
 def model_list(dataset):
     available = {p.stem for p in layout.embeddings_dir(DATASETS[dataset]["src"]).glob("*.npy")}
+    if dataset in SLIDE_PANEL_DATASETS:
+        # Study arms sit beside the published slide embeddings; they join an APD run only
+        # when named explicitly (``--models``), never through the default roster.
+        expected = slide_panel()
+        missing = sorted(set(expected) - available)
+        if missing:
+            raise ValueError(f"{dataset}: slide-panel embeddings are missing for {missing}")
+        return expected
     if dataset not in PATHOROB_DOWNSTREAM_DATASETS:
         return sorted(available)
 

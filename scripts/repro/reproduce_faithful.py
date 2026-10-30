@@ -94,6 +94,12 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # After the APD sweep: it reads the per-encoder APD cells and apd.csv for its nIPD
     # columns, beside the benchmark runs' per-sample CRoMa.
     ("finetune-pairs", "scripts/studies/finetune_pairs.py", []),
+    # tab:slide-vs-meanpool. Prerequisite outside this pipeline: the GPU re-extraction
+    # `scripts/studies/slide_vs_meanpool.py extract` (hours per pair; run it detached).
+    # Without it, reduce fails naming the pair, cohort and that command.
+    ("slide-vs-meanpool-reduce", "scripts/studies/slide_vs_meanpool.py", ["reduce"]),
+    ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
+     ["evaluate", "--recompute"]),
 ]
 #: The studies that take ``--jobs``: the probe sweeps.
 JOBS_STUDIES = {"apd-sweep", "auc-sweep"}

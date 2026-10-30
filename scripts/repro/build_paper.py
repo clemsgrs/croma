@@ -113,6 +113,13 @@ STUDIES = [
         None,
         "run scripts/studies/auc/sweep.py, then scripts/studies/auc/report.py",
     ),
+    # tab:slide-vs-meanpool. Skipped by name until the study has been evaluated; once it
+    # has, a pair the table declares without study output fails the generator.
+    (
+        "generate_slide_vs_meanpool_table.py",
+        "output/studies/slide-vs-meanpool/differences.csv",
+        "run scripts/studies/slide_vs_meanpool.py extract, reduce, then evaluate",
+    ),
 ]
 
 

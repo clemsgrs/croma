@@ -884,7 +884,30 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append("% nIPD from AUROC (tab:nipd-auroc): the cells under output/studies/auc")
     out.extend(auroc_lines)
     print(f"{'nIPD AUROC':16s}        -> {len(auroc_lines)} macros", file=sys.stderr)
+
+    svm_lines = _slide_vs_meanpool_macros(root)
+    if svm_lines:
+        out.append("% Slide encoders vs mean-pooling of their tile encoders (tab:slide-vs-meanpool)")
+        out.extend(svm_lines)
+        print(f"{'slide-vs-meanpool':16s}     -> {len(svm_lines)} macros", file=sys.stderr)
     return "\n".join(out) + "\n"
+
+
+def _slide_vs_meanpool_macros(root: Path) -> list[str]:
+    """Slide-minus-mean-pool paired differences (``tab:slide-vs-meanpool``).
+
+    A study that has not been run is skipped by name, like every study block here. Once it
+    has run, every pair the table declares must be in its output: a missing pair raises
+    rather than dropping that pair's macros.
+    """
+    import _slide_vs_meanpool as svm
+
+    study_dir = root / svm.STUDY_REL
+    if not (study_dir / "differences.csv").exists():
+        print(f"warning: missing {study_dir}/differences.csv, skipping slide-vs-meanpool macros",
+              file=sys.stderr)
+        return []
+    return svm.macros(svm.load(study_dir))
 
 
 def main() -> None:
