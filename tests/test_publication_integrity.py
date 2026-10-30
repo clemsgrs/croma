@@ -244,7 +244,7 @@ def test_provenance_twin_is_the_live_nearest_neighbour_not_a_pinned_name() -> No
     assert r"\newcommand{\ProvenanceCromaFold}{$3.5\times$}" in macros
 
 
-def test_historical_overlap_caption_uses_its_own_roster(monkeypatch) -> None:
+def test_overlap_caption_counts_the_live_roster(monkeypatch) -> None:
     frame = pd.DataFrame(
         [
             {"model": "Midnight-12k", "rest": 0.60, "tcga": 0.82, "boost": 2.50},
@@ -257,8 +257,30 @@ def test_historical_overlap_caption_uses_its_own_roster(monkeypatch) -> None:
 
     tex = overlap_table.build()
 
-    assert "historical 3-encoder pathology subset" in tex
+    assert "for the 3 pathology encoders" in tex
+    assert "historical" not in tex
     assert r"$\dagger$ marks the $2$ TCGA-exposed encoders" in tex
+
+
+def test_overlap_study_must_cover_the_live_tolkach_roster(tmp_path: Path, monkeypatch) -> None:
+    """A study run on an older roster is a snapshot: it fails rather than rendering."""
+    import _overlap
+
+    study = tmp_path / "per_sample_metrics.csv"
+    pd.DataFrame(
+        {
+            "model": ["UNI", "UNI", "DINOv2-B", "DINOv2-B"],
+            "confounder": ["VALSET3_TCGA", "UKK", "VALSET3_TCGA", "UKK"],
+            "croma_m5": [0.2, 0.1, 0.0, -0.1],
+        }
+    ).to_csv(study, index=False)
+    run = tmp_path / "metrics.csv"
+    pd.DataFrame({"model": ["UNI", "DINOv2-B", "Mettle"]}).to_csv(run, index=False)
+    monkeypatch.setattr(_overlap, "PER_SAMPLE", study)
+    monkeypatch.setattr(_overlap, "RUN_METRICS", run)
+
+    with pytest.raises(ValueError, match="Mettle"):
+        _overlap.rows()
 
 
 def test_no_unlabelled_stale_roster_claims_in_active_outputs() -> None:

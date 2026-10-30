@@ -20,11 +20,15 @@ from pathlib import Path
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
+from paper_manifest import by_prefix
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "bench"))  # noqa: E402  (plotting.style lives with the benchmark plot library)
 
 REPO = Path(__file__).resolve().parents[2]
 
 PER_SAMPLE = REPO / "output/studies/pretraining-overlap/per_sample_metrics.csv"
+#: The Tolkach-ESCA run the paper reports, resolved through the manifest: the study must
+#: cover exactly its encoders, or it is a snapshot of an older panel.
+RUN_METRICS = REPO / by_prefix("Tolkach").metrics_rel
 TCGA_COHORT = "VALSET3_TCGA"
 HEADLINE_COL = f"croma_m{int(CROMA_HEADLINE_M)}"
 
@@ -43,9 +47,10 @@ def rows(include_control: bool = True) -> pd.DataFrame:
     CRoMa's bounded curve compresses differences at the biology-dominant end, so a raw gap
     would conflate the TCGA effect with where a model sits on the curve.
 
-    Raises when the study has not been run. A caption or a macro that quietly rewords itself
-    around a missing artifact is how a rendered table once grew confidence intervals nobody
-    asked for; ``build_paper.py`` names the skip instead.
+    Raises when the study has not been run, or was run on a roster other than the live
+    Tolkach-ESCA run's. A caption or a macro that quietly rewords itself around a missing
+    artifact is how a rendered table once grew confidence intervals nobody asked for;
+    ``build_paper.py`` names the skip instead.
     """
     if not PER_SAMPLE.exists():
         raise FileNotFoundError(
@@ -54,9 +59,17 @@ def rows(include_control: bool = True) -> pd.DataFrame:
         )
     from plotting.style import published_models
 
+    raw = pd.read_csv(PER_SAMPLE, usecols=["model", "confounder", HEADLINE_COL])
+    study, run = set(raw["model"]), set(pd.read_csv(RUN_METRICS, usecols=["model"])["model"])
+    if study != run:
+        raise ValueError(
+            f"{PER_SAMPLE} and {RUN_METRICS} describe different rosters: study-only "
+            f"{sorted(study - run)}, run-only {sorted(run - study)}. Re-run "
+            "scripts/studies/pretraining_overlap.py on the current tileset."
+        )
     # Study rows carry registry identities; the macros and table built from this frame
     # are published surfaces, so the model names are restyled here.
-    df = published_models(pd.read_csv(PER_SAMPLE, usecols=["model", "confounder", HEADLINE_COL]))
+    df = published_models(raw)
     if df[HEADLINE_COL].abs().max() >= 1.0:
         raise ValueError(
             f"{PER_SAMPLE} column {HEADLINE_COL} is out of (-1, 1): it looks like a legacy "
