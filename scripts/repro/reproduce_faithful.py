@@ -62,8 +62,9 @@ from run_config import (  # noqa: E402
 )
 
 #: Every study whose output a ``build_paper.py`` generator reads: the ones its STUDIES
-#: generators read, plus ``mari_vs_ri.py``, which feeds a CORE generator
-#: (``generate_mari_vs_ri_tables.py``) and the ``generate_paper_values.py`` macros. Invoked
+#: generators read, plus ``mari_vs_ri.py`` and ``finetune_pairs.py``, which feed CORE
+#: generators (``generate_mari_vs_ri_tables.py``, ``generate_finetune_pairs_table.py``) and
+#: the ``generate_paper_values.py`` macros. Invoked
 #: bare on purpose: each already defaults to the settings the paper used (``n_boot=2000``
 #: with a fixed seed; ``--iterations 20``), and re-declaring those here would be one more
 #: list to drift. ``--jobs`` is the exception -- it is a property of the machine, not of the
@@ -91,6 +92,9 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # cell is current and skipped, one an APD change made stale is re-run.
     ("auc-sweep", "scripts/studies/auc/sweep.py", []),
     ("auc-report", "scripts/studies/auc/report.py", []),
+    # After the APD sweep: it reads the per-encoder APD cells and apd.csv for its nIPD
+    # columns, beside the benchmark runs' per-sample CRoMa.
+    ("finetune-pairs", "scripts/studies/finetune_pairs.py", []),
 ]
 #: The studies that take ``--jobs``: the probe sweeps.
 JOBS_STUDIES = {"apd-sweep", "auc-sweep"}
