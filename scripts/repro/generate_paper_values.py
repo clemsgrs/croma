@@ -557,6 +557,35 @@ def _grade_matched_macros(study) -> list[str]:
     return lines
 
 
+def _nipd_auroc_macros(study) -> list[str]:
+    """nIPD from AUROC beside balanced accuracy (tab:nipd-auroc): the agreement rho per
+    cohort x regime, and the in-domain rho(CRoMa, nIPD from AUROC) per cohort -- with its
+    interval and BH q on the tile cohorts, with its exact p on the descriptive PCaBiop."""
+    from _nipd_auroc import SLIDE_COHORT, interval, significance
+
+    lines = [rf"\newcommand{{\NipdAurocNModels}}{{{study.n_ranked}}}"]
+    for scope, s_suffix in APD_SCOPE_MACRO.items():
+        for regime, r_suffix in (("id", "Id"), ("ood", "Ood")):
+            rho = float(study.cell(scope, regime, "nipd_auroc", "nipd_balacc")["rho"])
+            lines.append(
+                rf"\newcommand{{\NipdAurocAgreement{r_suffix}{s_suffix}}}{{{_apd_bare(rho)}}}"
+            )
+        row = study.cell(scope, "id", "croma", "nipd_auroc")
+        macro = f"NipdAurocIdCroma{s_suffix}"
+        lines.append(rf"\newcommand{{\{macro}}}{{{_apd_bare(float(row['rho']))}}}")
+        if scope == SLIDE_COHORT:
+            lines.append(
+                rf"\newcommand{{\{macro}P}}{{{significance('p', float(row['p_value']))}}}"
+            )
+        else:
+            ci = interval(float(row["ci_lo"]), float(row["ci_hi"]))
+            lines.append(rf"\newcommand{{\{macro}Ci}}{{{ci}}}")
+            lines.append(
+                rf"\newcommand{{\{macro}Q}}{{{significance('q', float(row['q_value']))}}}"
+            )
+    return lines
+
+
 #: Batch-mixing baselines (tab:silhouette-baselines): rho with in-domain nIPD for CRoMa and
 #: each baseline, and the head-to-head differences, each with its CI bounds.
 SILHOUETTE_METRIC_MACRO = {"croma": "Croma", "batch_asw": "BatchAsw", "ilisi": "Ilisi"}
@@ -831,6 +860,15 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append("% Batch-mixing baselines (tab:silhouette-baselines)")
     out.extend(sil_lines)
     print(f"{'batch-mixing':16s}        -> {len(sil_lines)} macros", file=sys.stderr)
+
+    # nIPD from AUROC beside balanced accuracy. Unlike the blocks above, a missing or stale
+    # AUROC cell fails the build: _nipd_auroc.load recomputes from the cells and raises.
+    from _nipd_auroc import load as load_nipd_auroc
+
+    auroc_lines = _nipd_auroc_macros(load_nipd_auroc(root))
+    out.append("% nIPD from AUROC (tab:nipd-auroc): the cells under output/studies/auc")
+    out.extend(auroc_lines)
+    print(f"{'nIPD AUROC':16s}        -> {len(auroc_lines)} macros", file=sys.stderr)
     return "\n".join(out) + "\n"
 
 

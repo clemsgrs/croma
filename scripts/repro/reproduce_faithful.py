@@ -38,7 +38,7 @@ Usage:
     python scripts/repro/reproduce_faithful.py Camelyon      # one run, by manifest prefix
     python scripts/repro/reproduce_faithful.py --dry-run     # print the commands, run nothing
     python scripts/repro/reproduce_faithful.py --runs-only   # skip studies and build_paper
-    python scripts/repro/reproduce_faithful.py --jobs 8      # parallelism for the APD sweep
+    python scripts/repro/reproduce_faithful.py --jobs 8      # parallelism for the probe sweeps
 """
 
 import argparse
@@ -87,7 +87,13 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # interpreter as every other step once croma[repro] is installed; no separate venv. That
     # interpreter must be Python >= 3.11, which scib-metrics requires.
     ("silhouette-baselines", "scripts/studies/silhouette_baselines.py", []),
+    # The AUROC cells ride on the APD cells written above: one that still reproduces its APD
+    # cell is current and skipped, one an APD change made stale is re-run.
+    ("auc-sweep", "scripts/studies/auc/sweep.py", []),
+    ("auc-report", "scripts/studies/auc/report.py", []),
 ]
+#: The studies that take ``--jobs``: the probe sweeps.
+JOBS_STUDIES = {"apd-sweep", "auc-sweep"}
 
 #: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
 PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
@@ -180,7 +186,8 @@ def main() -> int:
                    help="Allow the metrics artifact cache. Fast, but proves only that the "
                         "cached numbers are still on disk -- not that they recompute.")
     p.add_argument("--jobs", type=int, default=1,
-                   help="Parallel worker processes for the APD sweep (default 1).")
+                   help="Parallel worker processes for the APD and AUROC probe sweeps "
+                        "(default 1).")
     args = p.parse_args()
 
     entries = list(TABLES)
@@ -203,7 +210,7 @@ def main() -> int:
     if not args.skip_studies:
         for label, script, extra in STUDIES:
             cmd = [sys.executable, str(REPO / script), *extra]
-            if label == "apd-sweep" and args.jobs > 1:
+            if label in JOBS_STUDIES and args.jobs > 1:
                 cmd += ["--jobs", str(int(args.jobs))]
             _run(cmd, label=label, dry_run=args.dry_run, env=STUDY_ENV.get(label))
 

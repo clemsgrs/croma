@@ -8,7 +8,8 @@ with both, and asks whether the association with representation robustness survi
 
 Entrypoints (run as scripts):
   - ``probe_auc_cell.py`` -- one (cohort, encoder) cell: the APD sweep, observed.
-  - ``run_sweep.sh``      -- every missing or stale cell, a few at a time; resumable.
+  - ``sweep.py``          -- every missing or stale cell, ``--jobs`` at a time; resumable.
+    ``run_sweep.sh`` does the same from the shell, for a detached launch.
   - ``auc_cells.py``      -- the cell list (the APD study's) and the staleness check.
   - ``report.py``         -- the reduction CSV and the correlations behind
     ``tab:nipd-auroc``.

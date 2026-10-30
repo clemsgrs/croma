@@ -27,8 +27,11 @@ if str(HERE.parent / "apd") not in sys.path:
 
 from loaders import DATASETS, JOIN_KEYS, REPO, STUDY_DIR as APD_DIR  # noqa: E402
 
-#: Where the AUROC cells live, one ``<cohort>/<encoder>.json`` per APD cell.
-AUC_DIR = REPO / "output" / "studies" / "auc"
+#: Where the AUROC cells live, one ``<cohort>/<encoder>.json`` per APD cell, and where the
+#: APD cells they ride on live, both relative to a checkout root.
+AUC_REL = Path("output/studies/auc")
+APD_REL = APD_DIR.relative_to(REPO)
+AUC_DIR = REPO / AUC_REL
 
 #: Largest balanced-accuracy difference from the APD cell a current cell may carry. The
 #: sweep is deterministic, so a reproduced cell differs by float noise at most (0.0 in
