@@ -97,6 +97,14 @@ STUDIES = [
         f"{_CAMELYON.run_rel}/results/croma_m_sweep_metrics.csv",
         "re-run the benchmark with the CRoMa m-sweep enabled",
     ),
+    # Reads every replicate of the cohort-subsampling study (tab:subsampling-stability and
+    # fig:subsampling-stability); the marker is written only once all of them are on disk.
+    # The PDF the figure float captions is drawn by figures/subsampling_stability_figure.py.
+    (
+        "generate_subsampling_stability_float.py",
+        "output/studies/subsampling-stability/complete.json",
+        "run (or resume) scripts/studies/subsampling_stability.py sweep",
+    ),
 ]
 
 
