@@ -44,6 +44,9 @@ CORE = [
     # _cross_benchmark) to build the rank-aggregate Pareto overview float; the PDF it captions
     # is drawn by figures/rank_pareto_figure.py.
     ("generate_rank_pareto_float.py", None, ""),
+    # Reads the APD metadata under data/ through the study's own schedule and the library
+    # sweep's slicing; it fails, rather than skips, when that metadata is missing.
+    ("generate_split_schedule_table.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that
