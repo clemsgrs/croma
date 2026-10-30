@@ -338,6 +338,21 @@ def test_rank_frontier_macros_name_the_live_frontier() -> None:
     assert not any("TilePriorRankFrontier" in line for line in macros)
 
 
+def test_rank_pareto_rows_carry_the_mean_biological_accuracy_rank() -> None:
+    """The overview's fill: each encoder's biological-accuracy rank averaged over cohorts."""
+    index = pd.Index(["A", "B"], name="model")
+    panel = RankPareto(
+        medians=pd.DataFrame({"c1": [0.2, 0.1], "c2": [0.2, 0.1]}, index=index),
+        median_ranks=pd.DataFrame({"c1": [1, 2], "c2": [1, 2]}, index=index),
+        tail_ranks=pd.DataFrame({"c1": [2, 1], "c2": [2, 1]}, index=index),
+        exposed=frozenset(),
+        adversarial="c1",
+        bio_ranks=pd.DataFrame({"c1": [1, 2], "c2": [2, 1]}, index=index),
+    )
+
+    assert [row["bio_rank"] for row in panel.rows()] == [1.5, 1.5]
+
+
 def test_rank_frontier_macros_are_offline_at_the_generator_seam(
     tmp_path: Path, monkeypatch
 ) -> None:

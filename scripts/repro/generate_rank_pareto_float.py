@@ -18,6 +18,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from _rank_pareto import (  # noqa: E402
+    RankPareto,
     assert_exposure_marked,
     load,
 )
@@ -28,8 +29,9 @@ OUT = Path("paper/sections/supp/figure_rank_pareto.tex")
 GRAPHIC = "figures/rank_pareto.pdf"
 
 
-def build() -> str:
-    rp = load()
+def build(rp: RankPareto | None = None) -> str:
+    """The float for ``rp`` (the live panel when omitted)."""
+    rp = load() if rp is None else rp
     exposed = assert_exposure_marked(rp)
 
     caption = " ".join([
@@ -39,6 +41,8 @@ def build() -> str:
         r"$\mcode{LTM}_{10}$ (rank $1$ = mildest tail). The axes show the mean rank across benchmarks,",
         r"with lower (=better) ranks plotted toward the upper-right corner. Ringed points form the",
         r"Pareto frontier, while shaded points are dominated on both axes.",
+        r"Point fill encodes the mean rank by biological $k$-NN balanced accuracy (darker = better;",
+        r"colour bar), since raw accuracy is not commensurable across benchmarks.",
         rf"$\dagger$ marks the {len(exposed)} TCGA-exposed encoders.",
     ]) + "}"
 

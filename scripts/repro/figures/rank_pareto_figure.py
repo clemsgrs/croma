@@ -33,6 +33,8 @@ import plotting as P  # noqa: E402
 from plotting import style as plotstyle  # noqa: E402
 from _rank_pareto import load  # noqa: E402
 
+#: Each point's fill is its mean biological-accuracy rank (``RankPareto.bio_ranks``): raw
+#: balanced accuracy is not commensurable across benchmarks, ranks are.
 #: Beside the study data it is drawn from, under ``plots/{pdf,png}/``. Nothing writes into
 #: ``paper/figures/``; copy what the paper needs by hand.
 OUT = REPO / "output/studies/rank-pareto/plots/rank_pareto.png"
