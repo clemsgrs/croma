@@ -18,6 +18,7 @@ from croma.metrics.bootstrap import (
     shared_draw_tail_statistics,
     spearman_inference,
 )
+from croma.metrics.bootstrap import _residualise, _two_sided_p
 from croma.metrics.tail import compute_tail_metrics
 
 
@@ -515,6 +516,31 @@ class TestPartialSpearman:
         expected = np.mean(np.abs(null) >= abs(observed) - 1e-12)
         assert result.rho == pytest.approx(observed)
         assert result.p_value == pytest.approx(expected)
+
+    def test_undefined_permutations_leave_the_exact_p_denominator(self) -> None:
+        # rank(y) is uncorrelated with z = 0..4, so rho = 0 and every defined ordering is
+        # at least as extreme; 2 of the 120 permuted residuals lie in span(1, rank z),
+        # re-residualise to zero and have no statistic. p is 118 / 118, not 118 / 120.
+        result = partial_spearman_inference([1, 0, 4, 3, 2], [0, 4, 3, 2, 1], np.arange(5))
+        assert result.rho == pytest.approx(0.0, abs=1e-12)
+        assert (result.permutation, result.n_permutations) == ("exact", 118)
+        assert result.p_value == 1.0
+
+    def test_undefined_permutations_with_tied_ranks(self) -> None:
+        # 4 of the 24 orderings are undefined: p = 12 / 20, not 12 / 24
+        result = partial_spearman_inference([0, 2, 1, 3], [1, 1, 2, 0], [3, 0, 1, 1])
+        assert (result.permutation, result.n_permutations) == ("exact", 20)
+        assert result.p_value == pytest.approx(0.6)
+
+    def test_a_residual_at_float_noise_is_undefined(self) -> None:
+        # a = 5.5 - 1.2 z exactly, but its least-squares residual is ~3e-16, not 0
+        residual = _residualise(np.array([1.9, 0.7, 3.1, 4.3]), np.array([3.0, 4.0, 2.0, 1.0]))
+        assert np.isnan(residual).all()
+
+    def test_monte_carlo_p_counts_only_defined_statistics(self) -> None:
+        # one hit among two defined statistics: (1 + 1) / (2 + 1), not (1 + 1) / (3 + 1)
+        p, n_defined = _two_sided_p(0.5, np.array([0.6, np.nan, 0.1]), "monte-carlo")
+        assert (p, n_defined) == (pytest.approx(2 / 3), 2)
 
     def test_conditioning_removes_an_association_driven_only_by_z(self) -> None:
         rng = np.random.default_rng(0)

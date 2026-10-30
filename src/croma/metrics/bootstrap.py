@@ -573,20 +573,28 @@ _PERMUTATION_STREAM = 1
 # |null| >= |observed| up to float noise: a permutation that reproduces the observed
 # statistic exactly must count, however its floating-point sum was ordered.
 _TIE_TOLERANCE = 1e-12
+# A least-squares residual whose range is at most this share of the input's is zero up to
+# float noise: the input lies in span(1, z).
+_ZERO_RESIDUAL_TOLERANCE = 1e-9
 
 
 @dataclass(frozen=True, eq=False)
 class CorrelationInference:
     """A correlation across encoders with its encoder-bootstrap CI and permutation p.
 
-    ``ci.point`` equals ``rho``. ``p_value`` is two-sided: the share of permutations whose
-    statistic is at least as extreme as ``rho`` in absolute value. ``permutation`` says how
-    the null was formed: ``"exact"`` enumerates all ``n!`` orderings (``n <=``
-    :data:`EXACT_PERMUTATION_MAX_N`); ``"monte-carlo"`` draws ``n_permutations`` seeded
-    orderings and reports ``(1 + hits) / (1 + n_permutations)``, which is never 0.
+    ``ci.point`` equals ``rho``. ``p_value`` is two-sided: the share of the defined
+    permutations whose statistic is at least as extreme as ``rho`` in absolute value. A
+    permutation is undefined when its statistic is: in a partial, a permuted response can
+    lie in ``span(1, rank z)`` and leave no residual. Undefined permutations are dropped
+    from the count and the denominator alike, and ``n_permutations`` is the number of
+    defined ones. ``permutation`` says how the null was formed: ``"exact"`` enumerates all
+    ``n!`` orderings (``n <=`` :data:`EXACT_PERMUTATION_MAX_N`) and reports
+    ``hits / n_permutations``; ``"monte-carlo"`` draws seeded orderings and reports
+    ``(1 + hits) / (1 + n_permutations)``, which is never 0.
     ``replicates`` holds the bootstrap replicates of the correlation (``nan`` where a
-    replicate's drawn encoders are constant on a variable); two inferences computed on the
-    same ``draws`` have paired replicates, so their difference has a percentile CI too.
+    replicate's drawn encoders are constant on a variable, or, in a partial, where ``x`` or
+    ``y`` is determined by ``z``); two inferences computed on the same ``draws`` have
+    paired replicates, so their difference has a percentile CI too.
     """
 
     rho: float
@@ -609,11 +617,20 @@ def _permutation_orders(
     return rng.permuted(identity, axis=1), "monte-carlo"
 
 
-def _two_sided_p(observed: float, null: np.ndarray, permutation: PermutationMethod) -> float:
-    hits = int(np.count_nonzero(np.abs(null) >= abs(observed) - _TIE_TOLERANCE))
+def _two_sided_p(
+    observed: float, null: np.ndarray, permutation: PermutationMethod
+) -> tuple[float, int]:
+    """Two-sided p over the defined (finite) null statistics, and how many there were.
+
+    A permutation with no statistic (``nan``) is neither extreme nor not, so it leaves the
+    denominator as well as the count. The exact null always includes the identity, whose
+    statistic is the finite observed one, so its denominator is at least 1.
+    """
+    defined = null[np.isfinite(null)]
+    hits = int(np.count_nonzero(np.abs(defined) >= abs(observed) - _TIE_TOLERANCE))
     if permutation == "exact":
-        return hits / null.size
-    return (hits + 1) / (null.size + 1)
+        return hits / defined.size, int(defined.size)
+    return (hits + 1) / (defined.size + 1), int(defined.size)
 
 
 def encoder_bootstrap_draws(n: int, *, n_boot: int = 2000, seed: int = 0) -> np.ndarray:
@@ -704,14 +721,14 @@ def spearman_inference(
     ci = _percentile_ci(replicates, rho, level, int(idx.shape[0]))
 
     orders, permutation = _permutation_orders(n, n_permutations, seed)
-    null = _row_pearson(rx, ry[orders])
+    p_value, n_defined = _two_sided_p(rho, _row_pearson(rx, ry[orders]), permutation)
     return CorrelationInference(
         rho=rho,
         ci=ci,
-        p_value=_two_sided_p(rho, null, permutation),
+        p_value=p_value,
         n=n,
         permutation=permutation,
-        n_permutations=int(orders.shape[0]),
+        n_permutations=n_defined,
         replicates=replicates,
     )
 
@@ -739,14 +756,22 @@ def benjamini_hochberg(p_values: np.ndarray | list[float]) -> np.ndarray:
 
 
 def _residualise(a: np.ndarray, z: np.ndarray) -> np.ndarray:
-    """Residual of ``a`` on ``[1, z]`` by least squares, row-wise along the last axis;
-    ``nan`` where ``z`` is constant (the regression is then undefined)."""
+    """Residual of ``a`` on ``[1, z]`` by least squares, row-wise along the last axis.
+
+    ``nan`` where ``z`` is constant (the regression is then undefined) and where ``a``
+    lies in ``span(1, z)``, so the residual is zero up to float noise: its range at most
+    :data:`_ZERO_RESIDUAL_TOLERANCE` times ``a``'s. A correlation with that residual is
+    undefined, and leaving the noise in would turn it into an arbitrary statistic.
+    """
     ac = a - a.mean(axis=-1, keepdims=True)
     zc = z - z.mean(axis=-1, keepdims=True)
     with np.errstate(invalid="ignore", divide="ignore"):
         slope = (ac * zc).sum(axis=-1, keepdims=True) / (zc**2).sum(axis=-1, keepdims=True)
     residual = ac - slope * zc
-    return np.where(np.ptp(z, axis=-1, keepdims=True) == 0, np.nan, residual)
+    zero = np.ptp(residual, axis=-1, keepdims=True) <= _ZERO_RESIDUAL_TOLERANCE * np.ptp(
+        a, axis=-1, keepdims=True
+    )
+    return np.where((np.ptp(z, axis=-1, keepdims=True) == 0) | zero, np.nan, residual)
 
 
 def partial_spearman_inference(
@@ -792,12 +817,13 @@ def partial_spearman_inference(
     orders, permutation = _permutation_orders(n, n_permutations, seed)
     fitted_y = ry - res_y
     null = _row_pearson(res_x, _residualise(fitted_y + res_y[orders], rz))
+    p_value, n_defined = _two_sided_p(rho, null, permutation)
     return CorrelationInference(
         rho=rho,
         ci=ci,
-        p_value=_two_sided_p(rho, null, permutation),
+        p_value=p_value,
         n=n,
         permutation=permutation,
-        n_permutations=int(orders.shape[0]),
+        n_permutations=n_defined,
         replicates=replicates,
     )
