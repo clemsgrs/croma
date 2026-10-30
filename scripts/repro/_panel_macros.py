@@ -3,8 +3,8 @@ r"""Roster-dependent macros for ``generated_values.tex``: rankings, frontiers, o
 The text quotes a family of numbers that move whenever an encoder joins the tile panel: who
 sits on each benchmark's median-vs-tail Pareto frontier, how many encoders are confounder-
 dominant or have a negative tail, the top three, the operating ``k``, where the natural-image
-control lands, the TCGA-2x2 composition and rank agreement, and how closely APD and nIPD rank
-the encoders. They were hand-typed and went stale at 26 encoders. Every one is derived here
+control lands, each cohort's composition and per-cell counts (the dataset-cardinality
+captions), TCGA-2x2's rank agreement, and how closely APD and nIPD rank the encoders. They were hand-typed and went stale at 26 encoders. Every one is derived here
 from the runs ``paper_manifest`` names.
 
 Unlike the optional study blocks of ``generate_paper_values.build``, nothing here warns and
@@ -29,7 +29,7 @@ for _path in (HERE, REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" /
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from _cohort_counts import paired_composition  # noqa: E402
+from _cohort_counts import CELL, QUARTET_CELL, balance, cells  # noqa: E402
 from _paper_tables import CaptionClaimError, bare_num, croma_as_margin, num_math  # noqa: E402
 from paper_manifest import by_benchmark, by_prefix  # noqa: E402
 from plotting.base import _pareto_frontier_max_max  # noqa: E402
@@ -48,6 +48,12 @@ TCGA2X2_OTHERS = ("Camelyon", "Tolkach")
 #: The join the nIPD floats read (``scripts/studies/apd/apd_croma_correlation.py``).
 APD_JOINED_CSV = "output/studies/apd/apd_metrics_joined.csv"
 APD_REGIMES = (("id", "Id"), ("ood", "Ood"))
+#: Every cohort the dataset-cardinality figures show, by macro prefix.
+CARDINALITY_PREFIXES = ("Camelyon", "TcgaTwoByTwo", "TcgaFourByFour", "Tolkach", "Panda", "PandaIsup")
+#: A Tolkach-ESCA ``group_id`` is a case, which contributes tiles to several classes.
+CARDINALITY_GROUP = {"Tolkach": "Cases"}
+#: Evaluated per slide: their cells state slides only.
+SLIDE_LEVEL_PREFIXES = ("Panda", "PandaIsup")
 
 _ORDINALS = ("One", "Two", "Three")
 
@@ -123,14 +129,49 @@ def operating_point_macros(prefix: str, df: pd.DataFrame) -> list[str]:
     return [_macro(prefix, suffix, body) for suffix, body in specs]
 
 
-def tcga2x2_composition_macros(manifest: pd.DataFrame) -> list[str]:
-    """Cancer types, centres and quartets of the paired TCGA cohort, from its rows."""
-    composition = paired_composition(manifest)
-    return [
-        _macro(TCGA2X2, "NCancerTypes", str(composition.n_classes)),
-        _macro(TCGA2X2, "NCentres", str(composition.n_centres)),
-        _macro(TCGA2X2, "NQuartets", str(composition.n_quartets)),
-    ]
+def _count(n: int) -> str:
+    """A count for text or math mode: ``5{,}100``."""
+    return f"{int(n):,}".replace(",", "{,}")
+
+
+def cardinality_macros(manifests: dict[str, pd.DataFrame]) -> list[str]:
+    """Composition and per-cell counts of each cohort, from its view's evaluation rows.
+
+    These are the numbers the dataset-cardinality captions quote, so every cell of a cohort
+    must hold the same count (``_cohort_counts.balance``); an unbalanced cohort fails the
+    build instead of printing a per-cell count no cell has. A paired cohort's cell is a
+    quartet cell; its tiles recur across quartets, so it also states its occurrences and
+    the range of distinct slides a class x centre pools over its quartets.
+    """
+    lines = []
+    for prefix, manifest in manifests.items():
+        paired = "subset" in manifest
+        group = CARDINALITY_GROUP.get(prefix, "Slides")
+        try:
+            balanced = balance(manifest, QUARTET_CELL if paired else CELL)
+        except ValueError as error:
+            raise CaptionClaimError(f"{prefix}: {error}") from error
+        composition = [
+            ("NClasses", manifest["label"].nunique()),
+            ("NCentres", manifest["confounder"].nunique()),
+        ]
+        specs = [(f"Cell{group}", balanced.cell.slides), (f"N{group}", balanced.slides)]
+        if prefix not in SLIDE_LEVEL_PREFIXES:
+            specs += [
+                ("CellTiles", balanced.cell.tiles),
+                (f"TilesPer{group[:-1]}", balanced.tiles_per_slide),
+                ("NTiles", manifest["sample_id"].nunique()),
+            ]
+        if paired:
+            pooled = [cell.slides for cell in cells(manifest).values()]
+            composition.append(("NQuartets", manifest["subset"].nunique()))
+            specs += [
+                ("NOccurrences", balanced.tiles),
+                (f"PooledCell{group}Min", min(pooled)),
+                (f"PooledCell{group}Max", max(pooled)),
+            ]
+        lines += [_macro(prefix, suffix, _count(n)) for suffix, n in composition + specs]
+    return lines
 
 
 def _rho(left: pd.Series, right: pd.Series) -> float:
@@ -182,10 +223,10 @@ def _metrics(root: Path, prefix: str) -> pd.DataFrame:
     return published_models(pd.read_csv(path))
 
 
-def _tcga2x2_manifest() -> pd.DataFrame:
+def _view_manifest(prefix: str) -> pd.DataFrame:
     import views
 
-    return views.load_view(by_prefix(TCGA2X2).benchmark).eval_manifest
+    return views.load_view(by_prefix(prefix).benchmark).eval_manifest
 
 
 def panel_macros(root: Path) -> list[str]:
@@ -202,8 +243,9 @@ def panel_macros(root: Path) -> list[str]:
         lines += ranking_macros(prefix, frames[prefix])
     for prefix in OPERATING_PREFIXES:
         lines += operating_point_macros(prefix, frames[prefix])
-    lines.append("% TCGA-2x2 composition (its view) and rank agreement with the other cohorts")
-    lines += tcga2x2_composition_macros(_tcga2x2_manifest())
+    lines.append("% Cohort composition and per-cell counts (each benchmark's view)")
+    lines += cardinality_macros({p: _view_manifest(p) for p in CARDINALITY_PREFIXES})
+    lines.append("% TCGA-2x2 rank agreement with the other cohorts")
     croma = {
         prefix: pd.Series(croma_as_margin(df["croma"]).to_numpy(float), index=df["model"])
         for prefix, df in frames.items()

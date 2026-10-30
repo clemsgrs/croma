@@ -106,19 +106,80 @@ def test_control_macros_report_its_scores_and_how_many_encoders_fall_below_it():
 
 
 def test_tcga2x2_composition_is_counted_from_the_view():
+    # Two quartets; each cell holds one slide of two tiles. Slide "s1" (BRCA at X) recurs in
+    # both quartets, so the paired cohort holds 7 slides and 14 tiles in 16 occurrences.
+    labels = ["BRCA", "BRCA", "LUAD", "LUAD", "BRCA", "BRCA", "COAD", "COAD"]
+    confounders = ["X", "Y", "X", "Y", "X", "Z", "X", "Z"]
+    slides = ["s1", "s2", "s3", "s4", "s1", "s5", "s6", "s7"]
     manifest = pd.DataFrame(
         {
-            "subset": ["q1"] * 4 + ["q2"] * 4,
-            "label": ["BRCA", "BRCA", "LUAD", "LUAD", "BRCA", "BRCA", "COAD", "COAD"],
-            "confounder": ["X", "Y", "X", "Y", "X", "Z", "X", "Z"],
+            "subset": ["q1"] * 8 + ["q2"] * 8,
+            "label": [x for x in labels for _ in range(2)],
+            "confounder": [x for x in confounders for _ in range(2)],
+            "group_id": [x for x in slides for _ in range(2)],
+            "sample_id": [f"{s}-{t}" for s in slides for t in range(2)],
         }
     )
 
-    lines = panel.tcga2x2_composition_macros(manifest)
+    lines = panel.cardinality_macros({"TcgaTwoByTwo": manifest})
 
-    assert r"\newcommand{\TcgaTwoByTwoNCancerTypes}{3}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoNClasses}{3}" in lines
     assert r"\newcommand{\TcgaTwoByTwoNCentres}{3}" in lines
     assert r"\newcommand{\TcgaTwoByTwoNQuartets}{2}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoCellSlides}{1}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoCellTiles}{2}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoNSlides}{7}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoNTiles}{14}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoNOccurrences}{16}" in lines
+    # Pooled over quartets, (BRCA, X) holds s1 only; no class x centre holds more than one.
+    assert r"\newcommand{\TcgaTwoByTwoPooledCellSlidesMin}{1}" in lines
+    assert r"\newcommand{\TcgaTwoByTwoPooledCellSlidesMax}{1}" in lines
+
+
+def test_cardinality_macros_count_cases_on_tolkach_and_slides_only_on_pcabiop():
+    # Tolkach-shaped: 2 classes x 2 centres, one case per cell with 100 tiles per class; case
+    # "c1" spans both classes at centre X, so the cohort holds 3 cases, not 4.
+    tolkach = pd.DataFrame(
+        {
+            "label": ["A"] * 100 + ["B"] * 100 + ["A"] * 100 + ["B"] * 100,
+            "confounder": ["X"] * 200 + ["Y"] * 200,
+            "group_id": ["c1"] * 200 + ["c2"] * 100 + ["c3"] * 100,
+            "sample_id": [f"t{i}" for i in range(400)],
+        }
+    )
+    pcabiop = pd.DataFrame(
+        {
+            "label": ["0", "0", "1", "1"] * 250,
+            "confounder": ["KI", "RUMC"] * 500,
+            "group_id": [f"s{i}" for i in range(1000)],
+            "sample_id": [f"s{i}" for i in range(1000)],
+        }
+    )
+
+    lines = panel.cardinality_macros({"Tolkach": tolkach, "Panda": pcabiop})
+
+    assert r"\newcommand{\TolkachCellCases}{1}" in lines
+    assert r"\newcommand{\TolkachCellTiles}{100}" in lines
+    assert r"\newcommand{\TolkachTilesPerCase}{100}" in lines
+    assert r"\newcommand{\TolkachNCases}{3}" in lines
+    assert r"\newcommand{\TolkachNTiles}{400}" in lines
+    assert r"\newcommand{\PandaCellSlides}{250}" in lines
+    assert r"\newcommand{\PandaNSlides}{1{,}000}" in lines
+    assert not any(r"\PandaCellTiles" in line or r"\PandaNTiles" in line for line in lines)
+
+
+def test_an_unbalanced_cohort_fails_the_cardinality_caption():
+    manifest = pd.DataFrame(
+        {
+            "label": ["A", "A", "B"],
+            "confounder": ["X", "X", "X"],
+            "group_id": ["s1", "s2", "s3"],
+            "sample_id": ["t1", "t2", "t3"],
+        }
+    )
+
+    with pytest.raises(CaptionClaimError, match="Camelyon"):
+        panel.cardinality_macros({"Camelyon": manifest})
 
 
 def test_tcga2x2_rank_agreement_is_reported_apart_from_the_cross_cohort_mean():
