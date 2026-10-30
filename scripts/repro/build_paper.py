@@ -50,6 +50,10 @@ CORE = [
     # Reads every listed benchmark's view, APD metadata and tileset manifest, one tile image
     # per slide, and the committed acquisition.csv of curated scanner facts.
     ("generate_acquisition_table.py", None, ""),
+    # Reads output/studies/mari-vs-ri/ (scripts/studies/mari_vs_ri.py) for tab:mari-vs-ri and
+    # tab:mari-tau-sweep. A study input, but listed here rather than under STUDIES on purpose:
+    # the tables and their macros are cited, so a missing study must fail the build, not skip.
+    ("generate_mari_vs_ri_tables.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that

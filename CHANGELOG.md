@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The documented rationale for MaRI's automatic `tau` is corrected, in the
+  `croma.metrics.tau` module docstring and in "Choosing `tau`" on the metrics page. It used
+  to read `exp(-d / tau)` as if each anchor's nearest neighbour sat at distance zero, which
+  overstated how sharply the weights grade inside one neighbourhood. Typed neighbours inside
+  a fixed `k` lie in a narrow distance band, so within one neighbourhood the weights are
+  close to flat at the automatic `tau`, and most of MaRI's departure from RI comes from
+  comparing different anchors. The recommendation is unchanged: leave `tau` automatic. No
+  computed value changes.
+
 - Six tile encoders (DINOv2-B, H-optimus-0, H-optimus-1, Prov-GigaPath, GPFM and mSTAR)
   are now extracted with their authors' preprocessing recipes, the ones slide2vec uses, in
   place of the transform timm resolved from each checkpoint's hub config. The hub configs
