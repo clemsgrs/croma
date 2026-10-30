@@ -605,6 +605,33 @@ class CorrelationInference:
     n_permutations: int
     replicates: np.ndarray
 
+    def difference_ci(self, other: "CorrelationInference") -> BootstrapCI:
+        """Paired CI for ``self.rho - other.rho``, e.g. two metrics against one target.
+
+        Both inferences must come from the same ``draws`` (see
+        :func:`encoder_bootstrap_draws`), so that replicate ``b`` of each was computed on the
+        same drawn encoders. The point is the difference of the two rhos; the interval is the
+        percentile interval of the replicate-by-replicate differences, at this inference's
+        level, over the replicates on which both correlations are defined.
+        """
+        if (self.n, self.replicates.shape) != (other.n, other.replicates.shape):
+            raise ValueError(
+                "a paired difference needs both correlations computed on one encoder draw "
+                f"(n={self.n}, {self.replicates.size} replicates vs n={other.n}, "
+                f"{other.replicates.size})"
+            )
+        if self.ci.level != other.ci.level:
+            raise ValueError(
+                f"the two correlations have different CI levels ({self.ci.level} vs "
+                f"{other.ci.level})"
+            )
+        return _percentile_ci(
+            self.replicates - other.replicates,
+            self.rho - other.rho,
+            self.ci.level,
+            int(self.replicates.size),
+        )
+
 
 def _permutation_orders(
     n: int, n_permutations: int, seed: int

@@ -443,6 +443,41 @@ class TestSpearmanInference:
             difference -= spearmanr(b[idx], target[idx]).statistic
             assert ra.replicates[replicate] - rb.replicates[replicate] == pytest.approx(difference)
 
+    def test_difference_of_two_correlations_is_paired_on_their_shared_draw(self) -> None:
+        # The CI of rho(a, target) - rho(b, target) is the percentile interval of the
+        # replicate-by-replicate differences, each replicate re-ranking the same drawn
+        # encoders for both correlations.
+        rng = np.random.default_rng(4)
+        target = rng.normal(size=15)
+        a = target + rng.normal(scale=0.5, size=15)
+        b = target + rng.normal(scale=2.0, size=15)
+        draws = encoder_bootstrap_draws(15, n_boot=400, seed=0)
+        ra = spearman_inference(a, target, draws=draws)
+        rb = spearman_inference(b, target, draws=draws)
+
+        difference = ra.difference_ci(rb)
+
+        direct = np.array(
+            [
+                spearmanr(a[i], target[i]).statistic - spearmanr(b[i], target[i]).statistic
+                for i in draws
+            ]
+        )
+        lo, hi = np.nanpercentile(direct, [2.5, 97.5])
+        point = spearmanr(a, target).statistic - spearmanr(b, target).statistic
+        assert difference.point == pytest.approx(point)
+        assert (difference.lo, difference.hi) == pytest.approx((lo, hi))
+        assert (difference.level, difference.n_boot) == (0.95, 400)
+
+    def test_differencing_unpaired_inferences_is_rejected(self) -> None:
+        x, y = _toy_encoder_metrics(12, seed=2)
+        with pytest.raises(ValueError, match="draw"):
+            spearman_inference(x, y, n_boot=100).difference_ci(spearman_inference(x, y, n_boot=50))
+        with pytest.raises(ValueError, match="level"):
+            spearman_inference(x, y, n_boot=50).difference_ci(
+                spearman_inference(x, y, n_boot=50, level=0.9)
+            )
+
     def test_malformed_draws_are_rejected(self) -> None:
         x, y = _toy_encoder_metrics(6)
         with pytest.raises(ValueError, match="shape"):
