@@ -9,12 +9,13 @@ size-matched random pool. Two consumers read its output and must agree:
   grade counts as macros.
 
 Both go through :func:`load`, which fails when the study has not been run, was run on a
-different benchmark run than the paper reports, or no longer supports the caption's
-claims. It never lets a consumer warn and skip.
+different benchmark run than the paper reports (or on an earlier version of it), or no
+longer supports the caption's claims. It never lets a consumer warn and skip.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import sys
@@ -82,6 +83,15 @@ def load(root: Path = REPO) -> GradeMatched:
         raise CaptionClaimError(
             f"the grade-matched study read {meta['run_rel']}, but the paper reports "
             f"{meta['benchmark']} from {entry.run_rel}. {_RERUN}."
+        )
+    # An in-place re-run keeps run_rel, so the run's data is fingerprinted too.
+    per_sample = Path(root) / entry.per_sample_rel
+    if not per_sample.is_file():
+        raise CaptionClaimError(f"{per_sample} absent: the study's run is gone. {_RERUN}.")
+    if hashlib.sha256(per_sample.read_bytes()).hexdigest() != meta.get("per_sample_sha256"):
+        raise CaptionClaimError(
+            f"{per_sample} is not the file the grade-matched study read: the run was redone "
+            f"after the study. {_RERUN}."
         )
     if not meta.get("full_pool_reproduces_run"):
         raise CaptionClaimError(f"{meta_path} does not record the full-pool check. {_RERUN}.")

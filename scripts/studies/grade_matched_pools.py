@@ -430,6 +430,7 @@ def _model_first(frame: pd.DataFrame) -> pd.DataFrame:
 
 def main(argv: Sequence[str] | None = None) -> int:
     import argparse
+    import hashlib
     import json
     from concurrent.futures import ProcessPoolExecutor
     from multiprocessing import get_context
@@ -468,8 +469,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     providers = sorted(manifest["confounder"].unique())
     groups = [(p, g) for p in providers for g in GRADES]
 
+    per_sample_path = REPO / entry.per_sample_rel
+    per_sample_sha256 = hashlib.sha256(per_sample_path.read_bytes()).hexdigest()
     per_sample = pd.read_csv(
-        results / "per_sample_metrics.csv",
+        per_sample_path,
         float_precision="round_trip",
         dtype={"label": str, "sample_id": str},
     )
@@ -544,6 +547,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     meta = {
         "benchmark": BENCHMARK,
         "run_rel": entry.run_rel,
+        # The run's per-sample file, read by the full-pool check: an in-place re-run of
+        # the benchmark keeps run_rel but changes this, so the paper basis checks it.
+        "per_sample_sha256": per_sample_sha256,
         "roster": roster,
         "headline_m": headline_m,
         "search": {

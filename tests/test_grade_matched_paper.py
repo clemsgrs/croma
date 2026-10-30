@@ -6,6 +6,7 @@ Everything renders from a synthetic study directory under ``tmp_path``; no ``pap
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -128,6 +129,10 @@ def _write_study(
 ) -> Path:
     study = root / basis.STUDY_REL
     study.mkdir(parents=True)
+    # The run's per-sample file, whose fingerprint the study records.
+    per_sample = root / by_benchmark("panda").per_sample_rel
+    per_sample.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"model": list(roster), "croma_m5": 0.1}).to_csv(per_sample, index=False)
     rows = []
     for model in roster:
         rows.append({"model": model, "grade": "all", "n_anchors": 500, **_POOLED[model]})
@@ -137,6 +142,7 @@ def _write_study(
     meta = {
         "benchmark": "panda",
         "run_rel": run_rel or by_benchmark("panda").run_rel,
+        "per_sample_sha256": hashlib.sha256(per_sample.read_bytes()).hexdigest(),
         "roster": list(roster),
         "headline_m": 5,
         "seed": 0,
@@ -174,6 +180,26 @@ class TestBasis:
         _write_study(tmp_path, run_rel="output/metrics/median-k/panda")
 
         with pytest.raises(CaptionClaimError, match="median-k"):
+            basis.load(tmp_path)
+
+    def test_a_rerun_of_the_benchmark_in_place_leaves_the_study_stale(self, tmp_path):
+        # Re-running panda in place keeps its run_rel, so the path cannot tell; the study
+        # records the fingerprint of the per-sample file its full-pool check read.
+        _write_study(tmp_path)
+        per_sample = tmp_path / by_benchmark("panda").per_sample_rel
+        rerun = pd.concat(
+            [pd.read_csv(per_sample), pd.DataFrame({"model": ["CHIEF"], "croma_m5": [0.2]})]
+        )
+        rerun.to_csv(per_sample, index=False)
+
+        with pytest.raises(CaptionClaimError, match="per_sample_metrics.csv"):
+            basis.load(tmp_path)
+
+    def test_a_study_whose_run_lost_its_per_sample_file_is_stale(self, tmp_path):
+        _write_study(tmp_path)
+        (tmp_path / by_benchmark("panda").per_sample_rel).unlink()
+
+        with pytest.raises(CaptionClaimError, match="per_sample_metrics.csv"):
             basis.load(tmp_path)
 
     def test_the_caption_balance_claim_is_checked_not_assumed(self, tmp_path):
@@ -267,8 +293,14 @@ class TestMacros:
         assert r"\newcommand{\GradeMatchedRadboudGradeFiveSlides}{50}" in lines
         assert sum("Slides}" in line for line in lines) == 10
 
-    def test_the_values_file_fails_without_the_study(self, tmp_path):
+    def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
+        import _overlap
         import generate_paper_values as gpv
+
+        # Two blocks before this one read live runs relative to the repo, not ``root``;
+        # stub them so the test sees only the missing study, on a clean clone too.
+        monkeypatch.setattr(gpv, "_load_rank_frontier_change_macros", lambda: [])
+        monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
 
         with pytest.raises(FileNotFoundError, match="grade_matched_pools.py"):
             gpv.build([], tmp_path, "auto")
