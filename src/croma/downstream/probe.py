@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import random
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -130,6 +131,7 @@ def probe_sweep(
     iterations: int = 20,
     seed: int = 1000,
     validation_fraction: float | None = None,
+    train_rows_per_slide: int | None = None,
 ) -> np.ndarray:
     """Run the confounder-biased probe sweep and return its accuracy matrix.
 
@@ -170,6 +172,17 @@ def probe_sweep(
             of the cell's training rows, which is the faithful setting for a sweep over
             patches. It underflows to zero when a slide *is* one row, which is why a
             slide-level sweep has to state the fraction instead.
+        train_rows_per_slide: How many of its rows each *training* slide contributes, for
+            a low-data sweep. ``None``, the default, trains on every row. Set, every
+            training slide keeps that many of its rows, and every cell's validation slice
+            shrinks by the same factor ``train_rows_per_slide / rows_per_slide`` (rounded
+            down, but never below one row where the full-tile slice has any). Which slides
+            train, which rows are held out and every test set are exactly the full-tile
+            sweep's, and since every cell is thinned alike, so is the schedule's Cramér's
+            V. The rows kept are drawn from the replicate's seed, through a generator of
+            their own that is consulted only after the slides are arranged, so they move
+            nothing the full-tile sweep decides. Equal to ``rows_per_slide``, it is the
+            full-tile sweep, bit for bit.
 
     Returns:
         The ``(n_splits, iterations)`` matrix of balanced accuracies on the held-out
@@ -185,7 +198,9 @@ def probe_sweep(
             training, validation or test rows. Those last few are the same fault wearing
             different clothes: a schedule and a cohort that were not written for each
             other, which would otherwise run to completion at a confounder bias nobody
-            asked for.
+            asked for. Also if ``train_rows_per_slide`` is below one or above
+            ``rows_per_slide``, or is set while some cell's training block is not a whole
+            number of slides.
     """
     return probe_sweep_over_test_sets(
         embeddings,
@@ -196,6 +211,7 @@ def probe_sweep(
         iterations=iterations,
         seed=seed,
         validation_fraction=validation_fraction,
+        train_rows_per_slide=train_rows_per_slide,
     )[IN_DOMAIN]
 
 
@@ -211,6 +227,7 @@ def probe_sweep_over_test_sets(
     seed: int = 1000,
     validation_fraction: float | None = None,
     arrange_slides: SlideArrangement | None = None,
+    train_rows_per_slide: int | None = None,
 ) -> dict[str, np.ndarray]:
     """Run one sweep and score every probe it trains on more than one test set.
 
@@ -245,6 +262,9 @@ def probe_sweep_over_test_sets(
             reordered; it may draw from the generator it is given, and *must* draw before
             it shuffles for its sweep to match a driver that does, since the two share one
             stream. It may not add, drop or break up a slide.
+        train_rows_per_slide: As :func:`probe_sweep`. The rows are thinned after the
+            arrangement has run, so an arrangement sees, and decides, exactly what it would
+            in the full-tile sweep.
 
     Returns:
         ``{"in_domain": matrix}`` plus one ``(n_splits, iterations)`` matrix per named
@@ -258,6 +278,138 @@ def probe_sweep_over_test_sets(
             ``arrange_slides`` that returns anything but a rearrangement of the slides it
             was handed.
     """
+    accuracies, _ = _sweep(
+        embeddings,
+        confounders,
+        labels,
+        schedule=schedule,
+        test_sets=test_sets,
+        rows_per_slide=rows_per_slide,
+        iterations=iterations,
+        seed=seed,
+        validation_fraction=validation_fraction,
+        arrange_slides=arrange_slides,
+        train_rows_per_slide=train_rows_per_slide,
+    )
+    return accuracies
+
+
+@dataclass(frozen=True)
+class ProbeSweepRecord:
+    """One sweep's accuracy matrices, and what every probe it trained predicted.
+
+    Every array that has a split and a replicate axis puts them first and in that order,
+    as the accuracy matrices do, so ``margins[name][s, i]`` belongs to the probe scored in
+    ``accuracies[name][s, i]``.
+
+    Attributes:
+        accuracies: Exactly what :func:`probe_sweep_over_test_sets` returns for the same
+            arguments -- ``{"in_domain": matrix, **named}``, each ``(n_splits, iterations)``.
+        held_out: ``(iterations, n_held_out)`` row indices into the caller's ``embeddings``:
+            replicate ``i``'s held-out in-domain rows, in the order its margins list them.
+            One row set per replicate, because the held-out tail is the same at every split.
+        margins: ``{name: (n_splits, iterations, n_rows, n_columns)}``, every probe's
+            ``decision_function`` on each test set -- under ``"in_domain"`` on the
+            replicate's ``held_out`` rows, under a named test set on that set's rows in the
+            caller's order. A binary probe has one column, the margin towards
+            ``classes[1]``; otherwise there is one column per entry of ``classes``.
+        best_c: ``(n_splits, iterations)`` regularisation strength each probe was refitted
+            with, as its validation search chose it.
+        classes: The class indices the decision columns refer to, shared by every probe.
+    """
+
+    accuracies: dict[str, np.ndarray]
+    held_out: np.ndarray
+    margins: dict[str, np.ndarray]
+    best_c: np.ndarray
+    classes: np.ndarray
+
+
+def probe_sweep_with_predictions(
+    embeddings: ArrayLike,
+    confounders: ArrayLike,
+    labels: ArrayLike,
+    *,
+    schedule: Sequence[SplitPlan],
+    test_sets: Mapping[str, tuple[ArrayLike, ArrayLike]] | None = None,
+    rows_per_slide: int = 1,
+    iterations: int = 20,
+    seed: int = 1000,
+    validation_fraction: float | None = None,
+    arrange_slides: SlideArrangement | None = None,
+    train_rows_per_slide: int | None = None,
+) -> ProbeSweepRecord:
+    """Run one sweep and keep every probe's predictions beside its scores.
+
+    The sweep :func:`probe_sweep_over_test_sets` runs, with the same arguments, the same
+    probes and the same accuracy matrices to the bit. A probe is discarded once it is
+    scored, so whatever a later analysis needs to know about *which* rows it got wrong has
+    to be taken while it exists: this form keeps each probe's decision margins on every
+    test set, the held-out rows they belong to, and the regularisation it was refitted
+    with. Keeping them consumes no random numbers and refits nothing.
+
+    Args:
+        embeddings: As :func:`probe_sweep`.
+        confounders: As :func:`probe_sweep`.
+        labels: As :func:`probe_sweep`.
+        schedule: As :func:`probe_sweep`. Every split has to put the held-out tail in the
+            same place -- one ``max_train_slides`` -- for a replicate's rows to be one set.
+        test_sets: As :func:`probe_sweep_over_test_sets`.
+        rows_per_slide: As :func:`probe_sweep`.
+        iterations: As :func:`probe_sweep`.
+        seed: As :func:`probe_sweep`.
+        validation_fraction: As :func:`probe_sweep`.
+        arrange_slides: As :func:`probe_sweep_over_test_sets`.
+        train_rows_per_slide: As :func:`probe_sweep`.
+
+    Returns:
+        A :class:`ProbeSweepRecord`.
+
+    Raises:
+        ValueError: Everything :func:`probe_sweep_over_test_sets` raises, plus a schedule
+            whose splits disagree about where the held-out tail starts, and probes that
+            were trained on different sets of classes, whose decision columns would not
+            line up.
+    """
+    accuracies, log = _sweep(
+        embeddings,
+        confounders,
+        labels,
+        schedule=schedule,
+        test_sets=test_sets,
+        rows_per_slide=rows_per_slide,
+        iterations=iterations,
+        seed=seed,
+        validation_fraction=validation_fraction,
+        arrange_slides=arrange_slides,
+        train_rows_per_slide=train_rows_per_slide,
+        record=True,
+    )
+    return ProbeSweepRecord(
+        accuracies=accuracies,
+        held_out=np.asarray(log.held_out, dtype=np.int64),
+        margins=log.margins,
+        best_c=log.best_c,
+        classes=log.classes,
+    )
+
+
+def _sweep(
+    embeddings: ArrayLike,
+    confounders: ArrayLike,
+    labels: ArrayLike,
+    *,
+    schedule: Sequence[SplitPlan],
+    test_sets: Mapping[str, tuple[ArrayLike, ArrayLike]] | None,
+    rows_per_slide: int,
+    iterations: int,
+    seed: int,
+    validation_fraction: float | None,
+    arrange_slides: SlideArrangement | None,
+    train_rows_per_slide: int | None = None,
+    record: bool = False,
+) -> tuple[dict[str, np.ndarray], _PredictionLog | None]:
+    """The one sweep loop every public form runs; ``record`` also keeps every prediction."""
     features, confounder_of_row, label_of_row = _validated_rows(embeddings, confounders, labels)
     named_tests = _validated_test_sets(test_sets, n_features=features.shape[1])
     cells = _cells(confounder_of_row, label_of_row)
@@ -272,27 +424,100 @@ def probe_sweep_over_test_sets(
         raise ValueError(f"iterations must be at least 1, got {iterations}")
     if iterations > _SEED_POOL:
         raise ValueError(f"iterations must be at most {_SEED_POOL}, got {iterations}")
+    if train_rows_per_slide is not None:
+        _validate_thinning(plans, rows_per_slide, train_rows_per_slide)
 
     arrangement = _shuffle_slides if arrange_slides is None else arrange_slides
     names = [IN_DOMAIN, *named_tests]
     accuracies = {name: np.empty((len(plans), iterations), dtype=float) for name in names}
     replicate_seeds = random.Random(seed).sample(range(0, _SEED_POOL), iterations)
+    log = _PredictionLog(n_splits=len(plans), iterations=iterations) if record else None
 
     for column, replicate_seed in enumerate(replicate_seeds):
         _arrange(cells, rows_per_slide, arrangement, random.Random(replicate_seed))
+        thinning = (
+            None
+            if train_rows_per_slide is None
+            else _Thinning(
+                cells,
+                rows_per_slide=rows_per_slide,
+                train_rows_per_slide=train_rows_per_slide,
+                n_rows=len(features),
+                replicate_seed=replicate_seed,
+            )
+        )
         for row, plan in enumerate(plans):
-            train, validation, held_out = plan.slice(cells)
-            _, _, scores = train_logistic_regression(
+            train, validation, held_out = plan.slice(cells, thinning)
+            test_xs = [features[held_out], *(test_x for test_x, _ in named_tests.values())]
+            probe, best_c, scores = train_logistic_regression(
                 features[train],
                 label_of_row[train],
                 features[validation],
                 label_of_row[validation],
-                [features[held_out], *(test_x for test_x, _ in named_tests.values())],
+                test_xs,
                 [label_of_row[held_out], *(test_y for _, test_y in named_tests.values())],
             )
             for name, score in zip(names, scores):
                 accuracies[name][row, column] = score
-    return accuracies
+            if log is not None:
+                log.add(row, column, probe, best_c, held_out, dict(zip(names, test_xs)))
+    return accuracies, log
+
+
+class _PredictionLog:
+    """Collects what each probe of a recording sweep predicted, in the record's layout.
+
+    It reads the trained probe and nothing else: ``decision_function`` is deterministic and
+    draws no random numbers, so a sweep that keeps a log is the sweep that does not.
+    """
+
+    def __init__(self, *, n_splits: int, iterations: int) -> None:
+        self.n_splits = n_splits
+        self.iterations = iterations
+        self.best_c = np.empty((n_splits, iterations), dtype=float)
+        self.held_out: list[list[int]] = []
+        self.margins: dict[str, np.ndarray] = {}
+        self.classes: np.ndarray | None = None
+
+    def add(
+        self,
+        split: int,
+        replicate: int,
+        probe,
+        best_c: float,
+        held_out: list[int],
+        test_xs: dict[str, np.ndarray],
+    ) -> None:
+        if split == 0:
+            self.held_out.append(list(held_out))
+        elif held_out != self.held_out[replicate]:
+            # One held-out row set per replicate is what makes the record's rows joinable
+            # across splits; a schedule whose splits disagree on max_train_slides would put
+            # the tail somewhere else at every split.
+            raise ValueError(
+                f"split {split}: the held-out rows differ from split 0's, so the schedule "
+                "moves the held-out tail between splits; every split must share one "
+                "max_train_slides for the predictions to be recorded per row"
+            )
+        classes = np.asarray(probe.classes_)
+        if self.classes is None:
+            self.classes = classes
+        elif not np.array_equal(classes, self.classes):
+            raise ValueError(
+                f"split {split}, replicate {replicate}: the probe was trained on classes "
+                f"{classes.tolist()}, not {self.classes.tolist()} like the first one, so "
+                "its decision columns would not line up with the other probes'"
+            )
+        self.best_c[split, replicate] = best_c
+        for name, test_x in test_xs.items():
+            margins = np.asarray(probe.decision_function(test_x), dtype=float)
+            if margins.ndim == 1:
+                margins = margins[:, None]
+            if name not in self.margins:
+                self.margins[name] = np.empty(
+                    (self.n_splits, self.iterations, *margins.shape), dtype=float
+                )
+            self.margins[name][split, replicate] = margins
 
 
 class _Plan:
@@ -321,23 +546,104 @@ class _Plan:
                 max_train_slides + round(validation_fraction * max_train_slides) + 1
             ) * rows_per_slide
 
-    def slice(self, cells: list[list[list[int]]]) -> tuple[list[int], list[int], list[int]]:
+    def slice(
+        self, cells: list[list[list[int]]], thinning: _Thinning | None = None
+    ) -> tuple[list[int], list[int], list[int]]:
         """Cut this split's training, validation and held-out row indices out of the cells.
 
         Training rows come off the front of each cell, validation directly behind them, and
         the held-out tail from a fixed offset every split shares -- so the test rows are the
-        same rows at every confounder bias, and only the training composition moves.
+        same rows at every confounder bias, and only the training composition moves. A
+        ``thinning`` keeps a subset of the training and validation rows it would cut, and
+        leaves the held-out tail alone.
         """
-        train = [row for i, j, take in self.split_map for row in cells[i][j][:take]]
-        validation = [
-            row
-            for (i, j, take), reserve in zip(self.split_map, self.validation_take)
-            for row in cells[i][j][take : take + reserve]
-        ]
+        if thinning is None:
+            train = [row for i, j, take in self.split_map for row in cells[i][j][:take]]
+            validation = [
+                row
+                for (i, j, take), reserve in zip(self.split_map, self.validation_take)
+                for row in cells[i][j][take : take + reserve]
+            ]
+        else:
+            train = [
+                row
+                for i, j, take in self.split_map
+                for row in cells[i][j][:take]
+                if thinning.kept[row]
+            ]
+            validation = [
+                row
+                for (i, j, take), reserve in zip(self.split_map, self.validation_take)
+                for row in thinning.validation(cells[i][j][take : take + reserve])
+            ]
         held_out = [
             row for cell_row in cells for cell in cell_row for row in cell[self.first_held_out :]
         ]
         return train, validation, held_out
+
+
+class _Thinning:
+    """One replicate's reduced-tile draw: which rows of each slide train, and validate.
+
+    Drawn once the replicate's slides are arranged, from a generator of its own seeded off
+    the replicate seed, so the arrangement -- and with it every split's slides and the
+    held-out tail -- is the full-tile sweep's. Each slide keeps the same rows at every
+    split, so splits still differ only in which slides they train on.
+    """
+
+    def __init__(
+        self,
+        cells: list[list[list[int]]],
+        *,
+        rows_per_slide: int,
+        train_rows_per_slide: int,
+        n_rows: int,
+        replicate_seed: int,
+    ) -> None:
+        # A child stream of the replicate seed, not the replicate's own generator: the
+        # arrangement has already drawn from that one, and nothing here may move it.
+        self.rng = np.random.default_rng(np.random.SeedSequence(replicate_seed, spawn_key=(0,)))
+        self.rows_per_slide = rows_per_slide
+        self.train_rows_per_slide = train_rows_per_slide
+        self.kept = np.zeros(n_rows, dtype=bool)
+        for cell_row in cells:
+            for cell in cell_row:
+                for start in range(0, len(cell), rows_per_slide):
+                    slide = cell[start : start + rows_per_slide]
+                    picked = self.rng.choice(
+                        len(slide), size=min(train_rows_per_slide, len(slide)), replace=False
+                    )
+                    self.kept[[slide[position] for position in picked]] = True
+
+    def validation(self, rows: list[int]) -> list[int]:
+        """A cell's full-tile validation slice, shrunk by the training factor.
+
+        Rounded down, as PathoROB's own validation rule is, but never to zero: a cell that
+        validates at full tiles keeps at least one row, or the regularisation search would
+        lose that cell altogether.
+        """
+        if not rows:
+            return []
+        size = max(1, len(rows) * self.train_rows_per_slide // self.rows_per_slide)
+        picked = np.sort(self.rng.choice(len(rows), size=size, replace=False))
+        return [rows[position] for position in picked]
+
+
+def _validate_thinning(plans: list[_Plan], rows_per_slide: int, train_rows_per_slide: int) -> None:
+    if not 1 <= train_rows_per_slide <= rows_per_slide:
+        raise ValueError(
+            f"train_rows_per_slide must lie in [1, rows_per_slide = {rows_per_slide}], got "
+            f"{train_rows_per_slide}: a slide cannot contribute fewer than one row, nor more "
+            "than it carries"
+        )
+    for split, plan in enumerate(plans):
+        for i, j, take in plan.split_map:
+            if take % rows_per_slide:
+                raise ValueError(
+                    f"split {split}: cell ({i}, {j}) trains on {take} rows, which is not a "
+                    f"whole number of {rows_per_slide}-row slides, so it has no slides to "
+                    "thin to train_rows_per_slide rows each"
+                )
 
 
 def _validated_rows(
