@@ -1,9 +1,10 @@
 """Shared basis for the robustness fine-tune vs parent artifacts (``tab:finetune-pairs``).
 
 The table and the ``\\FineTune...`` macros both read the study CSV through :func:`load`, which
-fails when the study was never run or no longer matches the pairs ``model_metadata.csv``
-declares. A missing input therefore fails the paper build instead of silently dropping the
-macros a sentence cites.
+fails when the study was never run, no longer matches the pairs ``model_metadata.csv``
+declares, or was computed from a benchmark run or APD table that has since been redone. A
+missing or stale input therefore fails the paper build instead of silently dropping the
+macros a sentence cites or rendering numbers from superseded runs.
 """
 
 from __future__ import annotations
@@ -39,12 +40,22 @@ MACRO_STATS = (
 _DIGITS = ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine")
 
 
-def load(path: Path = CSV, *, metadata: pd.DataFrame | None = None) -> pd.DataFrame:
-    """The study CSV, checked against the pairs and cohorts the metadata now declares."""
+def load(
+    path: Path = CSV, *, metadata: pd.DataFrame | None = None, root: Path = REPO
+) -> pd.DataFrame:
+    """The study CSV, checked against the pairs the metadata declares and the inputs it read.
+
+    The cohorts' runs and the APD study table resolve under ``root``, through
+    ``paper_manifest`` as it stands now. Every row records the sha256 of the files it was
+    computed from (``study.input_rels``); a file that is gone or hashes differently was
+    redone after the study (an encoder joined, the median k moved), so the ranks, k and
+    differences the paper would render from it are stale.
+    """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"missing {path}: {REMEDY}")
-    frame = pd.read_csv(path)
+    fingerprints = {c for b in study.BENCHMARKS for c in study.input_rels(b)}
+    frame = pd.read_csv(path, dtype={column: str for column in fingerprints})
     pairs = study.finetune_pairs(study.read_metadata() if metadata is None else metadata)
     expected = [(p.finetune, p.parent, b) for p in pairs for b in study.BENCHMARKS]
     found = list(zip(frame["finetune"], frame["parent"], frame["benchmark"]))
@@ -53,7 +64,34 @@ def load(path: Path = CSV, *, metadata: pd.DataFrame | None = None) -> pd.DataFr
             f"{path} holds (fine-tune, parent, cohort) rows {found}, but model_metadata.csv "
             f"now declares {expected}: {REMEDY}"
         )
+    _require_current_inputs(frame, path, Path(root))
     return frame
+
+
+def _require_current_inputs(frame: pd.DataFrame, path: Path, root: Path) -> None:
+    """Fail unless each row's input fingerprints match the files under ``root`` now."""
+    digests: dict[Path, str] = {}
+    for benchmark, rows in frame.groupby("benchmark", sort=False):
+        for column, rel in study.input_rels(benchmark).items():
+            if column not in rows.columns:
+                raise CaptionClaimError(
+                    f"{path} records no {column}, so it cannot be checked against the inputs "
+                    f"it was computed from: {REMEDY}"
+                )
+            source = root / rel
+            if source not in digests:
+                if not source.is_file():
+                    raise CaptionClaimError(
+                        f"{source} is absent, so the {benchmark} rows of {path} cannot be "
+                        f"checked against it: {REMEDY}"
+                    )
+                digests[source] = study.sha256(source)
+            if set(rows[column]) != {digests[source]}:
+                raise CaptionClaimError(
+                    f"{source} is not the file the {benchmark} rows of {path} were computed "
+                    f"from: it was redone after the study, so their ranks, k and differences "
+                    f"are stale: {REMEDY}"
+                )
 
 
 def signed(value: float, decimals: int) -> str:

@@ -9,6 +9,7 @@ names a model.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 from dataclasses import dataclass
@@ -361,7 +362,29 @@ N_BOOT = 2000
 LEVEL = 0.95
 SEED = 12345
 OUT_CSV = REPO / "output" / "studies" / "finetune-pairs" / "finetune_pairs.csv"
+#: The APD study table (``scripts/studies/apd``) the nIPD points must reproduce.
+APD_CSV_REL = "output/studies/apd/apd.csv"
 _PER_SAMPLE_COLUMNS = ["model", "sample_id", "group_id", "label", "confounder", HEADLINE_COL]
+
+
+def input_rels(benchmark: str) -> dict[str, str]:
+    """The repo-relative files a cohort's rows are computed from, by fingerprint column.
+
+    Each row records the sha256 of these files: the cohort's ``metrics.csv`` in the run
+    ``paper_manifest`` names, and the APD study table. A benchmark or APD re-run that keeps
+    the pairs (an encoder joins, the median k moves) changes one of them, and
+    ``scripts/repro/_finetune_pairs.load`` recomputes the fingerprints to refuse the stale
+    study. The per-sample file is not fingerprinted: it is large, and the study already
+    refuses per-sample points that do not reproduce ``metrics.csv``.
+    """
+    from paper_manifest import by_benchmark
+
+    return {"metrics_sha256": by_benchmark(benchmark).metrics_rel, "apd_sha256": APD_CSV_REL}
+
+
+def sha256(path: Path) -> str:
+    """The hex sha256 of a file's bytes."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _apd_dataset(benchmark: str) -> str:
@@ -373,8 +396,10 @@ def _apd_dataset(benchmark: str) -> str:
     return keys[0]
 
 
-def _apd_inputs(benchmark: str, models: list[str]) -> tuple[dict, pd.DataFrame, dict]:
-    """The APD cells, study rows and nIPD integration settings for one cohort."""
+def _apd_inputs(
+    benchmark: str, models: list[str], table_path: Path
+) -> tuple[dict, pd.DataFrame, dict]:
+    """The APD cells, study rows (from ``table_path``) and nIPD settings for one cohort."""
     from loaders import DATASETS, STUDY_DIR, training_correlations
 
     dataset = _apd_dataset(benchmark)
@@ -383,7 +408,7 @@ def _apd_inputs(benchmark: str, models: list[str]) -> tuple[dict, pd.DataFrame, 
         path = STUDY_DIR / dataset / f"{model}.json"
         if path.exists():
             cells[model] = json.loads(path.read_text())
-    table = pd.read_csv(STUDY_DIR / "apd.csv", keep_default_na=False, na_values=[])
+    table = pd.read_csv(table_path, keep_default_na=False, na_values=[])
     settings = dict(
         cramers_v=training_correlations(dataset),
         chance=1.0 / len(DATASETS[dataset]["biological_classes"]),
@@ -395,7 +420,8 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
     """One row per fine-tune x cohort: representation scores, nIPD and per-sample shifts.
 
     Each cohort's run is the one ``paper_manifest`` names, so the study inherits the
-    protocol the paper reports and never names one.
+    protocol the paper reports and never names one. Each row ends with the sha256 of the
+    files it was computed from (:func:`input_rels`).
     """
     from paper_manifest import by_benchmark
 
@@ -407,7 +433,9 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
     frames = []
     for benchmark in BENCHMARKS:
         entry = by_benchmark(benchmark)
-        metrics = pd.read_csv(REPO / entry.metrics_rel)
+        inputs = {column: REPO / rel for column, rel in input_rels(benchmark).items()}
+        fingerprints = {column: sha256(path) for column, path in inputs.items()}
+        metrics = pd.read_csv(inputs["metrics_sha256"])
         _require_roster(pairs, set(metrics["model"].astype(str)), benchmark)
         per_sample = pd.read_csv(REPO / entry.per_sample_rel, usecols=_PER_SAMPLE_COLUMNS)
         per_sample = per_sample[per_sample["model"].isin(models)]
@@ -421,7 +449,7 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
             seed=seed,
             level=level,
         )
-        cells, apd_rows, settings = _apd_inputs(benchmark, models)
+        cells, apd_rows, settings = _apd_inputs(benchmark, models, inputs["apd_sha256"])
         downstream = paired_downstream(
             pairs,
             cells,
@@ -432,7 +460,8 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
             level=level,
             **settings,
         )
-        frames.append(represent.merge(downstream, on=["benchmark", "finetune"], validate="1:1"))
+        merged = represent.merge(downstream, on=["benchmark", "finetune"], validate="1:1")
+        frames.append(merged.assign(**fingerprints))
     order = {p.finetune: i for i, p in enumerate(pairs)}
     out = pd.concat(frames, ignore_index=True)
     out = out.sort_values(

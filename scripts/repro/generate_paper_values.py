@@ -695,14 +695,14 @@ def _load_rank_frontier_macros() -> list[str]:
 def _load_finetune_pair_macros(root: Path) -> list[str]:
     """Fine-tune minus parent differences (supp tab:finetune-pairs).
 
-    Unconditional: ``_finetune_pairs.load`` raises when the study is missing or no longer
-    matches the metadata's pairs, so a missing input fails the build instead of dropping
-    macros a sentence may cite.
+    Unconditional: ``_finetune_pairs.load`` raises when the study is missing, no longer
+    matches the metadata's pairs, or predates a re-run of the inputs it read, so a missing or
+    stale input fails the build instead of dropping or staling macros a sentence may cite.
     """
     import _finetune_pairs
 
     path = root / _finetune_pairs.CSV.relative_to(_finetune_pairs.REPO)
-    return _finetune_pairs.macro_lines(_finetune_pairs.load(path))
+    return _finetune_pairs.macro_lines(_finetune_pairs.load(path, root=root))
 
 
 def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
