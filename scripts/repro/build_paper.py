@@ -125,6 +125,11 @@ STUDIES = [
         None,
         "run scripts/studies/auc/sweep.py, then scripts/studies/auc/report.py",
     ),
+    # tab:low-data (shortcut susceptibility with fewer training tiles), from the probe-records
+    # reductions that also give tab:nipd-auroc its sensitivity and specificity rows. No
+    # required input: a missing or stale study fails the build -- _probe_reductions.load
+    # raises, and generate_paper_values.py fails on the same study for its macros.
+    ("generate_low_data_table.py", None, "run scripts/studies/probe_reductions.py"),
     # tab:slide-vs-meanpool. Skipped by name until the study has been evaluated; once it
     # has, a pair the table renders without study output fails the generator, and so does a
     # declared pair left out that the study did not record as not run, with a reason.

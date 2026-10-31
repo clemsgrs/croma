@@ -102,6 +102,10 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # records of the tile cohorts and PCaBiop, then the montage drawn from that study. The
     # records skip any cell already on disk and valid, so a re-run recomputes only what changed.
     ("probe-records", "scripts/studies/apd/probe_records.py", []),
+    # The records reduced to coverage, sensitivity and specificity, and the low-data summary
+    # (tab:low-data, the sensitivity rows of tab:nipd-auroc). It also reads the APD cells and
+    # the bootstrap replicates, both written above.
+    ("probe-reductions", "scripts/studies/probe_reductions.py", []),
     ("sample-shortcut", "scripts/studies/sample_shortcut.py", []),
     ("margin-montage", "scripts/repro/figures/margin_montage_figure.py", []),
     # tab:slide-vs-meanpool. Prerequisite outside this pipeline: the GPU re-extraction

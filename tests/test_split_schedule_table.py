@@ -9,6 +9,7 @@ by hand from PathoROB's published Camelyon schedule and croma's PCaBiop schedule
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 import sys
 from pathlib import Path
@@ -92,17 +93,33 @@ def test_pcabiop_uses_the_explicit_slide_level_validation_fraction(pcabiop_metad
     assert pcabiop.ood_pool == schedule.Pool(("PAR",), slides=324, tiles=324)
 
 
-def test_a_tiles_per_slide_override_rescales_tiles_but_not_slides(camelyon_metadata):
+def test_a_tiles_per_slide_override_thins_training_but_keeps_the_full_id_pool(camelyon_metadata):
     reduced = schedule.schedule("camelyon", camelyon_metadata, tiles_per_slide=30)
 
     assert reduced.tiles_per_slide == 30
-    assert reduced.id_pool.tiles == 68 * 30
+    # The reduced sweep scores the held-out tail at full tiles, so the pool it draws on is
+    # the cohort's: 68 slides of 300 tiles, not of 30.
+    assert reduced.id_pool.tiles == 20400
     assert [s.train for s in reduced.splits] == [840] * 8
     assert all(s.test_slides == (2, 2) for s in reduced.splits)
     assert [s.unfavourable for s in reduced.splits] == list(range(7, 15))
 
 
-def test_tcga_lists_both_favourable_cell_types():
+def test_a_reduced_tile_override_validates_as_the_thinned_sweep_does(camelyon_metadata):
+    # The reduced sweep keeps the full sweep's slices and shrinks each cell's validation
+    # slice by the training factor, rounding down but never below one row. Split 3 trains
+    # 4 slides per favourable cell and 10 per unfavourable one; at full tiles they validate
+    # on 1,200 / 14 = 85 and 3,000 / 14 = 214 rows, so at 3 tiles on 1 and 2 rows each.
+    reduced = schedule.schedule("camelyon", camelyon_metadata, tiles_per_slide=3)
+
+    split = reduced.splits[3]
+    assert (split.favourable, split.unfavourable) == ((4,), 10)
+    assert (split.train, split.validation) == ((2 * 4 + 2 * 10) * 3, 2 * 1 + 2 * 2)
+    # The held-out tail is the full sweep's.
+    assert split.test_slides == (2, 2)
+
+
+def _tcga_metadata(tiles: int):
     cells = {(c, b): 12 for c in range(4) for b in range(4)}
     centres = ["Asterand", "Christiana Healthcare", "Roswell Park", "University of Pittsburgh"]
     classes = [
@@ -112,11 +129,24 @@ def test_tcga_lists_both_favourable_cell_types():
         "Lung_squamous_cell_carcinoma",
     ]
     held_out = ["Cureline", "Greater Poland Cancer Center", "International Genomics Consortium"]
-    md = _metadata(
+    return _metadata(
         {(centres[c], classes[b]): n for (c, b), n in cells.items()},
-        30,
+        tiles,
         {(centre, classes[0]): 1 for centre in [*held_out, "Johns Hopkins"]},
     )
+
+
+def test_a_one_tile_override_keeps_a_validation_row_in_every_cell():
+    # At one tile per slide a cell's full-tile validation slice shrinks below one row, and
+    # the sweep keeps one: the schedule never runs out of validation rows.
+    tcga = schedule.schedule("tcga_4x4", _tcga_metadata(30), tiles_per_slide=1)
+
+    assert all(s.train == 32 for s in tcga.splits)
+    assert tcga.splits[0].validation == 16
+
+
+def test_tcga_lists_both_favourable_cell_types():
+    md = _tcga_metadata(30)
 
     tcga = schedule.schedule("tcga_4x4", md)
 
@@ -182,6 +212,80 @@ def test_the_float_takes_a_tiles_per_slide_override(monkeypatch, camelyon_metada
     assert r"\label{tab:split-schedule-30}" in reduced
 
 
+def _camelyon_only(monkeypatch, camelyon_metadata):
+    monkeypatch.setattr(
+        table,
+        "schedules",
+        lambda root, tiles_per_slide=None: [
+            schedule.schedule(
+                "camelyon",
+                camelyon_metadata,
+                tiles_per_slide=(tiles_per_slide or {}).get("camelyon"),
+            )
+        ],
+    )
+
+
+def _panel_c(tex: str) -> list[list[str]]:
+    panel = tex.split(r"\emph{(c)")[1].split(r"\end{tabular}")[0]
+    rows = [line for line in panel.splitlines()[3:] if line.endswith(r"\\")]
+    return [line.removesuffix(r" \\").split(" & ") for line in rows]
+
+
+def test_the_float_lists_the_reduced_tile_sweeps_the_records_ran(monkeypatch, camelyon_metadata):
+    _camelyon_only(monkeypatch, camelyon_metadata)
+
+    tex = table.build(ROOT)
+
+    # Camelyon was recorded at 30 and 3 of its 300 tiles per slide: 28 training slides per
+    # split, and each cell's full-tile validation slice shrunk by 10 and by 100, never
+    # below one row (worked per split in the override tests above).
+    assert _panel_c(tex) == [["Camelyon", "30", "840", "58--60"], ["", "3", "84", "4--6"]]
+    caption = next(line for line in tex.splitlines() if line.startswith(r"\caption"))
+    assert r"\textbf{c,}" in caption and "never below one row" in caption
+
+
+def _caption_of(monkeypatch, made) -> str:
+    monkeypatch.setattr(table, "schedules", lambda root, tiles_per_slide=None: made)
+    tex = table.build(ROOT, tiles_per_slide={"any": 1}, label="tab:split-schedule-reduced")
+    return next(line for line in tex.splitlines() if line.startswith(r"\caption"))
+
+
+def test_a_one_tile_override_does_not_make_a_tile_cohort_slide_level(monkeypatch, pcabiop_metadata):
+    made = [
+        schedule.schedule("tcga_4x4", _tcga_metadata(30), tiles_per_slide=1),
+        schedule.schedule("pcabiop", pcabiop_metadata),
+    ]
+
+    caption = _caption_of(monkeypatch, made)
+
+    assert " PCaBiop is slide-level, with one embedding per slide" in caption
+    assert "TCGA-4x4 and" not in caption
+
+
+def test_a_reduced_case_block_keeps_its_tiles_and_trains_on_some(monkeypatch, camelyon_metadata):
+    # A case-based cohort under an override: the block is still the cohort's 300 tiles.
+    made = [
+        dataclasses.replace(
+            schedule.schedule("camelyon", camelyon_metadata, tiles_per_slide=30), case_based=True
+        )
+    ]
+
+    caption = _caption_of(monkeypatch, made)
+
+    assert "one case's 300-tile block within a class, of which only 30 tiles train," in caption
+    full = dataclasses.replace(schedule.schedule("camelyon", camelyon_metadata), case_based=True)
+    assert "one case's 300-tile block within a class, since" in _caption_of(monkeypatch, [full])
+
+
+def test_a_reduced_variant_has_no_reduced_tile_panel(monkeypatch, camelyon_metadata):
+    _camelyon_only(monkeypatch, camelyon_metadata)
+
+    tex = table.build(ROOT, tiles_per_slide={"camelyon": 30}, label="tab:split-schedule-30")
+
+    assert r"\emph{(c)" not in tex and r"\textbf{c,}" not in tex
+
+
 @pytest.mark.skipif(
     not (ROOT / "data/pathorob/metadata/camelyon.csv").exists(),
     reason="the APD metadata lives under data/, which is not tracked",
@@ -194,6 +298,19 @@ def test_the_live_schedules_cover_the_four_benchmarks():
     tolkach = live[2]
     assert tolkach.n_classes == 6
     assert tolkach.splits[0].test_slides == (2, 2)
+
+
+@pytest.mark.skipif(
+    not (ROOT / "data/pathorob/metadata/camelyon.csv").exists(),
+    reason="the APD metadata lives under data/, which is not tracked",
+)
+def test_a_live_override_reports_each_cohorts_full_id_pool():
+    # The probe records hold these ID rows at every recorded tile level.
+    reduced = schedule.schedules(
+        ROOT, tiles_per_slide={"camelyon": 30, "tcga_4x4": 1, "tolkach": 10}
+    )
+
+    assert [s.id_pool.tiles for s in reduced] == [20400, 5760, 10800, 1000]
 
 
 def test_an_output_path_outside_the_repository_is_written(monkeypatch, tmp_path):

@@ -129,11 +129,57 @@ def _stack(*lines: str) -> str:
     return r"\begin{tabular}[c]{@{}c@{}}" + r"\\".join(lines) + r"\end{tabular}"
 
 
+def _sens_spec(
+    *,
+    n_ranked: int = 26,
+    n_boot: int = FAST["n_boot"],
+    undefined: dict | None = None,
+    cells: dict | None = None,
+) -> pd.DataFrame:
+    """Sensitivity and specificity correlations shaped like the probe-reductions study's:
+    Camelyon's four in one BH family, PCaBiop's four descriptive with an exact p."""
+    undefined = undefined or {}
+    rows = []
+    for cohort, n, in_family in (("camelyon", n_ranked, True), ("pcabiop", 5, False)):
+        for regime in ("id", "ood"):
+            for target in ("nipd_sens", "nipd_spec"):
+                dropped = undefined.get((cohort, regime, target), "")
+                size = n - len([m for m in dropped.split(";") if m])
+                rows.append(
+                    dict(
+                        analysis="sens_spec",
+                        cohort=cohort,
+                        regime=regime,
+                        target=target,
+                        n=size,
+                        rho=0.5,
+                        ci_lo=0.1,
+                        ci_hi=0.8,
+                        level=0.95,
+                        n_boot=n_boot,
+                        p_value=0.01,
+                        permutation="monte-carlo" if in_family else "exact",
+                        n_permutations=FAST["n_permutations"] if in_family else 120,
+                        in_family=in_family,
+                        q_value=0.02 if in_family else np.nan,
+                        undefined=dropped,
+                    )
+                )
+                for column, value in (cells or {}).get((cohort, regime, target), {}).items():
+                    rows[-1][column] = value
+    if undefined:
+        # An exact p over fewer encoders runs over fewer orderings.
+        for row in rows:
+            if row["undefined"] and row["permutation"] == "exact":
+                row["n_permutations"] = {4: 24, 3: 6}[row["n"]]
+    return pd.DataFrame(rows)
+
+
 class TestTable:
-    def _tex(self, study) -> str:
+    def _tex(self, study, sens_spec=None) -> str:
         import generate_nipd_auroc_table as table
 
-        return table.build(study)
+        return table.build(study, _sens_spec() if sens_spec is None else sens_spec)
 
     def test_columns_are_cohort_by_regime_and_rows_metric_by_score(self, study):
         tex = self._tex(study)
@@ -142,20 +188,69 @@ class TestTable:
         labels = [part.split("}{")[-1].rstrip("} \\") for part in header.split(" & ")[2:]]
         assert labels == ["Camelyon", "TCGA-4x4", "Tolkach-ESCA", "PCaBiop"]
         body = [line for line in tex.splitlines() if r"\begin{tabular}[c]" in line]
-        # Three metrics x two scores, eight cohort-regime cells each...
-        assert [line.split(" & ")[:2] for line in body[:6]] == [
+        # Three metrics x two scores, eight cohort-regime cells each; CRoMa's block adds
+        # nIPD from sensitivity and from specificity on the binary cohorts...
+        assert [line.split(" & ")[:2] for line in body[:8]] == [
             [r"\textbf{\code{CRoMa}}", "AUROC"],
             ["", "Bal.\\ acc."],
+            ["", "Sensitivity"],
+            ["", "Specificity"],
             [r"\code{RI}", "AUROC"],
             ["", "Bal.\\ acc."],
             [r"\code{MaRI}", "AUROC"],
             ["", "Bal.\\ acc."],
         ]
-        assert {line.count(" & ") for line in body[:6]} == {9}
+        assert {line.count(" & ") for line in body[:8]} == {9}
         # ...then the agreement row at the bottom, its label spanning both label columns.
-        assert len(body) == 7
-        assert body[6].startswith(r"\multicolumn{2}{l}{Agreement")
+        assert len(body) == 9
+        assert body[8].startswith(r"\multicolumn{2}{l}{Agreement")
         assert r"\label{tab:nipd-auroc}" in tex
+
+    def test_sensitivity_and_specificity_read_a_dash_on_the_multiclass_cohorts(self, study):
+        cells = _row(self._tex(study), " & Sensitivity")
+
+        # Camelyon ID/OOD, TCGA-4x4 ID/OOD, Tolkach-ESCA ID/OOD, PCaBiop ID/OOD.
+        assert cells[4:8] == ["---"] * 4
+        assert "---" not in cells[2:4] + cells[8:10]
+
+    def test_a_binary_cohort_missing_from_the_sensitivity_rows_is_refused(self, study):
+        # The caption says the dashes mark the multiclass cohorts: a binary cohort the
+        # probe reductions never reached must fail the build, not read as multiclass.
+        sens_spec = _sens_spec()
+
+        with pytest.raises(CaptionClaimError, match="pcabiop"):
+            self._tex(study, sens_spec[sens_spec["cohort"] != "pcabiop"])
+
+    def test_sensitivity_on_camelyon_has_its_interval_and_q_and_on_pcabiop_its_exact_p(self, study):
+        sens_spec = _sens_spec(
+            cells={
+                ("camelyon", "id", "nipd_sens"): dict(
+                    rho=0.932308, ci_lo=0.814704, ci_hi=0.969149, q_value=0.000133
+                ),
+                ("pcabiop", "ood", "nipd_spec"): dict(rho=0.4, p_value=0.75),
+            }
+        )
+        tex = self._tex(study, sens_spec)
+
+        assert _row(tex, " & Sensitivity")[2] == _stack(
+            "$0.93$", r"{\scriptsize$[0.81, 0.97]$}", r"{\scriptsize$q{<}0.001$}"
+        )
+        assert _row(tex, " & Specificity")[9] == _stack("$0.40$", r"{\scriptsize$p{=}0.750$}")
+
+    def test_the_caption_states_the_sensitivity_family_and_any_undefined_encoder(self, study):
+        tex = self._tex(
+            study, _sens_spec(undefined={("pcabiop", "ood", "nipd_spec"): "Prov-GigaPath"})
+        )
+        caption = tex.split(r"\caption{")[1]
+
+        assert "disease class" in caption and "chance $0.5$" in caption
+        assert "own Benjamini--Hochberg family of $4$" in caption
+        assert "Prov-GigaPath" in caption
+        assert "remaining $4$" in caption and "all $24$ orderings" in caption
+
+    def test_sensitivity_resampled_unlike_the_auroc_study_is_refused(self, study):
+        with pytest.raises(CaptionClaimError, match="n_boot"):
+            self._tex(study, _sens_spec(n_boot=FAST["n_boot"] + 1))
 
     def test_a_tile_association_carries_rho_its_interval_and_q(self, study):
         planted = _planted(
@@ -216,7 +311,8 @@ class TestTable:
     def test_the_caption_quotes_the_counts_the_study_used(self):
         import generate_nipd_auroc_table as table
 
-        caption = table.build(basis.from_reduction(_reduction(20), **FAST)).split(r"\caption{")[1]
+        tex = table.build(basis.from_reduction(_reduction(20), **FAST), _sens_spec(n_ranked=20))
+        caption = tex.split(r"\caption{")[1]
 
         assert "$20$ ranked encoders" in caption
         assert "$200$ encoder resamples" in caption
@@ -230,8 +326,8 @@ class TestTable:
     def test_the_table_rebuilds_byte_for_byte(self):
         import generate_nipd_auroc_table as table
 
-        first = table.build(basis.from_reduction(_reduction(), **FAST))
-        second = table.build(basis.from_reduction(_reduction(), **FAST))
+        first = table.build(basis.from_reduction(_reduction(), **FAST), _sens_spec())
+        second = table.build(basis.from_reduction(_reduction(), **FAST), _sens_spec())
 
         assert first == second
 

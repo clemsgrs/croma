@@ -172,6 +172,7 @@ exclude = [
   "/tests/test_mari_vs_ri_tables.py",
   "/tests/test_grade_matched_paper.py",
   "/tests/test_nipd_auroc_paper.py",
+  "/tests/test_low_data_paper.py",
   "/tests/test_finetune_pairs_paper.py",
   "/tests/test_uncertainty_supp.py",
   "/tests/test_apd_correlation_table.py",
