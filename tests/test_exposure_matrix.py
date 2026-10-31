@@ -377,8 +377,17 @@ def test_rank_inputs_over_benchmarks_that_rank_different_panels_fail():
         ex.rank_inputs({"b1": frame, "b2": frame[frame["model"] != "E"]})
 
 
-def _write_inputs(root: Path, *, join_croma: list[float] | None = None) -> None:
-    """A Camelyon run and the APD join under ``root``, in registry spellings."""
+def _write_inputs(
+    root: Path,
+    *,
+    join_croma: list[float] | None = None,
+    run_croma: list[float] | None = None,
+) -> None:
+    """A Camelyon run and the APD join under ``root``, in registry spellings.
+
+    ``croma`` is the margin both files carry by default; ``run_croma`` overrides what the run
+    stores (e.g. the same margins on the ratio scale) and ``join_croma`` what the join stores.
+    """
     from _panel_macros import APD_JOINED_CSV
     from paper_manifest import by_prefix
 
@@ -387,7 +396,11 @@ def _write_inputs(root: Path, *, join_croma: list[float] | None = None) -> None:
     metrics = root / by_prefix("Camelyon").metrics_rel
     metrics.parent.mkdir(parents=True)
     pd.DataFrame(
-        {"model": models, "croma": croma, "croma_ltm_alpha": [-0.2, -0.5, 0.1, -0.9]}
+        {
+            "model": models,
+            "croma": run_croma or croma,
+            "croma_ltm_alpha": [-0.2, -0.5, 0.1, -0.9],
+        }
     ).to_csv(metrics, index=False)
     joined = root / APD_JOINED_CSV
     joined.parent.mkdir(parents=True)
@@ -423,6 +436,20 @@ def test_a_join_whose_croma_is_not_the_runs_fails_as_stale(tmp_path):
 
     with pytest.raises(ex.CaptionClaimError, match="Gamma"):
         ex.load_scores(tmp_path, by_prefix("Camelyon"))
+
+
+def test_a_ratio_scale_run_is_checked_against_the_join_on_the_margin_scale(tmp_path):
+    """``loaders.load_joined`` writes the join on the margin scale whatever the run stores, so
+    a ratio-scale run is compared, and returned, as margins rather than refused as stale."""
+    from paper_manifest import by_prefix
+
+    margins = [0.3, -0.1, 0.2, -0.4]
+    _write_inputs(tmp_path, run_croma=[(1 + m) / (1 - m) for m in margins])
+
+    scores = ex.load_scores(tmp_path, by_prefix("Camelyon")).set_index("model")
+
+    assert list(scores.index) == ["Alpha", "RudolfV-2", "Gamma", "DINOv2-B"]
+    assert scores["croma"].tolist() == pytest.approx(margins, abs=1e-12)
 
 
 def test_a_missing_run_or_join_fails_the_build(tmp_path):

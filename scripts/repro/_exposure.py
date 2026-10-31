@@ -779,7 +779,9 @@ def load_scores(root: Path, entry) -> pd.DataFrame:
             f"{sorted(set(metrics.index) - set(joined.index))}, only in the join "
             f"{sorted(set(joined.index) - set(metrics.index))}."
         )
-    run_croma = metrics["croma"].astype(float)
+    # The join is on the margin scale whatever the run stores (``loaders.load_joined``
+    # normalises), so the run is compared, and reported, as margins too.
+    run_croma = croma_as_margin(metrics["croma"])
     join_croma = joined["croma"].astype(float).reindex(run_croma.index)
     stale = run_croma.index[~np.isclose(run_croma, join_croma, rtol=0.0, atol=1e-12)]
     if len(stale):
@@ -789,7 +791,7 @@ def load_scores(root: Path, entry) -> pd.DataFrame:
         )
     out = pd.DataFrame(
         {
-            "croma": croma_as_margin(run_croma),
+            "croma": run_croma,
             "croma_ltm_alpha": metrics["croma_ltm_alpha"].astype(float),
             "nipd_id": joined["nipd_id"].astype(float).reindex(run_croma.index),
             "nipd_ood": joined["nipd_ood"].astype(float).reindex(run_croma.index),
