@@ -304,3 +304,43 @@ class TestMacros:
 
         with pytest.raises(FileNotFoundError, match="grade_matched_pools.py"):
             gpv.build([], tmp_path, "auto")
+
+
+class TestReproduction:
+    """``reproduce_faithful.py`` must recompute ``panda`` in the study's numerical setting.
+
+    The study asserts its full pool matches the run's ``croma_m5`` exactly, so a ``panda``
+    recomputed under another BLAS kernel or thread count aborts the one-command run.
+    """
+
+    @staticmethod
+    def _env_for(benchmark: str, monkeypatch) -> dict[str, str] | None:
+        import reproduce_faithful as rf
+
+        seen: list[dict[str, str] | None] = []
+        monkeypatch.setattr(rf, "_replay_for", lambda entry, *, dry_run: [])
+        monkeypatch.setattr(rf, "_run", lambda cmd, *, label, dry_run, env=None: seen.append(env))
+        rf.run_benchmark(by_benchmark(benchmark), recompute=True, dry_run=True)
+        (env,) = seen
+        return env
+
+    def test_the_panda_run_gets_the_grade_matched_study_env(self, monkeypatch):
+        import reproduce_faithful as rf
+
+        env = self._env_for("panda", monkeypatch)
+
+        assert env is not None
+        assert env == rf.STUDY_ENV["grade-matched"]
+
+    @pytest.mark.parametrize("benchmark", ["panda-isup", "pathorob-camelyon", "prostate"])
+    def test_other_runs_keep_the_caller_env(self, benchmark, monkeypatch):
+        assert self._env_for(benchmark, monkeypatch) is None
+
+    def test_the_dry_run_prints_the_panda_env(self, monkeypatch, capsys):
+        import reproduce_faithful as rf
+
+        monkeypatch.setattr(rf, "_replay_for", lambda entry, *, dry_run: [])
+        rf.run_benchmark(by_benchmark("panda"), recompute=True, dry_run=True)
+
+        out = capsys.readouterr().out
+        assert out.startswith("[Panda] OPENBLAS_CORETYPE=SKYLAKEX OPENBLAS_NUM_THREADS=4 ")

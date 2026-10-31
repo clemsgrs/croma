@@ -84,11 +84,21 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("mari-vs-ri", "scripts/studies/mari_vs_ri.py", []),
 ]
 
+#: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
+PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
+
+#: Environment a benchmark run needs on top of the caller's, keyed by benchmark name. The
+#: grade-matched study checks its full pool against ``panda``'s ``per_sample_metrics.csv``
+#: exactly, so ``panda`` must be recomputed in the same numerical setting as the study.
+BENCHMARK_ENV: dict[str, dict[str, str]] = {
+    "panda": PANDA_BLAS_ENV,
+}
+
 #: Environment a study needs on top of the caller's. The grade-matched study asserts that
 #: its full SO pool reproduces the panda run's CRoMa bit for bit, which holds only on the
 #: BLAS kernel and thread count the run was computed with (see its module docstring).
 STUDY_ENV: dict[str, dict[str, str]] = {
-    "grade-matched": {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"},
+    "grade-matched": PANDA_BLAS_ENV,
 }
 
 
@@ -145,7 +155,7 @@ def run_benchmark(entry, *, recompute: bool, dry_run: bool) -> None:
     ]
     if recompute:
         cmd.append("--recompute-metrics")
-    _run(cmd, label=entry.prefix, dry_run=dry_run)
+    _run(cmd, label=entry.prefix, dry_run=dry_run, env=BENCHMARK_ENV.get(entry.benchmark))
     if not dry_run:
         print(f"[{entry.prefix}] metrics -> {entry.metrics_rel}", flush=True)
 
