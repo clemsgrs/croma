@@ -177,7 +177,8 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         )
         lines.append(rf"\multicolumn{{{N_COLUMNS}}}{{l}}{{\textbf{{{title}}}}} \\")
         for _, row in frame[frame["finetune"] == pair.finetune].iterrows():
-            lines += _rows(row, pair.finetune in exposed.get(row["benchmark"], []))
+            members = exposed.get(row["benchmark"], [])
+            lines += _rows(row, any(m in members for m in (pair.parent, pair.finetune)))
 
     selections = list(dict.fromkeys(p.benchmark_selection for p in pairs if p.benchmark_selection))
     unworded = [s for s in selections if s not in SELECTION_LEGENDS]

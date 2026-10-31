@@ -386,5 +386,14 @@ class TestMarkers:
         assert r"\dagger" not in block_b.replace(r"\ddagger", "")
         assert "TCGA-4x4 for Base-A and Robust-A" in _caption(tex)
 
+    def test_a_cohort_in_only_the_parents_pretraining_provenance_is_daggered_and_named(self):
+        metadata = _metadata()
+        metadata.loc[metadata["model"] == "Base-A", "corpus_domains"] = "tcga"
+
+        tex = _render(metadata=metadata)
+
+        assert r"TCGA-4x4$^{\dagger}$" in _block(tex, "Robust-A")
+        assert "TCGA-4x4 for Base-A" in _caption(tex)
+
     def test_without_exposure_no_dagger_is_drawn(self):
         assert r"\dagger" not in _render().replace(r"\ddagger", "")
