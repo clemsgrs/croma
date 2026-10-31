@@ -179,6 +179,21 @@ def _read_csv(path: Path) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+def paths_under(root: Path) -> dict[str, Path]:
+    """``load``'s inputs at their places under ``root`` rather than under this checkout.
+
+    The keys are ``load``'s parameter names. ``generate_paper_values.py --root`` reads
+    every other block from the tree it is given, and this one must read the same tree.
+    """
+    defaults = {
+        "per_encoder_csv": study.PER_ENCODER_CSV,
+        "correlation_csv": study.CORRELATION_CSV,
+        "provenance_json": study.PROVENANCE_JSON,
+        "apd_correlation_csv": APD_CORRELATION_CSV,
+    }
+    return {name: Path(root) / path.relative_to(REPO) for name, path in defaults.items()}
+
+
 def load(
     per_encoder_csv: Path = study.PER_ENCODER_CSV,
     correlation_csv: Path = study.CORRELATION_CSV,

@@ -105,6 +105,17 @@ def _write(
     return paths
 
 
+def _write_under(root: Path, **kwargs) -> dict[str, Path]:
+    """``_write``'s artifacts laid out under ``root`` the way a checkout's ``output/`` is."""
+    study_dir = root / "output/studies/silhouette-baselines"
+    study_dir.mkdir(parents=True)
+    paths = _write(study_dir, **kwargs)
+    apd = root / "output/studies/apd/apd_correlation.csv"
+    apd.parent.mkdir(parents=True)
+    paths["apd_correlation_csv"] = paths["apd_correlation_csv"].rename(apd)
+    return paths
+
+
 def _caption(tex: str) -> str:
     return tex[tex.index(r"\caption{") :]
 
@@ -330,3 +341,23 @@ class TestMacros:
                         dataset, "head_to_head", metric, column
                     )
         assert len(macros) == len(lines) == 3 * (3 + 2) * 3
+
+    def test_an_empty_root_fails_rather_than_reading_this_checkout(self, tmp_path: Path) -> None:
+        with pytest.raises(FileNotFoundError, match=re.escape(str(tmp_path))):
+            gpv._silhouette_block(tmp_path, tmp_path / gpv.APD_CORRELATION_CSV)
+
+    def test_the_macros_are_read_from_the_artifacts_under_the_root(self, tmp_path: Path) -> None:
+        paths = _write_under(tmp_path)
+        lines = gpv._silhouette_block(tmp_path, tmp_path / gpv.APD_CORRELATION_CSV)
+        assert lines == gpv._silhouette_baseline_macros(gsb.load(**paths))
+
+    def test_the_croma_check_reads_the_apd_table_the_apd_macros_came_from(
+        self, tmp_path: Path
+    ) -> None:
+        paths = _write_under(tmp_path)
+        stale = pd.read_csv(paths["apd_correlation_csv"])
+        stale["spearman"] += 0.01
+        elsewhere = tmp_path / "apd_correlation_elsewhere.csv"
+        stale.to_csv(elsewhere, index=False)
+        with pytest.raises(CaptionClaimError, match="stale"):
+            gpv._silhouette_block(tmp_path, elsewhere)

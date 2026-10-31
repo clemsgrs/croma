@@ -578,6 +578,21 @@ def _silhouette_baseline_macros(baselines) -> list[str]:
     return lines
 
 
+def _silhouette_block(root: Path, apd_path: Path) -> list[str]:
+    """The batch-mixing baseline macros, from the study artifacts under ``root``.
+
+    Never warns-and-skips: a missing study artifact raises here and fails the build.
+    ``apd_path`` is the ``apd_correlation.csv`` the APD macros were read from, so the check
+    that CRoMa's row equals tab:apd-correlation's compares exactly the file they came from.
+    """
+    import generate_silhouette_baselines_table as _silhouette
+
+    inputs = {**_silhouette.paths_under(root), "apd_correlation_csv": apd_path}
+    silhouette = _silhouette.load(**inputs)
+    silhouette.assert_croma_matches_apd_correlation()
+    return _silhouette_baseline_macros(silhouette)
+
+
 def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     """Model-level PCaBiop/PAR values cited in the external-validation paragraph."""
     rows = df[df["dataset"] == "pcabiop"].set_index("model")
@@ -812,12 +827,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.extend(gm_lines)
     print(f"{'grade-matched':16s}        -> {len(gm_lines)} macros", file=sys.stderr)
 
-    # Never warns-and-skips: a missing study artifact raises here and fails the build.
-    import generate_silhouette_baselines_table as _silhouette
-
-    silhouette = _silhouette.load()
-    silhouette.assert_croma_matches_apd_correlation()
-    sil_lines = _silhouette_baseline_macros(silhouette)
+    sil_lines = _silhouette_block(root, apd_path)
     out.append("% Batch-mixing baselines (tab:silhouette-baselines)")
     out.extend(sil_lines)
     print(f"{'batch-mixing':16s}        -> {len(sil_lines)} macros", file=sys.stderr)
