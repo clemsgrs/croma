@@ -447,10 +447,12 @@ def test_an_apd_cell_is_recomputed_when_its_arms_source_matrix_changes(tmp_path,
 ARM_SHA256 = {"TITAN-rerun": "a" * 64, "TITAN-meanpool": "b" * 64}
 
 
-def _evaluate(tmp_path: Path, monkeypatch, extraction: str | None) -> Path:
+def _evaluate(tmp_path: Path, monkeypatch, extraction: str | None, on_score=None) -> Path:
     """``evaluate`` on one reduced pair, with both drivers stubbed out.
 
-    ``extraction`` is the text of ``extraction.json`` (``None``: no record).
+    ``extraction`` is the text of ``extraction.json`` (``None``: no record). ``on_score``,
+    if given, is called with ``"representation"`` or ``"downstream"`` from inside the
+    stubbed driver of that name, so a test can see the state the scoring runs in.
     """
     import json
     from types import SimpleNamespace
@@ -475,15 +477,23 @@ def _evaluate(tmp_path: Path, monkeypatch, extraction: str | None) -> Path:
     )
     cells = {m: _cell([FLAT], [FLAT]) for m in models}
 
+    def run_representation(models, **_):
+        if on_score is not None:
+            on_score("representation")
+        return metrics, per_sample, ["--x"]
+
+    def run_downstream(models, **_):
+        if on_score is not None:
+            on_score("downstream")
+        return apd, cells, ARM_SHA256
+
     monkeypatch.setattr(study, "_pcabiop_rows", lambda: ROWS)
     monkeypatch.setattr(
         study, "arm_sources", lambda models, **_: {m: tmp_path / f"{m}.npy" for m in models}
     )
-    monkeypatch.setattr(
-        study, "run_representation", lambda models, **_: (metrics, per_sample, ["--x"])
-    )
+    monkeypatch.setattr(study, "run_representation", run_representation)
     monkeypatch.setattr(study, "check_published_arms", lambda *_: None)
-    monkeypatch.setattr(study, "run_downstream", lambda models, **_: (apd, cells, ARM_SHA256))
+    monkeypatch.setattr(study, "run_downstream", run_downstream)
     monkeypatch.setattr(study, "_published_run", lambda: SimpleNamespace(protocol="k-star"))
     monkeypatch.setattr(loaders, "training_correlations", lambda dataset: TOY_V)
 
@@ -528,6 +538,53 @@ def test_evaluate_writes_no_artifact_when_its_provenance_cannot_be_built(tmp_pat
 
     for name in ("summary.csv", "differences.csv", "provenance.json"):
         assert not (tmp_path / "study" / name).exists()
+
+
+def _numpy_blas_threads() -> list[int]:
+    """The thread counts of the BLAS pools NumPy loaded (OpenBLAS in the NumPy wheels)."""
+    from threadpoolctl import threadpool_info
+
+    return [
+        info["num_threads"]
+        for info in threadpool_info()
+        if info.get("user_api") == "blas" and "numpy" in str(info.get("filepath"))
+    ]
+
+
+def _forked_numpy_blas_threads() -> list[int]:
+    """:func:`_numpy_blas_threads` in a worker forked the way the APD driver forks its own."""
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    with ProcessPoolExecutor(1, mp_context=multiprocessing.get_context("fork")) as pool:
+        return pool.submit(_numpy_blas_threads).result()
+
+
+def test_evaluate_scores_with_one_blas_thread_per_process(tmp_path, monkeypatch):
+    # The study imports NumPy before ``apd_experiment`` sets its one-thread defaults, so
+    # those come too late for NumPy's BLAS pool. Without a runtime limit, the scoring and
+    # every APD worker forked from it run with as many BLAS threads as the host gives.
+    import multiprocessing
+
+    from threadpoolctl import threadpool_limits
+
+    if not _numpy_blas_threads():
+        pytest.skip("NumPy reports no BLAS thread pool")
+    can_fork = "fork" in multiprocessing.get_all_start_methods()
+    seen = {}
+
+    def record(step):
+        seen[step] = _numpy_blas_threads()
+        if can_fork and step == "downstream":
+            seen["apd worker"] = _forked_numpy_blas_threads()
+
+    with threadpool_limits(4, user_api="blas"):
+        assert set(_numpy_blas_threads()) == {4}  # the pool the study starts from
+        _evaluate(tmp_path, monkeypatch, extraction=None, on_score=record)
+        assert set(_numpy_blas_threads()) == {4}  # and gives back to its caller
+
+    assert set(seen) == {"representation", "downstream"} | ({"apd worker"} if can_fork else set())
+    assert all(set(threads) == {1} for threads in seen.values()), seen
 
 
 def test_evaluate_defaults_to_the_study_arm_directory(tmp_path, monkeypatch):

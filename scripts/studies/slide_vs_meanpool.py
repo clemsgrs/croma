@@ -884,8 +884,15 @@ def evaluate(
     Scoring needs no encoder package: each pair's slide2vec version is the one ``extract``
     recorded in ``extraction.json``, ``null`` where the record has none. All three
     artifacts are assembled before any is written, so a failure leaves none of them new.
+
+    Scoring runs with one BLAS/OpenMP thread per process, as ``apd_experiment`` intends.
+    Its environment defaults come too late for that: this module has already imported
+    NumPy, whose BLAS pool is sized by then. So the limit is set at run time, around both
+    drivers, and the forked APD workers inherit it. It is not set in the environment,
+    which ``extract`` passes on to slide2vec.
     """
     import apd_experiment
+    import threadpoolctl
     from croma.metrics.croma import CROMA_HEADLINE_M
     from loaders import DATASETS, training_correlations
 
@@ -902,13 +909,14 @@ def evaluate(
         published_dir=published_dir or PCABIOP_DIR,
     )
 
-    metrics, per_sample, bench_argv = run_representation(
-        models, rows=rows, study_dir=study_dir, sources=sources, recompute=recompute,
-    )
-    check_published_arms(metrics, [slide for _, slide, _ in arms])
-    apd, cells, source_sha256 = run_downstream(
-        models, sources=sources, study_dir=study_dir, jobs=jobs, recompute=recompute
-    )
+    with threadpoolctl.threadpool_limits(1):
+        metrics, per_sample, bench_argv = run_representation(
+            models, rows=rows, study_dir=study_dir, sources=sources, recompute=recompute,
+        )
+        check_published_arms(metrics, [slide for _, slide, _ in arms])
+        apd, cells, source_sha256 = run_downstream(
+            models, sources=sources, study_dir=study_dir, jobs=jobs, recompute=recompute
+        )
 
     headline = f"croma_m{int(CROMA_HEADLINE_M)}"
     per_sample = per_sample.rename(columns={headline: "croma"})[
