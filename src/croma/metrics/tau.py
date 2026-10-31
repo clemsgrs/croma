@@ -1,21 +1,35 @@
 """Principled selection of the MaRI temperature ``tau``.
 
 MaRI weights neighbour evidence by ``exp(-d / tau)``, where ``d`` is the cosine distance to
-a typed (``SO``/``OS``) neighbour. The useful range of ``tau`` is fixed by the *scale* of
-those typed-neighbour distances on the dataset at hand:
+a typed (``SO``/``OS``) neighbour. The weights are not normalised per anchor: pooled MaRI is a
+ratio of sums over every typed slot of every anchor. So ``tau`` acts at two levels.
 
-* ``tau`` much smaller than the typical typed distance -> ``exp(-d / tau)`` collapses onto
-  the single nearest typed neighbour (winner-take-all); the score becomes noisy and
-  dominated by one sample.
+* **Within one anchor**, only distance *differences* matter. Relative to the anchor's nearest
+  neighbour at ``d_1``, a neighbour at ``d`` receives ``exp(-(d - d_1) / tau)``. Inside a
+  fixed-``k`` neighbourhood the typed neighbours lie in a narrow distance band, much narrower
+  than the distances themselves. On the scale of the typed distances the weights inside one
+  neighbourhood are therefore close to flat, and even a few times sharper they are only
+  moderately graded. Reading ``exp(-d / tau)`` as if the nearest neighbour sat at distance
+  zero overstates this grading badly.
+* **Across anchors**, absolute distances matter. An anchor whose typed neighbours sit closer
+  contributes more weight to the pooled sums, and this comparison between *different* anchors
+  carries most of the difference between MaRI and the count-based RI.
+
+The useful range of ``tau`` is still fixed by the *scale* of the typed-neighbour distances:
+
+* ``tau`` much smaller than the typical typed distance -> the pooled score is carried by the
+  few anchors whose typed neighbours are closest, and becomes noisy.
 * ``tau`` much larger -> ``exp(-d / tau) ~ 1`` for every neighbour, so MaRI degenerates into
   the count-based RI and the margin information is lost.
 
-A principled ``tau`` therefore lies *on the scale* of the typed-neighbour distances. We take
-the median typed-neighbour distance as the recommended value and flag ``tau`` that falls more
-than ``factor`` away from it in either direction. The default ``factor=4`` brackets the
-"graded" regime: at ``tau = median / 4`` the median typed neighbour already receives only
-``exp(-4) ~ 0.018`` of the nearest neighbour's weight (effectively winner-take-all), while at
-``tau = median * 4`` the weights across a typical typed shell are nearly uniform (~RI).
+We recommend the median typed-neighbour distance, which the metric resolves automatically.
+Because it scales with the distances, MaRI is unchanged when every distance is multiplied by a
+common factor, so encoders whose distance scales differ are weighted alike; a pinned ``tau``
+lacks this property. Sharper temperatures move MaRI further from RI, but on the benchmarks
+studied they do not consistently strengthen its association with downstream shortcut
+susceptibility, and on some they weaken it, so there is no case for sharpening below the
+median. ``assess_tau`` flags a ``tau`` more than ``factor``
+away from the median in either direction (default ``factor=4``) as off the distance scale.
 """
 
 from __future__ import annotations

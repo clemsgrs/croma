@@ -125,9 +125,20 @@ Choosing ``tau``
 ~~~~~~~~~~~~~~~~
 
 ``tau`` sets how fast that weight decays, so it only means anything relative to the *scale*
-of the typed-neighbour distances. Far **below** that scale the score collapses onto the
-single nearest typed neighbour -- winner-take-all, and noisy. Far **above** it every weight
-is :math:`\approx 1` and MaRI degenerates back into count-based RI, losing the margin
+of the typed-neighbour distances. The weights are not normalised per sample, so ``tau``
+acts at two levels:
+
+- **Within one neighbourhood**, only distance *differences* count, and the typed neighbours
+  inside a fixed ``k`` lie in a narrow distance band. On the typed-distance scale their
+  weights are therefore close to flat, and even a few times sharper they are only
+  moderately graded -- nowhere near winner-take-all.
+- **Across samples**, absolute distances count: a sample whose typed neighbours sit closer
+  carries more weight in the pooled score. This comparison between *different* samples is
+  where most of the difference between MaRI and RI comes from.
+
+Far **below** the typed-distance scale, the pooled score is carried by the few samples with
+the closest typed neighbours, and turns noisy. Far **above** it every weight is
+:math:`\approx 1` and MaRI degenerates back into count-based RI, losing the margin
 entirely.
 
 That scale is a property of each embedding, not of the dataset: a tight representation's
@@ -135,7 +146,11 @@ typed neighbours sit much closer than a diffuse one's. **One fixed** ``tau`` **s
 models therefore sharpens the margin for some and flattens it for others** -- exactly the
 distortion MaRI exists to remove. So ``croma`` resolves it automatically, per model, as the
 **median typed-neighbour cosine distance at the operating** ``k``, and reports the value
-used on ``result.tau``. Leave it unset.
+used on ``result.tau``. Because that value scales with the distances, rescaling every
+distance by a common factor leaves MaRI unchanged; a pinned ``tau`` does not have this
+property. Sharpening ``tau`` below the automatic value moves MaRI further from RI, but on the
+benchmarks in this repository it does not consistently strengthen MaRI's association with
+downstream shortcut susceptibility, and on some it weakens it. Leave it unset.
 
 You can still pin ``tau`` -- to reproduce a published number, say. ``croma`` warns if the
 pinned value sits more than a factor of 4 from the data's typed-distance median; silence
