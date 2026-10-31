@@ -77,6 +77,13 @@ def _exposure_clause(entry, dist) -> str:
     return _exposure_sentence(entry, exposed) if exposed else ""
 
 
+#: The fill both per-benchmark panels draw (``croma_pareto_figure._bio_accuracy``).
+_FILL_SENTENCE = (
+    r"Point fill encodes biological $k$-NN balanced accuracy on this benchmark (darker = higher;"
+    r" colour bar)."
+)
+
+
 def _source(entry) -> str:
     #: Built from the manifest, never spelled out: a literal ``output/metrics/<protocol>/``
     #: here would be a second source of truth for which run backs the paper (and the protocol
@@ -123,6 +130,7 @@ def build_figure(dist) -> str:
         r"for the \CamelyonRankedNModels{} pathology encoders evaluated in this study.",
         r"Higher values are preferable on both axes. Ringed points form the upper-right Pareto",
         r"frontier, while shaded points are dominated on both axes.",
+        _FILL_SENTENCE,
         _exposure_clause(CAMELYON, dist),
     ]
     caption = " ".join(p for p in parts if p) + "}"
@@ -144,6 +152,7 @@ def build_supp_figure(entry, dist) -> str:
         rf"Pooled median \code{{CRoMa}} against worst-decile mean $\mcode{{LTM}}_{{10}}$ for the {n_models}",
         r"pathology encoders. Higher values are preferable on both axes. Ringed points form the",
         r"upper-right Pareto frontier, while shaded points are dominated on both axes.",
+        _FILL_SENTENCE,
         rf"Per-model $F(0)$ and $\mcode{{LTM}}_{{10}}$ are reported in Table~\ref{{{entry.label}}}.",
         _exposure_clause(entry, dist),
     ]

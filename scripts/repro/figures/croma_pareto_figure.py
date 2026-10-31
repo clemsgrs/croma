@@ -11,6 +11,10 @@ control holds no rank and is dropped (``dist.pathology``), as everywhere else.
   <tcga-4x4>/studies/plots/pdf/croma_pareto.pdf   fig:croma-pareto-tcga4x4   (supp)
   <tolkach>/studies/plots/pdf/croma_pareto.pdf    fig:croma-pareto-tolkach   (supp)
 
+Each point's fill is the encoder's biological k-NN balanced accuracy on that benchmark, on the
+shared sequential ramp with a colour bar, so whether the robust corner is bought with class
+separation reads off the panel.
+
 Every panel labels its Pareto frontier in bold and flags -- with a dagger after the encoder's name
 in the legend -- those whose pretraining overlaps a *scored* cohort of that benchmark:
 CAMELYON-trained on the Camelyon panel, TCGA-exposed on TCGA-4x4, and the RudolfV-2 family with
@@ -44,6 +48,7 @@ import pandas as pd  # noqa: E402
 
 import plotting as P  # noqa: E402
 from plotting import style as plotstyle  # noqa: E402
+from plotting.style import published_models  # noqa: E402
 from _distributions import CAMELYON, SUPP_BENCHMARKS, exposed_models, load  # noqa: E402
 
 #: Camelyon in the main text, the two other tile benchmarks in the supplement. Every panel
@@ -64,14 +69,25 @@ def _ltm_alpha_pct(entry) -> int:
     return int(round(float(alphas[0]) * 100))
 
 
+def _bio_accuracy(entry) -> dict[str, float]:
+    """Biological k-NN balanced accuracy per encoder, the fill every panel encodes.
+
+    Read from the run's ``metrics.csv`` under published names, the names the loader's models
+    carry, so each point takes its own encoder's accuracy.
+    """
+    metrics = published_models(pd.read_csv(REPO / entry.metrics_rel))
+    return dict(zip(metrics["model"], metrics["bio_knn_bacc"].astype(float)))
+
+
 def main() -> None:
     plotstyle.apply_style()
     for entry in BENCHMARKS:
         dist = load(entry=entry)
+        bio = _bio_accuracy(entry)
         # Margin-scale median and LTM straight from the guarded loader; the control is excluded
         # from the frontier just as it is from every ranking.
         rows = [
-            {"model": m.name, "croma": m.median, "croma_ltm_alpha": m.ltm}
+            {"model": m.name, "croma": m.median, "croma_ltm_alpha": m.ltm, "bio": bio[m.name]}
             for m in dist.pathology
         ]
         out_png = REPO / entry.studies_rel / "plots" / "croma_pareto.png"

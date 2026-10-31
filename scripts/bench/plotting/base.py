@@ -181,6 +181,7 @@ def _draw_model_scatter(
     vline: float | None = None,
     marker_size: float = 52.0,
     exposed: set[str] | frozenset[str] | None = None,
+    colors: dict[str, object] | None = None,
 ) -> None:
     """Shared one-point-per-model scatter with the project's visual identity.
 
@@ -190,7 +191,8 @@ def _draw_model_scatter(
     threshold lines. ``marker_size`` overrides the point area (the Pareto panels
     enlarge it so the family colour reads); ``exposed``, when given, suffixes those
     models' legend labels with a dagger (used when exposure is flagged in the
-    legend rather than on the point).
+    legend rather than on the point). ``colors``, when given, replaces each
+    model's family colour (a quantity encoded on the fill, e.g. the Pareto panels').
     """
     exposed = set(exposed or ())
     points = [
@@ -223,7 +225,7 @@ def _draw_model_scatter(
             [x],
             [y],
             s=marker_size,
-            color=_color_for_model(model),
+            color=colors[model] if colors is not None else _color_for_model(model),
             edgecolors="white",
             linewidths=0.7,
             alpha=0.9,

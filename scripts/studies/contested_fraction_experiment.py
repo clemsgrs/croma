@@ -1,19 +1,19 @@
-"""Contested-fraction analysis: why pooled MaRI tracks RI at the operating k*.
+"""Contested-fraction analysis: why pooled MaRI tracks RI at the operating k.
 
 MaRI can only differ from RI on *contested* samples -- those whose fixed-k neighbourhood
 contains at least one SO (same biology, other confounder) AND at least one OS (other
 biology, same confounder). If a sample's defined neighbourhood is "pure" (only SO, or only
 OS), its MaRI denominator has a single term and MaRI_i == RI_i exactly, regardless of tau.
 
-This script measures, for every model at its selected k* (read from metrics.csv), the
+This script measures, for every model at the k its run scored it at (metrics.csv), the
 fraction of defined samples that are pure-SO / pure-OS / contested, and pairs it with the
 pooled RI and MaRI@0.2 (also from metrics.csv) so the pooled gap MaRI - RI can be read off.
 
 The two findings it backs in the manuscript:
-  (1) At local k*, the contested fraction is tiny (a few percent), so almost every defined
+  (1) At the local operating k, the contested fraction is tiny (a few percent), so almost every defined
       sample has MaRI_i == RI_i by construction -- the per-sample reason pooled MaRI ~ RI.
       This is the typed_neighbor_rank result from the other lens (both an SO and an OS are
-      reached only deep, median rank ~314), so a local k* neighbourhood rarely holds both.
+      reached only deep), so a local fixed-k neighbourhood rarely holds both.
   (2) The pooled gap MaRI - RI is nonetheless not identically zero: where favorable (SO)
       neighbours are *systematically* closer than unfavorable (OS) ones, the asymmetry
       accumulates instead of cancelling and MaRI rises above RI (e.g. UNI2-h), and vice
@@ -22,6 +22,10 @@ The two findings it backs in the manuscript:
 
 Contested counts come from the same core neighbour helpers the benchmark uses
 (_prepare_neighbors), so "defined" matches metrics.csv exactly.
+
+The run is the one the paper reports (``paper_manifest``), never a hard-coded protocol:
+the counts are k-dependent, and the k is whatever that run scored at. The per-model table
+it writes feeds ``tab:typed-neighbour-coverage`` (``scripts/repro/generate_supp_rank_table.py``).
 """
 
 import json
@@ -35,12 +39,15 @@ import sys
 from _neighbor_analysis import REPO, load_meta, prepare_embedding
 
 sys.path.insert(0, str(REPO / "scripts" / "bench"))
+sys.path.insert(0, str(REPO / "scripts" / "repro"))
 import views  # noqa: E402
+from paper_manifest import by_benchmark  # noqa: E402
 
 from croma.metrics.neighbors import _prepare_neighbors
 
-PROTOCOL = "k-star"
-view = views.load_view("pathorob-camelyon")  # row-view over the pathorob-camelyon tileset
+BENCHMARK = "pathorob-camelyon"
+PROTOCOL = by_benchmark(BENCHMARK).protocol
+view = views.load_view(BENCHMARK)  # row-view over the pathorob-camelyon tileset
 METRICS = view.results_dir(PROTOCOL) / "metrics.csv"
 STUDIES = view.studies_dir(PROTOCOL)
 
@@ -49,7 +56,7 @@ labels, centers, slide = load_meta(df)
 n = len(df)
 
 mdf = pd.read_csv(METRICS).set_index("model")
-kstar = mdf["k"].astype(int).to_dict()
+k_by_model = mdf["k"].astype(int).to_dict()
 ri_pooled = mdf["ri"].astype(float).to_dict()
 mari_pooled = mdf["mari"].astype(float).to_dict()
 
@@ -59,7 +66,7 @@ print(f"{n} samples, {len(models)} models\n")
 rows = []
 for model in models:
     X = prepare_embedding(view.features(model))
-    k = int(kstar[model])
+    k = int(k_by_model[model])
     nidx, ndist, vc = _prepare_neighbors(X, slide, k)
     so = np.zeros(n, int)
     os = np.zeros(n, int)
@@ -83,7 +90,7 @@ for model in models:
     rows.append(
         {
             "model": model,
-            "kstar": k,
+            "k": k,
             "defined_frac": nd / n,
             "pure_so_frac_of_defined": n_pure_so / nd if nd else float("nan"),
             "pure_os_frac_of_defined": n_pure_os / nd if nd else float("nan"),

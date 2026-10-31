@@ -21,7 +21,7 @@ REPO = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from paper_manifest import HISTORICAL_TYPED_NEIGHBOUR_RUN, by_prefix  # noqa: E402
+from paper_manifest import by_prefix  # noqa: E402
 
 _CAMELYON = by_prefix("Camelyon")
 
@@ -44,6 +44,12 @@ CORE = [
     # _cross_benchmark) to build the rank-aggregate Pareto overview float; the PDF it captions
     # is drawn by figures/rank_pareto_figure.py.
     ("generate_rank_pareto_float.py", None, ""),
+    # Reads the APD metadata under data/ through the study's own schedule and the library
+    # sweep's slicing; it fails, rather than skips, when that metadata is missing.
+    ("generate_split_schedule_table.py", None, ""),
+    # Reads every listed benchmark's view, APD metadata and tileset manifest, one tile image
+    # per slide, and the committed acquisition.csv of curated scanner facts.
+    ("generate_acquisition_table.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that
@@ -55,10 +61,15 @@ STUDIES = [
         f"{_CAMELYON.run_rel}/results/bootstrap_uncertainty.json",
         "run scripts/studies/bootstrap_uncertainty.py",
     ),
+    # Reads the live Camelyon run plus the two neighbourhood studies written beside it; the
+    # contested-fraction summary stands in for both (they are run together). The macros the
+    # text quotes from this table are emitted by generate_paper_values.py, which fails when
+    # either study is missing.
     (
         "generate_supp_rank_table.py",
-        f"{HISTORICAL_TYPED_NEIGHBOUR_RUN.studies_rel}/typed_neighbor_rank_summary.csv",
-        "restore the sealed issue-131 prepublication snapshot",
+        f"{_CAMELYON.studies_rel}/contested_fraction_summary.csv",
+        "run scripts/repro/figures/typed_neighbor_rank_experiment.py and "
+        "scripts/studies/contested_fraction_experiment.py",
     ),
     (
         "generate_pretraining_overlap_table.py",

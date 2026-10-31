@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -22,7 +21,6 @@ for path in (REPRO, BENCH):
 
 import generate_paper_values as paper_values  # noqa: E402
 import generate_pretraining_overlap_table as overlap_table  # noqa: E402
-import generate_supp_rank_table as typed_table  # noqa: E402
 from _rank_pareto import RankPareto  # noqa: E402
 
 EXPECTED_PUBLIC_COHORTS = {"camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"}
@@ -56,14 +54,6 @@ EXPECTED_PANEL = {
     "Virchow",
     "Virchow2",
     "mSTAR",
-}
-EXPECTED_HISTORICAL_TYPED_PANEL = EXPECTED_PANEL - {
-    "Mascaret",
-    "Mettle",
-    "Phaet",
-    "RudolfV-2",
-    "RudolfV-2-B",
-    "RudolfV-2-S",
 }
 
 
@@ -232,7 +222,29 @@ def test_provenance_guard_accepts_the_expanded_family_relationships() -> None:
     assert r"\newcommand{\ProvenanceFineTuneCroma}{$0.27$}" in macros
 
 
-def test_historical_overlap_caption_uses_its_own_roster(monkeypatch) -> None:
+def test_provenance_twin_is_the_live_nearest_neighbour_not_a_pinned_name() -> None:
+    # Mettle joins with a differenced-probe gap (0.880 - 0.556 = 0.324) one thousandth from
+    # Midnight-12k's (0.323), closer than CONCHv1.5 (0.319). The twin macro follows it, and
+    # the wide-margin claim is checked against Mettle: 0.396 / 0.114 = 3.5x.
+    rows = [
+        ("Midnight-12k", 0.882, 0.559, 0.396),
+        ("Mascaret", 0.876, 0.434, 0.270),
+        ("Mettle", 0.880, 0.556, 0.114),
+        ("CONCHv1.5", 0.811, 0.492, 0.153),
+        ("CONCH", 0.790, 0.487, 0.146),
+        ("H-optimus-1", 0.878, 0.676, 0.088),
+        ("DINOv2-B", 0.607, 0.579, 0.006),
+    ]
+    frame = pd.DataFrame(rows, columns=["model", "bio_knn_bacc", "confounder_knn_bacc", "croma"])
+
+    macros = "\n".join(paper_values._provenance_macros(frame))
+
+    assert r"\newcommand{\ProvenanceTwinModel}{Mettle}" in macros
+    assert r"\newcommand{\ProvenanceTwinCroma}{$0.11$}" in macros
+    assert r"\newcommand{\ProvenanceCromaFold}{$3.5\times$}" in macros
+
+
+def test_overlap_caption_counts_the_live_roster(monkeypatch) -> None:
     frame = pd.DataFrame(
         [
             {"model": "Midnight-12k", "rest": 0.60, "tcga": 0.82, "boost": 2.50},
@@ -245,41 +257,30 @@ def test_historical_overlap_caption_uses_its_own_roster(monkeypatch) -> None:
 
     tex = overlap_table.build()
 
-    assert "historical 3-encoder pathology subset" in tex
+    assert "for the 3 pathology encoders" in tex
+    assert "historical" not in tex
     assert r"$\dagger$ marks the $2$ TCGA-exposed encoders" in tex
 
 
-def test_typed_neighbour_table_is_rendered_from_the_sealed_historical_roster(
-    tmp_path: Path,
-) -> None:
-    archive = ROOT / typed_table.SNAPSHOT
-    if not archive.is_dir():
-        import pytest
+def test_overlap_study_must_cover_the_live_tolkach_roster(tmp_path: Path, monkeypatch) -> None:
+    """A study run on an older roster is a snapshot: it fails rather than rendering."""
+    import _overlap
 
-        pytest.skip("sealed local paper-study archive is absent in this checkout")
-    out = tmp_path / "typed_neighbor_ranks.tex"
+    study = tmp_path / "per_sample_metrics.csv"
+    pd.DataFrame(
+        {
+            "model": ["UNI", "UNI", "DINOv2-B", "DINOv2-B"],
+            "confounder": ["VALSET3_TCGA", "UKK", "VALSET3_TCGA", "UKK"],
+            "croma_m5": [0.2, 0.1, 0.0, -0.1],
+        }
+    ).to_csv(study, index=False)
+    run = tmp_path / "metrics.csv"
+    pd.DataFrame({"model": ["UNI", "DINOv2-B", "Mettle"]}).to_csv(run, index=False)
+    monkeypatch.setattr(_overlap, "PER_SAMPLE", study)
+    monkeypatch.setattr(_overlap, "RUN_METRICS", run)
 
-    proc = subprocess.run(
-        [sys.executable, str(REPRO / "generate_supp_rank_table.py"), "--out", str(out)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert proc.returncode == 0, proc.stderr
-    tex = out.read_text()
-    rows = {
-        match.group(1)
-        for match in re.finditer(r"^(.+?) & [-0-9.]+ & [0-9]+ & [0-9]+ \\\\$", tex, re.MULTILINE)
-    }
-    assert rows == EXPECTED_HISTORICAL_TYPED_PANEL
-    assert "historical fixed 20-pathology-encoder analysis" in tex
-    assert "% Sealed snapshot artifact SHA-256:" in tex
-    assert "2facf7719b38ae7890d01dafe5b7b90c61b53a4409bba400c37a525d05fabc26" in tex
-    assert (
-        "first \\code{SO} or \\code{OS} neighbour occurs at a median rank of $\\approx 149$" in tex
-    )
+    with pytest.raises(ValueError, match="Mettle"):
+        _overlap.rows()
 
 
 def test_no_unlabelled_stale_roster_claims_in_active_outputs() -> None:
@@ -327,8 +328,6 @@ def test_active_discussion_does_not_repeat_the_disproved_genbio_frontier_claim()
     discussion = (PAPER / "sections/discussion.tex").read_text()
 
     assert "GenBio-PathFM} was the only model on the median–tail Pareto frontier" not in discussion
-    assert r"\TilePriorRankFrontierNModels" in discussion
-    assert r"\TileRankFrontierNModels" in discussion
 
 
 def _explicit_rank_pareto(
@@ -344,45 +343,44 @@ def _explicit_rank_pareto(
     )
 
 
-def _explicit_frontier_panels() -> tuple[RankPareto, RankPareto]:
-    historical = _explicit_rank_pareto(
-        ["H1", "H2", "H3", "H4"],
-        [1, 2, 3, 4],
-        [4, 3, 2, 1],
+def _explicit_frontier_panel() -> RankPareto:
+    return _explicit_rank_pareto(
+        ["Mascaret", "H1", "H2", "H3", "H4"],
+        [1, 2, 3, 4, 5],
+        [1, 5, 4, 3, 2],
     )
-    current = _explicit_rank_pareto(
-        [
-            "Mascaret",
-            "H1",
-            "H2",
-            "H3",
-            "H4",
-            "Phaet",
-            "RudolfV 2",
-            "RudolfV 2-B",
-            "RudolfV 2-S",
-        ],
-        [1, 2, 3, 4, 5, 6, 7, 8, 9],
-        [1, 5, 4, 3, 2, 6, 7, 8, 9],
-    )
-    return historical, current
 
 
-def test_expanded_frontier_change_is_guarded_by_explicit_rank_inputs() -> None:
-    historical, current = _explicit_frontier_panels()
-    macros = paper_values._rank_frontier_change_macros(historical, current)
+def test_rank_frontier_macros_name_the_live_frontier() -> None:
+    macros = paper_values._rank_frontier_macros(_explicit_frontier_panel())
 
-    assert r"\newcommand{\TilePriorRankFrontierNModels}{4}" in macros
     assert r"\newcommand{\TileRankFrontierNModels}{1}" in macros
     assert r"\newcommand{\TileRankFrontierModels}{Mascaret}" in macros
+    # The pre-expansion comparison served no sentence in the text and is retired.
+    assert not any("TilePriorRankFrontier" in line for line in macros)
 
 
-def test_frontier_guard_is_offline_at_the_generator_seam(tmp_path: Path, monkeypatch) -> None:
+def test_rank_pareto_rows_carry_the_mean_biological_accuracy_rank() -> None:
+    """The overview's fill: each encoder's biological-accuracy rank averaged over cohorts."""
+    index = pd.Index(["A", "B"], name="model")
+    panel = RankPareto(
+        medians=pd.DataFrame({"c1": [0.2, 0.1], "c2": [0.2, 0.1]}, index=index),
+        median_ranks=pd.DataFrame({"c1": [1, 2], "c2": [1, 2]}, index=index),
+        tail_ranks=pd.DataFrame({"c1": [2, 1], "c2": [2, 1]}, index=index),
+        exposed=frozenset(),
+        adversarial="c1",
+        bio_ranks=pd.DataFrame({"c1": [1, 2], "c2": [2, 1]}, index=index),
+    )
+
+    assert [row["bio_rank"] for row in panel.rows()] == [1.5, 1.5]
+
+
+def test_rank_frontier_macros_are_offline_at_the_generator_seam(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     assert not Path("output").exists()
-    historical, current = _explicit_frontier_panels()
 
-    macros = paper_values._rank_frontier_change_macros(historical, current)
+    macros = paper_values._rank_frontier_macros(_explicit_frontier_panel())
 
-    assert r"\newcommand{\TilePriorRankFrontierNModels}{4}" in macros
     assert r"\newcommand{\TileRankFrontierNModels}{1}" in macros

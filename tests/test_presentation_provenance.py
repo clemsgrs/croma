@@ -14,9 +14,11 @@ for path in (REPRO, BENCH, FIGURES):
         sys.path.insert(0, str(path))
 
 import _distributions as distributions  # noqa: E402
+import _rank_pareto as rank_pareto  # noqa: E402
 import croma_pareto_figure  # noqa: E402
 import generate_model_tables as model_tables  # noqa: E402
 import generate_pareto_float as pareto_float  # noqa: E402
+import generate_rank_pareto_float as rank_pareto_float  # noqa: E402
 import generate_results_table as results_table  # noqa: E402
 from paper_manifest import by_prefix  # noqa: E402
 from plotting import style  # noqa: E402
@@ -129,6 +131,9 @@ def test_tolkach_pareto_renderer_receives_the_rudolf_exposure_set(
     monkeypatch.setattr(croma_pareto_figure, "REPO", tmp_path)
     monkeypatch.setattr(croma_pareto_figure, "load", lambda *, entry: dist)
     monkeypatch.setattr(croma_pareto_figure, "_ltm_alpha_pct", lambda entry: 10)
+    monkeypatch.setattr(
+        croma_pareto_figure, "_bio_accuracy", lambda entry: {m.name: 0.9 for m in dist.models}
+    )
     monkeypatch.setattr(
         croma_pareto_figure.P,
         "plot_croma_pareto",
@@ -330,3 +335,39 @@ def test_published_models_renames_the_name_columns_without_mutating_the_input() 
     assert list(frame["model"]) == ["RudolfV 2", "UNI"]
     missing = style.published_models(frame, columns=("model", "absent"))
     assert list(missing["model"]) == ["RudolfV-2", "UNI"]
+
+
+def test_every_pareto_caption_states_the_biological_accuracy_fill() -> None:
+    """Each per-benchmark panel fills its points by biological k-NN balanced accuracy, so
+    the caption must say so -- a weak encoder must not read as competitive from the axes."""
+    camelyon = distributions.Distributions(
+        (
+            distributions.Model("UNI", 0.2, -0.2, 0.3, False),
+            distributions.Model("GPFM", 0.1, -0.3, 0.4, False),
+            distributions.Model("DINOv2-B", 0.0, -0.4, 0.5, True),
+        )
+    )
+    captions = [
+        pareto_float.build_figure(camelyon),
+        pareto_float.build_supp_figure(by_prefix("Tolkach"), _tolkach_distributions()),
+    ]
+    for caption in captions:
+        assert "biological $k$-NN balanced accuracy" in caption
+        assert "colour bar" in caption
+
+
+def test_rank_pareto_caption_states_the_mean_biological_accuracy_rank_fill() -> None:
+    index = pd.Index(["UNI", "GPFM"], name="model")
+    panel = rank_pareto.RankPareto(
+        medians=pd.DataFrame({"c1": [0.2, 0.1]}, index=index),
+        median_ranks=pd.DataFrame({"c1": [1, 2]}, index=index),
+        tail_ranks=pd.DataFrame({"c1": [2, 1]}, index=index),
+        exposed=frozenset({"GPFM"}),
+        adversarial="c1",
+        bio_ranks=pd.DataFrame({"c1": [2, 1]}, index=index),
+    )
+
+    caption = rank_pareto_float.build(panel)
+
+    assert "mean rank by biological $k$-NN balanced accuracy" in caption
+    assert "colour bar" in caption

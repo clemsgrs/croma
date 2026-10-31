@@ -76,6 +76,12 @@ CANONICAL_ITERATIONS = 20
 PROBE_SEED = 1000
 
 
+def validation_fraction(rows_per_slide):
+    """The validation fraction the sweep is given: PathoROB's own rule (``None``) at patch
+    level, :data:`VAL_FRACTION` at slide level, where that rule underflows to zero rows."""
+    return None if rows_per_slide > 1 else VAL_FRACTION
+
+
 def compute(model, dataset, iterations=20):
     """Run the confounder-biased probe sweep for one (model, dataset) and reduce it.
 
@@ -100,7 +106,7 @@ def compute(model, dataset, iterations=20):
         # PathoROB's own rule at patch level; at slide level it underflows to zero, so the
         # study states a fraction instead -- one of its two documented slide-level
         # deviations, the other being loaders._pcabiop_split_map's schedule.
-        validation_fraction=None if rows_per_slide > 1 else VAL_FRACTION,
+        validation_fraction=validation_fraction(rows_per_slide),
         arrange_slides=arrangement_for(dataset, cohort.group_ids),
     )
     id_accuracies, ood_accuracies = accuracies[IN_DOMAIN], accuracies[OUT_OF_DOMAIN]

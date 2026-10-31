@@ -36,28 +36,30 @@ sys.path.insert(
 from plotting.style import published_models  # noqa: E402
 
 
-def _tail_rank_matrix(models: pd.Index) -> pd.DataFrame:
-    """Per-(model, benchmark) rank by ``LTM_10``, 1 = mildest tail (the largest, least-negative LTM).
+def _rank_matrix(models: pd.Index, column: str) -> pd.DataFrame:
+    """Per-(model, benchmark) rank by a ``metrics.csv`` column, 1 = its largest value.
 
-    Read from the same ``metrics.csv`` the medians come from, restricted to and ordered by the
-    ranked roster ``models`` (the control is already dropped there), so this rank matrix aligns
-    model-for-model with the median-rank matrix. The run directory is resolved through
-    ``paper_manifest`` -- never a spelled-out protocol.
+    For ``croma_ltm_alpha`` that is the mildest tail (the largest, least-negative LTM); for
+    ``bio_knn_bacc`` the highest biological k-NN balanced accuracy. Read from the same
+    ``metrics.csv`` the medians come from, restricted to and ordered by the ranked roster
+    ``models`` (the control is already dropped there), so the matrix aligns model-for-model
+    with the median-rank matrix. The run directory is resolved through ``paper_manifest`` --
+    never a spelled-out protocol.
     """
     cols = {}
     for benchmark in PANEL:
         # Restyled like ``_cross_benchmark.load``, so this matrix reindexes cleanly
         # against the published median-rank roster.
         frame = published_models(pd.read_csv(REPO / by_benchmark(benchmark).metrics_rel))
-        cols[short_label(benchmark)] = frame.set_index("model")["croma_ltm_alpha"]
-    ltm = pd.DataFrame(cols).reindex(models)
-    if ltm.isna().any().any():
-        missing = ltm.index[ltm.isna().any(axis=1)].tolist()
+        cols[short_label(benchmark)] = frame.set_index("model")[column]
+    values = pd.DataFrame(cols).reindex(models)
+    if values.isna().any().any():
+        missing = values.index[values.isna().any(axis=1)].tolist()
         raise ValueError(
-            f"missing LTM_10 for {missing} on one of {list(ltm.columns)}; the tail-rank matrix "
+            f"missing {column} for {missing} on one of {list(values.columns)}; its rank matrix "
             f"would not align with the median-rank matrix."
         )
-    return ltm.rank(ascending=False, method="first").astype(int)
+    return values.rank(ascending=False, method="first").astype(int)
 
 
 @dataclass(frozen=True)
@@ -74,6 +76,9 @@ class RankPareto:
     exposed: frozenset[str]
     #: The benchmark designated adversarial by the cross-benchmark analysis.
     adversarial: str
+    #: model x benchmark, 1 = highest biological k-NN balanced accuracy: the figure's fill.
+    #: Raw accuracy is not commensurable across benchmarks, so the overview averages ranks.
+    bio_ranks: pd.DataFrame | None = None
 
     @property
     def models(self) -> list[str]:
@@ -120,14 +125,17 @@ class RankPareto:
         return tuple(_pareto_frontier_max_max(points))
 
     def rows(self) -> list[dict]:
-        """One dict per encoder for the figure: the two mean ranks plus the exposed flag."""
+        """One dict per encoder for the figure: the two mean ranks, the exposed flag and,
+        when known, the mean biological-accuracy rank its fill encodes."""
         mmr, mtr = self.mean_median_rank, self.mean_tail_rank
+        bio = None if self.bio_ranks is None else self.bio_ranks.mean(axis=1)
         return [
             {
                 "model": m,
                 "median_rank": float(mmr[m]),
                 "tail_rank": float(mtr[m]),
                 "exposed": m in self.exposed,
+                **({} if bio is None else {"bio_rank": float(bio[m])}),
             }
             for m in self.models
         ]
@@ -144,9 +152,10 @@ def load() -> RankPareto:
     return RankPareto(
         medians=cb.croma,
         median_ranks=cb.ranks,
-        tail_ranks=_tail_rank_matrix(cb.croma.index),
+        tail_ranks=_rank_matrix(cb.croma.index, "croma_ltm_alpha"),
         exposed=cb.exposed,
         adversarial=cb.adversarial,
+        bio_ranks=_rank_matrix(cb.croma.index, "bio_knn_bacc"),
     )
 
 

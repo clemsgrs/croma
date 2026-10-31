@@ -77,6 +77,12 @@ FRAGILE_SHADE_COLOR = "#f3e3d2"
 TREND_LINE_COLOR = "#5b6b7b"
 TREND_ALPHA = 0.55
 
+# Magnitude encodings (a quantity on a point's fill, read off a colour bar) use one
+# sequential ramp: a single hue, light for low and dark for high. Its lightest step is
+# clipped so the lowest value still reads against the white panel and the white marker edge.
+SEQUENTIAL_CMAP = "Blues"
+SEQUENTIAL_SPAN = (0.30, 0.95)
+
 # ---------------------------------------------------------------------------
 # Model family and order come from the machine-readable provenance table; this module owns only
 # the visual palette assigned to each family. That keeps checkpoint relationships and plot order
@@ -274,6 +280,29 @@ def style_axes(ax, *, grid_axis: str = "both") -> None:
         ax.grid(axis="x", **grid_kw)
     else:
         ax.grid(**grid_kw)
+
+
+def sequential_cmap():
+    """The shared sequential ramp, ``SEQUENTIAL_CMAP`` clipped to ``SEQUENTIAL_SPAN``."""
+    import numpy as np
+    from matplotlib.colors import ListedColormap
+
+    stops = np.linspace(*SEQUENTIAL_SPAN, 256)
+    return ListedColormap(matplotlib.colormaps[SEQUENTIAL_CMAP](stops), name="croma-sequential")
+
+
+def add_colorbar(fig, mappable, *, rect: tuple[float, float, float, float], label: str):
+    """A thin colour bar in its own axes at ``rect`` (figure fraction), in the shared chrome.
+
+    Placed by hand rather than stolen from the panel, so a panel whose geometry is fixed
+    (the Pareto panels reserve label room from their margins) keeps the box it computed.
+    """
+    bar = fig.colorbar(mappable, cax=fig.add_axes(rect))
+    bar.set_label(label, fontsize=FS_LABEL, color=TEXT_COLOR)
+    bar.ax.tick_params(labelsize=FS_TICK, colors=TEXT_COLOR, width=LW_SPINE, length=2.5)
+    bar.outline.set_linewidth(LW_SPINE)
+    bar.outline.set_edgecolor(SPINE_COLOR)
+    return bar
 
 
 def set_panel_title(ax, title: str) -> None:

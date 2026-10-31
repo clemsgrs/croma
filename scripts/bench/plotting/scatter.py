@@ -37,7 +37,41 @@ _POINT_LABEL_FS = 6.0
 #: typographic points to data units from exactly these numbers -- a margin edited in one place
 #: but not the other silently mis-sizes every reserved label box.
 _PARETO_FIGSIZE = (COL_ONEHALF, 5.2)
-_PARETO_MARGINS = dict(top=0.95, bottom=0.11, left=0.135, right=0.975)
+_PARETO_MARGINS = dict(top=0.95, bottom=0.11, left=0.135, right=0.835)
+
+#: The Pareto panels encode biological accuracy on the point fill, read off a colour bar in the
+#: strip the right margin leaves: panel-high, beside the plot, clear of its frontier tags.
+_PARETO_COLORBAR_RECT = (
+    _PARETO_MARGINS["right"] + 0.025,
+    _PARETO_MARGINS["bottom"],
+    0.022,
+    _PARETO_MARGINS["top"] - _PARETO_MARGINS["bottom"],
+)
+
+
+def _sequential_fill(values: dict[str, float], *, low_is_best: bool = False):
+    """Each model's fill on the shared sequential ramp, plus the mappable its colour bar reads.
+
+    The best value takes the ramp's dark end: the highest one, or the lowest when
+    ``low_is_best`` (a rank). A rank's colour bar is flipped so that its best end, too, is dark
+    and on top.
+    """
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.colors import Normalize
+
+    ramp = plotstyle.sequential_cmap()
+    lo, hi = min(values.values()), max(values.values())
+    norm = Normalize(vmin=lo, vmax=hi)
+    position = (lambda v: 1.0 - float(norm(v))) if low_is_best else (lambda v: float(norm(v)))
+    fills = {model: ramp(position(v)) for model, v in values.items()}
+    mappable = ScalarMappable(norm=norm, cmap=ramp.reversed() if low_is_best else ramp)
+    return fills, mappable
+
+
+def _pareto_colorbar(fig, mappable, *, label: str, low_is_best: bool = False) -> None:
+    bar = plotstyle.add_colorbar(fig, mappable, rect=_PARETO_COLORBAR_RECT, label=label)
+    if low_is_best:
+        bar.ax.invert_yaxis()
 
 
 def _daggered(name: str, exposed: set[str] | frozenset[str]) -> str:
@@ -577,6 +611,11 @@ def plot_croma_pareto(
 
     exposed = set(exposed or ())
     coords = {r["model"]: (float(r["croma"]), float(r["ltm"])) for r in valid_rows}
+    bio = {str(r["model"]): float(r["bio"]) for r in rows if np.isfinite(r.get("bio", np.nan))}
+    unscored = sorted(set(coords) - set(bio))
+    if unscored:
+        raise ValueError(f"no biological k-NN balanced accuracy ('bio') for {unscored}")
+    fills, mappable = _sequential_fill({m: bio[m] for m in coords})
     xs = np.asarray([x for x, _ in coords.values()], dtype=float)
     ys = np.asarray([y for _, y in coords.values()], dtype=float)
 
@@ -617,11 +656,14 @@ def plot_croma_pareto(
         hline=0.0,
         vline=0.0,
         marker_size=_PARETO_MARKER_S,
+        colors=fills,
     )
     # The scatter primitive forces a square data box (its own identity); here that compresses
     # the axes into the bottom legend. Let the panel fill its figure cell instead (cf.
     # apd_figure), which keeps the x-label clear of the roster legend.
     ax.set_box_aspect(None)
+    # Biological accuracy on the fill: is the robust corner bought with class separation?
+    _pareto_colorbar(fig, mappable, label="Biological k-NN balanced accuracy")
 
     boundary = _pareto_boundary(frontier_xy, xlim=xlim, ylim=ylim)
 
@@ -731,6 +773,17 @@ def plot_rank_pareto(
     # and a MultipleLocator keeps them at whole ranks (5, 10, 15, ...) rather than half-ranks.
     coords = {name: (-mr, -tr) for name, mr, tr, _ in points}
     exposed = {name for name, _, _, is_exposed in points if is_exposed}
+    # Raw balanced accuracy is not commensurable across benchmarks (TCGA-4x4 tops out lower
+    # than Camelyon), so the overview's fill is the mean biological-accuracy rank instead.
+    bio_rank = {
+        str(r["model"]): float(r["bio_rank"])
+        for r in rows
+        if np.isfinite(float(r.get("bio_rank", np.nan)))
+    }
+    unscored = sorted(set(coords) - set(bio_rank))
+    if unscored:
+        raise ValueError(f"no mean biological-accuracy rank ('bio_rank') for {unscored}")
+    fills, mappable = _sequential_fill({m: bio_rank[m] for m in coords}, low_is_best=True)
     scatter_rows = [{"model": name, "gx": gx, "gy": gy} for name, (gx, gy) in coords.items()]
 
     gxs = np.asarray([gx for gx, _ in coords.values()], dtype=float)
@@ -766,8 +819,15 @@ def plot_rank_pareto(
         xlim=xlim,
         ylim=ylim,
         marker_size=_PARETO_MARKER_S,
+        colors=fills,
     )
     ax.set_box_aspect(None)
+    _pareto_colorbar(
+        fig,
+        mappable,
+        label="Mean rank by biological k-NN accuracy  (1 = best)",
+        low_is_best=True,
+    )
     show_rank = FuncFormatter(lambda value, _pos: f"{-value:.0f}")
     for axis in (ax.xaxis, ax.yaxis):
         axis.set_major_locator(MultipleLocator(5))

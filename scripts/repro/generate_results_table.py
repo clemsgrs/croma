@@ -18,13 +18,14 @@ Usage:
 
 import argparse
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, croma_as_margin, scriptsize_ci
-from paper_manifest import ResultsTable, rendered
+from paper_manifest import ResultsTable, primary, rendered
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 sys.path.insert(
@@ -34,20 +35,109 @@ from plotting.style import CONTROL_MODEL, published_models  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[2]
 
-# column -> (header, decimals, percent). ``k`` is deliberately absent: it is a single shared
-# value under the median-k protocol, so it belongs in the caption rather than in a column of
-# identical cells. ``delta`` is present because Section 3 reads its *sign* per model.
-COLS = [
-    ("bio_knn_bacc", "bio bacc", 3, False),
-    ("confounder_knn_bacc", "conf bacc", 3, False),
-    ("ri", r"\code{RI}", 3, False),
-    ("mari", r"\code{MaRI}", 3, False),
-    ("delta", r"$\Delta$", 3, False),
-    ("croma", r"\code{CRoMa}", 2, False),
-    ("croma_frac_neg", r"$F(0)$", 3, False),
-    ("croma_ltm_alpha", r"$\mcode{LTM}_{10}$", 2, False),
-    ("support", "support", 1, True),
-]
+# --------------------------------------------------------------------------------------
+# Columns, in three groups under a two-level header: what the representation decodes, the
+# fixed-k pooled scores, and the per-sample CRoMa summaries. Every score column carries the
+# direction in which it improves; the diagnostics (Centre, Delta) carry none. ``k`` is not a
+# column: under median-k it is one shared value, so it heads the pooled group instead.
+# ``delta`` is present because Section 3 reads its *sign* per model. The slide-panel table
+# (generate_panda_table.py) reuses these groups, so a change here reaches every table.
+# --------------------------------------------------------------------------------------
+UP = r"$\uparrow$"
+
+
+@dataclass(frozen=True)
+class Column:
+    key: str
+    header: str
+    decimals: int
+    percent: bool = False
+
+
+@dataclass(frozen=True)
+class Group:
+    title: str
+    columns: tuple[Column, ...]
+
+
+BIOLOGY = Column("bio_knn_bacc", "Biology" + UP, 3)
+CENTRE = Column("confounder_knn_bacc", "Centre", 3)
+RI = Column("ri", r"\code{RI}" + UP, 3)
+MARI = Column("mari", r"\code{MaRI}" + UP, 3)
+DELTA = Column("delta", r"$\Delta$", 3)
+SUPPORT = Column("support", "Support" + UP, 1, percent=True)
+MEDIAN = Column("croma", "Median" + UP, 2)
+F0 = Column("croma_frac_neg", r"$F(0)\downarrow$", 3)
+LTM = Column("croma_ltm_alpha", r"$\mcode{LTM}_{10}\uparrow$", 2)
+
+DECODABILITY_TITLE = r"$k$-NN decodability"
+CROMA_TITLE = rf"\code{{CRoMa}} (per-sample, $m{{=}}{int(CROMA_HEADLINE_M)}$)"
+
+
+def pooled_title(k: str) -> str:
+    """The fixed-k group's title, naming the operating point its scores are pooled at."""
+    return rf"Fixed-$k$ pooled ($k{{=}}{k}$)"
+
+
+def groups(k: str, pooled_lead: tuple[Column, ...] = ()) -> tuple[Group, ...]:
+    """The three column groups of a results table whose scores are pooled at ``k``.
+
+    ``pooled_lead`` prepends columns to the pooled group -- the slide panel's per-model
+    ``k^\\star``, which has no single value to put in the title.
+    """
+    return (
+        Group(DECODABILITY_TITLE, (BIOLOGY, CENTRE)),
+        Group(pooled_title(k), (*pooled_lead, RI, MARI, DELTA, SUPPORT)),
+        Group(CROMA_TITLE, (MEDIAN, F0, LTM)),
+    )
+
+
+#: Flat column order, for callers that only need the keys and formats.
+COLS = [(c.key, c.header, c.decimals, c.percent) for g in groups("") for c in g.columns]
+
+#: An empty, narrow column between groups, so each group's \cline stops short of the next
+#: one (booktabs is not loaded, so there is no \cmidrule trimming to lean on).
+SPACER = r"@{\hspace{6pt}}c@{\hspace{6pt}}"
+
+
+def _join(cells: list[str]) -> str:
+    return " & ".join(cells).replace(" &  & ", " & & ")
+
+
+def column_spec(table_groups: tuple[Group, ...]) -> str:
+    return "l" + SPACER.join("c" * len(g.columns) for g in table_groups)
+
+
+def total_columns(table_groups: tuple[Group, ...]) -> int:
+    """Every tabular column: the name, each group's columns, one spacer between groups."""
+    return 1 + sum(len(g.columns) for g in table_groups) + len(table_groups) - 1
+
+
+def header_lines(table_groups: tuple[Group, ...]) -> list[str]:
+    """Group titles, over one \\cline per group, over the per-column headers."""
+    tops, rules, leaves = [""], [], ["Model"]
+    first = 2  # column 1 holds the model name
+    for i, group in enumerate(table_groups):
+        if i:
+            tops.append("")
+            leaves.append("")
+            first += 1
+        width = len(group.columns)
+        tops.append(rf"\multicolumn{{{width}}}{{c}}{{{group.title}}}")
+        rules.append(rf"\cline{{{first}-{first + width - 1}}}")
+        leaves.extend(c.header for c in group.columns)
+        first += width
+    return [_join(tops) + r" \\", "".join(rules), _join(leaves) + r" \\"]
+
+
+def row_cells(table_groups: tuple[Group, ...], cell) -> list[str]:
+    """A body row's cells after the name: ``cell(column)`` per column, a spacer between groups."""
+    cells: list[str] = []
+    for i, group in enumerate(table_groups):
+        if i:
+            cells.append("")
+        cells.extend(cell(c) for c in group.columns)
+    return cells
 
 # Diagnostics, not scores: never bolded, and excluded from the per-column "best". conf bacc's
 # max marks the *least* robust models, and delta is sign-informative but not a quality ordering.
@@ -144,16 +234,21 @@ def benchmark_exposed(entry: ResultsTable, ranked: pd.DataFrame) -> set[str]:
 # --------------------------------------------------------------------------------------
 
 
+def _shared_k(df: pd.DataFrame) -> int:
+    ks = sorted(df["k"].unique())
+    if len(ks) != 1:
+        raise CaptionClaimError(
+            f"median-k promises one shared k, run has {ks}. The caption cannot call this "
+            f"a shared operating point."
+        )
+    return int(ks[0])
+
+
 def _operating_point(df: pd.DataFrame, protocol: str) -> str:
     ks = sorted(df["k"].unique())
     if protocol == "median-k":
-        if len(ks) != 1:
-            raise CaptionClaimError(
-                f"median-k promises one shared k, run has {ks}. The caption cannot call this "
-                f"a shared operating point."
-            )
         return (
-            rf"All models are evaluated at the shared operating point $k{{=}}{int(ks[0])}$, "
+            rf"All models are evaluated at the shared operating point $k{{=}}{_shared_k(df)}$, "
             r"the dataset median of the per-model biological $k^\star$."
         )
     lo, hi = int(min(ks)), int(max(ks))
@@ -210,14 +305,26 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
         rf"median \code{{CRoMa}} ($m{{=}}{m}$){_control_clause(control)}. "
         rf"{_operating_point(df, entry.protocol)}"
     )
-    cols = (
-        r" Columns: biological and confounder $k$-NN balanced accuracy (bio bacc and conf "
-        rf"bacc; confounder: {confounder}); pooled \code{{RI}} "
-        r"and \code{MaRI}; $\Delta{=}\code{MaRI}-\code{RI}$; median \code{CRoMa}; $F(0)$, the "
-        r"fraction with $\mcode{CRoMa}\le0$; $\mcode{LTM}_{10}$, the mean of the lowest decile; "
-        r"and support, the fraction of samples effectively contributing to \code{RI}/\code{MaRI}. "
-        r"Bold denotes the best value in each score column (conf bacc and $\Delta$ are diagnostics)."
-    )
+    # The primary table defines the three column groups, in the order the header shows them;
+    # every other results table refers back to it rather than restating them.
+    if entry.primary:
+        cols = (
+            r" Columns fall into three groups. \emph{$k$-NN decodability}: biological (Biology) "
+            rf"and confounder (Centre; confounder: {confounder}) $k$-NN balanced accuracy. "
+            r"\emph{Fixed-$k$ pooled} scores at the operating point: \code{RI} and \code{MaRI}; "
+            r"$\Delta{=}\code{MaRI}-\code{RI}$; and support, the fraction of samples effectively "
+            r"contributing to \code{RI}/\code{MaRI}. "
+            rf"\emph{{Per-sample \code{{CRoMa}}}} ($m{{=}}{m}$): the median; $F(0)$, the fraction "
+            r"with $\mcode{CRoMa}\le0$; and $\mcode{LTM}_{10}$, the mean of the lowest decile. "
+            r"Arrows give the favourable direction of each score ($\uparrow$ higher is better, "
+            r"$\downarrow$ lower is better); bold denotes the best value in each score column "
+            r"(Centre and $\Delta$ are diagnostics)."
+        )
+    else:
+        cols = (
+            rf" Column groups, arrows and bold follow Table~\ref{{{primary().label}}} "
+            rf"(confounder: {confounder})."
+        )
     ci = (
         r" \code{CRoMa} brackets are 95\% group-level cluster-bootstrap confidence intervals on "
         r"the pooled median (Supplementary Table~\ref{tab:bootstrap-uncertainty})."
@@ -249,26 +356,31 @@ def build_table(entry: ResultsTable, metrics_csv: Path) -> str:
     }
     # TCGA tables mark corpus exposure; Tolkach marks conservative institutional exposure.
     exposed = benchmark_exposed(entry, ranked)
+    k = str(_shared_k(df)) if entry.protocol == "median-k" else r"k^\star"
+    table_groups = groups(k)
 
     def row(record: pd.Series, *, bold: bool) -> str:
         name = record["model"]
-        cells = [name + (r"$^{\dagger}$" if name in exposed else "")]
-        for col, _, dec, pct in COLS:
+
+        def cell(column: Column) -> str:
+            col = column.key
             is_best = bold and col not in NO_BOLD and abs(record[col] - best[col]) < 1e-9
-            cell = _fmt(record[col], dec, pct, is_best, signed=col in SIGNED)
+            text = _fmt(record[col], column.decimals, column.percent, is_best, col in SIGNED)
             if col == "croma" and croma_ci and record["model"] in croma_ci:
-                cell += r"\," + scriptsize_ci(*croma_ci[record["model"]])
-            cells.append(cell)
-        return " & ".join(cells) + r" \\"
+                text += r"\," + scriptsize_ci(*croma_ci[record["model"]])
+            return text
+
+        cells = [name + (r"$^{\dagger}$" if name in exposed else "")]
+        return _join(cells + row_cells(table_groups, cell)) + r" \\"
 
     lines = [
         r"\begin{table}[!htbp]",
         r"\centering",
         r"\small",
         r"\setlength{\tabcolsep}{4pt}",
-        r"\begin{tabular}{l" + "c" * len(COLS) + "}",
+        r"\begin{tabular}{" + column_spec(table_groups) + "}",
         r"\hline",
-        " & ".join(["Model"] + [h for _, h, _, _ in COLS]) + r" \\",
+        *header_lines(table_groups),
         r"\hline",
     ]
     lines += [row(r, bold=True) for _, r in ranked.iterrows()]

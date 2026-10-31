@@ -25,43 +25,51 @@ from pathlib import Path
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
-from generate_results_table import _fmt, load_frame
+from generate_results_table import (
+    SIGNED,
+    Column,
+    _fmt,
+    _join,
+    column_spec,
+    groups,
+    header_lines,
+    load_frame,
+    primary,
+    row_cells,
+    total_columns,
+)
 from paper_manifest import by_prefix
 
 REPO = Path(__file__).resolve().parents[2]
 OUT = REPO / "paper/sections/supp/table_panda_isup.tex"
 
-PANEL_A = [
-    ("k", r"$k^\star$", 0, False),
-    ("bio_knn_bacc", "bio bacc", 3, False),
-    ("confounder_knn_bacc", "conf bacc", 3, False),
-    ("ri", r"\code{RI}", 3, False),
-    ("mari", r"\code{MaRI}", 3, False),
-    ("croma", r"\code{CRoMa}", 2, False),
-    ("croma_frac_neg", r"$F(0)$", 3, False),
-    ("croma_ltm_alpha", r"$\mcode{LTM}_{10}$", 2, False),
-    ("support", "support", 1, True),
-]
+#: The tile tables' three column groups, with the per-model k* leading the pooled group: the
+#: slide panel runs at k-star, so there is no one k to name in the group title.
+KSTAR = Column("k", r"$k^\star$", 0)
+GROUPS = groups(r"k^\star", pooled_lead=(KSTAR,))
+PANEL_A = [(c.key, c.header, c.decimals, c.percent) for g in GROUPS for c in g.columns]
 PANEL_B = list(PANEL_A)
 
-NO_BOLD = ("k", "confounder_knn_bacc")
+NO_BOLD = ("k", "confounder_knn_bacc", "delta")
 MINIMIZE = ("croma_frac_neg",)
 
 
-def _panel(df: pd.DataFrame, cols) -> list[str]:
+def _panel(df: pd.DataFrame) -> list[str]:
     df = df.sort_values("croma", ascending=False)
     best = {
         c: (df[c].min() if c in MINIMIZE else df[c].max())
-        for c, _, _, _ in cols
+        for c, _, _, _ in PANEL_A
         if c not in NO_BOLD
     }
     lines = []
     for _, r in df.iterrows():
-        cells = [r["model"]]
-        for col, _, dec, pct in cols:
+
+        def cell(column: Column) -> str:
+            col = column.key
             is_best = col not in NO_BOLD and abs(r[col] - best[col]) < 1e-9
-            cells.append(_fmt(r[col], dec, pct, is_best))
-        lines.append(" & ".join(cells) + r" \\")
+            return _fmt(r[col], column.decimals, column.percent, is_best, col in SIGNED)
+
+        lines.append(_join([r["model"], *row_cells(GROUPS, cell)]) + r" \\")
     return lines
 
 
@@ -79,16 +87,30 @@ def _caption(a: pd.DataFrame, b: pd.DataFrame) -> str:
     n = len(set(a["model"]) & set(b["model"]))
     return (
         rf"\textbf{{Robustness of slide-level representations on PCaBiop and PCaBiop-ISUP.}} "
-        rf"The {_spell(n)} slide-level encoders are ordered within each panel by "
-        rf"\code{{CRoMa}} ($m{{=}}{m}$). Biological balanced accuracy (bio bacc) is reported at "
-        r"the model-specific, biologically selected $k^\star$; confounder balanced accuracy "
-        r"(conf bacc) is the maximum over the evaluated $k$ grid. \code{RI} and \code{MaRI} are "
-        r"pooled at $k^\star$; support is the fraction of samples contributing to these "
-        r"fixed-$k$ scores. $F(0)$ is the fraction with $\mcode{CRoMa}<0$, and $\mcode{LTM}_{10}$ "
-        r"is the mean of the lowest decile. Bold denotes the most favourable value in each "
-        r"score. \textbf{a,} Binary cancer detection on $1{,}000$ slides. \textbf{b,} Six-class "
-        r"ISUP grading over $3{,}000$ slides."
+        rf"The {_spell(n)} slide-level encoders are ordered within each panel by median "
+        rf"\code{{CRoMa}} ($m{{=}}{m}$). Column groups, arrows and bold follow "
+        rf"Table~\ref{{{primary().label}}}; the confounder is the data provider. Unlike the "
+        r"tile tables, each encoder is evaluated at a model-specific, biologically selected "
+        r"$k^\star$, listed in the pooled group: Biology and the fixed-$k$ pooled scores are "
+        r"reported at $k^\star$, and Centre is the maximum over the evaluated $k$ grid. "
+        r"\textbf{a,} Binary "
+        r"cancer detection on $1{,}000$ slides. \textbf{b,} Six-class ISUP grading over "
+        r"$3{,}000$ slides."
     )
+
+
+def _tabular(title: str, df: pd.DataFrame) -> list[str]:
+    return [
+        r"\begin{tabular}{" + column_spec(GROUPS) + "}",
+        r"\hline",
+        rf"\multicolumn{{{total_columns(GROUPS)}}}{{l}}{{\emph{{{title}}}}} \\",
+        r"\hline",
+        *header_lines(GROUPS),
+        r"\hline",
+        *_panel(df),
+        r"\hline",
+        r"\end{tabular}",
+    ]
 
 
 def build_float(root: Path = REPO) -> str:
@@ -98,27 +120,11 @@ def build_float(root: Path = REPO) -> str:
         r"\begin{table}[!htbp]",
         r"\centering",
         r"\small",
-        r"\setlength{\tabcolsep}{5pt}",
-        r"\begin{tabular}{l" + "c" * len(PANEL_A) + "}",
-        r"\hline",
-        rf"\multicolumn{{{len(PANEL_A) + 1}}}{{l}}{{\emph{{(a) Cancer detection}}}} \\",
-        r"\hline",
-        " & ".join(["Model"] + [h for _, h, _, _ in PANEL_A]) + r" \\",
-        r"\hline",
-        *_panel(a, PANEL_A),
-        r"\hline",
-        r"\end{tabular}",
+        r"\setlength{\tabcolsep}{4pt}",
+        *_tabular("(a) Cancer detection", a),
         "",
         r"\vspace{5pt}",
-        r"\begin{tabular}{l" + "c" * len(PANEL_B) + "}",
-        r"\hline",
-        rf"\multicolumn{{{len(PANEL_B) + 1}}}{{l}}{{\emph{{(b) ISUP grading}}}} \\",
-        r"\hline",
-        " & ".join(["Model"] + [h for _, h, _, _ in PANEL_B]) + r" \\",
-        r"\hline",
-        *_panel(b, PANEL_B),
-        r"\hline",
-        r"\end{tabular}",
+        *_tabular("(b) ISUP grading", b),
         rf"\caption{{{_caption(a, b)}}}",
         # Both labels attach to this one float on purpose: the results section cites the
         # detection panel and the supplement cites the grading panel.

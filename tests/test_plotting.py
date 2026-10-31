@@ -483,10 +483,10 @@ def test_plot_croma_pareto_rings_labels_the_frontier_and_marks_the_exposed(
         # Phikon is dominated outright. GenBio-PathFM is exposed, so its point label carries
         # the dagger; Virchow2 is a labelled frontier member with no dagger.
         rows = [
-            {"model": "Virchow2", "croma": 0.20, "croma_ltm_alpha": -0.11, "croma_alpha": 0.1},
-            {"model": "GenBio-PathFM", "croma": 0.19, "croma_ltm_alpha": -0.07, "croma_alpha": 0.1},
-            {"model": "CONCH", "croma": 0.20, "croma_ltm_alpha": -0.20, "croma_alpha": 0.1},
-            {"model": "Phikon", "croma": -0.20, "croma_ltm_alpha": -0.50, "croma_alpha": 0.1},
+            {"model": "Virchow2", "croma": 0.20, "croma_ltm_alpha": -0.11, "bio": 0.95},
+            {"model": "GenBio-PathFM", "croma": 0.19, "croma_ltm_alpha": -0.07, "bio": 0.94},
+            {"model": "CONCH", "croma": 0.20, "croma_ltm_alpha": -0.20, "bio": 0.93},
+            {"model": "Phikon", "croma": -0.20, "croma_ltm_alpha": -0.50, "bio": 0.85},
         ]
         out_path = tmp_path / "croma_pareto.png"
         plot_croma_pareto(rows=rows, out_path=out_path, exposed={"GenBio-PathFM"})
@@ -546,10 +546,10 @@ def test_plot_croma_pareto_labels_every_frontier_member_and_marks_off_frontier(
         # frontier; Phikon is dominated. Midnight-12k (frontier) and Phikon (dominated) are
         # exposed, so two legend daggers are drawn while three points are ringed.
         rows = [
-            {"model": "Midnight-12k", "croma": 0.40, "croma_ltm_alpha": -0.21, "croma_alpha": 0.1},
-            {"model": "H-optimus-1", "croma": 0.09, "croma_ltm_alpha": -0.10, "croma_alpha": 0.1},
-            {"model": "CONCHv1.5", "croma": 0.15, "croma_ltm_alpha": -0.13, "croma_alpha": 0.1},
-            {"model": "Phikon", "croma": 0.02, "croma_ltm_alpha": -0.20, "croma_alpha": 0.1},
+            {"model": "Midnight-12k", "croma": 0.40, "croma_ltm_alpha": -0.21, "bio": 0.88},
+            {"model": "H-optimus-1", "croma": 0.09, "croma_ltm_alpha": -0.10, "bio": 0.88},
+            {"model": "CONCHv1.5", "croma": 0.15, "croma_ltm_alpha": -0.13, "bio": 0.81},
+            {"model": "Phikon", "croma": 0.02, "croma_ltm_alpha": -0.20, "bio": 0.77},
         ]
         out_path = tmp_path / "croma_pareto_supp.png"
         plot_croma_pareto(rows=rows, out_path=out_path, exposed={"Midnight-12k", "Phikon"})
@@ -611,6 +611,11 @@ def test_plot_rank_pareto_rings_labels_the_frontier_and_marks_the_exposed(
             {"model": "GenBio-PathFM", "median_rank": 3.0, "tail_rank": 6.0, "exposed": True},
             {"model": "Midnight-12k", "median_rank": 3.0, "tail_rank": 15.0, "exposed": True},
         ]
+        # Fill: mean biological-accuracy rank, independent of the two plotted axes.
+        bio_rank = dict(
+            zip(("Midnight-12k", "H-optimus-1", "GenBio-PathFM", "CONCHv1.5"), (1, 2, 4, 7))
+        )
+        rows = [{**r, "bio_rank": float(bio_rank.get(r["model"], 9))} for r in rows]
         out_path = tmp_path / "rank_pareto.png"
         plot_rank_pareto(rows=rows, out_path=out_path, n_benchmarks=3)
     finally:
@@ -628,6 +633,88 @@ def test_plot_rank_pareto_rings_labels_the_frontier_and_marks_the_exposed(
     assert not any(r"$\dagger$" in l for l in scatter_labels)
     assert not any(t == r"$\dagger$" for t in annotate_texts)
     assert not any("more robust" in t for t in annotate_texts)
+
+
+def _spy_point_colours_and_colorbars(monkeypatch):
+    """Capture each labelled per-model point's colour and every colour bar drawn."""
+    import matplotlib.axes
+    import matplotlib.figure
+
+    colours: dict[str, tuple] = {}
+    bars: list = []
+    original_scatter = matplotlib.axes.Axes.scatter
+    original_colorbar = matplotlib.figure.Figure.colorbar
+
+    def spy_scatter(self, x, y, *args, **kwargs):
+        if isinstance(kwargs.get("label"), str):
+            colours[kwargs["label"]] = kwargs.get("color")
+        return original_scatter(self, x, y, *args, **kwargs)
+
+    def spy_colorbar(self, *args, **kwargs):
+        bar = original_colorbar(self, *args, **kwargs)
+        bars.append(bar)
+        return bar
+
+    monkeypatch.setattr(matplotlib.axes.Axes, "scatter", spy_scatter)
+    monkeypatch.setattr(matplotlib.figure.Figure, "colorbar", spy_colorbar)
+    return colours, bars
+
+
+def test_plot_croma_pareto_colours_each_encoder_by_biological_accuracy(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Fill colour carries biological k-NN balanced accuracy on the one sequential ramp: the
+    most accurate encoder takes its dark end, the least accurate its light end, and a colour
+    bar names the quantity."""
+    from plotting.style import sequential_cmap
+
+    colours, bars = _spy_point_colours_and_colorbars(monkeypatch)
+    rows = [
+        {"model": "Virchow2", "croma": 0.20, "croma_ltm_alpha": -0.11, "bio": 0.95},
+        {"model": "CONCH", "croma": 0.15, "croma_ltm_alpha": -0.20, "bio": 0.90},
+        {"model": "Phikon", "croma": -0.20, "croma_ltm_alpha": -0.50, "bio": 0.85},
+    ]
+    plot_croma_pareto(rows=rows, out_path=tmp_path / "croma_pareto.png")
+
+    ramp = sequential_cmap()
+    assert np.allclose(colours["Virchow2"], ramp(1.0))
+    assert np.allclose(colours["CONCH"], ramp(0.5))
+    assert np.allclose(colours["Phikon"], ramp(0.0))
+    (bar,) = bars
+    assert bar.ax.get_ylabel() == "Biological k-NN balanced accuracy"
+
+
+def test_plot_croma_pareto_refuses_a_point_without_biological_accuracy(tmp_path: Path) -> None:
+    rows = [
+        {"model": "Virchow2", "croma": 0.20, "croma_ltm_alpha": -0.11, "bio": 0.95},
+        {"model": "CONCH", "croma": 0.15, "croma_ltm_alpha": -0.20},
+    ]
+    with pytest.raises(ValueError, match="CONCH"):
+        plot_croma_pareto(rows=rows, out_path=tmp_path / "croma_pareto.png")
+
+
+def test_plot_rank_pareto_colours_by_mean_biological_accuracy_rank(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Raw accuracy is not commensurable across benchmarks, so the overview colours by mean
+    rank: the best (lowest) mean rank takes the ramp's dark end, as the highest accuracy does
+    on the per-benchmark panels."""
+    from plotting.style import sequential_cmap
+
+    colours, bars = _spy_point_colours_and_colorbars(monkeypatch)
+    rows = [
+        {"model": "CONCH", "median_rank": 2.0, "tail_rank": 7.0, "bio_rank": 1.0},
+        {"model": "H-optimus-1", "median_rank": 8.0, "tail_rank": 3.0, "bio_rank": 3.0},
+        {"model": "Phikon", "median_rank": 9.0, "tail_rank": 9.0, "bio_rank": 5.0},
+    ]
+    plot_rank_pareto(rows=rows, out_path=tmp_path / "rank_pareto.png", n_benchmarks=3)
+
+    ramp = sequential_cmap()
+    assert np.allclose(colours["CONCH"], ramp(1.0))
+    assert np.allclose(colours["H-optimus-1"], ramp(0.5))
+    assert np.allclose(colours["Phikon"], ramp(0.0))
+    (bar,) = bars
+    assert bar.ax.get_ylabel() == "Mean rank by biological k-NN accuracy  (1 = best)"
 
 
 def test_plot_croma_ltm_bars_sorts_descending_with_threshold_and_local_legend(

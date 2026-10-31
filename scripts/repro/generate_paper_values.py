@@ -105,15 +105,14 @@ SATURATION_PAIR = ("Camelyon", "Hibou-B", "Hibou-L")
 # and its twin, so both are fixed here and every ordinal claim the paragraph makes is
 # asserted below rather than assumed.
 #
-# `twin` is the encoder nearest to `model` in probe space once the two k-NN accuracies are
-# differenced: it is the TCGA analogue of the Camelyon saturation pair, showing that the
-# pooled probes rank-predict CRoMa without setting its scale. Pinned, but cross-checked to
-# still *be* the nearest -- the paragraph rotted once already by asserting an ordering that
-# had silently inverted (the run moved from 8 medical centres to PathoROB's 4 in-domain
-# ones, and with it every TCGA probe accuracy).
+# The twin is the encoder nearest to `model` in probe space once the two k-NN accuracies are
+# differenced: the TCGA analogue of the Camelyon saturation pair, showing that the pooled
+# probes rank-predict CRoMa without setting its scale. It is derived, not pinned, and
+# emitted as \ProvenanceTwinModel: a pinned name went stale twice as the panel grew (the
+# run moved from 8 medical centres to PathoROB's 4, then Mettle joined nearer than
+# CONCHv1.5). The wide-margin claim is still asserted against whichever encoder it is.
 PROVENANCE_PREFIX = "TcgaFourByFour"
 PROVENANCE_MODEL = "Midnight-12k"
-PROVENANCE_TWIN = "CONCHv1.5"
 PROVENANCE_TOP_BIO_DEPTH = 5
 PROVENANCE_MIN_FOLD = 2.0  # the twin's CRoMa must be at least this many times smaller
 MODEL_METADATA_CSV = Path(__file__).resolve().parent.parent / "bench" / "model_metadata.csv"
@@ -378,7 +377,7 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
     d["gap"] = d["bio_knn_bacc"].astype(float) - d["confounder_knn_bacc"].astype(float)
     d = d.set_index("model")
 
-    model, twin = PROVENANCE_MODEL, PROVENANCE_TWIN
+    model = PROVENANCE_MODEL
     metadata = pd.read_csv(MODEL_METADATA_CSV, keep_default_na=False, na_values=[])
     fine_tunes = metadata[
         (metadata["parent_model"] == model)
@@ -390,9 +389,8 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
             f"{MODEL_METADATA_CSV}; got {fine_tunes}."
         )
     fine_tune = str(fine_tunes[0])
-    for name in (model, twin):
-        if name not in d.index:
-            raise CaptionClaimError(f"Sec 3.4 names {name!r}, absent from the ranked panel.")
+    if model not in d.index:
+        raise CaptionClaimError(f"Sec 3.4 names {model!r}, absent from the ranked panel.")
     others = d.drop(index=model)
 
     if d["croma"].idxmax() != model:
@@ -423,12 +421,7 @@ def _provenance_macros(df: pd.DataFrame) -> list[str]:
             f"centre-decodable among the top {PROVENANCE_TOP_BIO_DEPTH} biological "
             f"encoders ({top_bio_least_conf} is)."
         )
-    nearest = (others["gap"] - d.loc[model, "gap"]).abs().idxmin()
-    if nearest != twin:
-        raise CaptionClaimError(
-            f"Sec 3.4 names {twin} as {model}'s nearest neighbour in differenced-probe "
-            f"space; it is now {nearest}."
-        )
+    twin = str((others["gap"] - d.loc[model, "gap"]).abs().idxmin())
     fold = float(d.loc[model, "croma"] / d.loc[twin, "croma"])
     if fold < PROVENANCE_MIN_FOLD:
         raise CaptionClaimError(
@@ -584,68 +577,29 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
 # may enter it.
 CROSS_COHORT_BENCHMARKS = ["Camelyon", "Tolkach", "TcgaFourByFour"]
 SLIDE_PANEL_BENCHMARK = "Panda"
-EXPANDED_ENCODERS = frozenset(
-    # Published spellings: the frames this set is compared against are restyled at load.
-    {"Mascaret", "Phaet", "RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"}
-)
 
 
-def _historical_rank_pareto(current: "RankPareto") -> "RankPareto":
-    """Re-rank the current panel after removing exactly the five issue #133 additions."""
-    from _rank_pareto import RankPareto
+def _rank_frontier_macros(current: "RankPareto") -> list[str]:
+    """Name the cross-benchmark mean-rank Pareto frontier the overview figure rings.
 
-    missing = EXPANDED_ENCODERS - set(current.models)
-    if missing:
-        raise CaptionClaimError(
-            f"Discussion frontier guard is missing issue #133 encoders: {sorted(missing)}"
-        )
-
-    prior_models = [model for model in current.models if model not in EXPANDED_ENCODERS]
-    return RankPareto(
-        medians=current.medians.loc[prior_models],
-        median_ranks=current.median_ranks.loc[prior_models]
-        .rank(ascending=True, method="first")
-        .astype(int),
-        tail_ranks=current.tail_ranks.loc[prior_models]
-        .rank(ascending=True, method="first")
-        .astype(int),
-        exposed=frozenset(current.exposed & set(prior_models)),
-        adversarial=current.adversarial,
-    )
-
-
-def _rank_frontier_change_macros(
-    historical: "RankPareto", current: "RankPareto"
-) -> list[str]:
-    """Guard the Discussion claim from two explicit rank-Pareto inputs.
-
-    This comparison is deliberately I/O-free so committed tests can exercise the exact
-    claim without the git-ignored benchmark tree. Both inputs use ``RankPareto.frontier``,
-    the same property that rings the generated figure.
+    I/O-free so committed tests can exercise it without the git-ignored benchmark tree; it
+    reads ``RankPareto.frontier``, the same property that rings the generated figure. An
+    empty frontier is a broken input, never a sentence.
     """
-    current_frontier = frozenset(current.frontier)
-    prior_frontier = frozenset(historical.frontier)
-    if not current_frontier or not prior_frontier:
-        raise CaptionClaimError("Discussion frontier guard produced an empty frontier.")
-    if current_frontier == prior_frontier:
-        raise CaptionClaimError(
-            "Discussion says frontier membership changed after issue #133, but the "
-            f"historical and expanded sets are both {sorted(current_frontier)}."
-        )
-
+    frontier = sorted(current.frontier)
+    if not frontier:
+        raise CaptionClaimError("the cross-benchmark rank frontier is empty.")
     return [
-        rf"\newcommand{{\TilePriorRankFrontierNModels}}{{{len(prior_frontier)}}}",
-        rf"\newcommand{{\TileRankFrontierNModels}}{{{len(current_frontier)}}}",
-        rf"\newcommand{{\TileRankFrontierModels}}{{{', '.join(sorted(current_frontier))}}}",
+        rf"\newcommand{{\TileRankFrontierNModels}}{{{len(frontier)}}}",
+        rf"\newcommand{{\TileRankFrontierModels}}{{{', '.join(frontier)}}}",
     ]
 
 
-def _load_rank_frontier_change_macros() -> list[str]:
+def _load_rank_frontier_macros() -> list[str]:
     """Load live benchmark ranks for the canonical local paper build."""
     from _rank_pareto import load as load_rank_pareto
 
-    current = load_rank_pareto()
-    return _rank_frontier_change_macros(_historical_rank_pareto(current), current)
+    return _rank_frontier_macros(load_rank_pareto())
 
 
 def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
@@ -738,8 +692,18 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         out.append(rf"\newcommand{{\ProbePooledRhoRange}}{{{_span(lo, hi)}}}")
 
     out.extend(_cross_cohort_macros(croma_by_prefix, panel_sizes))
-    out.append("% Expanded-panel frontier guard (Discussion)")
-    out.extend(_load_rank_frontier_change_macros())
+    out.append("% Cross-benchmark mean-rank Pareto frontier (fig:croma-pareto-rank)")
+    out.extend(_load_rank_frontier_macros())
+
+    # Roster-dependent numbers the text quotes: per-benchmark frontiers, counts and leaders,
+    # operating k, the control, TCGA-2x2, APD vs nIPD, and the typed-neighbour coverage.
+    # Unlike the study blocks below, these never warn and skip -- a missing input raises.
+    from _panel_macros import panel_macros
+    from generate_supp_rank_table import macros as typed_neighbour_macros
+
+    out.extend(panel_macros(root))
+    out.append("% Typed-neighbour coverage (tab:typed-neighbour-coverage)")
+    out.extend(typed_neighbour_macros(root))
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel

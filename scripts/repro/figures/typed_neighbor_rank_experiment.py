@@ -230,6 +230,7 @@ summary.to_csv(out, index=False)
 json.dump(
     dict(
         ranked_n_models=len(_ranked),
+        n_samples=int(n),
         pooled_first_percentiles_ranked={str(p): float(np.percentile(first_ranked, p)) for p in (50, 75, 90, 95, 99)},
         pooled_both_percentiles_ranked={str(p): float(np.percentile(both_ranked, p)) for p in (50, 75, 90, 95, 99)},
         pooled_frac_first_le10_ranked=float(np.mean(first_ranked <= 10)),
