@@ -60,6 +60,7 @@ from run_config import (  # noqa: E402
     replay_args,
     write_run_config,
 )
+from _slide_vs_meanpool import RENDERED_PAIRS as SLIDE_VS_MEANPOOL_PAIRS  # noqa: E402
 
 #: Every study whose output a ``build_paper.py`` generator reads: the ones its STUDIES
 #: generators read, plus ``mari_vs_ri.py`` and ``finetune_pairs.py``, which feed CORE
@@ -97,10 +98,13 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # tab:slide-vs-meanpool. Prerequisite outside this pipeline: the GPU re-extraction
     # `scripts/studies/slide_vs_meanpool.py extract` (hours per pair; run it detached).
     # Without it, reduce fails naming the pair, cohort and that command. Both steps use
-    # the study-root default for the arms (output/studies/slide-vs-meanpool/embeddings/).
-    ("slide-vs-meanpool-reduce", "scripts/studies/slide_vs_meanpool.py", ["reduce"]),
+    # the study-root default for the arms (output/studies/slide-vs-meanpool/embeddings/),
+    # and both take the pairs the table renders, which include an optional pair that ran;
+    # the study's own default is the required pairs only.
+    ("slide-vs-meanpool-reduce", "scripts/studies/slide_vs_meanpool.py",
+     ["reduce", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
     ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
-     ["evaluate", "--recompute"]),
+     ["evaluate", "--recompute", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
 ]
 #: The studies that take ``--jobs``: the probe sweeps, and the slide-vs-meanpool evaluation,
 #: which scores its arms' APD cells. Each is always told this run's count, 1 included: the

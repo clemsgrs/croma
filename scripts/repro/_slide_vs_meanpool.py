@@ -9,8 +9,10 @@ read them and must agree:
 * ``generate_slide_vs_meanpool_table.py`` renders ``tab:slide-vs-meanpool``;
 * ``generate_paper_values.py`` emits the paired differences as macros.
 
-Which pairs are rendered is declared once, in :data:`RENDERED_PAIRS`. A declared pair the
-study has no output for is an error, never a silently shorter table.
+Which pairs are rendered is declared once, in :data:`RENDERED_PAIRS`. A rendered pair the
+study has no output for is an error, never a silently shorter table, and so is a declared
+pair that is neither rendered nor recorded by the study as not run (with its reason, which
+the caption gives). A required pair is always rendered.
 """
 
 from __future__ import annotations
@@ -28,11 +30,15 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts" / "studies"))
 from slide_vs_meanpool import PAIRS, PAIRS_BY_MODEL, STUDY_NAME  # noqa: E402
 
-__all__ = ["CaptionClaimError", "RENDERED_PAIRS", "STUDY_REL", "Basis", "load", "macros"]
+__all__ = [
+    "CaptionClaimError", "RENDERED_PAIRS", "STUDY_REL", "Basis", "load", "macros", "tex_text",
+]
 
-#: The pairs ``tab:slide-vs-meanpool`` renders, in row order. Every one must have study
-#: output; the caption lists the declared pairs (``slide_vs_meanpool.PAIRS``) left out.
-RENDERED_PAIRS: tuple[str, ...] = ("TITAN", "MOOZY", "PRISM2")
+#: The pairs ``tab:slide-vs-meanpool`` renders, in row order: every pair the study ran, the
+#: three required ones and the optional PRISM. Every one must have study output. The
+#: declared pairs (``slide_vs_meanpool.PAIRS``) left out are those the study records as not
+#: run, which the caption names with their reasons.
+RENDERED_PAIRS: tuple[str, ...] = ("TITAN", "MOOZY", "PRISM2", "PRISM")
 
 STUDY_REL = f"output/studies/{STUDY_NAME}"
 
@@ -68,16 +74,39 @@ class Basis:
 
     @property
     def missing(self) -> list[str]:
-        """Declared pairs that the table does not render."""
+        """Declared pairs that the table does not render (each one recorded as not run)."""
         return [p.slide_model for p in PAIRS if p.slide_model not in self.rendered]
+
+    @property
+    def not_run(self) -> dict[str, str]:
+        """Declared pairs the study recorded as not run, with the reason it recorded."""
+        return dict(self.provenance.get("not_run") or {})
 
 
 def tile_display(pair: str) -> str:
     return TILE_DISPLAY[PAIRS_BY_MODEL[pair].tile_encoder]
 
 
+#: LaTeX's special characters in running text, and how each is set as itself.
+_TEX_TEXT = {
+    "\\": r"\textbackslash{}", "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#", "_": r"\_",
+    "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}",
+}
+
+
+def tex_text(text: str) -> str:
+    """``text`` (a recorded reason, say) set literally in LaTeX running text."""
+    return "".join(_TEX_TEXT.get(char, char) for char in str(text))
+
+
 def load(study_dir: Path | None = None, rendered: tuple[str, ...] = RENDERED_PAIRS) -> Basis:
-    """Read the study's artifacts and check that every rendered pair is in all three."""
+    """Read the study's artifacts and check them against the pairs the table renders.
+
+    Every rendered pair must be in all three artifacts. The declared pairs split into the
+    rendered ones and the ones ``provenance.json`` records as not run, with a reason: a
+    pair the study did not run is never rendered, a required pair is always rendered, and
+    no declared pair is left out without a recorded reason.
+    """
     study_dir = Path(study_dir) if study_dir is not None else REPO / STUDY_REL
     paths = [study_dir / n for n in ("summary.csv", "differences.csv", "provenance.json")]
     absent = [str(p) for p in paths if not p.exists()]
@@ -102,10 +131,22 @@ def load(study_dir: Path | None = None, rendered: tuple[str, ...] = RENDERED_PAI
             problems.append(f"{pair}: differences.csv has {sorted(stats)}")
         if pair not in provenance.get("pairs", {}):
             problems.append(f"{pair}: provenance.json has no record")
+    not_run = provenance.get("not_run") or {}
+    for declared in PAIRS:
+        pair = declared.slide_model
+        reason = str(not_run.get(pair) or "").strip()
+        if pair in rendered:
+            if pair in not_run:
+                problems.append(f"{pair} is rendered, but the study did not run it ({reason})")
+        elif declared.required:
+            problems.append(f"{pair} is a required pair and must be rendered")
+        elif not reason:
+            problems.append(
+                f"{pair} is declared but neither rendered nor recorded as not run with a reason"
+            )
     if problems:
         raise CaptionClaimError(
-            "tab:slide-vs-meanpool declares pairs the study has no output for: "
-            + "; ".join(problems)
+            "tab:slide-vs-meanpool does not match the study's output: " + "; ".join(problems)
         )
     return Basis(
         summary=summary.set_index(["pair", "arm"]),

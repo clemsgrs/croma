@@ -528,6 +528,25 @@ def test_evaluate_needs_no_slide2vec_and_records_the_extracting_version(tmp_path
     assert provenance["pairs"]["TITAN"]["slide2vec_version"] == "7.1.4"
 
 
+def test_evaluate_records_the_declared_pairs_it_did_not_run_and_why(tmp_path, monkeypatch):
+    # The table reads only the study's artifacts: provenance.json carries the not-run
+    # pairs and their reasons, whether or not ``extract`` was ever asked for them.
+    import json
+
+    import slide_vs_meanpool as study
+
+    study_dir = _evaluate(tmp_path, monkeypatch, extraction=None)
+
+    provenance = json.loads((study_dir / "provenance.json").read_text())
+    assert provenance["declared_pairs"] == [pair.slide_model for pair in study.PAIRS]
+    assert provenance["not_run"] == study.NOT_RUN
+    # The evaluated pair's own record is unchanged by the declaration.
+    assert set(provenance["pairs"]["TITAN"]) == set(vars(study.PAIRS_BY_MODEL["TITAN"])) | {
+        "reproduction",
+        "slide2vec_version",
+    }
+
+
 def test_evaluate_writes_no_artifact_when_its_provenance_cannot_be_built(tmp_path, monkeypatch):
     # The three artifacts describe one evaluation: a failure while assembling the
     # provenance must not leave fresh CSVs beside a missing or older provenance.json.
@@ -797,6 +816,66 @@ def test_a_finished_required_pair_neither_waits_for_the_gpu_nor_restamps_its_rec
 
     # The times and the slide2vec version stay those of the run that embedded the slides.
     assert json.loads((study_dir / "extraction.json").read_text()) == {"TITAN": DONE_RECORD}
+
+
+def test_a_pair_declared_not_run_is_recorded_with_its_reason_and_never_launched(
+    tmp_path, monkeypatch
+):
+    # Prov-GigaPath has no faithful re-run (``study.NOT_RUN`` says why). ``extract`` records
+    # it as attempted and not run, with that reason, instead of failing on it; it probes no
+    # GPU and launches no slide2vec for it, and leaves the other pairs' records alone.
+    import json
+
+    import slide_vs_meanpool as study
+
+    assert "Prov-GigaPath" in study.NOT_RUN
+    study_dir = _complete_pair_on_a_cpu_host(tmp_path, monkeypatch, "TITAN")
+
+    def no_probe():
+        raise AssertionError("probed the GPU for a pair that is not run")
+
+    monkeypatch.setattr(study, "_gpu_free_mib", no_probe)
+    argv = ["extract", "--study-dir", str(study_dir), "--pairs", "TITAN", "Prov-GigaPath"]
+
+    assert study.main(argv) == 0
+
+    expected = {
+        "TITAN": DONE_RECORD,
+        "Prov-GigaPath": {"status": "not run", "reason": study.NOT_RUN["Prov-GigaPath"]},
+    }
+    record_path = study_dir / "extraction.json"
+    assert json.loads(record_path.read_text()) == expected
+    # The record carries no time, so a second pass finds nothing to change.
+    text = record_path.read_text()
+    assert study.main(argv) == 0
+    assert record_path.read_text() == text
+
+
+def test_only_a_declared_optional_pair_with_a_reason_can_be_not_run():
+    # A required pair must run (its absence fails the study), so it can never be declared
+    # not run; neither can a pair the study does not declare, or one without a reason.
+    import slide_vs_meanpool as study
+
+    assert study.NOT_RUN and all(not study.PAIRS_BY_MODEL[m].required for m in study.NOT_RUN)
+    study.check_not_run(study.NOT_RUN)
+    with pytest.raises(ValueError, match="TITAN"):
+        study.check_not_run({"TITAN": "the GPU was busy"})
+    with pytest.raises(ValueError, match="UNI"):
+        study.check_not_run({"UNI": "not a slide encoder"})
+    with pytest.raises(ValueError, match="reason"):
+        study.check_not_run({"PRISM": "  "})
+
+
+def test_reducing_a_pair_that_was_not_run_names_its_reason(tmp_path):
+    # Not "run extract first": extract records the pair as not run and never embeds it.
+    import slide_vs_meanpool as study
+
+    pair = study.PAIRS_BY_MODEL["Prov-GigaPath"]
+    with pytest.raises(ValueError, match="not run") as raised:
+        study.reduce_pair(
+            pair, rows=ROWS, run_root=tmp_path / "runs" / pair.slide_model, study_dir=tmp_path
+        )
+    assert study.NOT_RUN["Prov-GigaPath"] in str(raised.value)
 
 
 def test_a_pair_is_complete_only_when_both_its_cohorts_are(tmp_path):

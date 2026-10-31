@@ -38,10 +38,19 @@ def _repro():
     return basis, table
 
 
-def _write_study(study_dir: Path, pairs=("TITAN", "MOOZY", "PRISM2")) -> Path:
-    """Study artifacts as ``evaluate`` writes them, with hand-picked values per pair."""
+def _write_study(study_dir: Path, pairs=None, not_run=None) -> Path:
+    """Study artifacts as ``evaluate`` writes them, with hand-picked values per pair.
+
+    ``pairs`` defaults to the rendered pairs, and ``not_run`` (the pairs the study records
+    as not run, with their reasons) to the study's own declaration.
+    """
     import json
 
+    import slide_vs_meanpool as study
+
+    basis, _ = _repro()
+    pairs = basis.RENDERED_PAIRS if pairs is None else pairs
+    not_run = study.NOT_RUN if not_run is None else not_run
     study_dir.mkdir(parents=True, exist_ok=True)
     summary, differences, reproduction = [], [], {}
     for i, pair in enumerate(pairs):
@@ -57,7 +66,7 @@ def _write_study(study_dir: Path, pairs=("TITAN", "MOOZY", "PRISM2")) -> Path:
                     pair=pair,
                     arm=role,
                     model=model,
-                    bio_knn_bacc=[0.915, 0.971, 0.975][i],
+                    bio_knn_bacc=[0.915, 0.971, 0.975, 0.962, 0.958][i],
                     croma=croma,
                     croma_f0=f0,
                     croma_ltm_alpha=ltm,
@@ -100,6 +109,7 @@ def _write_study(study_dir: Path, pairs=("TITAN", "MOOZY", "PRISM2")) -> Path:
     pd.DataFrame(differences).to_csv(study_dir / "differences.csv", index=False)
     provenance = {
         "pairs": {p: {"reproduction": reproduction[p]} for p in pairs},
+        "not_run": dict(not_run),
         "bootstrap": {"n_boot": 2000, "level": 0.95},
         "downstream": {"iterations": 20},
         "representation": {"protocol": "k-star", "croma_headline_m": 5},
@@ -142,10 +152,78 @@ def test_the_caption_names_rendered_and_missing_pairs_and_the_reproduction_resul
     # TITAN's re-run did not reproduce, so its re-run slide embeddings are the slide arm.
     assert "TITAN: $17$ of $1{,}324$ slides" in caption
     assert "minimum cosine $0.412$" in caption
+    # Every pair left out is one the study did not run, named with the reason it recorded.
+    assert missing == list(study.NOT_RUN)
+    for pair in missing:
+        assert (
+            f"{pair} ({basis.tile_display(pair)}), an optional pair, was not run: "
+            f"{study.NOT_RUN[pair]}." in caption
+        )
+    assert "Declared pairs not shown" not in caption
+
+
+def test_every_declared_pair_is_either_rendered_or_recorded_as_not_run(tmp_path):
+    # A declared pair is never dropped silently: left out of the table, it must be one the
+    # study recorded as not run, with a reason.
+    basis, _ = _repro()
+
+    with pytest.raises(basis.CaptionClaimError, match="Prov-GigaPath.*neither rendered"):
+        basis.load(_write_study(tmp_path / "no-record", not_run={}))
+    with pytest.raises(basis.CaptionClaimError, match="Prov-GigaPath.*neither rendered"):
+        basis.load(_write_study(tmp_path / "no-reason", not_run={"Prov-GigaPath": " "}))
+
+
+def test_a_pair_the_study_did_not_run_is_never_rendered(tmp_path):
+    basis, _ = _repro()
+    rendered = (*basis.RENDERED_PAIRS, "Prov-GigaPath")
+    study_dir = _write_study(tmp_path / "study", pairs=rendered)
+
+    with pytest.raises(basis.CaptionClaimError, match="Prov-GigaPath.*not run"):
+        basis.load(study_dir, rendered=rendered)
+
+
+def test_a_required_pair_is_never_left_out_even_if_recorded_as_not_run(tmp_path):
+    import slide_vs_meanpool as study
+
+    basis, _ = _repro()
+    rendered = tuple(p for p in basis.RENDERED_PAIRS if p != "TITAN")
+    not_run = {**study.NOT_RUN, "TITAN": "the GPU was busy"}
+    study_dir = _write_study(tmp_path / "study", pairs=rendered, not_run=not_run)
+
+    with pytest.raises(basis.CaptionClaimError, match="TITAN.*required"):
+        basis.load(study_dir, rendered=rendered)
+
+
+def test_every_pair_that_ran_is_rendered():
+    # The four pairs the re-extraction finished are shown; only the not-run one is not.
+    import slide_vs_meanpool as study
+
+    basis, _ = _repro()
+    assert basis.RENDERED_PAIRS == ("TITAN", "MOOZY", "PRISM2", "PRISM")
+    declared = [pair.slide_model for pair in study.PAIRS]
+    assert sorted([*basis.RENDERED_PAIRS, *study.NOT_RUN]) == sorted(declared)
+
+
+def test_a_not_run_reason_is_set_as_text_in_the_caption(tmp_path):
+    import slide_vs_meanpool as study
+
+    basis, table = _repro()
+    reason = r"50% of runs_failed & {1} #2 ~x ^y \z"
+    study_dir = _write_study(tmp_path / "study", not_run={"Prov-GigaPath": reason})
+
+    caption = _caption(table.build(basis.load(study_dir)))
+
+    assert (
+        r"was not run: 50\% of runs\_failed \& \{1\} \#2 \textasciitilde{}x "
+        r"\textasciicircum{}y \textbackslash{}z." in caption
+    )
+    assert study.NOT_RUN["Prov-GigaPath"] == basis.tex_text(study.NOT_RUN["Prov-GigaPath"])
 
 
 #: The table ``_write_study`` renders, as it rendered before the caption counted the
-#: replicates each nIPD spread is over. With every replicate defined it must not move.
+#: replicates each nIPD spread is over. With every replicate defined it must not move. (It
+#: last changed when PRISM, which ran, joined the rendered pairs and the caption began to
+#: name the pair not run, with its reason; the three required pairs' rows did not change.)
 GOLDEN_TABLE = ROOT / "tests" / "fixtures" / "slide_vs_meanpool_table.tex"
 
 
@@ -269,6 +347,14 @@ def test_the_full_reproduction_reduces_then_evaluates_the_study():
     study_commands = [c for c in commands if "slide_vs_meanpool.py" in c]
     assert len(study_commands) == 2
     assert not any("--embeddings-dir" in c for c in study_commands)
+    # Both steps take exactly the pairs the table renders, which are more than the
+    # study's default (the required pairs): one ran optionally.
+    basis, _ = _repro()
+    for _, script, extra in reproduce_faithful.STUDIES:
+        if "slide_vs_meanpool.py" in script:
+            start = extra.index("--pairs") + 1
+            assert extra[start : start + len(basis.RENDERED_PAIRS)] == list(basis.RENDERED_PAIRS)
+            assert extra[start + len(basis.RENDERED_PAIRS) :] == []
 
 
 def test_the_reproduction_runs_the_evaluation_with_its_own_worker_count_even_serially():

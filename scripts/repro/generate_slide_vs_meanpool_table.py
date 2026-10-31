@@ -3,7 +3,8 @@
 One block per pair in ``_slide_vs_meanpool.RENDERED_PAIRS``: the slide arm, the
 mean-pooled arm, and their paired difference (slide minus mean-pool). Values come from
 ``output/studies/slide-vs-meanpool/`` (``scripts/studies/slide_vs_meanpool.py evaluate``);
-a declared pair without output there fails the build.
+a rendered pair without output there fails the build. The caption names each declared pair
+left out with the reason the study recorded for not running it.
 
 Run: python scripts/repro/generate_slide_vs_meanpool_table.py
 """
@@ -25,6 +26,7 @@ from _slide_vs_meanpool import (
     Basis,
     load,
     pct,
+    tex_text,
     tile_display,
 )
 
@@ -146,11 +148,12 @@ def _caption(basis: Basis) -> str:
         f"provider strata, {_count(boot['n_boot'])} replicates, one draw shared by every arm), "
         r"and \code{nIPD} differences (" + _spread_clause(basis, probe["iterations"]) + "). ",
     ]
-    if basis.missing:
+    # ``load`` has checked that every declared pair left out is optional and recorded as
+    # not run, with a reason.
+    for p in basis.missing:
         parts.append(
-            "Declared pairs not shown: "
-            + _series([f"{p} ({tile_display(p)})" for p in basis.missing])
-            + "."
+            f"{p} ({tile_display(p)}), an optional pair, was not run: "
+            f"{tex_text(basis.not_run[p].strip())}. "
         )
     return "".join(parts).rstrip() + "}"
 

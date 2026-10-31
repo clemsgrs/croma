@@ -14,7 +14,8 @@ Subcommands (run in this order):
     Re-run each pair's slide2vec config, one cohort at a time, under
     ``output/studies/slide-vs-meanpool/runs/<MODEL>/{panda,par}/``. Resumable: a cohort
     whose slides are all embedded is skipped, a partial one resumes. GPU-bound; launch it
-    detached (``launch`` does that).
+    detached (``launch`` does that). A pair in ``NOT_RUN`` is recorded as not run, with
+    its reason, and never launched.
 ``status``
     Embedded / expected slides per pair and cohort.
 ``reduce``
@@ -125,6 +126,52 @@ PAIRS: tuple[Pair, ...] = (
 )
 
 PAIRS_BY_MODEL = {pair.slide_model: pair for pair in PAIRS}
+
+#: Declared optional pairs the study does not run, each with its reason. ``extract``
+#: records the pair as not run with that reason (and launches nothing), ``reduce`` refuses
+#: it, ``evaluate`` carries the declaration into ``provenance.json``, and the table caption
+#: names the pair and the reason. Only an optional pair can be here (:func:`check_not_run`).
+#:
+#: Prov-GigaPath. The published PAR run (``aetsexkb``, slide2vec 5.3.0 by its log) read
+#: 256 px tiles and encoded their centre 224 px: the 5.3.0 gigapath preset was 256 px and its
+#: transform Resize(256) + CenterCrop(224). Before slide2vec 6.3.0 the LongNet slide encoder
+#: was also left in training mode (dropout 0.25, drop-path 0.1), so each published slide
+#: embedding is one dropout draw. On five PAR slides, two training-mode encodings of the same
+#: tile features agree at cosine 0.93 to 0.95, so no re-run can reach
+#: ``REPRODUCTION_COSINE``. slide2vec 7.1.4 refuses the replayed 256 px request (its preset is
+#: now 224 px). With ``allow_non_recommended_settings`` it encodes the whole 256 px tile
+#: (cosine 0.95 to 0.97 with the published embeddings), and at 224 px it tiles the slides on
+#: another grid (cosine 0.95 to 0.96). Both are a different configuration from the published
+#: one, not a re-run of it.
+NOT_RUN: dict[str, str] = {
+    "Prov-GigaPath": (
+        "its published slide embeddings were encoded with the slide encoder in training mode "
+        "(dropout active), so no re-run can reproduce them, and the installed slide2vec "
+        "cannot replay its tile input (the centre 224 px of each 256 px tile)"
+    ),
+}
+
+#: The ``extraction.json`` status of a pair in :data:`NOT_RUN`.
+NOT_RUN_STATUS = "not run"
+
+
+def check_not_run(not_run: dict[str, str]) -> None:
+    """Refuse a not-run declaration for an undeclared or required pair, or one with no reason.
+
+    A required pair must run: its missing output fails ``reduce``, ``evaluate`` and the
+    table. It is never an entry that would let the study skip it.
+    """
+    for model, reason in not_run.items():
+        pair = PAIRS_BY_MODEL.get(model)
+        if pair is None:
+            raise ValueError(f"{model} is not a declared pair, so it cannot be declared not run")
+        if pair.required:
+            raise ValueError(f"{model} is a required pair, so it cannot be declared not run")
+        if not str(reason).strip():
+            raise ValueError(f"{model}: a pair declared not run needs a reason")
+
+
+check_not_run(NOT_RUN)
 
 
 def _migrate_retired_tiling_keys(tiling: dict) -> None:
@@ -420,6 +467,11 @@ def reduce_pair(
     (``-meanpool``, ``-rerun``), so even an override pointing at the published directory
     never writes a published ``<slide_model>.npy``.
     """
+    if pair.slide_model in NOT_RUN:
+        raise ValueError(
+            f"{pair.slide_model} was not run, so it has no arms to reduce: "
+            f"{NOT_RUN[pair.slide_model]}"
+        )
     embeddings_dir = embeddings_dir or study_embeddings_dir(study_dir)
     published_dir = published_dir or PCABIOP_DIR
     sample_ids = rows["sample_id"].astype(str).tolist()
@@ -943,6 +995,7 @@ def evaluate(
             for p in pairs
         },
         "declared_pairs": [pair.slide_model for pair in PAIRS],
+        "not_run": dict(NOT_RUN),
         "arm_sources": {model: str(path) for model, path in sources.items()},
         "arm_source_sha256": source_sha256,
         "extraction": extraction,
@@ -1036,6 +1089,11 @@ def _cmd_extract(args) -> int:
     slide2vec_version = _installed_version("slide2vec")
     for model in args.pairs:
         pair = PAIRS_BY_MODEL[model]
+        if model in NOT_RUN:
+            # No time in the record: a later pass finds it unchanged and rewrites nothing.
+            print(f"[extract] {model}: not run: {NOT_RUN[model]}", flush=True)
+            record[model] = {"status": NOT_RUN_STATUS, "reason": NOT_RUN[model]}
+            continue
         if pair_complete(pair, rows, study_dir=study_dir, limit=args.limit):
             print(f"[extract] {model}: both cohorts done; skipped, its record kept", flush=True)
             continue
