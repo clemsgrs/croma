@@ -900,6 +900,15 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append("% nIPD from AUROC (tab:nipd-auroc): the cells under output/studies/auc")
     out.extend(auroc_lines)
     print(f"{'nIPD AUROC':16s}        -> {len(auroc_lines)} macros", file=sys.stderr)
+
+    # Low-data shortcut susceptibility (tab:low-data). Never skipped either: a missing or
+    # stale probe-reductions study fails the build through _probe_reductions.load.
+    from generate_low_data_table import macros as low_data_macros
+
+    low_data_lines = low_data_macros(root)
+    out.append("% Low-data rho(CRoMa, nIPD_ID) (tab:low-data): output/studies/probe-reductions")
+    out.extend(low_data_lines)
+    print(f"{'low data':16s}        -> {len(low_data_lines)} macros", file=sys.stderr)
     return "\n".join(out) + "\n"
 
 

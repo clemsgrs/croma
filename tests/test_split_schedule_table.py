@@ -102,7 +102,21 @@ def test_a_tiles_per_slide_override_rescales_tiles_but_not_slides(camelyon_metad
     assert [s.unfavourable for s in reduced.splits] == list(range(7, 15))
 
 
-def test_tcga_lists_both_favourable_cell_types():
+def test_a_reduced_tile_override_validates_as_the_thinned_sweep_does(camelyon_metadata):
+    # The reduced sweep keeps the full sweep's slices and shrinks each cell's validation
+    # slice by the training factor, rounding down but never below one row. Split 3 trains
+    # 4 slides per favourable cell and 10 per unfavourable one; at full tiles they validate
+    # on 1,200 / 14 = 85 and 3,000 / 14 = 214 rows, so at 3 tiles on 1 and 2 rows each.
+    reduced = schedule.schedule("camelyon", camelyon_metadata, tiles_per_slide=3)
+
+    split = reduced.splits[3]
+    assert (split.favourable, split.unfavourable) == ((4,), 10)
+    assert (split.train, split.validation) == ((2 * 4 + 2 * 10) * 3, 2 * 1 + 2 * 2)
+    # The held-out tail is the full sweep's.
+    assert split.test_slides == (2, 2)
+
+
+def _tcga_metadata(tiles: int):
     cells = {(c, b): 12 for c in range(4) for b in range(4)}
     centres = ["Asterand", "Christiana Healthcare", "Roswell Park", "University of Pittsburgh"]
     classes = [
@@ -112,11 +126,24 @@ def test_tcga_lists_both_favourable_cell_types():
         "Lung_squamous_cell_carcinoma",
     ]
     held_out = ["Cureline", "Greater Poland Cancer Center", "International Genomics Consortium"]
-    md = _metadata(
+    return _metadata(
         {(centres[c], classes[b]): n for (c, b), n in cells.items()},
-        30,
+        tiles,
         {(centre, classes[0]): 1 for centre in [*held_out, "Johns Hopkins"]},
     )
+
+
+def test_a_one_tile_override_keeps_a_validation_row_in_every_cell():
+    # At one tile per slide a cell's full-tile validation slice shrinks below one row, and
+    # the sweep keeps one: the schedule never runs out of validation rows.
+    tcga = schedule.schedule("tcga_4x4", _tcga_metadata(30), tiles_per_slide=1)
+
+    assert all(s.train == 32 for s in tcga.splits)
+    assert tcga.splits[0].validation == 16
+
+
+def test_tcga_lists_both_favourable_cell_types():
+    md = _tcga_metadata(30)
 
     tcga = schedule.schedule("tcga_4x4", md)
 
@@ -180,6 +207,47 @@ def test_the_float_takes_a_tiles_per_slide_override(monkeypatch, camelyon_metada
 
     assert "8{,}400" in full and "8{,}400" not in reduced
     assert r"\label{tab:split-schedule-30}" in reduced
+
+
+def _camelyon_only(monkeypatch, camelyon_metadata):
+    monkeypatch.setattr(
+        table,
+        "schedules",
+        lambda root, tiles_per_slide=None: [
+            schedule.schedule(
+                "camelyon",
+                camelyon_metadata,
+                tiles_per_slide=(tiles_per_slide or {}).get("camelyon"),
+            )
+        ],
+    )
+
+
+def _panel_c(tex: str) -> list[list[str]]:
+    panel = tex.split(r"\emph{(c)")[1].split(r"\end{tabular}")[0]
+    rows = [line for line in panel.splitlines()[3:] if line.endswith(r"\\")]
+    return [line.removesuffix(r" \\").split(" & ") for line in rows]
+
+
+def test_the_float_lists_the_reduced_tile_sweeps_the_records_ran(monkeypatch, camelyon_metadata):
+    _camelyon_only(monkeypatch, camelyon_metadata)
+
+    tex = table.build(ROOT)
+
+    # Camelyon was recorded at 30 and 3 of its 300 tiles per slide: 28 training slides per
+    # split, and each cell's full-tile validation slice shrunk by 10 and by 100, never
+    # below one row (worked per split in the override tests above).
+    assert _panel_c(tex) == [["Camelyon", "30", "840", "58--60"], ["", "3", "84", "4--6"]]
+    caption = next(line for line in tex.splitlines() if line.startswith(r"\caption"))
+    assert r"\textbf{c,}" in caption and "never below one row" in caption
+
+
+def test_a_reduced_variant_has_no_reduced_tile_panel(monkeypatch, camelyon_metadata):
+    _camelyon_only(monkeypatch, camelyon_metadata)
+
+    tex = table.build(ROOT, tiles_per_slide={"camelyon": 30}, label="tab:split-schedule-30")
+
+    assert r"\emph{(c)" not in tex and r"\textbf{c,}" not in tex
 
 
 @pytest.mark.skipif(
