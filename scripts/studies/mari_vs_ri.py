@@ -406,8 +406,15 @@ def automatic_tau(neighbours: Neighbours, k: int) -> float:
 #: default. The published runs were not all scored under one kernel -- encoders whose
 #: metrics were cached from an earlier host keep that host's rounding -- and a different
 #: kernel rounds the cosine distances differently, which reorders near-ties at the k-th
-#: slot. Each encoder keeps the first kernel that gives its published row back exactly.
+#: slot. Each encoder keeps the first kernel that gives its published row back exactly. A
+#: kernel the caller exported in ``OPENBLAS_CORETYPE`` is tried first, before these.
 BLAS_CORETYPES = (None, "SkylakeX", "Cooperlake")
+
+
+def blas_candidates(coretypes=BLAS_CORETYPES) -> tuple:
+    """The kernels to try, in turn: the caller's ``OPENBLAS_CORETYPE`` (if set), then these."""
+    caller = os.environ.get("OPENBLAS_CORETYPE") or None
+    return tuple(dict.fromkeys(((caller,) if caller else ()) + tuple(coretypes)))
 
 
 def _numpy_blas_architecture() -> str | None:
@@ -441,9 +448,10 @@ def _encoder_task(benchmark: str, model: str, published: dict, kmax: int):
 
 def _score_encoders(tasks: list, *, workers: int, coretypes=BLAS_CORETYPES) -> dict:
     """Run every task, retrying the ones that do not reproduce under the next kernel."""
+    candidates = blas_candidates(coretypes)
     pending = {(task[0], task[1]): task for task in tasks}
     done, failures, tried = {}, {}, set()
-    for coretype in coretypes:
+    for coretype in candidates:
         if not pending or coretype in tried:
             continue
         saved = os.environ.get("OPENBLAS_CORETYPE")
@@ -474,7 +482,7 @@ def _score_encoders(tasks: list, *, workers: int, coretypes=BLAS_CORETYPES) -> d
                 os.environ["OPENBLAS_CORETYPE"] = saved
     if pending:
         detail = "\n".join(failures[key] for key in pending)
-        raise ReproductionError(f"no BLAS kernel in {coretypes} reproduces:\n{detail}")
+        raise ReproductionError(f"no BLAS kernel in {candidates} reproduces:\n{detail}")
     return done
 
 

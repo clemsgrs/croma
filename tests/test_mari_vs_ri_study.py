@@ -298,3 +298,23 @@ def test_tau_sweep_summary_ranks_ranked_encoders_per_benchmark_and_factor() -> N
     assert summary.loc[0.5, "rho_ri"] == pytest.approx(0.2)
     assert summary.loc[0.5, "rho_nipd_id"] == pytest.approx(0.2)
     assert summary.loc[0.5, "rho_nipd_ood"] == pytest.approx(-0.2)
+
+
+@pytest.mark.parametrize(
+    ("caller", "expected"),
+    [
+        (None, (None, "SkylakeX", "Cooperlake")),
+        ("", (None, "SkylakeX", "Cooperlake")),
+        ("Sandybridge", ("Sandybridge", None, "SkylakeX", "Cooperlake")),
+        ("SkylakeX", ("SkylakeX", None, "Cooperlake")),
+    ],
+)
+def test_blas_candidates_try_the_callers_kernel_first_without_repeats(
+    monkeypatch: pytest.MonkeyPatch, caller: str | None, expected: tuple
+) -> None:
+    if caller is None:
+        monkeypatch.delenv("OPENBLAS_CORETYPE", raising=False)
+    else:
+        monkeypatch.setenv("OPENBLAS_CORETYPE", caller)
+
+    assert study.blas_candidates((None, "SkylakeX", "Cooperlake")) == expected
