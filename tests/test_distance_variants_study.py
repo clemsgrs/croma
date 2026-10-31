@@ -282,6 +282,10 @@ def _toy_run(bench_env):
     return run, load_view("toy")
 
 
+#: The embedding digest ``_run_unit`` records in every cell.
+_SCORED_FROM = "0" * 64
+
+
 def _run_unit(root, run, view, *, kernel="test", within_tolerance=False):
     return dv.run_unit(
         root,
@@ -292,7 +296,7 @@ def _run_unit(root, run, view, *, kernel="test", within_tolerance=False):
         manifest=view.eval_manifest,
         kernel=kernel,
         within_tolerance=within_tolerance,
-        embedding_sha256="0" * 64,
+        embedding_sha256=_SCORED_FROM,
     )
 
 
@@ -423,3 +427,71 @@ def test_a_unit_outside_its_tolerance_is_refused(
     (root / dv.DESIGN).write_text("{}")
     with pytest.raises(dv.IncompleteStudyError, match="cells missing"):
         dv.summarise(root, _toy_design(run), apd_correlation_csv=None)
+
+
+# --------------------------------------------------------------------------------------
+# The embeddings a unit's cells were scored from.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_unit_whose_cosine_cell_was_scored_from_other_embeddings_is_not_extended(
+    bench_env, tmp_path
+):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+    assert _run_unit(root, run, view) == 0
+    euclidean, _ = dv.cell_paths(root, "toy", "M1", "euclidean")
+    euclidean.unlink()
+
+    # Regenerated in place: the cosine cell on disk no longer describes these features.
+    with pytest.raises(RuntimeError, match="embeddings"):
+        dv.run_unit(
+            root,
+            run,
+            "M1",
+            features=view.features("M1"),
+            rows=view.rows,
+            manifest=view.eval_manifest,
+            kernel="test",
+            embedding_sha256="1" * 64,
+        )
+
+    assert not euclidean.exists()
+
+
+def _finished_toy_study(bench_env, tmp_path, monkeypatch) -> tuple[Path, dict]:
+    """Every cell of the toy unit, reproduced exactly; ready to summarise."""
+    run, view = _toy_run(bench_env)
+    monkeypatch.setitem(dv.REPRODUCTION_TOLERANCE, "toy", 0.0)
+    root = tmp_path / "study"
+    assert _run_unit(root, run, view) == 0
+    (root / dv.DESIGN).write_text("{}")
+    return root, _toy_design(run)
+
+
+def test_a_study_scored_from_embeddings_that_have_since_changed_is_refused(
+    bench_env, tmp_path, monkeypatch
+):
+    root, design = _finished_toy_study(bench_env, tmp_path, monkeypatch)
+
+    with pytest.raises(dv.IncompleteStudyError, match="toy / M1: the embeddings on disk"):
+        dv.summarise(root, design, apd_correlation_csv=None, embedding_digest=lambda b, m: "1" * 64)
+
+    assert not (root / dv.PROVENANCE).exists()
+
+
+def test_a_unit_whose_cells_were_scored_from_different_embeddings_is_refused(
+    bench_env, tmp_path, monkeypatch
+):
+    root, design = _finished_toy_study(bench_env, tmp_path, monkeypatch)
+    whitened, _ = dv.cell_paths(root, "toy", "M1", "whitened")
+    record = json.loads(whitened.read_text())
+    whitened.write_text(json.dumps({**record, "embedding_sha256": "1" * 64}))
+
+    # The digest on disk matches the cosine cell's, so only the mix gives the unit away.
+    with pytest.raises(dv.IncompleteStudyError, match="toy / M1: .*different embeddings"):
+        dv.summarise(
+            root, design, apd_correlation_csv=None, embedding_digest=lambda b, m: _SCORED_FROM
+        )
+
+    assert not (root / dv.PROVENANCE).exists()

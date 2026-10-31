@@ -46,7 +46,9 @@ Usage::
 Outputs go to ``output/studies/distance-variants/``: one ``.json`` record and one
 per-sample ``.csv.gz`` (keyed by ``subset`` and ``sample_id``) per encoder x benchmark x
 variant under ``cells/``, then ``summary.csv``, ``measures.csv`` and ``provenance.json``,
-which records the sha256 of every input the published numbers are computed from.
+which records the sha256 of every input the published numbers are computed from. Each cell
+records the sha256 of the embedding file it was scored from; ``summarise`` re-hashes every
+embedding file and refuses a unit whose cells do not all record the file now on disk.
 """
 
 from __future__ import annotations
@@ -61,7 +63,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -175,7 +177,8 @@ REPRODUCTION_TOLERANCE: dict[str, float] = {
 
 
 class IncompleteStudyError(RuntimeError):
-    """The study is missing a cell, or a reference that did not reproduce."""
+    """The study is missing a cell, or a reference that did not reproduce, or holds cells
+    scored from embeddings other than the ones on disk."""
 
 
 class Assignment(NamedTuple):
@@ -479,6 +482,27 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def embedding_path(benchmark: str, model: str) -> Path:
+    """The tileset embedding file ``benchmark``'s view reads ``model``'s features from."""
+    import benchmarks
+    import layout
+
+    return layout.embedding_path(benchmarks.get(benchmark).tileset, model)
+
+
+def embedding_digests() -> Callable[[str, str], str]:
+    """``(benchmark, model) -> sha256`` of the embedding file on disk, each file hashed once."""
+    digests: dict[Path, str] = {}
+
+    def digest(benchmark: str, model: str) -> str:
+        path = embedding_path(benchmark, model)
+        if path not in digests:
+            digests[path] = sha256(path)
+        return digests[path]
+
+    return digest
+
+
 def _atomic_bytes(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -538,6 +562,9 @@ def run_unit(
     ``REPRODUCTION_TOLERANCE``: the cosine record then carries that ``tolerance``, its
     ``max_deviation`` and every candidate's deviation, and the other variants run under the
     same kernel. Otherwise it returns :data:`NOT_REPRODUCED` and writes nothing.
+
+    An existing cosine cell is only extended under the kernel and from the embedding file
+    (``embedding_sha256``) it was scored with; anything else raises.
     """
     base = {
         "benchmark": run.benchmark,
@@ -578,6 +605,13 @@ def run_unit(
         raise RuntimeError(
             f"{run.benchmark} / {model}: cosine was scored under {cosine.get('kernel')}, "
             f"not {kernel}; every variant of an encoder shares one kernel"
+        )
+    elif cosine.get("embedding_sha256") != embedding_sha256:
+        raise RuntimeError(
+            f"{run.benchmark} / {model}: cosine was scored from embeddings with sha256 "
+            f"{cosine.get('embedding_sha256')}, not the {embedding_sha256} now on disk; every "
+            f"variant of an encoder is scored from one embedding file, so move "
+            f"{cell_dir(root, run.benchmark, model)} aside and re-run the unit"
         )
 
     for v in variants_for(run.benchmark):
@@ -918,11 +952,15 @@ def summarise(
     *,
     apd_csv: Path = APD_CSV,
     apd_correlation_csv: Path | None = APD_CORRELATION_CSV,
+    embedding_digest: Callable[[str, str], str] | None = None,
 ) -> pd.DataFrame:
     """``summary.csv``, ``measures.csv`` and ``provenance.json`` from a complete study.
 
-    Refuses on a missing cell and on any cosine reference that did not reproduce within its
-    benchmark's tolerance (:func:`reproduction_summary`, recorded in the provenance). When
+    Refuses on a missing cell, on any cosine reference that did not reproduce within its
+    benchmark's tolerance (:func:`reproduction_summary`, recorded in the provenance), and on
+    a unit whose cells were not all scored from the embedding file now on disk
+    (:func:`check_embeddings`). ``embedding_digest`` maps ``(benchmark, model)`` to that
+    file's sha256; by default each file is re-hashed once (:func:`embedding_digests`). When
     ``apd_correlation_csv`` is given, cosine's nIPD correlations must equal the ones
     ``tab:apd-correlation`` reports, so both tables read the same association.
     """
@@ -937,6 +975,7 @@ def summarise(
     if missing:
         raise IncompleteStudyError(f"{len(missing)} cells missing, e.g. {missing[:5]}")
     reproduced = reproduction_summary(root, record)
+    check_embeddings(root, record, embedding_digest or embedding_digests())
     rows, inputs = [], {}
     for benchmark, spec in record["benchmarks"].items():
         results_dir = REPO / spec["results_dir"]
@@ -987,6 +1026,37 @@ def summarise(
     }
     _atomic_text(root / PROVENANCE, _json(provenance))
     return table
+
+
+def check_embeddings(root: Path, record: dict, digest: Callable[[str, str], str]) -> None:
+    """Every cell of each unit was scored from one embedding file, the one now on disk.
+
+    Cells are kept once written, so embeddings regenerated in place would otherwise leave a
+    finished unit's variants unchecked: a change that preserves cosine (rescaling each row,
+    say) moves the Euclidean margins without failing the reproduction check. ``digest`` maps
+    ``(benchmark, model)`` to the sha256 of the file on disk. Raises
+    :class:`IncompleteStudyError` naming the first unit whose cells record different digests,
+    or whose recorded digest is not the file's.
+    """
+    for benchmark, spec in record["benchmarks"].items():
+        for model in spec["models"]:
+            recorded = {
+                v["name"]: read_cell(root, benchmark, model, v["name"])["embedding_sha256"]
+                for v in spec["variants"]
+            }
+            unit = f"{benchmark} / {model}"
+            if len(set(recorded.values())) != 1:
+                raise IncompleteStudyError(
+                    f"{unit}: its cells were scored from different embeddings ({recorded}); "
+                    f"move {cell_dir(root, benchmark, model)} aside and re-run the sweep"
+                )
+            scored_from, on_disk = next(iter(recorded.values())), digest(benchmark, model)
+            if on_disk != scored_from:
+                raise IncompleteStudyError(
+                    f"{unit}: the embeddings on disk (sha256 {on_disk}) are not the ones its "
+                    f"cells were scored from ({scored_from}); move "
+                    f"{cell_dir(root, benchmark, model)} aside and re-run the sweep"
+                )
 
 
 def reproduction_summary(root: Path, record: dict) -> dict[str, dict]:
@@ -1064,14 +1134,13 @@ def _unit_main(args: argparse.Namespace) -> int:
     kernel = numpy_kernel()
     if wanted and kernel != wanted:
         raise RuntimeError(f"asked for {wanted}, numpy's OpenBLAS runs {kernel}")
-    import layout
     from views import load_view
 
     run = production_run(args.benchmark)
     view = load_view(args.benchmark)
     started = time.perf_counter()
     features = view.features(args.model)
-    embedding = sha256(layout.embedding_path(view.spec.tileset, args.model))
+    embedding = sha256(embedding_path(args.benchmark, args.model))
     _log(f"{args.benchmark} / {args.model}: loaded {features.shape} under {kernel}")
     code = run_unit(
         Path(args.root),

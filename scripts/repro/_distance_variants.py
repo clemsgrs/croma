@@ -8,9 +8,13 @@ or an input it was computed from (a run's ``metrics.csv`` or ``run_config.json``
 study's ``apd.csv`` or ``apd_correlation.csv``) changed after it was summarised, or its
 recorded cosine reproduction no longer passes the study's ``REPRODUCTION_TOLERANCE``.
 
-The embeddings and the runs' per-sample files are fingerprinted too, when each cell is
-scored, but are not re-hashed on every build: they run to gigabytes, and a re-scored run
-rewrites its ``metrics.csv``, which is re-hashed.
+The embeddings and the runs' per-sample files are recorded in the provenance too, but are
+not re-hashed on every build: they run to gigabytes. The embeddings are checked by the
+study itself: every cell records the sha256 of the embedding file it was scored from, a unit
+is never extended from another file, and ``summarise`` re-hashes each file and refuses a
+unit whose cells do not all record it. The per-sample files are hashed when each cosine cell
+is scored; a re-scored run rewrites its ``metrics.csv``, which is re-hashed here, and its
+pooled scores are compared with cosine's (:func:`_check_cosine_matches_run`).
 """
 
 from __future__ import annotations
