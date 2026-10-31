@@ -1019,6 +1019,69 @@ def test_the_caption_names_rendered_and_missing_pairs_and_the_reproduction_resul
     assert "minimum cosine $0.412$" in caption
 
 
+#: The table ``_write_study`` renders, as it rendered before the caption counted the
+#: replicates each nIPD spread is over. With every replicate defined it must not move.
+GOLDEN_TABLE = ROOT / "tests" / "fixtures" / "slide_vs_meanpool_table.tex"
+
+
+def _defined_replicates(study_dir: Path, pair: str, statistic: str, n: int, spread: float):
+    """Rewrite one nIPD difference as if both arms' nIPD were defined on ``n`` replicates."""
+    path = study_dir / "differences.csv"
+    frame = pd.read_csv(path)
+    row = (frame["pair"] == pair) & (frame["statistic"] == statistic)
+    frame.loc[row, "n"] = n
+    frame.loc[row, "spread"] = spread
+    frame.to_csv(path, index=False)
+
+
+def _caption(tex: str) -> str:
+    return tex[tex.index(r"\caption{") :]
+
+
+def test_with_every_replicate_defined_the_table_is_unchanged(tmp_path):
+    basis, table = _repro()
+
+    tex = table.build(basis.load(_write_study(tmp_path / "study")))
+
+    assert tex == GOLDEN_TABLE.read_text()
+    assert r"($\pm$ the standard deviation of the $20$ paired probe replicates)" in tex
+
+
+def test_an_undefined_nipd_spread_renders_a_dash_never_nan(tmp_path):
+    basis, table = _repro()
+    study_dir = _write_study(tmp_path / "study")
+    _defined_replicates(study_dir, "MOOZY", "nipd_ood", n=1, spread=np.nan)
+
+    tex = table.build(basis.load(study_dir))
+    macros = basis.macros(basis.load(study_dir))
+
+    assert "nan" not in tex.lower()
+    assert r"& $-10.0$\,{\scriptsize$\pm1.2$} & $-10.0$\,{\scriptsize$\pm$---} \\" in tex
+    assert "; --- where fewer than two are)" in _caption(tex)
+    assert r"\newcommand{\SlideMeanpoolMoozyNipdOodDiffSd}{---}" in macros
+    assert r"\newcommand{\SlideMeanpoolMoozyNipdIdDiffSd}{$1.2$}" in macros
+    assert not any("nan" in line.lower() for line in macros)
+
+
+def test_the_caption_counts_only_the_replicates_both_arms_define(tmp_path):
+    basis, table = _repro()
+    study_dir = _write_study(tmp_path / "study")
+    rule = r"paired probe replicates in which both arms' \code{nIPD} is defined"
+
+    # One replicate drops out of every comparison: the caption gives the count it keeps.
+    for pair in basis.RENDERED_PAIRS:
+        for statistic in ("nipd_id", "nipd_ood"):
+            _defined_replicates(study_dir, pair, statistic, n=19, spread=0.012)
+    caption = _caption(table.build(basis.load(study_dir)))
+    assert rf"the standard deviation of the $19$ of $20$ {rule})" in caption
+
+    # Counts that differ by comparison: the rule, and no count that some row lacks.
+    _defined_replicates(study_dir, "MOOZY", "nipd_ood", n=18, spread=0.012)
+    caption = _caption(table.build(basis.load(study_dir)))
+    assert rf"the standard deviation over the {rule})" in caption
+    assert "$19$" not in caption and "$20$" not in caption
+
+
 def test_a_declared_pair_without_study_output_fails_the_build(tmp_path):
     basis, _ = _repro()
     study_dir = _write_study(tmp_path / "study", pairs=("TITAN", "MOOZY"))

@@ -1,0 +1,24 @@
+\begin{table}[!htbp]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llcccccc}
+\hline
+Slide encoder & Arm & bio bacc & \code{CRoMa} & $F(0)$ & $\mcode{LTM}_{10}$ & \code{nIPD}$_\mathrm{ID}$ & \code{nIPD}$_\mathrm{OOD}$ \\
+\hline
+\multirow{3}{*}{TITAN} & slide & $0.915$ & $-0.30$ & $0.895$ & $-0.60$ & $-18.9$ & $-12.6$ \\
+ & mean-pool & $0.915$ & $-0.20$ & $0.795$ & $-0.50$ & $-8.9$ & $-2.6$ \\
+ & $\Delta$ & & $-0.10$\,{\scriptsize$[-0.15, -0.06]$} & $0.200$\,{\scriptsize$[0.150, 0.240]$} & $-0.10$\,{\scriptsize$[-0.15, -0.06]$} & $-10.0$\,{\scriptsize$\pm1.2$} & $-10.0$\,{\scriptsize$\pm1.2$} \\
+\hline
+\multirow{3}{*}{MOOZY} & slide & $0.971$ & $-0.30$ & $0.895$ & $-0.60$ & $-18.9$ & $-12.6$ \\
+ & mean-pool & $0.971$ & $-0.20$ & $0.795$ & $-0.50$ & $-8.9$ & $-2.6$ \\
+ & $\Delta$ & & $-0.10$\,{\scriptsize$[-0.15, -0.06]$} & $0.200$\,{\scriptsize$[0.150, 0.240]$} & $-0.10$\,{\scriptsize$[-0.15, -0.06]$} & $-10.0$\,{\scriptsize$\pm1.2$} & $-10.0$\,{\scriptsize$\pm1.2$} \\
+\hline
+\multirow{3}{*}{PRISM2} & slide & $0.975$ & $-0.30$ & $0.895$ & $-0.60$ & $-18.9$ & $-12.6$ \\
+ & mean-pool & $0.975$ & $-0.20$ & $0.795$ & $-0.50$ & $-8.9$ & $-2.6$ \\
+ & $\Delta$ & & $-0.10$\,{\scriptsize$[-0.15, -0.06]$} & $0.200$\,{\scriptsize$[0.150, 0.240]$} & $-0.10$\,{\scriptsize$[-0.15, -0.06]$} & $-10.0$\,{\scriptsize$\pm1.2$} & $-10.0$\,{\scriptsize$\pm1.2$} \\
+\hline
+\end{tabular}
+\caption{\textbf{Slide encoders versus mean-pooling of their own tile embeddings on PCaBiop.} Pairs (slide encoder, tile encoder): TITAN (CONCHv1.5), MOOZY (Lunit ViT-S/8) and PRISM2 (Virchow2). Each slide encoder's published slide2vec configuration was re-run on the $1{,}324$ PCaBiop slides with its tile embeddings saved, so both arms come from one tiling: the slide arm is the slide encoder's embedding and the mean-pool arm is the unweighted mean of the same tile embeddings. Re-run slide embeddings reproduced the published ones (per-slide cosine $\geq0.999$ on every slide) for MOOZY and PRISM2, whose published embeddings form the slide arm. They did not for TITAN: $17$ of $1{,}324$ slides reproduced (minimum cosine $0.412$), so its re-run slide embeddings form the slide arm. bio bacc, median \code{CRoMa}$(m{=}5)$, $F(0)$ and $\mcode{LTM}_{10}$ are from the benchmark runner on the in-domain PANDA cohort at $k^\star$; \code{nIPD} (\%) is from the PCaBiop linear-probe sweep, in domain (PANDA) and out of domain (PAR). $\Delta$ is slide minus mean-pool: \code{CRoMa} summaries with 95\% confidence intervals from a stratified slide bootstrap (class $\times$ provider strata, $2{,}000$ replicates, one draw shared by every arm), and \code{nIPD} differences ($\pm$ the standard deviation of the $20$ paired probe replicates). Declared pairs not shown: PRISM (Virchow) and Prov-GigaPath (Prov-GigaPath).}
+\label{tab:slide-vs-meanpool}
+\end{table}

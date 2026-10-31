@@ -124,6 +124,16 @@ def pct(value: float) -> str:
     return num_math(100.0 * float(value), 1)
 
 
+#: How an nIPD spread prints when it is undefined: fewer than two paired replicates on
+#: which both arms' nIPD is defined (``slide_vs_meanpool.NIPD_SPREAD_RULE``).
+UNDEFINED_SPREAD = "---"
+
+
+def spread_pct(value: float) -> str:
+    """An nIPD spread in points, as :func:`pct`; :data:`UNDEFINED_SPREAD` when NaN."""
+    return UNDEFINED_SPREAD if pd.isna(value) else pct(value)
+
+
 def macros(basis: Basis) -> list[str]:
     r"""``\SlideMeanpool<Pair><Statistic>Diff`` (+ ``CI`` / ``Sd``): slide minus mean-pool."""
     names = {
@@ -146,5 +156,7 @@ def macros(basis: Basis) -> list[str]:
         for statistic in NIPD_STATISTICS:
             row = basis.differences.loc[(pair, statistic)]
             lines.append(rf"\newcommand{{\{stem}{names[statistic]}Diff}}{{{pct(row['point'])}}}")
-            lines.append(rf"\newcommand{{\{stem}{names[statistic]}DiffSd}}{{{pct(row['spread'])}}}")
+            lines.append(
+                rf"\newcommand{{\{stem}{names[statistic]}DiffSd}}{{{spread_pct(row['spread'])}}}"
+            )
     return lines

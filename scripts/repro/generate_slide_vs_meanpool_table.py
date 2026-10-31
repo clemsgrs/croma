@@ -11,6 +11,7 @@ Run: python scripts/repro/generate_slide_vs_meanpool_table.py
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from _slide_vs_meanpool import (
     DECIMALS,
     NIPD_STATISTICS,
     REPO,
+    UNDEFINED_SPREAD,
     Basis,
     load,
     pct,
@@ -67,10 +69,34 @@ def _difference_row(basis: Basis, pair: str) -> str:
         cells.append(num_math(row["point"], d) + r"\," + scriptsize_ci(row["lo"], row["hi"], d))
     for statistic in NIPD_STATISTICS:
         row = basis.differences.loc[(pair, statistic)]
-        spread = f"{100.0 * float(row['spread']):.1f}"
-        cells.append(pct(row["point"]) + r"\," + rf"{{\scriptsize$\pm{spread}$}}")
+        if math.isnan(float(row["spread"])):
+            spread = rf"{{\scriptsize$\pm${UNDEFINED_SPREAD}}}"
+        else:
+            spread = rf"{{\scriptsize$\pm{100.0 * float(row['spread']):.1f}$}}"
+        cells.append(pct(row["point"]) + r"\," + spread)
     # The bio bacc cell stays empty: no paired difference is reported for it.
     return r" & $\Delta$ & & " + " & ".join(cells) + r" \\"
+
+
+def _spread_clause(basis: Basis, iterations: int) -> str:
+    """What the nIPD ``±`` is the SD of, and over how many replicates.
+
+    A spread is over the paired replicates on which both arms' nIPD is defined (the
+    ``n`` column). The caption gives that count when every comparison shares it, and only
+    the rule when they differ; a spread over fewer than two prints as a dash.
+    """
+    rows = basis.differences.loc[[(p, s) for p in basis.rendered for s in NIPD_STATISTICS]]
+    counts = sorted(set(rows["n"].astype(int)))
+    rule = r"paired probe replicates in which both arms' \code{nIPD} is defined"
+    if counts == [int(iterations)]:
+        clause = rf"$\pm$ the standard deviation of the {_count(iterations)} paired probe replicates"
+    elif len(counts) == 1:
+        clause = rf"$\pm$ the standard deviation of the {_count(counts[0])} of {_count(iterations)} {rule}"
+    else:
+        clause = rf"$\pm$ the standard deviation over the {rule}"
+    if rows["spread"].isna().any():
+        clause += f"; {UNDEFINED_SPREAD} where fewer than two are"
+    return clause
 
 
 def _caption(basis: Basis) -> str:
@@ -118,9 +144,7 @@ def _caption(basis: Basis) -> str:
         r"$\Delta$ is slide minus mean-pool: \code{CRoMa} summaries with "
         rf"{level}\% confidence intervals from a stratified slide bootstrap (class $\times$ "
         f"provider strata, {_count(boot['n_boot'])} replicates, one draw shared by every arm), "
-        r"and \code{nIPD} differences ($\pm$ the standard deviation of the "
-        + _count(probe["iterations"])
-        + " paired probe replicates). ",
+        r"and \code{nIPD} differences (" + _spread_clause(basis, probe["iterations"]) + "). ",
     ]
     if basis.missing:
         parts.append(
