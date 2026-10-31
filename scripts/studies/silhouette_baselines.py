@@ -33,18 +33,21 @@ Inputs, per cohort (Camelyon, TCGA-4x4, Tolkach-ESCA: the cohorts with nIPD):
 Unlike CRoMa, neither baseline drops samples from the anchor's own independence group:
 their published definitions do not.
 
-Run (in an environment with ``croma[repro]``, which carries scib-metrics)::
+Run (on Python >= 3.11, in an environment with ``croma[repro]``, which carries
+scib-metrics there)::
 
     python scripts/studies/silhouette_baselines.py [--workers 3]
 
 Each (cohort, encoder) score is cached under ``cells/`` with the inputs it was computed
-from, so a re-run re-scores only what changed and then re-joins and re-infers everything
-(a run whose every cell is current needs no scib-metrics at all).
+from (the embedding file, a digest of the evaluated rows, labels and confounders, and the
+settings: :func:`cell_inputs`), so a re-run re-scores only what changed and then re-joins
+and re-infers everything.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import multiprocessing
 import platform
@@ -356,26 +359,74 @@ def _cell_path(dataset: str, model: str) -> Path:
     return CELLS_DIR / dataset / f"{model}.json"
 
 
+def view_sha256(rows, labels, confounders) -> str:
+    """Hex SHA-256 of everything ``score_encoder`` reads from the view besides features.
+
+    That is, per evaluated sample in eval-manifest order: the tileset embedding row it reads
+    (``view.rows``), its biological label and its confounder. The bytes hashed are the UTF-8
+    encoding of the compact JSON array ``[rows, labels, confounders]`` (separators ``,`` and
+    ``:``), with each row as an integer and each label and confounder as ``str`` of its
+    value. The digest therefore moves with a swapped tile, a re-ordered tileset index, a
+    relabelled class or a re-pointed confounder column, and not with the container or
+    dtype (numpy, pandas, int32 or int64) that carries the same values.
+    """
+    payload = [
+        [int(row) for row in np.asarray(rows).reshape(-1)],
+        [str(value) for value in np.asarray(labels, dtype=object).reshape(-1)],
+        [str(value) for value in np.asarray(confounders, dtype=object).reshape(-1)],
+    ]
+    encoded = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def cell_inputs(
+    benchmark: str,
+    *,
+    embedding_bytes: int,
+    embedding_mtime_ns: int,
+    rows,
+    labels,
+    confounders,
+) -> dict:
+    """The cache key of one cell: what its scores were computed from.
+
+    The embedding file (size and mtime), the evaluated view (:func:`view_sha256`) and the
+    scoring settings. A cached cell is reused only when its key equals this one;
+    ``n_samples`` is implied by the view digest and kept for reading.
+    """
+    return {
+        "benchmark": benchmark,
+        "embedding_bytes": int(embedding_bytes),
+        "embedding_mtime_ns": int(embedding_mtime_ns),
+        "n_samples": int(len(rows)),
+        "view_sha256": view_sha256(rows, labels, confounders),
+        "n_neighbors": N_NEIGHBORS,
+        "perplexity": PERPLEXITY,
+        "scores": list(SCORE_COLUMNS),
+    }
+
+
 def score_cell(dataset: str, benchmark: str, model: str) -> dict:
     """Score one encoder on one cohort's evaluated rows, or reuse its up-to-date cell.
 
-    A cell is reused only when the embedding file, the evaluated row count and the scoring
-    settings are what it was computed from.
+    A cell is reused only when the embedding file, the evaluated view (rows, labels and
+    confounders) and the scoring settings are what it was computed from (:func:`cell_inputs`).
     """
     import layout
     from views import load_view
 
     view = load_view(benchmark)
     stat = layout.embedding_path(view.spec.tileset, model).stat()
-    inputs = {
-        "benchmark": benchmark,
-        "embedding_bytes": stat.st_size,
-        "embedding_mtime_ns": stat.st_mtime_ns,
-        "n_samples": int(len(view.rows)),
-        "n_neighbors": N_NEIGHBORS,
-        "perplexity": PERPLEXITY,
-        "scores": SCORE_COLUMNS,
-    }
+    labels = view.eval_manifest["label"].to_numpy()
+    confounders = view.eval_manifest["confounder"].to_numpy()
+    inputs = cell_inputs(
+        benchmark,
+        embedding_bytes=stat.st_size,
+        embedding_mtime_ns=stat.st_mtime_ns,
+        rows=view.rows,
+        labels=labels,
+        confounders=confounders,
+    )
     path = _cell_path(dataset, model)
     if path.exists():
         cached = json.loads(path.read_text())
@@ -383,11 +434,7 @@ def score_cell(dataset: str, benchmark: str, model: str) -> dict:
             return cached
 
     started = time.time()
-    scores = score_encoder(
-        view.features(model),
-        view.eval_manifest["label"].to_numpy(),
-        view.eval_manifest["confounder"].to_numpy(),
-    )
+    scores = score_encoder(view.features(model), labels, confounders)
     cell = {
         "dataset": dataset,
         "model": model,
@@ -490,7 +537,9 @@ def main(argv: list[str] | None = None) -> None:
     except ImportError:
         raise SystemExit(
             f"{IMPLEMENTATION} is not installed in {sys.executable}; it is the reference "
-            "batch-ASW and iLISI this study reports. Install croma[repro], which pins it."
+            "batch-ASW and iLISI this study reports. Install croma[repro], which pins it, "
+            f"on Python >= 3.11 ({IMPLEMENTATION} requires it; this is Python "
+            f"{platform.python_version()})."
         ) from None
 
     runs = _runs()

@@ -22,8 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   10,000 seeded permutations), and `benjamini_hochberg` q values.
 - `CorrelationInference.difference_ci`: the paired percentile CI of `rho_a - rho_b` for two
   correlations computed on one encoder draw, e.g. two metrics against the same endpoint.
+  `CorrelationInference.draws_sha256` identifies that draw, and `difference_ci` refuses two
+  inferences computed on different draws, including draws of the same size from different
+  seeds.
 - The `repro` extra pins `scib-metrics==0.5.10`, the reference batch-ASW and iLISI that the
   batch-mixing baselines study (`scripts/studies/silhouette_baselines.py`) compares with CRoMa.
+  scib-metrics needs Python >= 3.11, so the pin carries that marker and the study needs
+  Python >= 3.11; on 3.10 `croma[repro]` still installs, without it.
 
 ### Changed
 

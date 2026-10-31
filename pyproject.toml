@@ -74,8 +74,10 @@ repro = [
   "pymupdf>=1.24",
   # The reference batch-ASW and iLISI for scripts/studies/silhouette_baselines.py. Pinned
   # because the paper's caption states the version that computed the baselines. It brings
-  # jax (numpy>=2) and anndata (pandas<3); both sit inside the core pins above.
-  "scib-metrics==0.5.10",
+  # jax (numpy>=2) and anndata (pandas<3); both sit inside the core pins above. It, jax
+  # and anndata need Python >= 3.11, so that study does too: on 3.10 the extra installs
+  # without it, and the study stops and says so.
+  "scib-metrics==0.5.10; python_version >= '3.11'",
 ]
 dev = [
   "pytest>=8.0",

@@ -34,6 +34,7 @@ per-sample values, so they never recompute neighbours.
 
 from __future__ import annotations
 
+import hashlib
 import itertools
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -594,7 +595,11 @@ class CorrelationInference:
     ``replicates`` holds the bootstrap replicates of the correlation (``nan`` where a
     replicate's drawn encoders are constant on a variable, or, in a partial, where ``x`` or
     ``y`` is determined by ``z``); two inferences computed on the same ``draws`` have
-    paired replicates, so their difference has a percentile CI too.
+    paired replicates, so their difference has a percentile CI too. ``draws_sha256`` is the
+    hex SHA-256 of the encoder draw those replicates were computed on (its shape, then its
+    entries in C order, each as a little-endian int64): equal digests mean the same drawn
+    encoders in every replicate, whether the draw was passed as ``draws`` or made from
+    ``seed``.
     """
 
     rho: float
@@ -604,21 +609,25 @@ class CorrelationInference:
     permutation: PermutationMethod
     n_permutations: int
     replicates: np.ndarray
+    draws_sha256: str
 
     def difference_ci(self, other: "CorrelationInference") -> BootstrapCI:
         """Paired CI for ``self.rho - other.rho``, e.g. two metrics against one target.
 
-        Both inferences must come from the same ``draws`` (see
-        :func:`encoder_bootstrap_draws`), so that replicate ``b`` of each was computed on the
-        same drawn encoders. The point is the difference of the two rhos; the interval is the
-        percentile interval of the replicate-by-replicate differences, at this inference's
-        level, over the replicates on which both correlations are defined.
+        Both inferences must come from the same encoder draw (pass one array from
+        :func:`encoder_bootstrap_draws` as ``draws`` to both, or the same ``n_boot`` and
+        ``seed``), so that replicate ``b`` of each was computed on the same drawn encoders;
+        anything else, including a draw of the same size from another seed, raises. The
+        point is the difference of the two rhos; the interval is the percentile interval of
+        the replicate-by-replicate differences, at this inference's level, over the
+        replicates on which both correlations are defined.
         """
-        if (self.n, self.replicates.shape) != (other.n, other.replicates.shape):
+        if self.draws_sha256 != other.draws_sha256:
             raise ValueError(
-                "a paired difference needs both correlations computed on one encoder draw "
-                f"(n={self.n}, {self.replicates.size} replicates vs n={other.n}, "
-                f"{other.replicates.size})"
+                "a paired difference needs both correlations computed on one encoder draw; "
+                f"these were computed on different draws (n={self.n}, "
+                f"{self.replicates.size} replicates vs n={other.n}, {other.replicates.size}): "
+                "pass the same draws to both"
             )
         if self.ci.level != other.ci.level:
             raise ValueError(
@@ -718,6 +727,20 @@ def _resolve_draws(draws: np.ndarray | None, n: int, n_boot: int, seed: int) -> 
     return draws
 
 
+def _draws_sha256(draws: np.ndarray) -> str:
+    """Hex SHA-256 identifying an encoder draw of shape ``(n_boot, n)``.
+
+    The digest is over the shape as two little-endian int64s, then the entries in C order
+    as little-endian int64s, so it depends only on which encoders each replicate drew, not
+    on the array's integer dtype or memory layout. A digest rather than the array itself:
+    the draw is ``n`` times the size of the replicates it produced.
+    """
+    draws = np.ascontiguousarray(draws, dtype="<i8")
+    digest = hashlib.sha256(np.asarray(draws.shape, dtype="<i8").tobytes())
+    digest.update(draws.tobytes())
+    return digest.hexdigest()
+
+
 def spearman_inference(
     x: np.ndarray,
     y: np.ndarray,
@@ -757,6 +780,7 @@ def spearman_inference(
         permutation=permutation,
         n_permutations=n_defined,
         replicates=replicates,
+        draws_sha256=_draws_sha256(idx),
     )
 
 
@@ -853,4 +877,5 @@ def partial_spearman_inference(
         permutation=permutation,
         n_permutations=n_defined,
         replicates=replicates,
+        draws_sha256=_draws_sha256(idx),
     )

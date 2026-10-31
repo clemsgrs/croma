@@ -84,7 +84,8 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("mari-vs-ri", "scripts/studies/mari_vs_ri.py", []),
     # After the APD steps: it joins their nIPD and is checked against their correlation
     # table. It imports scib-metrics, which the `repro` extra pins, so this runs in the same
-    # interpreter as every other step once croma[repro] is installed; no separate venv.
+    # interpreter as every other step once croma[repro] is installed; no separate venv. That
+    # interpreter must be Python >= 3.11, which scib-metrics requires.
     ("silhouette-baselines", "scripts/studies/silhouette_baselines.py", []),
 ]
 

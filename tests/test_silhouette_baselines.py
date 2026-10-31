@@ -304,6 +304,91 @@ class TestAssociations:
         pd.testing.assert_frame_equal(_infer(_per_encoder()), _infer(_per_encoder()))
 
 
+class TestCellCache:
+    """A cached cell is reused only for the view it was scored on."""
+
+    ROWS = np.array([0, 1, 2, 3, 4, 5])
+    LABELS = np.array(["normal", "tumor", "normal", "tumor", "normal", "tumor"])
+    CENTRES = np.array(["RUMC", "RUMC", "RUMC", "UMCU", "UMCU", "UMCU"])
+
+    def _inputs(self, **view) -> dict:
+        view = {"rows": self.ROWS, "labels": self.LABELS, "confounders": self.CENTRES, **view}
+        return study.cell_inputs(
+            "pathorob-camelyon", embedding_bytes=4096, embedding_mtime_ns=17, **view
+        )
+
+    def test_identical_views_share_a_key_whatever_container_carries_them(self) -> None:
+        same = self._inputs(
+            rows=self.ROWS.astype(np.int32),
+            labels=pd.Series(self.LABELS, dtype=object),
+            confounders=list(self.CENTRES),
+        )
+        assert same == self._inputs()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"rows": np.array([0, 1, 2, 3, 4, 6])},  # a tile swapped for another
+            {"rows": np.array([1, 0, 2, 3, 4, 5])},  # the tileset index re-ordered
+            {"labels": LABELS[::-1].copy()},  # classes relabelled
+            {"confounders": np.array(["RUMC", "UMCU"] * 3)},  # another confounder column
+        ],
+        ids=["swapped-tile", "reordered-rows", "relabelled", "repointed-confounder"],
+    )
+    def test_a_view_of_the_same_size_on_other_rows_labels_or_centres_has_another_key(
+        self, change: dict
+    ) -> None:
+        changed = self._inputs(**change)
+        assert changed["n_samples"] == self._inputs()["n_samples"]
+        assert changed != self._inputs()
+
+    def test_score_cell_rescores_when_the_view_changes_at_the_same_size(
+        self, bench_env, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        tiles = pd.DataFrame(
+            {
+                "sample_id": [f"s{i}" for i in range(8)],
+                "image_path": [f"/tiles/s{i}.png" for i in range(8)],
+                "label": ["A", "B"] * 4,
+                "medical_center": ["C1"] * 4 + ["C2"] * 4,
+                "scanner": ["V1", "V2"] * 4,
+                "group_id": [f"slide{i}" for i in range(8)],
+            }
+        )
+        bench_env.write_tileset("toy-tiles", tiles, {"M1": np.eye(8)})
+        bench_env.register("toy", tileset="toy-tiles", manifest=tiles.iloc[:6])
+        monkeypatch.setattr(study, "CELLS_DIR", tmp_path / "cells")
+        scored: list[tuple[list, list]] = []
+
+        def record(features, labels, batches):
+            scored.append((list(labels), list(batches)))
+            return dict.fromkeys(study.SCORE_COLUMNS, 0.5)
+
+        monkeypatch.setattr(study, "score_encoder", record)
+
+        def score() -> None:
+            study.score_cell("toy-cohort", "toy", "M1")
+
+        score()
+        score()
+        assert len(scored) == 1  # an unchanged view reuses its cell
+
+        # s4, s5 -> s6, s7: other tiles, the same labels, centres and count.
+        swapped = tiles.iloc[[0, 1, 2, 3, 6, 7]]
+        bench_env.register("toy", tileset="toy-tiles", manifest=swapped)
+        score()
+        assert len(scored) == 2 and scored[-1] == scored[0]
+
+        relabelled = tiles.iloc[:6].assign(label=["B", "A"] * 3)
+        bench_env.register("toy", tileset="toy-tiles", manifest=relabelled)
+        score()
+        assert len(scored) == 3 and scored[-1][0] == ["B", "A"] * 3
+
+        bench_env.respec("toy", confounder_column="scanner")
+        score()
+        assert len(scored) == 4 and scored[-1][1] == ["V1", "V2"] * 3
+
+
 def test_without_the_reference_package_the_study_stops_before_scoring(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -313,5 +398,6 @@ def test_without_the_reference_package_the_study_stops_before_scoring(
         raise AssertionError("cells were scored without scib-metrics")
 
     monkeypatch.setattr(study, "_score_all", scored)
-    with pytest.raises(SystemExit, match=r"croma\[repro\]"):
+    with pytest.raises(SystemExit, match=r"croma\[repro\]") as stopped:
         study.main(["--workers", "1"])
+    assert "Python >= 3.11" in str(stopped.value)

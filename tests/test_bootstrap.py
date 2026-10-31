@@ -469,6 +469,34 @@ class TestSpearmanInference:
         assert (difference.lo, difference.hi) == pytest.approx((lo, hi))
         assert (difference.level, difference.n_boot) == (0.95, 400)
 
+    def test_draws_of_the_same_size_from_different_seeds_are_not_paired(self) -> None:
+        # Same n, same replicate count, different encoders drawn: replicate b of one is not
+        # replicate b of the other, so no paired difference exists. Accepting it would give
+        # a self-difference a wide interval instead of exactly zero.
+        x, y = _toy_encoder_metrics(12, seed=2)
+        seed0 = spearman_inference(x, y, n_boot=500, seed=0)
+        with pytest.raises(ValueError, match="draw"):
+            seed0.difference_ci(spearman_inference(x, y, n_boot=500, seed=1))
+        itself = seed0.difference_ci(spearman_inference(x, y, n_boot=500, seed=0))
+        assert (itself.point, itself.lo, itself.hi) == (0.0, 0.0, 0.0)
+
+    def test_pairing_follows_the_draw_not_the_array_object(self) -> None:
+        # A seeded draw and the same draw passed explicitly (in another integer dtype) are one
+        # draw; a partial on that draw pairs with a plain correlation on it, too.
+        x, y = _toy_encoder_metrics(12, seed=2)
+        z = np.random.default_rng(5).normal(size=12)
+        draws = encoder_bootstrap_draws(12, n_boot=200, seed=3)
+        implicit = spearman_inference(x, y, n_boot=200, seed=3)
+        explicit = spearman_inference(x, y, draws=draws.astype(np.int32))
+        partial = partial_spearman_inference(x, y, z, draws=draws)
+        assert implicit.draws_sha256 == explicit.draws_sha256 == partial.draws_sha256
+        assert implicit.difference_ci(explicit).point == 0.0
+        implicit.difference_ci(partial)  # paired: no error
+        other = partial_spearman_inference(x, y, z, n_boot=200, seed=4)
+        assert other.draws_sha256 != partial.draws_sha256
+        with pytest.raises(ValueError, match="draw"):
+            partial.difference_ci(other)
+
     def test_differencing_unpaired_inferences_is_rejected(self) -> None:
         x, y = _toy_encoder_metrics(12, seed=2)
         with pytest.raises(ValueError, match="draw"):
