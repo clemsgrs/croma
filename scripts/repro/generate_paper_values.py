@@ -55,15 +55,6 @@ SS_SHELL_SUMMARY = (
 )
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
-# Uncertainty scalars for concerns 3 (UQ) and 6 (redundancy). Sourced from the
-# bootstrap_uncertainty experiment: per-model pooled-median CRoMa CIs + rank stability
-# (CSV) and the cross-model Spearman correlations with bootstrap CIs (JSON).
-UNCERTAINTY_SUMMARY = (
-    "Camelyon",
-    f"{by_prefix('Camelyon').run_rel}/results/bootstrap_uncertainty.json",
-    f"{by_prefix('Camelyon').run_rel}/results/bootstrap_uncertainty.csv",
-)
-
 # Downstream-validation scalars. Correlations are reported per benchmark only; PCaBiop
 # is descriptive because it contains four slide encoders.
 APD_CORRELATION_CSV = "output/studies/apd/apd_correlation.csv"
@@ -82,6 +73,8 @@ APD_SCOPE_MACRO = {
     "pcabiop": "Pcabiop",
 }
 APD_RANGE_BENCHMARKS = list(APD_SCOPE_MACRO)
+#: The tile benchmarks whose headline rho(CRoMa, nIPD_ID) the text quotes with a CI.
+APD_CI_SCOPES = ["camelyon", "tcga_4x4", "tolkach"]
 
 # Confounder-probe collapse. `confounder_knn_bacc` is an operating-point scalar the pipeline
 # already computes: how decodable the confounder is from the frozen representation. Its rank
@@ -260,37 +253,6 @@ def _ss_shell_macros(prefix: str, df: pd.DataFrame) -> list[str]:
         ("SsDepthCromaRho", _num(float(depth_rho))),
         ("SsPocketCromaRho", _num(float(pocket_rho))),
     ]
-    return [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
-
-
-def _uncertainty_macros(prefix: str, summary: dict, df: pd.DataFrame) -> list[str]:
-    """Bootstrap UQ + redundancy scalars (concerns 3 and 6).
-
-    Exposes the cross-model rank correlations with CIs (CRoMa vs RI/MaRI, and RI vs
-    MaRI to make the ``CRoMa is the least rank-redundant of the three'' point), the
-    headline-leader CRoMa with its CI, the size of the top rank-tie cluster (models
-    whose 95% rank interval includes rank 1), and the closest adjacent-pair win
-    probability (the coin-flip that shows nearby point estimates are statistical
-    ties). All sourced from the bootstrap experiment so prose cannot drift.
-    """
-    corr = summary["correlations"]
-    leader = df.sort_values("croma", ascending=False).iloc[0]
-    top_tie_n = int((df["rank_lo"] == 1).sum())
-    adj = summary.get("adjacent_pair_win", [])
-    closest = min(adj, key=lambda d: abs(d["p_higher_beats_lower"] - 0.5)) if adj else None
-    # The rho point estimates live in benchmark_macros, which reads the always-present metrics.csv;
-    # emitting them here too would be a duplicate \newcommand whenever this block does run.
-    specs = [
-        ("CromaVsRiCi", _ci(float(corr["croma_vs_ri"]["lo"]), float(corr["croma_vs_ri"]["hi"]))),
-        ("CromaVsMariCi", _ci(float(corr["croma_vs_mari"]["lo"]), float(corr["croma_vs_mari"]["hi"]))),
-        ("CromaLeaderModel", str(leader["model"])),
-        ("CromaLeaderVal", _num(float(leader["croma"]))),
-        ("CromaLeaderCi", _ci(float(leader["croma_lo"]), float(leader["croma_hi"]))),
-        ("CromaTopTieN", str(top_tie_n)),
-        ("CromaNBoot", str(int(summary["n_boot"]))),
-    ]
-    if closest is not None:
-        specs.append(("CromaClosestPairWinProb", _num(float(closest["p_higher_beats_lower"]))))
     return [rf"\newcommand{{\{prefix}{suffix}}}{{{body}}}" for suffix, body in specs]
 
 
@@ -532,6 +494,138 @@ def _apd_macros(df: pd.DataFrame) -> list[str]:
     return lines
 
 
+def _apd_ci_macros(df: pd.DataFrame, design: str) -> list[str]:
+    """CI bounds of the headline rho(median CRoMa, nIPD_ID) per tile benchmark.
+
+    ``design`` is the interval tab:apd-correlation renders (``generate_apd_floats.CI_DESIGN``),
+    so the text quotes the bracket the table shows.
+    """
+    lo_col, hi_col = ("two_level_lo", "two_level_hi") if design == "two-level" else (
+        "ci_lo", "ci_hi")
+    rows = df[(df["target"] == "nipd_id") & (df["metric"] == "croma")].set_index("scope")
+    lines = [f"% rho(CRoMa, nIPD_ID): 95% {design}-bootstrap CI bounds (tab:apd-correlation)"]
+    for scope in APD_CI_SCOPES:
+        if scope not in rows.index:
+            raise CaptionClaimError(f"no rho(CRoMa, nIPD_ID) row for {scope}")
+        lo, hi = float(rows.loc[scope, lo_col]), float(rows.loc[scope, hi_col])
+        name = f"NipdIdCroma{APD_SCOPE_MACRO[scope]}"
+        lines += [
+            rf"\newcommand{{\{name}Ci}}{{$[{_apd_bare(lo)}, {_apd_bare(hi)}]$}}",
+            rf"\newcommand{{\{name}CiLo}}{{{_apd_bare(lo)}}}",
+            rf"\newcommand{{\{name}CiHi}}{{{_apd_bare(hi)}}}",
+        ]
+    return lines
+
+
+def _apd_block(root: Path) -> list[str]:
+    """The downstream-validation macros. A missing study output raises: they are cited."""
+    from generate_apd_floats import CI_DESIGN
+
+    apd_path, apd_study_path = root / APD_CORRELATION_CSV, root / APD_STUDY_CSV
+    for path in (apd_path, apd_study_path):
+        if not path.exists():
+            raise FileNotFoundError(
+                f"missing {path}; run scripts/studies/apd/apd_experiment.py, then "
+                "apd_croma_correlation.py"
+            )
+    corr = pd.read_csv(apd_path)
+    return (
+        _apd_macros(corr)
+        + _apd_ci_macros(corr, CI_DESIGN)
+        + _pcabiop_nipd_macros(pd.read_csv(apd_study_path))
+    )
+
+
+def _grade_matched_macros(study) -> list[str]:
+    """PCaBiop grade-matched SO pools: per-encoder grade effect and pool medians, and the
+    cancer slides per ISUP grade per provider. Numbers only; no verdicts."""
+    from _grade_matched import macro_suffix
+
+    lines = []
+    for model, row in study.pooled.iterrows():
+        suffix = macro_suffix(str(model))
+        for column, name in (
+            ("delta_grade", "Delta"),
+            ("matched_median", "MatchedMedian"),
+            ("random_median", "RandomMedian"),
+        ):
+            lines.append(
+                rf"\newcommand{{\GradeMatched{suffix}{name}}}{{{_num(float(row[column]), 3)}}}"
+            )
+    for provider, by_grade in study.meta["cancer_slides_per_grade"].items():
+        for grade, count in by_grade.items():
+            lines.append(
+                rf"\newcommand{{\GradeMatched{macro_suffix(provider)}"
+                rf"Grade{macro_suffix(grade)}Slides}}{{{int(count)}}}"
+            )
+    return lines
+
+
+def _nipd_auroc_macros(study) -> list[str]:
+    """nIPD from AUROC beside balanced accuracy (tab:nipd-auroc): the agreement rho per
+    cohort x regime, and the in-domain rho(CRoMa, nIPD from AUROC) per cohort -- with its
+    interval and BH q on the tile cohorts, with its exact p on the descriptive PCaBiop."""
+    from _nipd_auroc import SLIDE_COHORT, interval, significance
+
+    lines = [rf"\newcommand{{\NipdAurocNModels}}{{{study.n_ranked}}}"]
+    for scope, s_suffix in APD_SCOPE_MACRO.items():
+        for regime, r_suffix in (("id", "Id"), ("ood", "Ood")):
+            rho = float(study.cell(scope, regime, "nipd_auroc", "nipd_balacc")["rho"])
+            lines.append(
+                rf"\newcommand{{\NipdAurocAgreement{r_suffix}{s_suffix}}}{{{_apd_bare(rho)}}}"
+            )
+        row = study.cell(scope, "id", "croma", "nipd_auroc")
+        macro = f"NipdAurocIdCroma{s_suffix}"
+        lines.append(rf"\newcommand{{\{macro}}}{{{_apd_bare(float(row['rho']))}}}")
+        if scope == SLIDE_COHORT:
+            lines.append(
+                rf"\newcommand{{\{macro}P}}{{{significance('p', float(row['p_value']))}}}"
+            )
+        else:
+            ci = interval(float(row["ci_lo"]), float(row["ci_hi"]))
+            lines.append(rf"\newcommand{{\{macro}Ci}}{{{ci}}}")
+            lines.append(
+                rf"\newcommand{{\{macro}Q}}{{{significance('q', float(row['q_value']))}}}"
+            )
+    return lines
+
+
+#: Batch-mixing baselines (tab:silhouette-baselines): rho with in-domain nIPD for CRoMa and
+#: each baseline, and the head-to-head differences, each with its CI bounds.
+SILHOUETTE_METRIC_MACRO = {"croma": "Croma", "batch_asw": "BatchAsw", "ilisi": "Ilisi"}
+
+
+def _silhouette_baseline_macros(baselines) -> list[str]:
+    """``\\BaselinesNipdId<Metric><Scope>`` and ``\\BaselinesDelta<Baseline><Scope>``, each
+    with ``Lo``/``Hi`` bounds, from the study table the float is rendered from."""
+    specs = [("downstream", "BaselinesNipdId", m) for m in SILHOUETTE_METRIC_MACRO]
+    specs += [("head_to_head", "BaselinesDelta", m) for m in ("batch_asw", "ilisi")]
+    lines = []
+    for dataset in baselines.cohorts:
+        scope = APD_SCOPE_MACRO[dataset]
+        for kind, family, metric in specs:
+            row = baselines.row(dataset, kind, metric)
+            name = f"{family}{SILHOUETTE_METRIC_MACRO[metric]}{scope}"
+            for column, suffix in (("estimate", ""), ("ci_lo", "Lo"), ("ci_hi", "Hi")):
+                lines.append(rf"\newcommand{{\{name}{suffix}}}{{{_apd_bare(float(row[column]))}}}")
+    return lines
+
+
+def _silhouette_block(root: Path, apd_path: Path) -> list[str]:
+    """The batch-mixing baseline macros, from the study artifacts under ``root``.
+
+    Never warns-and-skips: a missing study artifact raises here and fails the build.
+    ``apd_path`` is the ``apd_correlation.csv`` the APD macros were read from, so the check
+    that CRoMa's row equals tab:apd-correlation's compares exactly the file they came from.
+    """
+    import generate_silhouette_baselines_table as _silhouette
+
+    inputs = {**_silhouette.paths_under(root), "apd_correlation_csv": apd_path}
+    silhouette = _silhouette.load(**inputs)
+    silhouette.assert_croma_matches_apd_correlation()
+    return _silhouette_baseline_macros(silhouette)
+
+
 def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     """Model-level PCaBiop/PAR values cited in the external-validation paragraph."""
     rows = df[df["dataset"] == "pcabiop"].set_index("model")
@@ -595,6 +689,14 @@ def _rank_frontier_macros(current: "RankPareto") -> list[str]:
     ]
 
 
+def _uncertainty_block(study) -> list[str]:
+    """The bootstrap-uncertainty macros, naming the live mean-rank frontier's members."""
+    import _uncertainty
+    from _rank_pareto import load as load_rank_pareto
+
+    return _uncertainty.macros(study, load_rank_pareto().frontier)
+
+
 def _load_rank_frontier_macros() -> list[str]:
     """Load live benchmark ranks for the canonical local paper build."""
     from _rank_pareto import load as load_rank_pareto
@@ -602,11 +704,28 @@ def _load_rank_frontier_macros() -> list[str]:
     return _rank_frontier_macros(load_rank_pareto())
 
 
-def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
+def _load_finetune_pair_macros(root: Path) -> list[str]:
+    """Fine-tune minus parent differences (supp tab:finetune-pairs).
+
+    Unconditional: ``_finetune_pairs.load`` raises when the study is missing, no longer
+    matches the metadata's pairs, or predates a re-run of the inputs it read, so a missing or
+    stale input fails the build instead of dropping or staling macros a sentence may cite.
+    """
+    import _finetune_pairs
+
+    path = root / _finetune_pairs.CSV.relative_to(_finetune_pairs.REPO)
+    return _finetune_pairs.macro_lines(_finetune_pairs.load(path, root=root))
+
+
+def _cross_cohort_macros(
+    croma: dict[str, pd.Series], panel_sizes: dict[str, int], uncertainty=None
+) -> list[str]:
     """Panel sizes and the cross-cohort CRoMa rank-agreement cited by the abstract and intro.
 
     Correlations are cross-model, so the natural-image control is excluded; the tile-panel
-    count reported alongside them is therefore the ranked panel, not the full 26.
+    count reported alongside them is therefore the ranked panel, not the full 26. With the
+    bootstrap-uncertainty study (``_uncertainty.Study``), the encoder-bootstrap CIs of the mean
+    and of each pair follow, after checking the study scored the same rhos.
     """
     import itertools
 
@@ -619,10 +738,11 @@ def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int
         return []
 
     shared = sorted(set.intersection(*(set(croma[b].index) for b in present)) - {CONTROL_MODEL})
-    rhos = [
-        float(spearmanr(croma[a][shared], croma[b][shared]).statistic)
+    by_pair = {
+        frozenset((a, b)): float(spearmanr(croma[a][shared], croma[b][shared]).statistic)
         for a, b in itertools.combinations(present, 2)
-    ]
+    }
+    rhos = list(by_pair.values())
     mean_rho = sum(rhos) / len(rhos)
 
     specs = [
@@ -639,9 +759,14 @@ def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int
         f"(n={len(shared)}, {len(rhos)} pairs over {present})",
         file=sys.stderr,
     )
-    return ["% Cross-cohort CRoMa rank agreement + panel sizes (abstract, introduction)"] + [
+    lines = ["% Cross-cohort CRoMa rank agreement + panel sizes (abstract, introduction)"] + [
         rf"\newcommand{{\{suffix}}}{{{body}}}" for suffix, body in specs
     ]
+    if uncertainty is not None:
+        import _uncertainty
+
+        lines += _uncertainty.cross_cohort_ci_macros(uncertainty, by_pair)
+    return lines
 
 
 def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) -> str:
@@ -696,19 +821,38 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         out.append("% Across-benchmark |rho| range for the pooled scores vs the confounder probe")
         out.append(rf"\newcommand{{\ProbePooledRhoRange}}{{{_span(lo, hi)}}}")
 
-    out.extend(_cross_cohort_macros(croma_by_prefix, panel_sizes))
+    # Bootstrap uncertainty (the supplement's tables and the cross-cohort CIs). Like MaRI
+    # versus RI above, it never warns-and-skips: _uncertainty.load raises when a study is absent.
+    import _uncertainty
+
+    uncertainty = _uncertainty.load(root)
+    out.extend(_cross_cohort_macros(croma_by_prefix, panel_sizes, uncertainty))
     out.append("% Cross-benchmark mean-rank Pareto frontier (fig:croma-pareto-rank)")
     out.extend(_load_rank_frontier_macros())
+    unc_lines = _uncertainty_block(uncertainty)
+    out.extend(unc_lines)
+    print(f"{'uncertainty':16s}        -> {len(unc_lines)} macros", file=sys.stderr)
 
     # Roster-dependent numbers the text quotes: per-benchmark frontiers, counts and leaders,
     # operating k, the control, TCGA-2x2, APD vs nIPD, and the typed-neighbour coverage.
     # Unlike the study blocks below, these never warn and skip -- a missing input raises.
     from _panel_macros import panel_macros
+    from generate_distance_variants_table import macros as distance_variant_macros
+    from generate_sample_shortcut_floats import macros as sample_shortcut_macros
     from generate_supp_rank_table import macros as typed_neighbour_macros
 
     out.extend(panel_macros(root))
     out.append("% Typed-neighbour coverage (tab:typed-neighbour-coverage)")
     out.extend(typed_neighbour_macros(root))
+    out.append("% Robustness fine-tune vs parent (supp tab:finetune-pairs)")
+    out.extend(_load_finetune_pair_macros(root))
+    out.extend(sample_shortcut_macros(root))
+    # The exposure counts and the drop-exposed sensitivity, from the build that renders
+    # tab:exposure-matrix and tab:drop-exposed; a missing input raises here too.
+    from _exposure import build as build_exposure
+
+    out.extend(build_exposure(root).macros)
+    out.extend(distance_variant_macros(root))
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel
@@ -720,19 +864,6 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     else:
         print(f"warning: missing {ss_path}, skipping SS-shell macros", file=sys.stderr)
 
-    unc_prefix, unc_json, unc_csv = UNCERTAINTY_SUMMARY
-    json_path, csv_path = root / unc_json, root / unc_csv
-    if json_path.exists() and csv_path.exists():
-        import json as _json
-
-        summary = _json.loads(json_path.read_text())
-        unc_lines = _uncertainty_macros(unc_prefix, summary, published_models(pd.read_csv(csv_path)))
-        out.append(f"% {unc_prefix} uncertainty (concerns 3 & 6): {unc_json}")
-        out.extend(unc_lines)
-        print(f"{unc_prefix + ' uncertainty':16s}     -> {len(unc_lines)} macros", file=sys.stderr)
-    else:
-        print(f"warning: missing {json_path} or {csv_path}, skipping UQ macros", file=sys.stderr)
-
     from _overlap import PER_SAMPLE as OVERLAP_PER_SAMPLE
 
     if OVERLAP_PER_SAMPLE.exists():
@@ -743,19 +874,49 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     else:
         print(f"warning: missing {OVERLAP_PER_SAMPLE}, skipping overlap macros", file=sys.stderr)
 
-    apd_path = root / APD_CORRELATION_CSV
-    apd_study_path = root / APD_STUDY_CSV
-    if apd_path.exists() and apd_study_path.exists():
-        corr = pd.read_csv(apd_path)
-        apd_lines = _apd_macros(corr) + _pcabiop_nipd_macros(pd.read_csv(apd_study_path))
-        out.append(f"% APD downstream validation: {APD_CORRELATION_CSV}")
-        out.extend(apd_lines)
-        print(f"{'APD validation':16s}        -> {len(apd_lines)} macros", file=sys.stderr)
-    else:
-        print(
-            f"warning: missing {apd_path} or {apd_study_path}, skipping APD macros",
-            file=sys.stderr,
-        )
+    # Downstream validation: never skipped, since the headline rho and its CI are cited.
+    apd_lines = _apd_block(root)
+    out.append(f"% APD downstream validation: {APD_CORRELATION_CSV}")
+    out.extend(apd_lines)
+    print(f"{'APD validation':16s}        -> {len(apd_lines)} macros", file=sys.stderr)
+
+    # Grade-matched SO pools on PCaBiop. Unlike the blocks above, a missing or stale study
+    # fails the build: _grade_matched.load raises rather than letting a macro vanish.
+    from _grade_matched import STUDY_REL as GRADE_MATCHED_REL, load as load_grade_matched
+
+    gm_lines = _grade_matched_macros(load_grade_matched(root))
+    out.append(f"% Grade-matched SO pools on PCaBiop: {GRADE_MATCHED_REL}")
+    out.extend(gm_lines)
+    print(f"{'grade-matched':16s}        -> {len(gm_lines)} macros", file=sys.stderr)
+
+    sil_lines = _silhouette_block(root, root / APD_CORRELATION_CSV)
+    out.append("% Batch-mixing baselines (tab:silhouette-baselines)")
+    out.extend(sil_lines)
+    print(f"{'batch-mixing':16s}        -> {len(sil_lines)} macros", file=sys.stderr)
+
+    # nIPD from AUROC beside balanced accuracy. Unlike the blocks above, a missing or stale
+    # AUROC cell fails the build: _nipd_auroc.load recomputes from the cells and raises.
+    from _nipd_auroc import load as load_nipd_auroc
+
+    auroc_lines = _nipd_auroc_macros(load_nipd_auroc(root))
+    out.append("% nIPD from AUROC (tab:nipd-auroc): the cells under output/studies/auc")
+    out.extend(auroc_lines)
+    print(f"{'nIPD AUROC':16s}        -> {len(auroc_lines)} macros", file=sys.stderr)
+
+    # Low-data shortcut susceptibility (tab:low-data). Never skipped either: a missing or
+    # stale probe-reductions study fails the build through _probe_reductions.load.
+    from generate_low_data_table import macros as low_data_macros
+
+    low_data_lines = low_data_macros(root)
+    out.append("% Low-data rho(CRoMa, nIPD_ID) (tab:low-data): output/studies/probe-reductions")
+    out.extend(low_data_lines)
+    print(f"{'low data':16s}        -> {len(low_data_lines)} macros", file=sys.stderr)
+
+    svm_lines = _slide_vs_meanpool_macros(root)
+    if svm_lines:
+        out.append("% Slide encoders vs mean-pooling of their tile encoders (tab:slide-vs-meanpool)")
+        out.extend(svm_lines)
+        print(f"{'slide-vs-meanpool':16s}     -> {len(svm_lines)} macros", file=sys.stderr)
 
     # Cohort-subsampling stability (scripts/studies/subsampling_stability.py). Skipped until
     # the sweep marks the study complete; once marked, a missing replicate or a full-cohort
@@ -774,6 +935,24 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
             file=sys.stderr,
         )
     return "\n".join(out) + "\n"
+
+
+def _slide_vs_meanpool_macros(root: Path) -> list[str]:
+    """Slide-minus-mean-pool paired differences (``tab:slide-vs-meanpool``).
+
+    A study that has not been run is skipped by name, like every study block here. Once it
+    has run, every pair the table renders must be in its output: a missing pair raises
+    rather than dropping that pair's macros. A declared pair the study recorded as not run
+    has no macros.
+    """
+    import _slide_vs_meanpool as svm
+
+    study_dir = root / svm.STUDY_REL
+    if not (study_dir / "differences.csv").exists():
+        print(f"warning: missing {study_dir}/differences.csv, skipping slide-vs-meanpool macros",
+              file=sys.stderr)
+        return []
+    return svm.macros(svm.load(study_dir))
 
 
 def main() -> None:

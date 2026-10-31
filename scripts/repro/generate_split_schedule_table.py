@@ -11,7 +11,9 @@ caption. ``C_GRID`` restates the regularisation grid that code builds inline, an
 holds the two together.
 
 ``--tiles-per-slide camelyon=30`` (repeatable) renders the same table for a reduced-tile
-variant of the sweep, under its own ``--label`` and ``--out``.
+variant of the sweep, under its own ``--label`` and ``--out``. The default table runs that
+override at every reduced level the probe records were run at (``REDUCED_TILES``) and lists
+their training and validation sizes in panel c.
 
 Usage:
   python scripts/repro/generate_split_schedule_table.py
@@ -28,8 +30,19 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from _split_schedule import REPO, Schedule, schedules
+from loaders import DATASETS  # _split_schedule puts the APD study on the path
+from probe_records import RUNS
 
 OUT = REPO / "paper/sections/supp/split_schedule.tex"
+
+#: The reduced tiles per slide each cohort's probe records were run at: every recorded level
+#: below the cohort's own ``num_patches_per_slide``, in recorded order. The default table
+#: lists their training and validation sizes in panel c (``tab:low-data``'s sweeps).
+REDUCED_TILES = {
+    key: reduced
+    for key, levels in RUNS.items()
+    if (reduced := tuple(t for t in levels if t < DATASETS[key]["num_patches_per_slide"]))
+}
 LABEL = "tab:split-schedule"
 
 #: The probe's regularisation grid as ``np.linspace`` arguments over log10 C: 15 values from
@@ -114,6 +127,56 @@ def _split_panel(rows: list[Schedule]) -> list[str]:
     return lines + [r"\end{tabular}"]
 
 
+def _span(values: list[int]) -> str:
+    low, high = min(values), max(values)
+    return _n(low) if low == high else f"{_n(low)}--{_n(high)}"
+
+
+def _reduced(root: Path) -> list[Schedule]:
+    """Each recorded reduced-tile schedule, through the override, in table then tile order."""
+    depth = max(len(levels) for levels in REDUCED_TILES.values())
+    found: dict[tuple[str, int], Schedule] = {}
+    for rank in range(depth):
+        overrides = {k: v[rank] for k, v in REDUCED_TILES.items() if rank < len(v)}
+        for s in schedules(root, tiles_per_slide=overrides):
+            if s.key in overrides:
+                found[(s.key, s.tiles_per_slide)] = s
+    return [found[(k, t)] for k in REDUCED_TILES for t in REDUCED_TILES[k] if (k, t) in found]
+
+
+def _reduced_panel(rows: list[Schedule]) -> list[str]:
+    lines = [
+        r"\begin{tabular}{lccc}",
+        r"\hline",
+        r"\multicolumn{4}{l}{\emph{(c) Reduced-tile sweeps}} \\",
+        r"\hline",
+        r"Benchmark & Tiles/slide & Training & Validation \\",
+        r"\hline",
+    ]
+    for i, s in enumerate(rows):
+        first = i == 0 or rows[i - 1].key != s.key
+        lines.append(
+            f"{_name(s) if first else ''} & {s.tiles_per_slide} & "
+            f"{_span([x.train for x in s.splits])} & "
+            f"{_span([x.validation for x in s.splits])} \\\\"
+        )
+        if i == len(rows) - 1 or rows[i + 1].key != s.key:
+            lines.append(r"\hline")
+    return lines + [r"\end{tabular}"]
+
+
+def _reduced_sentence(rows: list[Schedule]) -> str:
+    if not rows:
+        return ""
+    return (
+        r" \textbf{c,} The reduced-tile sweeps of Table~\ref{tab:low-data}: the slides, "
+        r"splits and held-out test sets of panel~b, with each training slide contributing the "
+        r"stated number of tiles, drawn once per replicate and kept at every split, and each "
+        r"cell's validation slice shrunk by the same factor, rounded down but never below one "
+        r"row. Training and validation sizes span the splits."
+    )
+
+
 _WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
 
@@ -126,18 +189,27 @@ def _types_sentence(rows: list[Schedule]) -> str:
     )
 
 
+def _trained(s: Schedule) -> str:
+    """A reduced-tile block trains on only some of its tiles."""
+    if s.tiles_per_slide == s.rows_per_slide:
+        return ""
+    trains = "tiles train" if s.tiles_per_slide > 1 else "tile trains"
+    return f", of which only {s.tiles_per_slide} {trains}"
+
+
 def _case_sentence(rows: list[Schedule]) -> str:
     cased = [s for s in rows if s.case_based]
     return "".join(
         f" On {s.name} the independence unit is the case: panel~a counts cases, and a "
-        f"slide in panel~b is one case's {s.tiles_per_slide}-tile block within a class, since "
-        "a case contributes tiles to several classes."
+        f"slide in panel~b is one case's {s.rows_per_slide}-tile block within a class"
+        f"{_trained(s)}, since a case contributes tiles to several classes."
         for s in cased
     )
 
 
 def _slide_level_sentence(rows: list[Schedule]) -> str:
-    names = [s.name for s in rows if s.tiles_per_slide == 1]
+    # Slide-level is the cohort's own grain, not the tiles an override trains on.
+    names = [s.name for s in rows if s.rows_per_slide == 1]
     if not names:
         return ""
     return (
@@ -146,7 +218,7 @@ def _slide_level_sentence(rows: list[Schedule]) -> str:
     )
 
 
-def _caption(rows: list[Schedule]) -> str:
+def _caption(rows: list[Schedule], reduced: list[Schedule]) -> str:
     low, high, n = C_GRID
     return (
         r"\textbf{Confounder-biased probe schedules.} Each schedule walks the in-domain "
@@ -160,7 +232,7 @@ def _caption(rows: list[Schedule]) -> str:
         r"training slides per favourable (shortcut-opposing) and unfavourable "
         r"(shortcut-aligned) cell; the training and validation set sizes in tiles; and the "
         r"ID test slides per cell." + _types_sentence(rows) + _case_sentence(rows)
-        + _slide_level_sentence(rows)
+        + _slide_level_sentence(rows) + _reduced_sentence(reduced)
         + r" The probe is an L2-regularised logistic regression with scikit-learn defaults. "
         rf"Its inverse regularisation strength is chosen from {n} log-spaced values in "
         rf"$[10^{{{low}}}, 10^{{{high}}}]$ by validation balanced accuracy, and the probe is "
@@ -208,6 +280,8 @@ def build(
     label: str = LABEL,
 ) -> str:
     rows = schedules(root, tiles_per_slide=tiles_per_slide)
+    # A reduced variant already is one of panel c's sweeps; only the default table lists them.
+    reduced = [] if tiles_per_slide else _reduced(root)
     lines = [
         r"\begin{table}[!htbp]",
         r"\centering",
@@ -218,11 +292,13 @@ def build(
         r"\vspace{5pt}",
         *_split_panel(rows),
     ]
+    if reduced:
+        lines += ["", r"\vspace{5pt}", *_reduced_panel(reduced)]
     note = _footnote(rows)
     if note:
         lines += ["", r"\vspace{3pt}", rf"\parbox{{\linewidth}}{{\footnotesize {note}}}"]
     lines += [
-        rf"\caption{{{_caption(rows)}}}",
+        rf"\caption{{{_caption(rows, reduced)}}}",
         rf"\label{{{label}}}",
         r"\end{table}",
     ]

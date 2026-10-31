@@ -1,6 +1,7 @@
 import math
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -35,6 +36,9 @@ from croma.types import CRoMaResult
 # >= 0.99), so m only affects per-sample magnitudes and tail statistics; m=1 and the
 # full sweep are reported as sensitivity. See paper/sections/croma.tex.
 CROMA_HEADLINE_M = 5
+
+# Typed-neighbour distances ``CRoMa.compute`` accepts; the first is the default.
+CROMA_DISTANCES = ("cosine", "euclidean")
 
 
 @dataclass(frozen=True)
@@ -222,7 +226,20 @@ def _iterative_typed_neighbor_search(
     m: int,
     start_k: int,
     k_growth_factor: float,
+    scan=None,
+    distance: str = "cosine",
 ) -> tuple[np.ndarray, np.ndarray, _CRoMaSearchMeta]:
+    """Fill ``m`` slots of each of two neighbour types per sample, growing ``k`` until done.
+
+    ``scan`` decides which neighbour fills which slot. It defaults to CRoMa's own typing
+    (``_scan_typed_neighbors_for_query_rows``: SO into the first array, OS into the
+    second) and takes the same keyword arguments; a study that needs another two-way typing
+    of the same cross-group neighbours passes its own instead of re-implementing the search.
+    ``distance`` is the metric the neighbours are searched under, ``"cosine"`` (the
+    default) or ``"euclidean"``; the rows are searched as given.
+    """
+    if scan is None:
+        scan = _scan_typed_neighbors_for_query_rows
     n_samples = int(len(labels))
     so_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
     os_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
@@ -238,7 +255,12 @@ def _iterative_typed_neighbor_search(
             ),
         )
 
-    model = NearestNeighbors(metric="cosine")
+    if distance == "cosine":
+        model = NearestNeighbors(metric="cosine")
+    else:
+        # Brute force, as the cosine search is: a tree index would answer the same query
+        # with differently rounded distances, and low-dimensional inputs would select one.
+        model = NearestNeighbors(metric="euclidean", algorithm="brute")
     model.fit(features)
 
     k_current = int(max(1, min(int(start_k), n_samples - 1)))
@@ -284,7 +306,7 @@ def _iterative_typed_neighbor_search(
                 kmax=int(k_current),
             )
 
-            newly_defined = _scan_typed_neighbors_for_query_rows(
+            newly_defined = scan(
                 labels=labels,
                 centers=centers,
                 query_indices=batch_indices,
@@ -336,19 +358,34 @@ class CrossConfounderRobustnessMargin:
         alpha: float = 0.10,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
+        distance: Literal["cosine", "euclidean"] = "cosine",
     ) -> CRoMaResult | dict[int, CRoMaResult]:
         """Compute the cross-confounder robustness margin with total support.
 
         Args:
             evaluation_design: ``"all"`` (the default) or ``"paired_2x2"``; see the
                 constants in :mod:`croma.metrics.base` for what each scope scores.
+            distance: the typed-neighbour distance. ``"cosine"`` (the default) is the
+                metric's definition, and the distance RI and MaRI use: each subset's rows
+                are L2-normalised and compared by cosine distance, so a margin reads only
+                the direction of each embedding and an encoder's arbitrary feature scale
+                cannot enter it.
+                ``"euclidean"`` compares the rows as given, with no normalisation; it is
+                offered for sensitivity analysis (pass L2-normalised or whitened
+                features to choose the geometry) and changes nothing else -- the search,
+                the typed sets and the margin formula are shared. On unit vectors it keeps
+                every neighbour order, and at ``m=1`` maps a cosine margin ``c`` to
+                ``(sqrt(1 + c) - sqrt(1 - c)) / (sqrt(1 + c) + sqrt(1 - c))``.
 
         Raises:
+            ValueError: If ``distance`` is neither ``"cosine"`` nor ``"euclidean"``.
             RuntimeError: If any requested sample or subset occurrence does not have both
                 required typed-neighbour sets after adaptive search, or has a zero margin
                 denominator. No pooled or tail statistics are returned in that case.
         """
         evaluation_design = _normalize_evaluation_design(evaluation_design)
+        if distance not in CROMA_DISTANCES:
+            raise ValueError(f"distance must be one of {CROMA_DISTANCES}, got {distance!r}")
 
         if isinstance(m, (list, tuple)):
             if len(m) <= 0:
@@ -411,9 +448,10 @@ class CrossConfounderRobustnessMargin:
             sub = subset.rows
             idx = sub["source_sample_index"].to_numpy(dtype=int)
             subset_features = features[idx]
-            subset_features = subset_features / (
-                np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12
-            )
+            if distance == "cosine":
+                subset_features = subset_features / (
+                    np.linalg.norm(subset_features, axis=1, keepdims=True) + 1e-12
+                )
 
             labels = pd.factorize(sub["label"])[0].astype(int)
             centers = pd.factorize(sub["confounder"])[0].astype(int)
@@ -427,6 +465,7 @@ class CrossConfounderRobustnessMargin:
                 m=int(m_max),
                 start_k=int(start_k),
                 k_growth_factor=float(k_growth_factor),
+                distance=distance,
             )
 
             n_sub = len(sub)

@@ -853,20 +853,44 @@ class TestPaperValues:
     def test_the_values_file_carries_the_macros_only_once_the_study_is_complete(
         self, tmp_path, monkeypatch
     ):
+        from types import SimpleNamespace
+
+        import _exposure
+        import _grade_matched
         import _mari_vs_ri
+        import _nipd_auroc
+        import _overlap
         import _panel_macros
+        import _uncertainty
+        import generate_distance_variants_table
+        import generate_low_data_table
         import generate_paper_values as values
+        import generate_sample_shortcut_floats
         import generate_supp_rank_table
 
-        # The MaRI-versus-RI, frontier, panel and typed-neighbour blocks read the live runs
-        # and studies, which a checkout may not have, and raise rather than skip without
-        # them. ``build`` imports all but the frontier loader at call time, so those are
-        # stubbed on their own modules.
+        # Every block before this one reads the live runs and other studies, some relative to
+        # the repository rather than ``root``, and most raise rather than skip without them.
+        # ``build`` imports several at call time, so those are stubbed on their own modules.
+        # The SS-shell and slide-vs-meanpool blocks skip by name on an empty root.
         monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
         monkeypatch.setattr(_mari_vs_ri, "macros", lambda data: [])
         monkeypatch.setattr(values, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_uncertainty, "load", lambda root: None)
+        monkeypatch.setattr(values, "_uncertainty_block", lambda data: [])
         monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
         monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
+        monkeypatch.setattr(values, "_load_finetune_pair_macros", lambda root: [])
+        monkeypatch.setattr(generate_sample_shortcut_floats, "macros", lambda root: [])
+        monkeypatch.setattr(_exposure, "build", lambda root: SimpleNamespace(macros=[]))
+        monkeypatch.setattr(generate_distance_variants_table, "macros", lambda root: [])
+        monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
+        monkeypatch.setattr(values, "_apd_block", lambda root: [])
+        monkeypatch.setattr(_grade_matched, "load", lambda root: None)
+        monkeypatch.setattr(values, "_grade_matched_macros", lambda data: [])
+        monkeypatch.setattr(values, "_silhouette_block", lambda root, apd_path: [])
+        monkeypatch.setattr(_nipd_auroc, "load", lambda root: None)
+        monkeypatch.setattr(values, "_nipd_auroc_macros", lambda data: [])
+        monkeypatch.setattr(generate_low_data_table, "macros", lambda root: [])
         root = tmp_path / "output" / "studies" / "subsampling-stability"
         _write_real_design_study(root, seed=0)
         cited = r"\newcommand{\TolkachSubsampleHalfKendallMari}"

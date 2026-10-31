@@ -70,6 +70,22 @@ def _names(frame: pd.DataFrame) -> str:
     return ", ".join(sorted(frame["model"].astype(str)))
 
 
+def median_tail_frontier(ranked: pd.DataFrame) -> list[str]:
+    """The frontier the Pareto figure rings: median CRoMa (margin) and LTM_10, both maximised,
+    named in the staircase order (median ascending) the figure draws it in."""
+    return _pareto_frontier_max_max(
+        [
+            (str(r["model"]), float(r["croma"]), float(r["croma_ltm_alpha"]))
+            for _, r in ranked.iterrows()
+        ]
+    )
+
+
+def top_by_median(ranked: pd.DataFrame) -> pd.DataFrame:
+    """The top three by median CRoMa (margin), ties broken by name."""
+    return ranked.sort_values(["croma", "model"], ascending=[False, True]).head(len(_ORDINALS))
+
+
 def ranking_macros(prefix: str, df: pd.DataFrame) -> list[str]:
     """Frontier, sign/tail counts, F(0) extremes and top three over the ranked encoders."""
     ranked = _ranked(df)
@@ -77,14 +93,7 @@ def ranking_macros(prefix: str, df: pd.DataFrame) -> list[str]:
     ranked["croma_ltm_alpha"] = ranked["croma_ltm_alpha"].astype(float)
     ranked["croma_f0"] = ranked["croma_f0"].astype(float)
 
-    # The same frontier the Pareto figure rings: median CRoMa and LTM_10, both maximised,
-    # named in the staircase order (median ascending) the figure draws it in.
-    frontier = _pareto_frontier_max_max(
-        [
-            (str(r["model"]), float(r["croma"]), float(r["croma_ltm_alpha"]))
-            for _, r in ranked.iterrows()
-        ]
-    )
+    frontier = median_tail_frontier(ranked)
     if not frontier:
         raise CaptionClaimError(f"{prefix}: the median-vs-LTM Pareto frontier is empty.")
     if len(ranked) < len(_ORDINALS):
@@ -103,7 +112,7 @@ def ranking_macros(prefix: str, df: pd.DataFrame) -> list[str]:
         ("FZeroMax", num_math(hi, 3)),
         ("FZeroMaxModels", _names(ranked[(f0 - hi).abs() < 1e-12])),
     ]
-    top = ranked.sort_values(["croma", "model"], ascending=[False, True]).head(len(_ORDINALS))
+    top = top_by_median(ranked)
     for ordinal, (_, row) in zip(_ORDINALS, top.iterrows()):
         specs.append((f"Top{ordinal}Model", str(row["model"])))
         specs.append((f"Top{ordinal}Croma", num_math(float(row["croma"]))))

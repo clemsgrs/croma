@@ -14,9 +14,12 @@ block of ``num_patches_per_slide`` consecutive rows of one cell (a case on Tolka
 one slide embedding on PCaBiop).
 
 ``tiles_per_slide`` overrides a benchmark's rows per slide. Reduced-tile variants of the
-sweep keep every slide and draw fewer tiles from each, so the override rescales the cells
-and the schedule together and leaves the slide counts alone. The held-out OOD pool is a
-flat test set the sweep never slices, so its counts are reported as the metadata has them.
+sweep (``train_rows_per_slide``) keep the full sweep's slides, splits and held-out tail, and
+draw fewer tiles from each training and validation slide; the override runs the library's
+own thinning over the full-tile slices, so training and validation sizes are the reduced
+sweep's and the slide counts are left alone. Both pools are reported as the metadata has
+them: the reduced sweep scores the ID pool's held-out tail at full tiles, and the held-out
+OOD pool is a flat test set the sweep never slices.
 """
 
 from __future__ import annotations
@@ -35,7 +38,11 @@ for _path in (REPO / "src", HERE, REPO / "scripts" / "bench", REPO / "scripts" /
         sys.path.insert(0, str(_path))
 
 import apd_experiment  # noqa: E402
-from croma.downstream.probe import _validated_schedule  # noqa: E402
+from croma.downstream.probe import (  # noqa: E402
+    _Thinning,
+    _validate_thinning,
+    _validated_schedule,
+)
 from loaders import CROMA_SPLIT_MAPS, DATASETS, split_schedule, training_correlations  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 
@@ -81,6 +88,8 @@ class Schedule:
     key: str
     name: str
     tiles_per_slide: int
+    #: The cohort's own rows per slide; ``tiles_per_slide`` is below it only under an override.
+    rows_per_slide: int
     n_classes: int
     id_pool: Pool
     ood_pool: Pool
@@ -160,7 +169,8 @@ def _cell_types(split_maps: list[list[tuple[int, int, int]]], n_centres: int):
 def schedule(key: str, metadata: pd.DataFrame, *, tiles_per_slide: int | None = None) -> Schedule:
     """Reduce one benchmark's schedule over its APD metadata to the table's numbers."""
     cfg = DATASETS[key]
-    npps = int(tiles_per_slide or cfg["num_patches_per_slide"])
+    npps = int(cfg["num_patches_per_slide"])
+    tiles = int(tiles_per_slide or npps)
     md_id = metadata[metadata["subset"] == "ID"]
     md_ood = metadata[metadata["subset"] == "OOD"]
     slides = _cell_slides(md_id, cfg)
@@ -186,11 +196,22 @@ def schedule(key: str, metadata: pd.DataFrame, *, tiles_per_slide: int | None = 
     unfavourable, favourable, kinds = _cell_types(
         [plan.split_map for plan in plans], len(cfg["centers_id"])
     )
+    # The sizes the thinning keeps depend only on the cell sizes, never on which rows the
+    # seed draws, so any replicate seed gives the reduced sweep's counts.
+    if tiles != npps:
+        _validate_thinning(plans, npps, tiles)
+    thinning = (
+        None
+        if tiles == npps
+        else _Thinning(
+            cells, rows_per_slide=npps, train_rows_per_slide=tiles, n_rows=start, replicate_seed=0
+        )
+    )
 
     splits = []
     for index, (plan, v) in enumerate(zip(plans, training_correlations(key))):
         takes = {(i, j): take for i, j, take in plan.split_map}
-        train, validation, held_out = plan.slice(cells)
+        train, validation, held_out = plan.slice(cells, thinning)
         per_cell: dict[tuple[int, int], int] = {}
         for r in held_out:
             per_cell[owner[r]] = per_cell.get(owner[r], 0) + 1
@@ -207,13 +228,13 @@ def schedule(key: str, metadata: pd.DataFrame, *, tiles_per_slide: int | None = 
             )
         )
 
-    id_pool = _pool(md_id, cfg["centers_id"])
     return Schedule(
         key=key,
         name=_name(key),
-        tiles_per_slide=npps,
+        tiles_per_slide=tiles,
+        rows_per_slide=npps,
         n_classes=len(cfg["biological_classes"]),
-        id_pool=Pool(id_pool.centres, id_pool.slides, sum(len(c) for row in cells for c in row)),
+        id_pool=_pool(md_id, cfg["centers_id"]),
         ood_pool=_pool(md_ood, cfg["centers_ood"]),
         replicates=apd_experiment.CANONICAL_ITERATIONS,
         seed=apd_experiment.PROBE_SEED,

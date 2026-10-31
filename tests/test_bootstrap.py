@@ -443,6 +443,69 @@ class TestSpearmanInference:
             difference -= spearmanr(b[idx], target[idx]).statistic
             assert ra.replicates[replicate] - rb.replicates[replicate] == pytest.approx(difference)
 
+    def test_difference_of_two_correlations_is_paired_on_their_shared_draw(self) -> None:
+        # The CI of rho(a, target) - rho(b, target) is the percentile interval of the
+        # replicate-by-replicate differences, each replicate re-ranking the same drawn
+        # encoders for both correlations.
+        rng = np.random.default_rng(4)
+        target = rng.normal(size=15)
+        a = target + rng.normal(scale=0.5, size=15)
+        b = target + rng.normal(scale=2.0, size=15)
+        draws = encoder_bootstrap_draws(15, n_boot=400, seed=0)
+        ra = spearman_inference(a, target, draws=draws)
+        rb = spearman_inference(b, target, draws=draws)
+
+        difference = ra.difference_ci(rb)
+
+        direct = np.array(
+            [
+                spearmanr(a[i], target[i]).statistic - spearmanr(b[i], target[i]).statistic
+                for i in draws
+            ]
+        )
+        lo, hi = np.nanpercentile(direct, [2.5, 97.5])
+        point = spearmanr(a, target).statistic - spearmanr(b, target).statistic
+        assert difference.point == pytest.approx(point)
+        assert (difference.lo, difference.hi) == pytest.approx((lo, hi))
+        assert (difference.level, difference.n_boot) == (0.95, 400)
+
+    def test_draws_of_the_same_size_from_different_seeds_are_not_paired(self) -> None:
+        # Same n, same replicate count, different encoders drawn: replicate b of one is not
+        # replicate b of the other, so no paired difference exists. Accepting it would give
+        # a self-difference a wide interval instead of exactly zero.
+        x, y = _toy_encoder_metrics(12, seed=2)
+        seed0 = spearman_inference(x, y, n_boot=500, seed=0)
+        with pytest.raises(ValueError, match="draw"):
+            seed0.difference_ci(spearman_inference(x, y, n_boot=500, seed=1))
+        itself = seed0.difference_ci(spearman_inference(x, y, n_boot=500, seed=0))
+        assert (itself.point, itself.lo, itself.hi) == (0.0, 0.0, 0.0)
+
+    def test_pairing_follows_the_draw_not_the_array_object(self) -> None:
+        # A seeded draw and the same draw passed explicitly (in another integer dtype) are one
+        # draw; a partial on that draw pairs with a plain correlation on it, too.
+        x, y = _toy_encoder_metrics(12, seed=2)
+        z = np.random.default_rng(5).normal(size=12)
+        draws = encoder_bootstrap_draws(12, n_boot=200, seed=3)
+        implicit = spearman_inference(x, y, n_boot=200, seed=3)
+        explicit = spearman_inference(x, y, draws=draws.astype(np.int32))
+        partial = partial_spearman_inference(x, y, z, draws=draws)
+        assert implicit.draws_sha256 == explicit.draws_sha256 == partial.draws_sha256
+        assert implicit.difference_ci(explicit).point == 0.0
+        implicit.difference_ci(partial)  # paired: no error
+        other = partial_spearman_inference(x, y, z, n_boot=200, seed=4)
+        assert other.draws_sha256 != partial.draws_sha256
+        with pytest.raises(ValueError, match="draw"):
+            partial.difference_ci(other)
+
+    def test_differencing_unpaired_inferences_is_rejected(self) -> None:
+        x, y = _toy_encoder_metrics(12, seed=2)
+        with pytest.raises(ValueError, match="draw"):
+            spearman_inference(x, y, n_boot=100).difference_ci(spearman_inference(x, y, n_boot=50))
+        with pytest.raises(ValueError, match="level"):
+            spearman_inference(x, y, n_boot=50).difference_ci(
+                spearman_inference(x, y, n_boot=50, level=0.9)
+            )
+
     def test_malformed_draws_are_rejected(self) -> None:
         x, y = _toy_encoder_metrics(6)
         with pytest.raises(ValueError, match="shape"):

@@ -72,6 +72,12 @@ repro = [
   # PDF -> SVG for the committed documentation figures (scripts/tools/build_doc_figures.py).
   # Not in the `docs` extra: the site renders committed SVG and converts nothing at build time.
   "pymupdf>=1.24",
+  # The reference batch-ASW and iLISI for scripts/studies/silhouette_baselines.py. Pinned
+  # because the paper's caption states the version that computed the baselines. It brings
+  # jax (numpy>=2) and anndata (pandas<3); both sit inside the core pins above. It, jax
+  # and anndata need Python >= 3.11, so that study does too: on 3.10 the extra installs
+  # without it, and the study stops and says so.
+  "scib-metrics==0.5.10; python_version >= '3.11'",
 ]
 dev = [
   "pytest>=8.0",
@@ -150,16 +156,28 @@ exclude = [
   "/scripts/repro",
   "/tests/test_paper_artifacts.py",
   "/tests/test_generate_model_tables.py",
+  "/tests/test_silhouette_baselines_table.py",
   "/tests/test_presentation_provenance.py",
   "/tests/test_acquisition_table.py",
   "/tests/test_dataset_cardinality.py",
   "/tests/test_panel_macros.py",
+  "/tests/test_exposure_matrix.py",
+  "/tests/test_distance_variants_table.py",
   "/tests/test_results_table_layout.py",
   "/tests/test_split_schedule_table.py",
+  "/tests/test_sample_shortcut_floats.py",
   "/tests/test_typed_neighbour_table.py",
   "/tests/test_dataset_montage.py",
   "/tests/test_scale_scatter.py",
   "/tests/test_mari_vs_ri_tables.py",
+  "/tests/test_grade_matched_paper.py",
+  "/tests/test_nipd_auroc_paper.py",
+  "/tests/test_low_data_paper.py",
+  "/tests/test_finetune_pairs_paper.py",
+  "/tests/test_uncertainty_supp.py",
+  "/tests/test_apd_correlation_table.py",
+  "/tests/test_slide_vs_meanpool_paper.py",
+  "/tests/fixtures/slide_vs_meanpool_table.tex",
   "/tests/test_subsampling_stability.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]

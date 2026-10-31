@@ -446,8 +446,14 @@ def _encoder_task(benchmark: str, model: str, published: dict, kmax: int):
     return benchmark, model, architecture, {**row, "blas_coretype": architecture}, sweep
 
 
-def _score_encoders(tasks: list, *, workers: int, coretypes=BLAS_CORETYPES) -> dict:
-    """Run every task, retrying the ones that do not reproduce under the next kernel."""
+def _score_encoders(
+    tasks: list, *, workers: int, coretypes=BLAS_CORETYPES, task=_encoder_task
+) -> dict:
+    """Run every task, retrying the ones that do not reproduce under the next kernel.
+
+    ``task(*args)`` returns ``(benchmark, model, architecture, row, payload)``; a ``None``
+    payload means ``row`` is the reproduction failure, to retry under the next kernel.
+    """
     candidates = blas_candidates(coretypes)
     pending = {(task[0], task[1]): task for task in tasks}
     done, failures, tried = {}, {}, set()
@@ -462,7 +468,7 @@ def _score_encoders(tasks: list, *, workers: int, coretypes=BLAS_CORETYPES) -> d
         try:
             context = get_context("spawn")  # a fresh interpreter reads the kernel at load
             with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
-                futures = [pool.submit(_encoder_task, *task) for task in pending.values()]
+                futures = [pool.submit(task, *args) for args in pending.values()]
                 for future in as_completed(futures):
                     benchmark, model, architecture, row, sweep = future.result()
                     tried.add(architecture)

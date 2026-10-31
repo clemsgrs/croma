@@ -54,17 +54,28 @@ CORE = [
     # tab:mari-tau-sweep. A study input, but listed here rather than under STUDIES on purpose:
     # the tables and their macros are cited, so a missing study must fail the build, not skip.
     ("generate_mari_vs_ri_tables.py", None, ""),
+    # Reads the robustness fine-tune vs parent study (scripts/studies/finetune_pairs.py) and
+    # the committed metadata. Core rather than a study: generate_paper_values.py cites the
+    # same CSV, and a missing or stale study must fail the build, never skip it.
+    ("generate_finetune_pairs_table.py", None, ""),
+    # Reads the committed model_metadata.csv, the three tile runs' metrics.csv and the APD
+    # join; fails, rather than skips, when any is missing.
+    ("generate_exposure_tables.py", None, ""),
+    # Reads each run's studies/bootstrap_uncertainty.* and studies/mari_ri_delta.*, plus
+    # output/studies/bootstrap-uncertainty/ (scripts/studies/bootstrap_uncertainty.py and
+    # mari_ri_delta.py). Core for the same reason: the section is input by supp.tex and its
+    # macros are cited, so a missing study fails the build -- _uncertainty.load raises.
+    ("generate_uncertainty_supp_table.py", None, ""),
+    # Reads output/studies/apd/ (apd_experiment.py, then apd_croma_correlation.py). Core for
+    # the same reason: tab:apd-correlation and the CIs of the headline rho(CRoMa, nIPD_ID) are
+    # cited, so a missing or pre-inference correlation CSV fails the build.
+    ("generate_apd_floats.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that
 #: has not been run leaves no artifact, and its table cannot be rebuilt. These skips are
 #: reported by name -- a silent skip is how a cited macro once vanished from the paper.
 STUDIES = [
-    (
-        "generate_uncertainty_supp_table.py",
-        f"{_CAMELYON.run_rel}/results/bootstrap_uncertainty.json",
-        "run scripts/studies/bootstrap_uncertainty.py",
-    ),
     # Reads the live Camelyon run plus the two neighbourhood studies written beside it; the
     # contested-fraction summary stands in for both (they are run together). The macros the
     # text quotes from this table are emitted by generate_paper_values.py, which fails when
@@ -84,10 +95,15 @@ STUDIES = [
     # deliberately not built: the manuscript retired that float in favour of the rank-aggregate
     # Pareto (fig:croma-pareto-rank), and nothing in the reachable tree references it. The
     # generator is kept for its caption-provenance unit tests but produces no paper artifact.
+    # Reads the three per-cohort studies under output/studies/sample-shortcut/ (PCaBiop, the
+    # last one the study writes, stands in for all three), each verified against the sha256
+    # of every input it recorded. The macros the text quotes are emitted by
+    # generate_paper_values.py, which fails when the study is missing or stale. The montage
+    # PDF it captions is drawn by figures/margin_montage_figure.py.
     (
-        "generate_apd_floats.py",
-        "output/studies/apd/apd_correlation.csv",
-        "run scripts/studies/apd/apd_experiment.py, then apd_croma_correlation.py",
+        "generate_sample_shortcut_floats.py",
+        "output/studies/sample-shortcut/pcabiop/cohort.json",
+        "run scripts/studies/sample_shortcut.py",
     ),
     # Reads each tile run's croma_m_sweep_metrics.csv (Camelyon guarded as representative;
     # the three are produced together). Absent only when a run was benchmarked without the
@@ -97,6 +113,35 @@ STUDIES = [
         f"{_CAMELYON.run_rel}/results/croma_m_sweep_metrics.csv",
         "re-run the benchmark with the CRoMa m-sweep enabled",
     ),
+    # tab:grade-matched (grade-matched SO pools on PCaBiop). No required input: it is never
+    # skipped, so a missing or stale study fails the build -- _grade_matched.load raises,
+    # and generate_paper_values.py fails on the same study for its macros.
+    ("generate_grade_matched_table.py", None, "run scripts/studies/grade_matched_pools.py"),
+    # tab:nipd-auroc (nIPD from AUROC beside balanced accuracy). No required input: it is
+    # never skipped, so a missing or stale AUROC cell fails the build -- _nipd_auroc.load
+    # raises, and generate_paper_values.py fails on the same cells for its macros.
+    (
+        "generate_nipd_auroc_table.py",
+        None,
+        "run scripts/studies/auc/sweep.py, then scripts/studies/auc/report.py",
+    ),
+    # tab:low-data (shortcut susceptibility with fewer training tiles), from the probe-records
+    # reductions that also give tab:nipd-auroc its sensitivity and specificity rows. No
+    # required input: a missing or stale study fails the build -- _probe_reductions.load
+    # raises, and generate_paper_values.py fails on the same study for its macros.
+    ("generate_low_data_table.py", None, "run scripts/studies/probe_reductions.py"),
+    # tab:slide-vs-meanpool. Skipped by name until the study has been evaluated; once it
+    # has, a pair the table renders without study output fails the generator, and so does a
+    # declared pair left out that the study did not record as not run, with a reason.
+    (
+        "generate_slide_vs_meanpool_table.py",
+        "output/studies/slide-vs-meanpool/differences.csv",
+        "run scripts/studies/slide_vs_meanpool.py extract, reduce, then evaluate",
+    ),
+    # tab:distance-variants. No required input on purpose: the macros it feeds are emitted
+    # by generate_paper_values.py unconditionally, so a missing study must fail this build
+    # by name rather than be reported as a skip.
+    ("generate_distance_variants_table.py", None, ""),
     # Reads every replicate of the cohort-subsampling study (tab:subsampling-stability and
     # fig:subsampling-stability); the marker is written only once all of them are on disk.
     # The PDF the figure float captions is drawn by figures/subsampling_stability_figure.py.
@@ -104,6 +149,18 @@ STUDIES = [
         "generate_subsampling_stability_float.py",
         "output/studies/subsampling-stability/complete.json",
         "run (or resume) scripts/studies/subsampling_stability.py sweep",
+    ),
+]
+
+
+#: Generators whose study artifact is *required*: when it is absent the build fails, naming
+#: the study to run, instead of skipping. Their macros feed generated_values.tex, which
+#: raises without them too.
+REQUIRED_STUDIES = [
+    (
+        "generate_silhouette_baselines_table.py",
+        "output/studies/silhouette-baselines/silhouette_baselines_correlation.csv",
+        "run scripts/studies/silhouette_baselines.py (needs croma[repro] for scib-metrics)",
     ),
 ]
 
@@ -139,9 +196,21 @@ def main() -> int:
         if _run(script, []) != 0:
             failed.append(script)
 
+    missing: list[tuple[str, str]] = []
+    for script, required, remedy in REQUIRED_STUDIES:
+        if not (REPO / required).exists():
+            missing.append((script, f"missing {required} -- {remedy}"))
+            failed.append(script)
+            continue
+        print(f"\n=== {script} ===", flush=True)
+        if _run(script, []) != 0:
+            failed.append(script)
+
     print("\n" + "=" * 70)
     for script, why in skipped:
         print(f"SKIPPED  {script}: {why}")
+    for script, why in missing:
+        print(f"MISSING  {script}: {why}")
     if failed:
         print(f"FAILED   {', '.join(failed)}")
         return 1

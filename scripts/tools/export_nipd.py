@@ -43,7 +43,7 @@ MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
     "apd_summary_sha256": "545118ececa707236155489337c1615602abda312c70d74628e4ced53733cffc",
-    "joined_summary_sha256": "55c1abdd7cefb3038ce1e0cd2b093c88bc1b31c127ce01b7870b3b39a3b68aeb",
+    "joined_summary_sha256": "42b90f01d3b753cb11d3b03b759b36e58e19313235a466543a2c51c786ebc737",
     "raw_cells_sha256": "5aa68e6a419854d2cac877628dc5bfdb8dfb077e2fddd67741faca0bf4f9a85b",
 }
 FLOAT_DIGITS = 10

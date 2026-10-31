@@ -38,10 +38,11 @@ Usage:
     python scripts/repro/reproduce_faithful.py Camelyon      # one run, by manifest prefix
     python scripts/repro/reproduce_faithful.py --dry-run     # print the commands, run nothing
     python scripts/repro/reproduce_faithful.py --runs-only   # skip studies and build_paper
-    python scripts/repro/reproduce_faithful.py --jobs 8      # parallelism for the APD sweep
+    python scripts/repro/reproduce_faithful.py --jobs 8      # parallelism for the probe sweeps
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -59,31 +60,70 @@ from run_config import (  # noqa: E402
     replay_args,
     write_run_config,
 )
+from _slide_vs_meanpool import RENDERED_PAIRS as SLIDE_VS_MEANPOOL_PAIRS  # noqa: E402
 
 #: Every study whose output a ``build_paper.py`` generator reads: the ones its STUDIES
-#: generators read, plus ``mari_vs_ri.py``, which feeds a CORE generator
-#: (``generate_mari_vs_ri_tables.py``) and the ``generate_paper_values.py`` macros. Invoked
-#: bare on purpose: each already defaults to the settings the paper used (``n_boot=2000``
-#: with a fixed seed; ``--iterations 20``), and re-declaring those here would be one more
-#: list to drift. ``--jobs`` and the subsampling sweep's required ``--scratch-root`` are the
-#: exceptions -- properties of the machine, not of the protocol. That scratch root holds
-#: only each driver run's working tree (deleted once the run is recorded) and the per-task
-#: logs; the records go under ``output/studies/``, so resuming the sweep does not depend on
-#: it.
+#: generators read, plus ``mari_vs_ri.py`` and ``finetune_pairs.py``, which feed CORE
+#: generators (``generate_mari_vs_ri_tables.py``, ``generate_finetune_pairs_table.py``) and
+#: the ``generate_paper_values.py`` macros. Invoked bare on purpose: each already defaults to
+#: the settings the paper used (``n_boot=2000`` with a fixed seed; ``--iterations 20``), and
+#: re-declaring those here would be one more list to drift. ``--jobs`` and the subsampling
+#: sweep's required ``--scratch-root`` are the exceptions -- properties of the machine, not
+#: of the protocol. That scratch root holds only each driver run's working tree (deleted
+#: once the run is recorded) and the per-task logs; the records go under
+#: ``output/studies/``, so resuming the sweep does not depend on it.
 STUDIES: list[tuple[str, str, list[str]]] = [
     ("pretraining-overlap", "scripts/studies/pretraining_overlap.py", []),
     ("typed-neighbour-ranks", "scripts/repro/figures/typed_neighbor_rank_experiment.py", []),
     # With typed-neighbour-ranks, the input of tab:typed-neighbour-coverage (both beside the
     # live Camelyon run).
     ("contested-fraction", "scripts/studies/contested_fraction_experiment.py", []),
+    # Before apd-correlation: its two-level design reads bootstrap_replicates.npz.
     ("bootstrap-uncertainty", "scripts/studies/bootstrap_uncertainty.py", []),
-    # The two sweeps go last because they are far and away the longest, the APD sweep with
-    # the two studies that read it. The APD sweep is a full probe sweep over every
+    # Delta = MaRI - RI intervals for the uncertainty supplement (tab:mari-ri-delta).
+    ("mari-ri-delta", "scripts/studies/mari_ri_delta.py", []),
+    ("grade-matched", "scripts/studies/grade_matched_pools.py", []),
+    # Last because it is far and away the longest: a full probe sweep over every
     # model-dataset pair, hours rather than minutes.
     ("apd-sweep", "scripts/studies/apd/apd_experiment.py", ["--overwrite"]),
     ("apd-correlation", "scripts/studies/apd/apd_croma_correlation.py", []),
     # After apd-correlation: it reads apd_metrics_joined.csv and apd_correlation.csv.
     ("mari-vs-ri", "scripts/studies/mari_vs_ri.py", []),
+    # After the APD steps: it joins their nIPD and is checked against their correlation
+    # table. It imports scib-metrics, which the `repro` extra pins, so this runs in the same
+    # interpreter as every other step once croma[repro] is installed; no separate venv. That
+    # interpreter must be Python >= 3.11, which scib-metrics requires.
+    ("silhouette-baselines", "scripts/studies/silhouette_baselines.py", []),
+    # The AUROC cells ride on the APD cells written above: one that still reproduces its APD
+    # cell is current and skipped, one an APD change made stale is re-run.
+    ("auc-sweep", "scripts/studies/auc/sweep.py", []),
+    ("auc-report", "scripts/studies/auc/report.py", []),
+    # After the APD sweep: it reads the per-encoder APD cells and apd.csv for its nIPD
+    # columns, beside the benchmark runs' per-sample CRoMa.
+    ("finetune-pairs", "scripts/studies/finetune_pairs.py", []),
+    # Per-sample probe predictions, then the per-sample margin study that reads the full-tile
+    # records of the tile cohorts and PCaBiop, then the montage drawn from that study. The
+    # records skip any cell already on disk and valid, so a re-run recomputes only what changed.
+    ("probe-records", "scripts/studies/apd/probe_records.py", []),
+    # The records reduced to coverage, sensitivity and specificity, and the low-data summary
+    # (tab:low-data, the sensitivity rows of tab:nipd-auroc). It also reads the APD cells and
+    # the bootstrap replicates, both written above.
+    ("probe-reductions", "scripts/studies/probe_reductions.py", []),
+    ("sample-shortcut", "scripts/studies/sample_shortcut.py", []),
+    ("margin-montage", "scripts/repro/figures/margin_montage_figure.py", []),
+    # tab:slide-vs-meanpool. Prerequisite outside this pipeline: the GPU re-extraction
+    # `scripts/studies/slide_vs_meanpool.py extract` (hours per pair; run it detached).
+    # Without it, reduce fails naming the pair, cohort and that command. Both steps use
+    # the study-root default for the arms (output/studies/slide-vs-meanpool/embeddings/),
+    # and both take the pairs the table renders, which include an optional pair that ran;
+    # the study's own default is the required pairs only.
+    ("slide-vs-meanpool-reduce", "scripts/studies/slide_vs_meanpool.py",
+     ["reduce", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
+    ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
+     ["evaluate", "--recompute", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
+    # After the runs (its cosine cells must reproduce them) and the APD study (its nIPD
+    # correlations are checked against apd_correlation.csv). Resumable; hours on four workers.
+    ("distance-variants", "scripts/studies/distance_variants.py", ["sweep", "--workers", "4"]),
     # Reads only the benchmark runs above: a 100% reproduction check of each tile cohort's
     # metrics.csv, then 180 subsampled replicates, about 90 CPU-hours (a day on its default
     # 4 workers). It resumes rather than overwrites -- finished replicates are kept -- so
@@ -94,16 +134,47 @@ STUDIES: list[tuple[str, str, list[str]]] = [
         ["sweep", "--scratch-root", "/var/tmp/croma-subsampling-stability"],
     ),
 ]
+#: The studies that take ``--jobs``: the probe sweeps, the per-sample probe records, and the
+#: slide-vs-meanpool evaluation, which scores its arms' APD cells. Each is always told this
+#: run's count, 1 included: the sweeps default to one worker, but the evaluation defaults to
+#: three, so leaving the flag out would run three workers on a serial reproduction.
+JOBS_STUDIES = {"apd-sweep", "auc-sweep", "probe-records", "slide-vs-meanpool-evaluate"}
+
+#: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
+PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
+
+#: Environment a benchmark run needs on top of the caller's, keyed by benchmark name. The
+#: grade-matched study checks its full pool against ``panda``'s ``per_sample_metrics.csv``
+#: exactly, so ``panda`` must be recomputed in the same numerical setting as the study.
+BENCHMARK_ENV: dict[str, dict[str, str]] = {
+    "panda": PANDA_BLAS_ENV,
+}
+
+#: Environment a study needs on top of the caller's. The grade-matched study asserts that
+#: its full SO pool reproduces the panda run's CRoMa bit for bit, which holds only on the
+#: BLAS kernel and thread count the run was computed with (see its module docstring).
+STUDY_ENV: dict[str, dict[str, str]] = {
+    "grade-matched": PANDA_BLAS_ENV,
+}
 
 
-def _run(cmd: list[str], *, label: str, dry_run: bool) -> None:
-    printable = " ".join(str(c) for c in cmd)
+def study_command(label: str, script: str, extra: list[str], *, jobs: int) -> list[str]:
+    """The command one ``STUDIES`` entry runs, with this run's ``--jobs`` for a
+    :data:`JOBS_STUDIES` entry."""
+    cmd = [sys.executable, str(REPO / script), *extra]
+    if label in JOBS_STUDIES:
+        cmd += ["--jobs", str(int(jobs))]
+    return cmd
+
+
+def _run(cmd: list[str], *, label: str, dry_run: bool, env: dict[str, str] | None = None) -> None:
+    printable = " ".join([*(f"{k}={v}" for k, v in (env or {}).items()), *map(str, cmd)])
     if dry_run:
         print(f"[{label}] {printable}", flush=True)
         return
     print(f"[{label}] {printable}", flush=True)
     started = time.monotonic()
-    subprocess.run(cmd, check=True, cwd=REPO)
+    subprocess.run(cmd, check=True, cwd=REPO, env={**os.environ, **env} if env else None)
     print(f"[{label}] done in {time.monotonic() - started:.0f}s", flush=True)
 
 
@@ -149,7 +220,7 @@ def run_benchmark(entry, *, recompute: bool, dry_run: bool) -> None:
     ]
     if recompute:
         cmd.append("--recompute-metrics")
-    _run(cmd, label=entry.prefix, dry_run=dry_run)
+    _run(cmd, label=entry.prefix, dry_run=dry_run, env=BENCHMARK_ENV.get(entry.benchmark))
     if not dry_run:
         print(f"[{entry.prefix}] metrics -> {entry.metrics_rel}", flush=True)
 
@@ -169,7 +240,9 @@ def main() -> int:
                    help="Allow the metrics artifact cache. Fast, but proves only that the "
                         "cached numbers are still on disk -- not that they recompute.")
     p.add_argument("--jobs", type=int, default=1,
-                   help="Parallel worker processes for the APD sweep (default 1).")
+                   help="Parallel worker processes for the APD and AUROC probe sweeps, "
+                        "the per-sample probe records and the slide-vs-meanpool evaluation "
+                        "(default 1).")
     args = p.parse_args()
 
     entries = list(TABLES)
@@ -191,10 +264,8 @@ def main() -> int:
 
     if not args.skip_studies:
         for label, script, extra in STUDIES:
-            cmd = [sys.executable, str(REPO / script), *extra]
-            if label == "apd-sweep" and args.jobs > 1:
-                cmd += ["--jobs", str(int(args.jobs))]
-            _run(cmd, label=label, dry_run=args.dry_run)
+            cmd = study_command(label, script, extra, jobs=args.jobs)
+            _run(cmd, label=label, dry_run=args.dry_run, env=STUDY_ENV.get(label))
 
     _run([sys.executable, str(REPO / "scripts/repro/build_paper.py")],
          label="build-paper", dry_run=args.dry_run)
