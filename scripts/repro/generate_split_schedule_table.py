@@ -189,18 +189,27 @@ def _types_sentence(rows: list[Schedule]) -> str:
     )
 
 
+def _trained(s: Schedule) -> str:
+    """A reduced-tile block trains on only some of its tiles."""
+    if s.tiles_per_slide == s.rows_per_slide:
+        return ""
+    trains = "tiles train" if s.tiles_per_slide > 1 else "tile trains"
+    return f", of which only {s.tiles_per_slide} {trains}"
+
+
 def _case_sentence(rows: list[Schedule]) -> str:
     cased = [s for s in rows if s.case_based]
     return "".join(
         f" On {s.name} the independence unit is the case: panel~a counts cases, and a "
-        f"slide in panel~b is one case's {s.tiles_per_slide}-tile block within a class, since "
-        "a case contributes tiles to several classes."
+        f"slide in panel~b is one case's {s.rows_per_slide}-tile block within a class"
+        f"{_trained(s)}, since a case contributes tiles to several classes."
         for s in cased
     )
 
 
 def _slide_level_sentence(rows: list[Schedule]) -> str:
-    names = [s.name for s in rows if s.tiles_per_slide == 1]
+    # Slide-level is the cohort's own grain, not the tiles an override trains on.
+    names = [s.name for s in rows if s.rows_per_slide == 1]
     if not names:
         return ""
     return (

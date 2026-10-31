@@ -17,8 +17,9 @@ one slide embedding on PCaBiop).
 sweep (``train_rows_per_slide``) keep the full sweep's slides, splits and held-out tail, and
 draw fewer tiles from each training and validation slide; the override runs the library's
 own thinning over the full-tile slices, so training and validation sizes are the reduced
-sweep's and the slide counts are left alone. The held-out OOD pool is a flat test set the
-sweep never slices, so its counts are reported as the metadata has them.
+sweep's and the slide counts are left alone. Both pools are reported as the metadata has
+them: the reduced sweep scores the ID pool's held-out tail at full tiles, and the held-out
+OOD pool is a flat test set the sweep never slices.
 """
 
 from __future__ import annotations
@@ -87,6 +88,8 @@ class Schedule:
     key: str
     name: str
     tiles_per_slide: int
+    #: The cohort's own rows per slide; ``tiles_per_slide`` is below it only under an override.
+    rows_per_slide: int
     n_classes: int
     id_pool: Pool
     ood_pool: Pool
@@ -225,14 +228,13 @@ def schedule(key: str, metadata: pd.DataFrame, *, tiles_per_slide: int | None = 
             )
         )
 
-    id_pool = _pool(md_id, cfg["centers_id"])
-    n_slides = sum(len(c) for row in cells for c in row) // npps
     return Schedule(
         key=key,
         name=_name(key),
         tiles_per_slide=tiles,
+        rows_per_slide=npps,
         n_classes=len(cfg["biological_classes"]),
-        id_pool=Pool(id_pool.centres, id_pool.slides, n_slides * tiles),
+        id_pool=_pool(md_id, cfg["centers_id"]),
         ood_pool=_pool(md_ood, cfg["centers_ood"]),
         replicates=apd_experiment.CANONICAL_ITERATIONS,
         seed=apd_experiment.PROBE_SEED,
