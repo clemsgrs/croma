@@ -127,7 +127,8 @@ STUDIES = [
         "run scripts/studies/auc/sweep.py, then scripts/studies/auc/report.py",
     ),
     # tab:slide-vs-meanpool. Skipped by name until the study has been evaluated; once it
-    # has, a pair the table declares without study output fails the generator.
+    # has, a pair the table renders without study output fails the generator, and so does a
+    # declared pair left out that the study did not record as not run, with a reason.
     (
         "generate_slide_vs_meanpool_table.py",
         "output/studies/slide-vs-meanpool/differences.csv",

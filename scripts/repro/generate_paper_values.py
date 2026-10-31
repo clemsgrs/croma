@@ -904,8 +904,9 @@ def _slide_vs_meanpool_macros(root: Path) -> list[str]:
     """Slide-minus-mean-pool paired differences (``tab:slide-vs-meanpool``).
 
     A study that has not been run is skipped by name, like every study block here. Once it
-    has run, every pair the table declares must be in its output: a missing pair raises
-    rather than dropping that pair's macros.
+    has run, every pair the table renders must be in its output: a missing pair raises
+    rather than dropping that pair's macros. A declared pair the study recorded as not run
+    has no macros.
     """
     import _slide_vs_meanpool as svm
 
