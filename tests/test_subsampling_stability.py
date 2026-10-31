@@ -853,10 +853,20 @@ class TestPaperValues:
     def test_the_values_file_carries_the_macros_only_once_the_study_is_complete(
         self, tmp_path, monkeypatch
     ):
+        import _mari_vs_ri
+        import _panel_macros
         import generate_paper_values as values
+        import generate_supp_rank_table
 
-        # The frontier guard reads the live benchmark runs, which a checkout may not have.
-        monkeypatch.setattr(values, "_load_rank_frontier_change_macros", lambda: [])
+        # The MaRI-versus-RI, frontier, panel and typed-neighbour blocks read the live runs
+        # and studies, which a checkout may not have, and raise rather than skip without
+        # them. ``build`` imports all but the frontier loader at call time, so those are
+        # stubbed on their own modules.
+        monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
+        monkeypatch.setattr(_mari_vs_ri, "macros", lambda data: [])
+        monkeypatch.setattr(values, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
+        monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
         root = tmp_path / "output" / "studies" / "subsampling-stability"
         _write_real_design_study(root, seed=0)
         cited = r"\newcommand{\TolkachSubsampleHalfKendallMari}"
