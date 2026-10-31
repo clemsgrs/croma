@@ -522,3 +522,63 @@ def test_a_study_whose_runs_per_sample_file_has_since_been_rewritten_is_refused(
         )
 
     assert not (root / dv.PROVENANCE).exists()
+
+
+# --------------------------------------------------------------------------------------
+# The nIPD association, checked against tab:apd-correlation.
+# --------------------------------------------------------------------------------------
+
+
+def _apd_correlation(path: Path, rho_id: float, rho_ood: float, n: int) -> Path:
+    pd.DataFrame(
+        {
+            "target": list(dv.NIPD_TARGETS),
+            "metric": ["croma", "croma"],
+            "scope": ["camelyon", "camelyon"],
+            "spearman": [rho_id, rho_ood],
+            "n": [n, n],
+        }
+    ).to_csv(path, index=False)
+    return path
+
+
+def _cosine_measures(rho_id: float, rho_ood: float, n: int) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "benchmark": ["pathorob-camelyon"],
+            "variant": ["cosine"],
+            "n_encoders": [n],
+            "rho_nipd_id": [rho_id],
+            "rho_nipd_ood": [rho_ood],
+        }
+    )
+
+
+def test_cosines_nipd_association_must_equal_the_apd_correlation_table(tmp_path):
+    corr = _apd_correlation(tmp_path / "apd_correlation.csv", 0.95, 0.74, 26)
+
+    dv.check_against_apd_correlation(_cosine_measures(0.95, 0.74, 26), corr)
+    with pytest.raises(ValueError, match="nipd_ood"):
+        dv.check_against_apd_correlation(_cosine_measures(0.95, 0.70, 26), corr)
+
+
+def test_a_cohort_whose_nipd_association_is_nan_is_refused(tmp_path):
+    corr = _apd_correlation(tmp_path / "apd_correlation.csv", 0.95, 0.74, 26)
+
+    with pytest.raises(ValueError, match="pathorob-camelyon: cosine rho\\(CRoMa, nipd_id\\) = nan"):
+        dv.check_against_apd_correlation(_cosine_measures(np.nan, 0.74, 26), corr)
+
+
+def test_an_nipd_cohort_missing_from_the_apd_study_is_refused(tmp_path):
+    apd = tmp_path / "apd.csv"
+    pd.DataFrame(
+        {
+            "dataset": ["camelyon", "tcga_4x4"],
+            "model": ["E1", "E1"],
+            "nipd_id": [-0.01, -0.02],
+            "nipd_ood": [-0.03, -0.04],
+        }
+    ).to_csv(apd, index=False)
+
+    with pytest.raises(ValueError, match="tolkach"):
+        dv.load_nipd(apd)

@@ -1133,8 +1133,11 @@ def reproduction_summary(root: Path, record: dict) -> dict[str, dict]:
 
 
 def load_nipd(path: Path = APD_CSV) -> pd.DataFrame:
-    """nIPD per cohort x encoder from the APD study's cells, keyed by benchmark."""
+    """nIPD per cohort x encoder from the APD study's cells, keyed by benchmark; every cohort
+    in ``NIPD_DATASETS`` must be there."""
     apd = pd.read_csv(path, float_precision="round_trip")
+    if absent := sorted(set(NIPD_DATASETS.values()) - set(apd["dataset"])):
+        raise ValueError(f"{path} has no nIPD cells for {absent}")
     by_dataset = {key: benchmark for benchmark, key in NIPD_DATASETS.items()}
     apd = apd[apd["dataset"].isin(by_dataset)].copy()
     apd["benchmark"] = apd["dataset"].map(by_dataset)
@@ -1154,7 +1157,10 @@ def check_against_apd_correlation(table: pd.DataFrame, path: Path) -> None:
             if len(stored) != 1:
                 raise ValueError(f"{path}: no single croma/{target}/{dataset} row")
             ours, theirs = float(row[f"rho_{target}"].iloc[0]), float(stored["spearman"].iloc[0])
-            if abs(ours - theirs) > 1e-12 or int(row["n_encoders"].iloc[0]) != int(stored["n"].iloc[0]):
+            # Written to fail on NaN: a cohort with no nIPD has no association to report.
+            if not abs(ours - theirs) <= 1e-12 or int(row["n_encoders"].iloc[0]) != int(
+                stored["n"].iloc[0]
+            ):
                 raise ValueError(
                     f"{benchmark}: cosine rho(CRoMa, {target}) = {ours} over "
                     f"{int(row['n_encoders'].iloc[0])} encoders, but {path} has {theirs} over "
