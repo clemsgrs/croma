@@ -244,18 +244,19 @@ def main() -> int:
     p.add_argument("--check", action="store_true")
     args = p.parse_args()
     out = args.out if args.out.is_absolute() else REPO / args.out
+    shown = out.relative_to(REPO) if out.is_relative_to(REPO) else out
     tex = build(tiles_per_slide=dict(args.tiles_per_slide), label=args.label)
     if args.check:
         if not out.exists() or out.read_text() != tex:
-            print(f"STALE  {out.relative_to(REPO)}", file=sys.stderr)
+            print(f"STALE  {shown}", file=sys.stderr)
             return 1
-        print(f"ok     {out.relative_to(REPO)}", file=sys.stderr)
+        print(f"ok     {shown}", file=sys.stderr)
         return 0
     if not out.parent.exists():
         print("skip   paper/ absent", file=sys.stderr)
         return 0
     out.write_text(tex)
-    print(f"wrote  {out.relative_to(REPO)}", file=sys.stderr)
+    print(f"wrote  {shown}", file=sys.stderr)
     return 0
 
 

@@ -194,3 +194,19 @@ def test_the_live_schedules_cover_the_four_benchmarks():
     tolkach = live[2]
     assert tolkach.n_classes == 6
     assert tolkach.splits[0].test_slides == (2, 2)
+
+
+def test_an_output_path_outside_the_repository_is_written(monkeypatch, tmp_path):
+    out = tmp_path / "x.tex"
+    monkeypatch.setattr(table, "build", lambda tiles_per_slide=None, label=table.LABEL: "tex\n")
+    monkeypatch.setattr(sys, "argv", ["generate_split_schedule_table.py", "--out", str(out)])
+
+    assert table.main() == 0
+    assert out.read_text() == "tex\n"
+
+    monkeypatch.setattr(
+        sys, "argv", ["generate_split_schedule_table.py", "--out", str(out), "--check"]
+    )
+    assert table.main() == 0
+    out.write_text("old\n")
+    assert table.main() == 1
