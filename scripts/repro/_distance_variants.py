@@ -9,12 +9,16 @@ study's ``apd.csv`` or ``apd_correlation.csv``) changed after it was summarised,
 recorded cosine reproduction no longer passes the study's ``REPRODUCTION_TOLERANCE``.
 
 The embeddings and the runs' per-sample files are recorded in the provenance too, but are
-not re-hashed on every build: they run to gigabytes. The embeddings are checked by the
-study itself: every cell records the sha256 of the embedding file it was scored from, a unit
-is never extended from another file, and ``summarise`` re-hashes each file and refuses a
-unit whose cells do not all record it. The per-sample files are hashed when each cosine cell
-is scored; a re-scored run rewrites its ``metrics.csv``, which is re-hashed here, and its
-pooled scores are compared with cosine's (:func:`_check_cosine_matches_run`).
+not re-hashed on every build: they run to gigabytes. Both are checked by the study itself,
+in ``summarise``. Every cell records the sha256 of the embedding file it was scored from, a
+unit is never extended from another file, and ``summarise`` re-hashes each file and refuses
+a unit whose cells do not all record it. Every cosine cell records the sha256 of the run's
+per-sample file it reproduced, and ``summarise`` re-hashes each one and refuses a unit whose
+file has changed since. So the provenance's digests of both describe the files as they were
+when the study was summarised. Here, a run re-scored after the summary is caught through its
+``metrics.csv``, which is re-hashed, and through its pooled scores, which are compared with
+cosine's (:func:`_check_cosine_matches_run`). A re-score that leaves both unchanged rewrites
+per-sample values only, and only the next ``summarise`` detects it.
 """
 
 from __future__ import annotations

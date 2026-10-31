@@ -47,8 +47,9 @@ Outputs go to ``output/studies/distance-variants/``: one ``.json`` record and on
 per-sample ``.csv.gz`` (keyed by ``subset`` and ``sample_id``) per encoder x benchmark x
 variant under ``cells/``, then ``summary.csv``, ``measures.csv`` and ``provenance.json``,
 which records the sha256 of every input the published numbers are computed from. Each cell
-records the sha256 of the embedding file it was scored from; ``summarise`` re-hashes every
-embedding file and refuses a unit whose cells do not all record the file now on disk.
+records the sha256 of the embedding file it was scored from, and each cosine cell that of the
+run's per-sample file it reproduced; ``summarise`` re-hashes both and refuses a unit whose
+cells do not record the files now on disk.
 """
 
 from __future__ import annotations
@@ -317,6 +318,14 @@ class Search:
         )
 
 
+def per_sample_csv(results_dir: Path, model: str) -> Path:
+    """``model``'s per-sample file in a run's ``results_dir``."""
+    # The driver's own path rule (``Path.with_suffix``), quirks included: CONCHv1.5's file
+    # is ``CONCHv1.csv``.
+    base = Path(results_dir) / "per_sample_metrics_by_model" / safe_model_name(model)
+    return base.with_suffix(".csv")
+
+
 @dataclass(frozen=True)
 class Run:
     """One benchmark run the study re-scores, and where its stored scores live."""
@@ -335,10 +344,7 @@ class Run:
         return self.results_dir / "run_config.json"
 
     def per_sample_csv(self, model: str) -> Path:
-        # The driver's own path rule (``Path.with_suffix``), quirks included: CONCHv1.5's
-        # file is ``CONCHv1.csv``.
-        base = self.results_dir / "per_sample_metrics_by_model" / safe_model_name(model)
-        return base.with_suffix(".csv")
+        return per_sample_csv(self.results_dir, model)
 
     def roster(self) -> list[str]:
         """The run's models: whatever its ``metrics.csv`` holds, never a declared list."""
@@ -957,12 +963,15 @@ def summarise(
     """``summary.csv``, ``measures.csv`` and ``provenance.json`` from a complete study.
 
     Refuses on a missing cell, on any cosine reference that did not reproduce within its
-    benchmark's tolerance (:func:`reproduction_summary`, recorded in the provenance), and on
-    a unit whose cells were not all scored from the embedding file now on disk
-    (:func:`check_embeddings`). ``embedding_digest`` maps ``(benchmark, model)`` to that
-    file's sha256; by default each file is re-hashed once (:func:`embedding_digests`). When
-    ``apd_correlation_csv`` is given, cosine's nIPD correlations must equal the ones
-    ``tab:apd-correlation`` reports, so both tables read the same association.
+    benchmark's tolerance (:func:`reproduction_summary`, recorded in the provenance), on a
+    unit whose cells were not all scored from the embedding file now on disk
+    (:func:`check_embeddings`), and on a unit whose run's per-sample file is not the one its
+    cosine cell reproduced (:func:`check_references`). ``embedding_digest`` maps
+    ``(benchmark, model)`` to the embedding file's sha256; by default each file is re-hashed
+    once (:func:`embedding_digests`). The per-sample files are always re-hashed, and the
+    provenance records those digests, not the cells' copies. When ``apd_correlation_csv`` is
+    given, cosine's nIPD correlations must equal the ones ``tab:apd-correlation`` reports, so
+    both tables read the same association.
     """
     root = Path(root)
     missing = [
@@ -976,16 +985,13 @@ def summarise(
         raise IncompleteStudyError(f"{len(missing)} cells missing, e.g. {missing[:5]}")
     reproduced = reproduction_summary(root, record)
     check_embeddings(root, record, embedding_digest or embedding_digests())
-    rows, inputs = [], {}
+    rows, inputs = [], check_references(root, record)
     for benchmark, spec in record["benchmarks"].items():
         results_dir = REPO / spec["results_dir"]
         for name in ("metrics.csv", "run_config.json"):
             inputs[_rel(results_dir / name)] = sha256(results_dir / name)
         for model in spec["models"]:
             cosine = read_cell(root, benchmark, model, COSINE.name)
-            inputs[_rel(Path(cosine["reproduction"]["reference"]))] = cosine["reproduction"][
-                "reference_sha256"
-            ]
             inputs[f"embeddings:{benchmark}:{model}"] = cosine["embedding_sha256"]
             reference = read_cell_values(root, benchmark, model, COSINE.name)
             for v in spec["variants"]:
@@ -1057,6 +1063,33 @@ def check_embeddings(root: Path, record: dict, digest: Callable[[str, str], str]
                     f"cells were scored from ({scored_from}); move "
                     f"{cell_dir(root, benchmark, model)} aside and re-run the sweep"
                 )
+
+
+def check_references(root: Path, record: dict) -> dict[str, str]:
+    """Each unit's cosine cell reproduced the run's per-sample file now on disk.
+
+    A cosine cell hashes the run's per-sample file when it is scored, and is kept once
+    written. A run re-scored afterwards, under a kernel that moves no pooled score in its
+    ``metrics.csv`` past the tolerance, would otherwise keep a reproduction claim about a
+    file that is no longer there. Each unit's file is re-hashed, at the path the run's
+    ``results_dir`` gives it in this checkout. Returns ``{path: sha256}`` for the
+    provenance; raises :class:`IncompleteStudyError` naming the first unit whose file is
+    not the one its cosine cell recorded.
+    """
+    digests = {}
+    for benchmark, spec in record["benchmarks"].items():
+        for model in spec["models"]:
+            cosine = read_cell(root, benchmark, model, COSINE.name)
+            path = per_sample_csv(REPO / spec["results_dir"], model)
+            recorded, on_disk = cosine["reproduction"]["reference_sha256"], sha256(path)
+            if on_disk != recorded:
+                raise IncompleteStudyError(
+                    f"{benchmark} / {model}: the run's per-sample file {path} (sha256 "
+                    f"{on_disk}) is not the one its cosine cell reproduced ({recorded}); move "
+                    f"{cell_dir(root, benchmark, model)} aside and re-run the sweep"
+                )
+            digests[_rel(path)] = on_disk
+    return digests
 
 
 def reproduction_summary(root: Path, record: dict) -> dict[str, dict]:

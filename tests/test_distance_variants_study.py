@@ -495,3 +495,30 @@ def test_a_unit_whose_cells_were_scored_from_different_embeddings_is_refused(
         )
 
     assert not (root / dv.PROVENANCE).exists()
+
+
+# --------------------------------------------------------------------------------------
+# The run's per-sample file each cosine cell was checked against.
+# --------------------------------------------------------------------------------------
+
+
+def test_a_study_whose_runs_per_sample_file_has_since_been_rewritten_is_refused(
+    bench_env, tmp_path, monkeypatch
+):
+    root, design = _finished_toy_study(bench_env, tmp_path, monkeypatch)
+    results_dir = Path(design["benchmarks"]["toy"]["results_dir"])
+    metrics_before = (results_dir / "metrics.csv").read_bytes()
+    reference = dv.read_cell(root, "toy", "M1", "cosine")["reproduction"]["reference"]
+    # Re-scored within a tolerance, say: the pooled scores in metrics.csv do not move, but
+    # the per-sample file the cosine cell reproduced is no longer the one on disk.
+    stored = pd.read_csv(reference, float_precision="round_trip")
+    stored.loc[3, "croma_m5"] = stored.loc[3, "croma_m5"] + 1e-9
+    stored.to_csv(reference, index=False)
+    assert (results_dir / "metrics.csv").read_bytes() == metrics_before
+
+    with pytest.raises(dv.IncompleteStudyError, match="toy / M1: .*per-sample.*re-run the sweep"):
+        dv.summarise(
+            root, design, apd_correlation_csv=None, embedding_digest=lambda b, m: _SCORED_FROM
+        )
+
+    assert not (root / dv.PROVENANCE).exists()
