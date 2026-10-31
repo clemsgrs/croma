@@ -303,6 +303,7 @@ class TestMacros:
         monkeypatch.setattr(gpv, "_load_rank_frontier_macros", lambda: [])
         monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
         monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
+        monkeypatch.setattr(gpv, "_load_finetune_pair_macros", lambda root: [])
         monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
         monkeypatch.setattr(_grade_matched, "load", lambda root: None)
         monkeypatch.setattr(gpv, "_grade_matched_macros", lambda study: [])

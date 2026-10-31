@@ -349,9 +349,12 @@ _Avoid_: model size (that is the parameter count, a separate attribute).
 **Checkpoint family and variant**:
 Machine-readable model provenance carried as `family`, `parent_model` and
 `variant_role`. A robustness fine-tune remains linked to the parent whose pretraining facts it
-inherits; a distilled student names its teacher. `training_run` and `shared_corpus` identify
-family members produced together from one disclosed corpus. Plot hue, within-family tone and
-canonical order are read from this metadata rather than a second model list in plotting code.
+inherits; its `adaptation_method_source` and `adaptation_data_source` hold the citation key or
+URL where its authors disclose the fine-tuning objective and data, and an empty cell means
+undisclosed, never inferred. A distilled student names its teacher. `training_run` and
+`shared_corpus` identify family members produced together from one disclosed corpus. Plot hue,
+within-family tone and canonical order are read from this metadata rather than a second model
+list in plotting code.
 _Avoid_: encoding parent/student or fine-tune relationships only in a display label.
 
 **Institutional/source-domain exposure**:

@@ -54,6 +54,10 @@ CORE = [
     # tab:mari-tau-sweep. A study input, but listed here rather than under STUDIES on purpose:
     # the tables and their macros are cited, so a missing study must fail the build, not skip.
     ("generate_mari_vs_ri_tables.py", None, ""),
+    # Reads the robustness fine-tune vs parent study (scripts/studies/finetune_pairs.py) and
+    # the committed metadata. Core rather than a study: generate_paper_values.py cites the
+    # same CSV, and a missing or stale study must fail the build, never skip it.
+    ("generate_finetune_pairs_table.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that

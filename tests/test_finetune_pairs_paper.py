@@ -1,0 +1,489 @@
+"""The robustness fine-tune vs parent study's paper surfaces: its basis, the table, the macros.
+
+Seams under test: the float basis that loads the study CSV and emits the ``\\FineTune...``
+macros (``scripts/repro/_finetune_pairs.py``) and the ``tab:finetune-pairs`` generator
+(``generate_finetune_pairs_table.py``). Everything renders from synthetic frames and inputs
+under ``tmp_path``; nothing here needs ``paper/`` or ``output/``. The paper tooling is not
+in the source distribution (ADR-0012), so neither is this file; the study itself is tested
+in ``test_finetune_pairs_study.py``.
+"""
+
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+for _p in (ROOT / "src", ROOT / "scripts" / "studies", ROOT / "scripts" / "repro"):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+import finetune_pairs as study  # noqa: E402
+import _finetune_pairs as basis  # noqa: E402
+from _paper_tables import CaptionClaimError  # noqa: E402
+from paper_manifest import by_benchmark  # noqa: E402
+
+
+def _metadata(**overrides) -> pd.DataFrame:
+    """A model_metadata.csv-shaped frame: two fine-tunes, a distilled student, a control."""
+    rows = [
+        # model, panel, panel_order, parent_model, variant_role, benchmark_selection
+        ("Base-A", "tile", 1, "", "", ""),
+        ("Base-B", "tile", 2, "", "", ""),
+        ("Teacher", "tile", 3, "", "teacher", ""),
+        ("Student", "tile", 4, "Teacher", "distilled-student", ""),
+        ("Robust-B", "tile", 5, "Base-B", "robustness-finetune", "pathorob-ri"),
+        ("Robust-A", "tile", 6, "Base-A", "robustness-finetune", ""),
+        ("DINOv2-B", "tile", 7, "", "", ""),
+        ("Slide-Model", "slide", 1, "", "", ""),
+    ]
+    frame = pd.DataFrame(
+        rows,
+        columns=[
+            "model",
+            "panel",
+            "panel_order",
+            "parent_model",
+            "variant_role",
+            "benchmark_selection",
+        ],
+    )
+    frame["adaptation_method_source"] = ""
+    frame["adaptation_data_source"] = ""
+    frame["corpus_domains"] = ""
+    frame["institutional_domains"] = ""
+    for column, values in overrides.items():
+        frame[column] = values
+    return frame
+
+
+# --- the float basis: loading the study and the \FineTune... macros ---------------------
+
+#: (fine-tune, parent) in the order ``_metadata`` lists the fine-tunes.
+STUDY_PAIRS = [("Robust-B", "Base-B"), ("Robust-A", "Base-A")]
+#: The study columns that record the sha256 of the inputs a row was computed from.
+FINGERPRINT_COLUMNS = ["metrics_sha256", "apd_sha256", "apd_cells_sha256"]
+#: The APD study's dataset key for each cohort, the directory its per-encoder cells sit in.
+APD_DATASETS = {
+    "pathorob-camelyon": "camelyon",
+    "pathorob-tcga-4x4": "tcga_4x4",
+    "pathorob-tolkach-esca": "tolkach",
+}
+
+
+def _study_row(finetune: str, parent: str, benchmark: str, **overrides) -> dict:
+    """One study CSV row with hand-picked values; every difference is stated, not derived."""
+    row = {
+        "benchmark": benchmark,
+        "finetune": finetune,
+        "parent": parent,
+        "k": 11,
+        "strata": "confounder" if benchmark == "pathorob-tolkach-esca" else "label+confounder",
+        "n_boot": 2000,
+        # Not the study's 0.95 default, so a level the table hard-codes cannot pass.
+        "level": 0.90,
+        "seed": 12345,
+        "n_ranked": 26,
+        "parent_croma": 0.10,
+        "finetune_croma": 0.28,
+        "delta_croma": 0.18,
+        "delta_croma_lo": 0.15,
+        "delta_croma_hi": 0.204,
+        "parent_f0": 0.400,
+        "finetune_f0": 0.088,
+        "delta_f0": -0.312,
+        "delta_f0_lo": -0.355,
+        "delta_f0_hi": -0.272,
+        "parent_ltm": -0.40,
+        "finetune_ltm": -0.07,
+        "delta_ltm": 0.33,
+        "delta_ltm_lo": 0.28,
+        "delta_ltm_hi": 0.38,
+        "parent_bio_bacc": 0.951,
+        "finetune_bio_bacc": 0.956,
+        "delta_bio_bacc": 0.005,
+        "parent_rank": 13,
+        "finetune_rank": 2,
+        "rank_change": 11,
+        "parent_nipd_id": -0.075,
+        "finetune_nipd_id": -0.007,
+        "delta_nipd_id": 0.068,
+        "delta_nipd_id_lo": 0.039,
+        "delta_nipd_id_hi": 0.106,
+        "nipd_runs": 20,
+        "parent_nipd_ood": 0.002,
+        "finetune_nipd_ood": -0.003,
+        "delta_nipd_ood": -0.005,
+        "delta_nipd_ood_lo": -0.011,
+        "delta_nipd_ood_hi": 0.001,
+        "metrics_sha256": "0" * 64,
+        "apd_sha256": "0" * 64,
+        "apd_cells_sha256": "0" * 64,
+    }
+    row.update(overrides)
+    return row
+
+
+def _study(**cell_overrides) -> pd.DataFrame:
+    """The study CSV for ``STUDY_PAIRS``; ``cell_overrides["finetune|benchmark"]`` edits one."""
+    rows = []
+    for finetune, parent in STUDY_PAIRS:
+        for benchmark in study.BENCHMARKS:
+            extra = cell_overrides.get(f"{finetune}|{benchmark}", {})
+            rows.append(_study_row(finetune, parent, benchmark, **extra))
+    return pd.DataFrame(rows)
+
+
+def _metrics_csv(root: Path, benchmark: str) -> Path:
+    return root / by_benchmark(benchmark).metrics_rel
+
+
+def _apd_csv(root: Path) -> Path:
+    return root / "output" / "studies" / "apd" / "apd.csv"
+
+
+def _apd_cell(root: Path, benchmark: str, model: str) -> Path:
+    """One encoder's APD study cell on a cohort: the probe runs its nIPD intervals resample."""
+    return root / "output" / "studies" / "apd" / APD_DATASETS[benchmark] / f"{model}.json"
+
+
+def _cell_text(model: str, runs: list[float]) -> str:
+    return json.dumps({"model": model, "id_test_accuracies": [runs]}) + "\n"
+
+
+def _write_inputs(root: Path) -> dict[str, dict[str, str]]:
+    """Each cohort's ``metrics.csv``, the APD study table and every pair member's APD cell
+    under ``root``, where the study resolves them; returns each row's fingerprints, keyed
+    ``"finetune|benchmark"``.
+
+    A row's cell fingerprint is one sha256 over its parent's and fine-tune's cells, read in
+    sorted path order, so a single file's fingerprint is that file's sha256.
+    """
+
+    def write(path: Path, text: str) -> bytes:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        return path.read_bytes()
+
+    apd = write(_apd_csv(root), "dataset,model,nipd_id,nipd_ood\ncamelyon,Base-A,-0.1,0.0\n")
+    fingerprints = {}
+    for benchmark in study.BENCHMARKS:
+        metrics = write(_metrics_csv(root, benchmark), f"model,k\n{benchmark},11\n")
+        for finetune, parent in STUDY_PAIRS:
+            cells = {
+                _apd_cell(root, benchmark, m): _cell_text(m, [0.9, 0.8, 0.7])
+                for m in (finetune, parent)
+            }
+            cell_bytes = b"".join(write(p, cells[p]) for p in sorted(cells, key=str))
+            fingerprints[f"{finetune}|{benchmark}"] = {
+                "metrics_sha256": hashlib.sha256(metrics).hexdigest(),
+                "apd_sha256": hashlib.sha256(apd).hexdigest(),
+                "apd_cells_sha256": hashlib.sha256(cell_bytes).hexdigest(),
+            }
+    return fingerprints
+
+
+def _current_study(root: Path) -> Path:
+    """A study CSV under ``root`` whose fingerprints match the inputs written beside it."""
+    path = root / "finetune_pairs.csv"
+    _study(**_write_inputs(root)).to_csv(path, index=False)
+    return path
+
+
+class TestLoad:
+    def test_a_study_that_was_never_run_fails_with_its_remedy(self, tmp_path):
+        with pytest.raises(FileNotFoundError, match="finetune_pairs.py"):
+            basis.load(tmp_path / "absent.csv", metadata=_metadata(), root=tmp_path)
+
+    def test_a_study_that_no_longer_matches_the_metadata_pairs_fails(self, tmp_path):
+        path = _current_study(tmp_path)
+        metadata = _metadata()
+        metadata.loc[metadata["model"] == "Student", "variant_role"] = "robustness-finetune"
+
+        with pytest.raises(CaptionClaimError, match="Student"):
+            basis.load(path, metadata=metadata, root=tmp_path)
+
+    def test_a_current_study_loads_in_pair_order(self, tmp_path):
+        path = _current_study(tmp_path)
+
+        frame = basis.load(path, metadata=_metadata(), root=tmp_path)
+
+        assert frame["finetune"].tolist() == ["Robust-B"] * 3 + ["Robust-A"] * 3
+
+    def test_a_benchmark_run_redone_after_the_study_fails(self, tmp_path):
+        """Same pairs, new run contents (an encoder joined, the median k moved): the study's
+        ranks, k and differences are stale even though its rows still match the metadata."""
+        path = _current_study(tmp_path)
+        metrics = _metrics_csv(tmp_path, "pathorob-tcga-4x4")
+        metrics.write_text(metrics.read_text() + "Newcomer,11\n")
+
+        with pytest.raises(CaptionClaimError, match=r"(?s)metrics\.csv.*finetune_pairs\.py"):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_an_apd_study_redone_after_the_study_fails(self, tmp_path):
+        path = _current_study(tmp_path)
+        apd = _apd_csv(tmp_path)
+        apd.write_text(apd.read_text() + "camelyon,Robust-A,-0.05,0.0\n")
+
+        with pytest.raises(CaptionClaimError, match=r"(?s)apd\.csv.*finetune_pairs\.py"):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_an_apd_cell_rewritten_under_an_unchanged_apd_table_fails(self, tmp_path):
+        """The APD study writes each cell as it finishes and rewrites ``apd.csv`` only at the
+        end of a completed run, so an aborted re-run leaves new cells under the old table.
+        Permuting a cell's probe runs keeps every nIPD point but moves the paired interval."""
+        path = _current_study(tmp_path)
+        cell = _apd_cell(tmp_path, "pathorob-tcga-4x4", "Base-A")
+        cell.write_text(_cell_text("Base-A", [0.7, 0.9, 0.8]))
+
+        with pytest.raises(
+            CaptionClaimError, match=r"(?s)tcga_4x4/Base-A\.json.*Robust-A.*finetune_pairs\.py"
+        ):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_a_missing_apd_cell_fails_with_its_remedy(self, tmp_path):
+        path = _current_study(tmp_path)
+        _apd_cell(tmp_path, "pathorob-tolkach-esca", "Robust-B").unlink()
+
+        with pytest.raises(
+            CaptionClaimError, match=r"(?s)tolkach/Robust-B\.json.*absent.*finetune_pairs\.py"
+        ):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_the_cell_of_an_encoder_outside_the_pairs_is_not_an_input(self, tmp_path):
+        path = _current_study(tmp_path)
+        other = _apd_cell(tmp_path, "pathorob-camelyon", "Teacher")
+        other.write_text(_cell_text("Teacher", [0.5]))
+
+        assert len(basis.load(path, metadata=_metadata(), root=tmp_path)) == 6
+
+    def test_a_missing_input_fails_with_its_remedy(self, tmp_path):
+        path = _current_study(tmp_path)
+        _metrics_csv(tmp_path, "pathorob-camelyon").unlink()
+
+        with pytest.raises(CaptionClaimError, match=r"(?s)metrics\.csv.*finetune_pairs\.py"):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    @pytest.mark.parametrize("column", FINGERPRINT_COLUMNS)
+    def test_a_study_that_records_no_input_fingerprints_fails(self, tmp_path, column):
+        path = _current_study(tmp_path)
+        pd.read_csv(path).drop(columns=[column]).to_csv(path, index=False)
+
+        with pytest.raises(CaptionClaimError, match=rf"(?s){column}.*finetune_pairs\.py"):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_the_fingerprinted_inputs_are_the_run_the_apd_table_and_the_pairs_cells(self):
+        """The per-sample file is deliberately not fingerprinted: it is large, and the study
+        already refuses per-sample points that do not reproduce ``metrics.csv``. A row's
+        cells are its two encoders', in sorted path order whatever order the pair is given."""
+        for benchmark, dataset in APD_DATASETS.items():
+            assert study.input_rels(benchmark, ("Midnight-12k", "Mascaret")) == {
+                "metrics_sha256": (by_benchmark(benchmark).metrics_rel,),
+                "apd_sha256": ("output/studies/apd/apd.csv",),
+                "apd_cells_sha256": (
+                    f"output/studies/apd/{dataset}/Mascaret.json",
+                    f"output/studies/apd/{dataset}/Midnight-12k.json",
+                ),
+            }
+        assert list(study.input_rels("pathorob-camelyon", ("A", "B"))) == FINGERPRINT_COLUMNS
+
+
+class TestMacros:
+    def _macros(self, frame=None) -> dict[str, str]:
+        lines = basis.macro_lines(_study() if frame is None else frame)
+        parsed = [re.fullmatch(r"\\newcommand\{\\([A-Za-z]+)\}\{(.*)\}", line) for line in lines]
+        assert all(parsed), lines
+        return {m.group(1): m.group(2) for m in parsed}
+
+    def test_each_difference_is_a_signed_macro_per_pair_and_cohort(self):
+        macros = self._macros()
+
+        assert macros["FineTuneRobustACamelyonCromaDelta"] == "$+0.18$"
+        assert macros["FineTuneRobustBTcgaFourByFourFZeroDelta"] == "$-0.312$"
+        assert macros["FineTuneRobustATolkachLtmDelta"] == "$+0.33$"
+        assert macros["FineTuneRobustACamelyonBioBaccDelta"] == "$+0.005$"
+        assert macros["FineTuneRobustACamelyonNipdIdDelta"] == "$+0.068$"
+        assert macros["FineTuneRobustACamelyonCromaDeltaCi"] == "$[0.15, 0.20]$"
+
+    def test_counts_over_every_pair_and_cohort(self):
+        frame = _study(
+            **{"Robust-A|pathorob-tolkach-esca": {"delta_f0": 0.010, "delta_ltm": -0.02}}
+        )
+
+        macros = self._macros(frame)
+
+        assert macros["FineTuneNCells"] == "6"
+        assert macros["FineTuneFZeroFallsCount"] == "5"
+        assert macros["FineTuneLtmRisesCount"] == "5"
+
+    def test_macro_names_hold_letters_only(self):
+        frame = _study().replace({"Robust-A": "Robust-2"})
+
+        assert "FineTuneRobustTwoCamelyonCromaDelta" in self._macros(frame)
+
+    def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
+        import _mari_vs_ri
+        import _panel_macros
+        import generate_paper_values as gpv
+        import generate_supp_rank_table
+
+        # The blocks before this one read other studies and live runs, some relative to the
+        # repo rather than ``root``, and several raise when those are absent. Stub them so
+        # the test sees only the missing fine-tune study, on a clean clone too.
+        monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
+        monkeypatch.setattr(_mari_vs_ri, "macros", lambda study: [])
+        monkeypatch.setattr(gpv, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
+        monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
+
+        with pytest.raises(FileNotFoundError, match="finetune_pairs.py"):
+            gpv.build([], tmp_path, "auto")
+
+
+# --- the rendered table ------------------------------------------------------------------
+
+
+def _render(frame=None, metadata=None, bib_keys=frozenset()) -> str:
+    import generate_finetune_pairs_table as table
+
+    return table.build(
+        _study() if frame is None else frame,
+        _metadata() if metadata is None else metadata,
+        bib_keys=set(bib_keys),
+    )
+
+
+def _caption(tex: str) -> str:
+    (line,) = [line for line in tex.splitlines() if line.startswith(r"\caption{")]
+    return line
+
+
+def _block(tex: str, finetune: str) -> str:
+    """The rows of one pair's block, from its header to the next header or rule."""
+    lines = tex.splitlines()
+    start = next(i for i, line in enumerate(lines) if "multicolumn" in line and finetune in line)
+    end = next(
+        i
+        for i in range(start + 1, len(lines))
+        if "multicolumn" in lines[i] or lines[i] == r"\hline"
+    )
+    return "\n".join(lines[start:end])
+
+
+class TestTable:
+    def test_one_block_per_pair_with_one_row_per_cohort(self):
+        tex = _render()
+
+        assert r"\label{tab:finetune-pairs}" in tex
+        assert tex.startswith(r"\begin{table}[!htbp]")
+        for finetune, parent in STUDY_PAIRS:
+            block = _block(tex, finetune)
+            assert rf"{parent} $\rightarrow$ {finetune}" in block
+            for cohort in ("Camelyon", "TCGA-4x4", "Tolkach-ESCA"):
+                assert sum(line.startswith(cohort) for line in block.splitlines()) == 1
+
+    def test_each_cohort_shows_parent_to_finetune_then_the_difference_then_its_interval(self):
+        rows = _block(_render(), "Robust-A").splitlines()
+        i = next(i for i, line in enumerate(rows) if line.startswith("Camelyon"))
+        values, delta, ci = (rows[i + j].split(" & ") for j in range(3))
+
+        assert values[1:3] == [r"$0.10 \to 0.28$", r"$0.400 \to 0.088$"]
+        assert values[-1] == r"$13 \to 2$ \\"
+        assert delta[1:6] == ["$+0.18$", "$-0.312$", "$+0.33$", "$+0.005$", "$+0.068$"]
+        assert delta[-1] == r"$+11$ \\"
+        assert ci[1:3] == ["$[0.15, 0.20]$", "$[-0.355, -0.272]$"]
+        assert ci[4:7] == ["", "$[0.039, 0.106]$", "$[-0.011, 0.001]$"]
+
+    def test_the_ci_rows_are_labelled_with_the_studys_confidence_level(self):
+        tex = _render()
+        rows = [line for line in tex.splitlines() if not line.startswith(r"\caption{")]
+        labels = [line.split(" & ")[0] for line in rows if line.startswith(r"\quad")]
+
+        assert r"\quad 90\% CI" in labels
+        assert not any(r"95\% CI" in line for line in rows)
+        assert r"its 90\% interval" in _caption(tex)
+
+    def test_the_caption_is_one_line_within_the_journal_word_limit(self):
+        caption = _caption(_render())
+
+        assert caption.endswith("}")
+        assert len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", caption)) <= 350
+
+    def test_the_caption_states_the_pairs_come_from_metadata_and_how_intervals_are_drawn(self):
+        caption = _caption(_render())
+
+        assert "model metadata" in caption
+        assert "B{=}2000" in caption
+        assert "$20$ probe runs" in caption
+        assert "26" in caption
+
+
+class TestDisclosureCaption:
+    def test_blank_disclosure_cells_read_undisclosed(self):
+        caption = _caption(_render())
+
+        assert "undisclosed for Robust-B and Robust-A" in caption
+
+    def test_a_disclosed_source_is_cited_and_a_url_is_linked(self):
+        metadata = _metadata()
+        robust_b = metadata["model"] == "Robust-B"
+        metadata.loc[robust_b, "adaptation_method_source"] = "smith2026robust"
+        metadata.loc[robust_b, "adaptation_data_source"] = "https://example.org/data"
+
+        caption = _caption(_render(metadata=metadata, bib_keys={"smith2026robust"}))
+
+        assert r"\cite{smith2026robust}" in caption
+        assert r"\url{https://example.org/data}" in caption
+        assert "undisclosed for Robust-A" in caption
+
+    def test_a_citation_key_absent_from_the_bibliography_fails(self):
+        metadata = _metadata()
+        metadata.loc[metadata["model"] == "Robust-B", "adaptation_method_source"] = "nokey2026"
+
+        with pytest.raises(CaptionClaimError, match="nokey2026"):
+            _render(metadata=metadata)
+
+
+class TestMarkers:
+    def test_a_benchmark_selected_finetune_carries_the_double_dagger_and_its_legend(self):
+        tex = _render()
+
+        assert r"Robust-B$^{\ddagger}$" in _block(tex, "Robust-B")
+        assert r"\ddagger" not in _block(tex, "Robust-A")
+        assert "PathoROB" in _caption(tex) and "checkpoint selection" in _caption(tex)
+
+    def test_an_undocumented_kind_of_benchmark_selection_fails(self):
+        metadata = _metadata()
+        metadata.loc[metadata["model"] == "Robust-B", "benchmark_selection"] = "other-benchmark"
+
+        with pytest.raises(CaptionClaimError, match="other-benchmark"):
+            _render(metadata=metadata)
+
+    def test_a_cohort_in_the_pairs_pretraining_provenance_is_daggered_and_named(self):
+        metadata = _metadata()
+        exposed = metadata["model"].isin(["Base-A", "Robust-A"])
+        metadata.loc[exposed, "corpus_domains"] = "tcga"
+
+        tex = _render(metadata=metadata)
+        block_a, block_b = _block(tex, "Robust-A"), _block(tex, "Robust-B")
+
+        assert r"TCGA-4x4$^{\dagger}$" in block_a
+        assert r"Camelyon$^{\dagger}$" not in block_a
+        assert r"\dagger" not in block_b.replace(r"\ddagger", "")
+        assert "TCGA-4x4 for Base-A and Robust-A" in _caption(tex)
+
+    def test_a_cohort_in_only_the_parents_pretraining_provenance_is_daggered_and_named(self):
+        metadata = _metadata()
+        metadata.loc[metadata["model"] == "Base-A", "corpus_domains"] = "tcga"
+
+        tex = _render(metadata=metadata)
+
+        assert r"TCGA-4x4$^{\dagger}$" in _block(tex, "Robust-A")
+        assert "TCGA-4x4 for Base-A" in _caption(tex)
+
+    def test_without_exposure_no_dagger_is_drawn(self):
+        assert r"\dagger" not in _render().replace(r"\ddagger", "")

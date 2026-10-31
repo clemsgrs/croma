@@ -692,6 +692,19 @@ def _load_rank_frontier_macros() -> list[str]:
     return _rank_frontier_macros(load_rank_pareto())
 
 
+def _load_finetune_pair_macros(root: Path) -> list[str]:
+    """Fine-tune minus parent differences (supp tab:finetune-pairs).
+
+    Unconditional: ``_finetune_pairs.load`` raises when the study is missing, no longer
+    matches the metadata's pairs, or predates a re-run of the inputs it read, so a missing or
+    stale input fails the build instead of dropping or staling macros a sentence may cite.
+    """
+    import _finetune_pairs
+
+    path = root / _finetune_pairs.CSV.relative_to(_finetune_pairs.REPO)
+    return _finetune_pairs.macro_lines(_finetune_pairs.load(path, root=root))
+
+
 def _cross_cohort_macros(croma: dict[str, pd.Series], panel_sizes: dict[str, int]) -> list[str]:
     """Panel sizes and the cross-cohort CRoMa rank-agreement cited by the abstract and intro.
 
@@ -799,6 +812,8 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.extend(panel_macros(root))
     out.append("% Typed-neighbour coverage (tab:typed-neighbour-coverage)")
     out.extend(typed_neighbour_macros(root))
+    out.append("% Robustness fine-tune vs parent (supp tab:finetune-pairs)")
+    out.extend(_load_finetune_pair_macros(root))
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel
