@@ -104,6 +104,18 @@ STUDIES = [
 ]
 
 
+#: Generators whose study artifact is *required*: when it is absent the build fails, naming
+#: the study to run, instead of skipping. Their macros feed generated_values.tex, which
+#: raises without them too.
+REQUIRED_STUDIES = [
+    (
+        "generate_silhouette_baselines_table.py",
+        "output/studies/silhouette-baselines/silhouette_baselines_correlation.csv",
+        "run scripts/studies/silhouette_baselines.py (needs croma[repro] for scib-metrics)",
+    ),
+]
+
+
 def _run(script: str, extra: list[str]) -> int:
     proc = subprocess.run([sys.executable, str(HERE / script), *extra], cwd=REPO)
     return proc.returncode
@@ -135,9 +147,21 @@ def main() -> int:
         if _run(script, []) != 0:
             failed.append(script)
 
+    missing: list[tuple[str, str]] = []
+    for script, required, remedy in REQUIRED_STUDIES:
+        if not (REPO / required).exists():
+            missing.append((script, f"missing {required} -- {remedy}"))
+            failed.append(script)
+            continue
+        print(f"\n=== {script} ===", flush=True)
+        if _run(script, []) != 0:
+            failed.append(script)
+
     print("\n" + "=" * 70)
     for script, why in skipped:
         print(f"SKIPPED  {script}: {why}")
+    for script, why in missing:
+        print(f"MISSING  {script}: {why}")
     if failed:
         print(f"FAILED   {', '.join(failed)}")
         return 1
