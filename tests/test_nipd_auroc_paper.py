@@ -295,6 +295,7 @@ class TestMacros:
         import _mari_vs_ri
         import _overlap
         import _panel_macros
+        import _uncertainty
         import generate_paper_values as gpv
         import generate_sample_shortcut_floats
         import generate_supp_rank_table
@@ -311,6 +312,9 @@ class TestMacros:
         monkeypatch.setattr(generate_sample_shortcut_floats, "macros", lambda root: [])
         monkeypatch.setattr(_exposure, "build", lambda root: SimpleNamespace(macros=[]))
         monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
+        monkeypatch.setattr(_uncertainty, "load", lambda root: None)
+        monkeypatch.setattr(gpv, "_uncertainty_block", lambda study: [])
+        monkeypatch.setattr(gpv, "_apd_block", lambda root: [])
         monkeypatch.setattr(_grade_matched, "load", lambda root: None)
         monkeypatch.setattr(gpv, "_grade_matched_macros", lambda study: [])
         monkeypatch.setattr(gpv, "_silhouette_block", lambda root, apd_path: [])

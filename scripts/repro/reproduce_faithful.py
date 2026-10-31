@@ -74,7 +74,10 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # With typed-neighbour-ranks, the input of tab:typed-neighbour-coverage (both beside the
     # live Camelyon run).
     ("contested-fraction", "scripts/studies/contested_fraction_experiment.py", []),
+    # Before apd-correlation: its two-level design reads bootstrap_replicates.npz.
     ("bootstrap-uncertainty", "scripts/studies/bootstrap_uncertainty.py", []),
+    # Delta = MaRI - RI intervals for the uncertainty supplement (tab:mari-ri-delta).
+    ("mari-ri-delta", "scripts/studies/mari_ri_delta.py", []),
     ("grade-matched", "scripts/studies/grade_matched_pools.py", []),
     # Last because it is far and away the longest: a full probe sweep over every
     # model-dataset pair, hours rather than minutes.

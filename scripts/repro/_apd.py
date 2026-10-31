@@ -27,8 +27,15 @@ JOINED_CSV = REPO / "output/studies/apd/apd_metrics_joined.csv"
 # Figures and the correlation table use the three 25-model PathoROB benchmarks.
 # PCaBiop's four-model correlations remain available for supplementary prose.
 FIGURE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
+#: The slide benchmark: a descriptive column of the correlation table, outside its BH family.
+SLIDE_DATASET = "pcabiop"
 TARGETS = [("nipd_id", "in-domain"), ("nipd_ood", "out-of-domain")]
 METRICS = ["croma", "ri", "mari"]
+#: The inference columns apd_croma_correlation.py writes; a CSV without them predates it.
+INFERENCE_COLUMNS = (
+    "partial_on", "perm_p", "permutation", "n_permutations", "ci_lo", "ci_hi", "n_boot",
+    "in_bh_family", "q_bh", "two_level_lo", "two_level_hi",
+)
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,30 @@ class Apd:
     """Read-only view over the per-benchmark downstream correlations."""
 
     corr: pd.DataFrame
+
+    def row(self, target: str, metric: str, scope: str) -> pd.Series:
+        """One association: rho, its CIs, permutation p and (in the BH family) q."""
+        missing = [c for c in INFERENCE_COLUMNS if c not in self.corr.columns]
+        if missing:
+            raise CaptionClaimError(
+                f"{CORRELATION_CSV} has no {missing}: it predates the correlation inference; "
+                "re-run scripts/studies/apd/apd_croma_correlation.py"
+            )
+        row = self.corr[
+            (self.corr["target"] == target)
+            & (self.corr["metric"] == metric)
+            & (self.corr["scope"] == scope)
+        ]
+        if len(row) != 1:
+            raise KeyError(f"no single row for ({target}, {metric}, {scope}) in {CORRELATION_CSV}")
+        return row.iloc[0]
+
+    def single(self, column: str, scopes: list[str]) -> object:
+        """The one value ``column`` takes over ``scopes`` (n_boot, permutation count, ...)."""
+        values = set(self.corr.loc[self.corr["scope"].isin(scopes), column])
+        if len(values) != 1:
+            raise CaptionClaimError(f"{column} differs across {scopes}: {sorted(values)}")
+        return values.pop()
 
     def rho(self, target: str, metric: str, scope: str) -> float:
         row = self.corr[
@@ -91,6 +122,12 @@ class Apd:
     def benchmark_labels(self) -> list[str]:
         return [by_benchmark(DATASETS[dataset]["benchmark"]).short_name
                 for dataset in FIGURE_DATASETS]
+
+    @property
+    def slide_label(self) -> str:
+        # The manifest names the run "PANDA (cancer detection)"; the paper calls the slide
+        # benchmark (PANDA in domain, PAR out of domain) PCaBiop.
+        return "PCaBiop"
 
     def operating_points(self) -> list[tuple[str, int]]:
         """Operating point for RI/MaRI on each tile benchmark."""

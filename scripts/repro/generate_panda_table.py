@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from _paper_tables import CROMA_HEADLINE_M
+from _uncertainty import table_label
 from generate_results_table import (
     SIGNED,
     Column,
@@ -95,7 +96,9 @@ def _caption(a: pd.DataFrame, b: pd.DataFrame) -> str:
         r"reported at $k^\star$, and Centre is the maximum over the evaluated $k$ grid. "
         r"\textbf{a,} Binary "
         r"cancer detection on $1{,}000$ slides. \textbf{b,} Six-class ISUP grading over "
-        r"$3{,}000$ slides."
+        r"$3{,}000$ slides. Bootstrap intervals for each encoder's median, $F(0)$, "
+        r"$\mcode{LTM}_{10}$ and rank in panel \textbf{a} are given in Supplementary "
+        rf"Table~\ref{{{table_label('Panda')}}}."
     )
 
 
