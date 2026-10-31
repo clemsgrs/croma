@@ -133,6 +133,10 @@ STUDIES = [
         "output/studies/slide-vs-meanpool/differences.csv",
         "run scripts/studies/slide_vs_meanpool.py extract, reduce, then evaluate",
     ),
+    # tab:distance-variants. No required input on purpose: the macros it feeds are emitted
+    # by generate_paper_values.py unconditionally, so a missing study must fail this build
+    # by name rather than be reported as a skip.
+    ("generate_distance_variants_table.py", None, ""),
 ]
 
 
