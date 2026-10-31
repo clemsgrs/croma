@@ -490,6 +490,11 @@ class TestWithinCellAuroc:
             ss.within_cell_auroc(np.array([0.1, 0.2]), np.array([True, False]), np.array([0, 1]))
         )
 
+    def test_is_undefined_on_an_empty_population(self):
+        empty = np.array([])
+        assert np.isnan(ss.within_cell_auroc(empty, empty.astype(bool), empty.astype(str)))
+        assert np.isnan(ss.within_cell_auroc([], [], []))
+
     def test_a_weighted_call_equals_the_rows_repeated_that_often(self):
         rng = np.random.default_rng(3)
         score = rng.integers(0, 6, 40).astype(float)  # coarse, so ties abound
@@ -660,6 +665,20 @@ class TestEncoderSummary:
         assert not summary["evaluable"]
         assert summary["auroc_croma"] == 1.0  # the point is kept, the table shows a dash
         assert np.isnan(summary["auroc_croma_lo"]) and np.isnan(summary["diff_croma_bio_hi"])
+
+    def test_a_balanced_probe_wrong_on_every_row_gives_a_row_with_no_auroc(self):
+        frame = _encoder_frame().assign(e0=0.5, flipped=False)
+        frame["colour_confidence"] = np.random.default_rng(1).uniform(size=len(frame))
+        frame["colour_stratum"] = frame["cell"]
+
+        summary = ss.encoder_summary(frame, n_boot=20, seed=0)
+
+        assert summary["n_held_out"] == len(frame)
+        assert summary["n_balanced_right"] == 0 and summary["n_flipped"] == 0
+        assert not summary["evaluable"]
+        for name in ("croma", "bio", "purity", "colour", "croma_given_colour"):
+            assert np.isnan(summary[f"auroc_{name}"])
+        assert np.isnan(summary["diff_croma_bio"]) and np.isnan(summary["diff_croma_purity"])
 
     def test_colour_predictors_when_the_cohort_has_colour(self):
         frame = _encoder_frame()

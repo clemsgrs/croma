@@ -257,7 +257,8 @@ class WithinCellAuroc:
             raise ValueError("cells must hold one label per row")
         self._order = np.lexsort((score, codes))
         s, c = score[self._order], codes[self._order]
-        starts = np.r_[True, (c[1:] != c[:-1]) | (s[1:] != s[:-1])]
+        starts = np.ones(len(s), dtype=bool)  # at the rows' own length, so none gives no group
+        starts[1:] = (c[1:] != c[:-1]) | (s[1:] != s[:-1])
         self._group = np.cumsum(starts) - 1
         self._group_cell = c[starts]
         self._n_groups = int(self._group[-1]) + 1 if len(s) else 0
