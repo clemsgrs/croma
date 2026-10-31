@@ -285,12 +285,30 @@ class TestMacros:
 
         assert r"\newcommand{\NipdAurocNModels}{26}" in gpv._nipd_auroc_macros(study)
 
-    def test_the_values_file_fails_without_the_study(self, tmp_path):
+    def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
         # Never warn-and-skip: a missing macro would compile to an undefined control
         # sequence at best and silently drop a sentence's number at worst.
+        import _grade_matched
+        import _mari_vs_ri
+        import _overlap
+        import _panel_macros
         import generate_paper_values as gpv
+        import generate_supp_rank_table
 
-        with pytest.raises(FileNotFoundError):
+        # The blocks before this one read other studies and live runs, some relative to the
+        # repo rather than ``root``, and several raise when those are absent. Stub them so
+        # the test sees only the missing AUROC cells, on a clean clone too.
+        monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
+        monkeypatch.setattr(_mari_vs_ri, "macros", lambda study: [])
+        monkeypatch.setattr(gpv, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
+        monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
+        monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
+        monkeypatch.setattr(_grade_matched, "load", lambda root: None)
+        monkeypatch.setattr(gpv, "_grade_matched_macros", lambda study: [])
+        monkeypatch.setattr(gpv, "_silhouette_block", lambda root, apd_path: [])
+
+        with pytest.raises(FileNotFoundError, match="no APD cells"):
             gpv.build([], tmp_path, "auto")
 
 
