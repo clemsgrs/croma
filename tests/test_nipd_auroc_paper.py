@@ -1,20 +1,32 @@
 """The threshold-free nIPD study's paper surfaces: its basis, ``tab:nipd-auroc``, macros.
 
-Everything renders from synthetic reductions or an empty ``tmp_path`` root; no ``paper/``
-or ``output/`` tree is needed. The study itself is tested in ``test_auc_study.py``.
+Also the parts of the study that read the paper's tooling: the reduction, which takes
+CRoMa, RI and MaRI from the runs ``paper_manifest`` resolves, and the full reproduction's
+study order. The sdist leaves this module out together with ``scripts/repro``; the rest
+of the study is tested in ``test_auc_study.py``, which it ships.
+
+Everything renders from synthetic reductions or a ``tmp_path`` tree; no ``paper/`` or
+``output/`` tree is needed.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+from auc_cell_records import apd_cell, auc_cell
 
 ROOT = Path(__file__).resolve().parents[1]
-for _p in (ROOT / "scripts" / "repro", ROOT / "scripts" / "bench"):
+for _p in (
+    ROOT / "scripts" / "repro",
+    ROOT / "scripts" / "bench",
+    ROOT / "scripts" / "studies" / "auc",
+    ROOT / "scripts" / "studies" / "apd",
+):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -293,3 +305,168 @@ def test_the_paper_build_never_skips_the_table():
     assert len(entries) == 1
     assert entries[0][1] is None
     assert "sweep.py" in entries[0][2]
+
+
+def test_the_full_reproduction_runs_the_study_after_the_apd_cells_it_rides_on() -> None:
+    import reproduce_faithful
+
+    labels = [label for label, _, _ in reproduce_faithful.STUDIES]
+    scripts = {label: script for label, script, _ in reproduce_faithful.STUDIES}
+
+    assert labels.index("apd-sweep") < labels.index("auc-sweep") < labels.index("auc-report")
+    assert scripts["auc-sweep"] == "scripts/studies/auc/sweep.py"
+    assert scripts["auc-report"] == "scripts/studies/auc/report.py"
+
+
+# The reduction (scripts/studies/auc/report.py) over a checkout-shaped tree: it reads each
+# cohort's run where paper_manifest says the paper reads it.
+
+
+def _falling(v: np.ndarray, start: float, floor: float, depth: float, iterations: int = 2):
+    """Matrix whose replicate mean falls linearly from ``start`` by ``depth`` of the way to
+    ``floor`` at V = 1. Its nIPD against chance ``floor`` is ``-depth / 2`` exactly."""
+    means = start - depth * (start - floor) * np.asarray(v)
+    spread = np.linspace(-0.001, 0.001, iterations)
+    return means[:, None] + spread[None, :]
+
+
+def _study_root(root: Path, encoders: dict[str, list[str]], *, metrics: dict | None = None):
+    """A checkout-shaped tree: APD cells, current AUROC cells and each cohort's run.
+
+    The first encoder's balanced accuracy falls all the way to chance in domain and half
+    way out of domain, and its AUROC does the same against 0.5; each later encoder falls a
+    little less. The run's ``metrics.csv`` sits where ``paper_manifest`` says the paper
+    reads it.
+    """
+    from loaders import DATASETS, metric_csv, training_correlations
+
+    for dataset, models in encoders.items():
+        v = training_correlations(dataset)
+        chance = 1.0 / len(DATASETS[dataset]["biological_classes"])
+        for i, model in enumerate(models):
+            id_depth, ood_depth = 1.0 - 0.1 * i, 0.5 - 0.05 * i
+            id_acc, ood_acc = _falling(v, 0.8, chance, id_depth), _falling(
+                v, 0.7, chance, ood_depth
+            )
+            id_auc, ood_auc = _falling(v, 0.9, 0.5, id_depth), _falling(v, 0.85, 0.5, ood_depth)
+            apd_cell(root / "output/studies/apd" / dataset / f"{model}.json", id_acc, ood_acc)
+            auc_cell(
+                root / "output/studies/auc" / dataset / f"{model}.json",
+                id_acc,
+                ood_acc,
+                id_auroc=id_auc,
+                ood_auroc=ood_auc,
+            )
+        run = (metrics or {}).get(dataset) or {
+            model: dict(croma=0.1 * i, ri=0.5 + 0.01 * i, mari=0.5 + 0.02 * i, k=11)
+            for i, model in enumerate(models)
+        }
+        path = root / metric_csv(dataset)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        pd.DataFrame([dict(model=m, **row) for m, row in run.items()]).to_csv(path, index=False)
+    return root
+
+
+def test_the_reduction_scores_each_regime_against_its_own_chance(tmp_path: Path) -> None:
+    # Tolkach-ESCA has six classes: balanced accuracy's chance is 1/6, AUROC's is 0.5
+    # whatever the class count. A linear fall to chance at V = 1 has nIPD -0.5 exactly, so
+    # both nIPDs are -0.5 in domain only if each score is normalised by its own chance.
+    import report
+
+    root = _study_root(tmp_path, {"tolkach": ["Alpha", "DINOv2-B"]})
+
+    reduction = report.reduce(root)
+
+    alpha = reduction[reduction["model"] == "Alpha"].set_index("regime")
+    assert list(reduction[["dataset", "model", "regime"]].itertuples(index=False)) == [
+        ("tolkach", "Alpha", "id"),
+        ("tolkach", "Alpha", "ood"),
+        ("tolkach", "DINOv2-B", "id"),
+        ("tolkach", "DINOv2-B", "ood"),
+    ]
+    assert alpha.loc["id", "nipd_auroc"] == pytest.approx(-0.5)
+    assert alpha.loc["id", "nipd_balacc"] == pytest.approx(-0.5)
+    assert alpha.loc["ood", "nipd_auroc"] == pytest.approx(-0.25)
+    assert alpha.loc["ood", "nipd_balacc"] == pytest.approx(-0.25)
+    # The V = 0 and V = 1 means, and the normalised endpoint g(1) they give.
+    assert alpha.loc["id", ["auroc_v0", "auroc_v1"]].tolist() == pytest.approx([0.9, 0.5])
+    assert alpha.loc["id", ["balacc_v0", "balacc_v1"]].tolist() == pytest.approx([0.8, 1 / 6])
+    assert alpha.loc["ood", ["endpoint_auroc", "endpoint_balacc"]].tolist() == pytest.approx(
+        [-0.5, -0.5]
+    )
+    # The representation metrics come from the run the paper reports, at its operating k.
+    assert alpha.loc["id", ["croma", "ri", "mari", "k"]].tolist() == pytest.approx(
+        [0.0, 0.5, 0.5, 11]
+    )
+    assert reduction.groupby("model")["control"].first().to_dict() == {
+        "Alpha": False,
+        "DINOv2-B": True,
+    }
+
+
+def _remove_cell(root: Path) -> None:
+    (root / "output/studies/auc/camelyon/Beta.json").unlink()
+
+
+def _drift_cell(root: Path) -> None:
+    path = root / "output/studies/auc/camelyon/Beta.json"
+    record = json.loads(path.read_text())
+    record["rows"][0][0][1] += 1e-6  # in-domain balanced accuracy, split 0, replicate 0
+    path.write_text(json.dumps(record))
+
+
+def _drop_run_row(root: Path) -> None:
+    from loaders import metric_csv
+
+    path = root / metric_csv("camelyon")
+    frame = pd.read_csv(path)
+    frame[frame["model"] != "Beta"].to_csv(path, index=False)
+
+
+def _add_run_row(root: Path) -> None:
+    # The run reports an encoder the downstream study never probed.
+    from loaders import metric_csv
+
+    path = root / metric_csv("camelyon")
+    frame = pd.read_csv(path)
+    extra = frame.iloc[[0]].assign(model="Mettle")
+    pd.concat([frame, extra]).to_csv(path, index=False)
+
+
+@pytest.mark.parametrize(
+    ("damage", "message"),
+    [
+        (_remove_cell, r"camelyon/Beta \(missing\)"),
+        (_drift_cell, r"camelyon/Beta \(stale\)"),
+        (_drop_run_row, r"camelyon/Beta has an AUROC cell but no row in .*metrics.csv"),
+        (_add_run_row, r"camelyon: .*metrics.csv reports Mettle, which has no APD cell"),
+    ],
+    ids=["missing-cell", "stale-cell", "absent-from-run", "unprobed-run-encoder"],
+)
+def test_the_reduction_never_skips_a_cell(tmp_path: Path, damage, message: str) -> None:
+    # A table built from whatever cells happen to be current would silently change its
+    # panel; every expected cell is reduced, or nothing is.
+    import report
+
+    root = _study_root(tmp_path, {"camelyon": ["Alpha", "Beta", "Gamma"]})
+    damage(root)
+
+    with pytest.raises(ValueError, match=message):
+        report.reduce(root)
+
+
+def test_the_study_writes_the_reduction_and_the_correlations_it_reports(
+    tmp_path: Path,
+) -> None:
+    import report
+
+    root = _study_root(tmp_path, {"camelyon": ["Alpha", "Beta", "Gamma", "Delta", "DINOv2-B"]})
+
+    reduction, corr = report.main(root)
+
+    written = pd.read_csv(root / "output/studies/auc/nipd_auroc.csv")
+    written_corr = pd.read_csv(root / "output/studies/auc/nipd_auroc_correlation.csv")
+    assert len(written) == 5 * 2
+    pd.testing.assert_frame_equal(written, reduction, check_dtype=False)
+    pd.testing.assert_frame_equal(written_corr, corr, check_dtype=False)
+    assert set(corr["n"]) == {4}

@@ -3,8 +3,12 @@
 ``scripts/studies/auc/`` re-runs the APD study's probe sweep and scores every probe it
 trains with AUROC beside balanced accuracy. It owns no protocol: the sweep is the APD
 study's own call, so what is tested here is what the AUROC arm adds -- which cells exist,
-whether a stored cell still reproduces the APD cell it rides on, and the reduction and
+whether a stored cell still reproduces the APD cell it rides on, the sweep, and the
 correlations the supplementary table is rendered from.
+
+The reduction reads CRoMa, RI and MaRI from the runs ``paper_manifest`` resolves, so its
+tests live with the study's paper surfaces in ``test_nipd_auroc_paper.py``, which the
+sdist leaves out together with ``scripts/repro``.
 """
 
 from __future__ import annotations
@@ -15,17 +19,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from auc_cell_records import apd_cell, auc_cell, write_json
 
 ROOT = Path(__file__).resolve().parents[1]
 STUDY = ROOT / "scripts" / "studies" / "auc"
 for _path in (STUDY, ROOT / "scripts" / "studies" / "apd"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
-
-
-def _write_json(path: Path, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_the_cell_list_is_the_apd_studys_cells(tmp_path: Path) -> None:
@@ -40,7 +40,7 @@ def test_the_cell_list_is_the_apd_studys_cells(tmp_path: Path) -> None:
         ("pcabiop", "Gamma"),
         ("prostate", "Delta"),
     ]:
-        _write_json(tmp_path / dataset / f"{model}.json", {})
+        write_json(tmp_path / dataset / f"{model}.json", {})
 
     cells = auc_cells.expected_cells(apd_dir=tmp_path)
 
@@ -54,8 +54,8 @@ def test_the_command_line_lists_the_work_and_counts_current_cells(tmp_path: Path
 
     id_acc, ood_acc = _accuracies(), _accuracies(start=0.8)
     for model in ("RudolfV 2", "Beta"):
-        _apd_cell(tmp_path / "apd" / "camelyon" / f"{model}.json", id_acc, ood_acc)
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Beta.json", id_acc, ood_acc)
+        apd_cell(tmp_path / "apd" / "camelyon" / f"{model}.json", id_acc, ood_acc)
+    auc_cell(tmp_path / "auc" / "camelyon" / "Beta.json", id_acc, ood_acc)
     dirs = ["--auc-dir", str(tmp_path / "auc"), "--apd-dir", str(tmp_path / "apd")]
 
     def cli(command: str) -> subprocess.CompletedProcess:
@@ -80,36 +80,6 @@ def _accuracies(n_splits: int = 8, iterations: int = 3, start: float = 0.9) -> n
     return start - 0.02 * split - 0.001 * replicate
 
 
-def _apd_cell(path: Path, id_acc: np.ndarray, ood_acc: np.ndarray) -> None:
-    """The two matrices of an APD study cell, which is all an AUROC cell is checked against."""
-    _write_json(
-        path,
-        {"id_test_accuracies": id_acc.tolist(), "ood_test_accuracies": ood_acc.tolist()},
-    )
-
-
-def _auc_cell(
-    path: Path,
-    id_acc: np.ndarray,
-    ood_acc: np.ndarray,
-    *,
-    id_auroc: np.ndarray | None = None,
-    ood_auroc: np.ndarray | None = None,
-) -> None:
-    """A stored AUROC cell: per (split, replicate) AUROC and balanced accuracy, both arms."""
-    id_auroc = id_acc + 0.05 if id_auroc is None else id_auroc
-    ood_auroc = ood_acc + 0.05 if ood_auroc is None else ood_auroc
-    rows = np.stack([id_auroc, id_acc, ood_auroc, ood_acc, np.ones_like(id_acc)], axis=-1)
-    _write_json(
-        path,
-        {
-            "columns": ["auroc_id", "balacc_id", "auroc_ood", "balacc_ood", "best_c"],
-            "iterations": int(id_acc.shape[1]),
-            "rows": rows.tolist(),
-        },
-    )
-
-
 @pytest.mark.parametrize(
     ("offset", "state"), [(0.0, "current"), (5e-10, "current"), (2e-9, "stale")]
 )
@@ -122,10 +92,10 @@ def test_a_cell_is_current_only_while_it_reproduces_the_current_apd_cell(
     import auc_cells
 
     id_acc, ood_acc = _accuracies(), _accuracies(start=0.8)
-    _apd_cell(tmp_path / "apd" / "camelyon" / "Alpha.json", id_acc, ood_acc)
+    apd_cell(tmp_path / "apd" / "camelyon" / "Alpha.json", id_acc, ood_acc)
     drifted = ood_acc.copy()
     drifted[3, 1] += offset
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Alpha.json", id_acc, drifted)
+    auc_cell(tmp_path / "auc" / "camelyon" / "Alpha.json", id_acc, drifted)
 
     status = auc_cells.cell_status(
         "camelyon", "Alpha", auc_dir=tmp_path / "auc", apd_dir=tmp_path / "apd"
@@ -141,10 +111,10 @@ def test_a_cell_is_missing_until_written_and_stale_when_its_apd_cell_changed_sha
     import auc_cells
 
     id_acc, ood_acc = _accuracies(), _accuracies(start=0.8)
-    _apd_cell(tmp_path / "apd" / "camelyon" / "Alpha.json", id_acc, ood_acc)
-    _apd_cell(tmp_path / "apd" / "camelyon" / "Beta.json", id_acc, ood_acc)
+    apd_cell(tmp_path / "apd" / "camelyon" / "Alpha.json", id_acc, ood_acc)
+    apd_cell(tmp_path / "apd" / "camelyon" / "Beta.json", id_acc, ood_acc)
     # Beta's AUROC cell ran fewer replicates than its APD cell holds now.
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Beta.json", id_acc[:, :2], ood_acc[:, :2])
+    auc_cell(tmp_path / "auc" / "camelyon" / "Beta.json", id_acc[:, :2], ood_acc[:, :2])
 
     def state(model: str) -> str:
         return auc_cells.cell_status(
@@ -170,9 +140,9 @@ def test_the_work_list_is_every_missing_or_stale_cell_slowest_cohort_first(
         ("camelyon", "Stale"),
         ("tolkach", "Missing"),
     ]:
-        _apd_cell(tmp_path / "apd" / dataset / f"{model}.json", id_acc, ood_acc)
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Current.json", id_acc, ood_acc)
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Stale.json", id_acc, ood_acc - 0.01)
+        apd_cell(tmp_path / "apd" / dataset / f"{model}.json", id_acc, ood_acc)
+    auc_cell(tmp_path / "auc" / "camelyon" / "Current.json", id_acc, ood_acc)
+    auc_cell(tmp_path / "auc" / "camelyon" / "Stale.json", id_acc, ood_acc - 0.01)
 
     pending = auc_cells.pending_cells(auc_dir=tmp_path / "auc", apd_dir=tmp_path / "apd")
 
@@ -218,7 +188,7 @@ def test_a_cell_rides_on_the_apd_sweep_and_reproduces_its_apd_cell(
 
     monkeypatch.setattr(apd_experiment, "load_data", lambda model, dataset: _toy_cohort())
     published = apd_experiment.compute("Toy", "pcabiop", iterations=2)
-    _write_json(tmp_path / "apd" / "pcabiop" / "Toy.json", published)
+    write_json(tmp_path / "apd" / "pcabiop" / "Toy.json", published)
 
     outcome = probe_auc_cell.run_cell(
         "pcabiop", "Toy", iterations=2, auc_dir=tmp_path / "auc", apd_dir=tmp_path / "apd"
@@ -244,8 +214,8 @@ def test_a_current_cell_is_skipped_without_running_the_sweep(
     import probe_auc_cell
 
     id_acc, ood_acc = _accuracies(), _accuracies(start=0.8)
-    _apd_cell(tmp_path / "apd" / "camelyon" / "Alpha.json", id_acc, ood_acc)
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Alpha.json", id_acc, ood_acc)
+    apd_cell(tmp_path / "apd" / "camelyon" / "Alpha.json", id_acc, ood_acc)
+    auc_cell(tmp_path / "auc" / "camelyon" / "Alpha.json", id_acc, ood_acc)
     monkeypatch.setattr(
         apd_experiment, "compute", lambda *a, **k: pytest.fail("a current cell was re-run")
     )
@@ -272,10 +242,10 @@ def test_a_stale_cell_is_replaced_and_an_unreproducible_one_is_never_written(
     # "Toy" has a stale AUROC cell (written before its APD cell moved); "Moved" has an APD
     # cell this sweep cannot reproduce -- as when the APD cell was re-run on new embeddings
     # that the AUROC sweep has not been pointed at.
-    _write_json(apd_dir / "pcabiop" / "Toy.json", published)
-    _auc_cell(auc_dir / "pcabiop" / "Toy.json", id_acc - 0.01, ood_acc)
-    _apd_cell(apd_dir / "pcabiop" / "Moved.json", id_acc - 0.01, ood_acc)
-    _auc_cell(auc_dir / "pcabiop" / "Moved.json", id_acc - 0.02, ood_acc)
+    write_json(apd_dir / "pcabiop" / "Toy.json", published)
+    auc_cell(auc_dir / "pcabiop" / "Toy.json", id_acc - 0.01, ood_acc)
+    apd_cell(apd_dir / "pcabiop" / "Moved.json", id_acc - 0.01, ood_acc)
+    auc_cell(auc_dir / "pcabiop" / "Moved.json", id_acc - 0.02, ood_acc)
     before = (auc_dir / "pcabiop" / "Moved.json").read_bytes()
 
     replaced = probe_auc_cell.run_cell(
@@ -356,142 +326,6 @@ def test_the_study_restates_no_protocol_constant(path: Path) -> None:
     }
 
     assert not assigned & PROTOCOL_CONSTANTS
-
-
-def _falling(v: np.ndarray, start: float, floor: float, depth: float, iterations: int = 2):
-    """Matrix whose replicate mean falls linearly from ``start`` by ``depth`` of the way to
-    ``floor`` at V = 1. Its nIPD against chance ``floor`` is ``-depth / 2`` exactly."""
-    means = start - depth * (start - floor) * np.asarray(v)
-    spread = np.linspace(-0.001, 0.001, iterations)
-    return means[:, None] + spread[None, :]
-
-
-def _study_root(root: Path, encoders: dict[str, list[str]], *, metrics: dict | None = None):
-    """A checkout-shaped tree: APD cells, current AUROC cells and each cohort's run.
-
-    The first encoder's balanced accuracy falls all the way to chance in domain and half
-    way out of domain, and its AUROC does the same against 0.5; each later encoder falls a
-    little less. The run's ``metrics.csv`` sits where ``paper_manifest`` says the paper
-    reads it.
-    """
-    import pandas as pd
-    from loaders import DATASETS, metric_csv, training_correlations
-
-    for dataset, models in encoders.items():
-        v = training_correlations(dataset)
-        chance = 1.0 / len(DATASETS[dataset]["biological_classes"])
-        for i, model in enumerate(models):
-            id_depth, ood_depth = 1.0 - 0.1 * i, 0.5 - 0.05 * i
-            id_acc, ood_acc = _falling(v, 0.8, chance, id_depth), _falling(
-                v, 0.7, chance, ood_depth
-            )
-            id_auc, ood_auc = _falling(v, 0.9, 0.5, id_depth), _falling(v, 0.85, 0.5, ood_depth)
-            _apd_cell(root / "output/studies/apd" / dataset / f"{model}.json", id_acc, ood_acc)
-            _auc_cell(
-                root / "output/studies/auc" / dataset / f"{model}.json",
-                id_acc,
-                ood_acc,
-                id_auroc=id_auc,
-                ood_auroc=ood_auc,
-            )
-        run = (metrics or {}).get(dataset) or {
-            model: dict(croma=0.1 * i, ri=0.5 + 0.01 * i, mari=0.5 + 0.02 * i, k=11)
-            for i, model in enumerate(models)
-        }
-        path = root / metric_csv(dataset)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        pd.DataFrame([dict(model=m, **row) for m, row in run.items()]).to_csv(path, index=False)
-    return root
-
-
-def test_the_reduction_scores_each_regime_against_its_own_chance(tmp_path: Path) -> None:
-    # Tolkach-ESCA has six classes: balanced accuracy's chance is 1/6, AUROC's is 0.5
-    # whatever the class count. A linear fall to chance at V = 1 has nIPD -0.5 exactly, so
-    # both nIPDs are -0.5 in domain only if each score is normalised by its own chance.
-    import report
-
-    root = _study_root(tmp_path, {"tolkach": ["Alpha", "DINOv2-B"]})
-
-    reduction = report.reduce(root)
-
-    alpha = reduction[reduction["model"] == "Alpha"].set_index("regime")
-    assert list(reduction[["dataset", "model", "regime"]].itertuples(index=False)) == [
-        ("tolkach", "Alpha", "id"),
-        ("tolkach", "Alpha", "ood"),
-        ("tolkach", "DINOv2-B", "id"),
-        ("tolkach", "DINOv2-B", "ood"),
-    ]
-    assert alpha.loc["id", "nipd_auroc"] == pytest.approx(-0.5)
-    assert alpha.loc["id", "nipd_balacc"] == pytest.approx(-0.5)
-    assert alpha.loc["ood", "nipd_auroc"] == pytest.approx(-0.25)
-    assert alpha.loc["ood", "nipd_balacc"] == pytest.approx(-0.25)
-    # The V = 0 and V = 1 means, and the normalised endpoint g(1) they give.
-    assert alpha.loc["id", ["auroc_v0", "auroc_v1"]].tolist() == pytest.approx([0.9, 0.5])
-    assert alpha.loc["id", ["balacc_v0", "balacc_v1"]].tolist() == pytest.approx([0.8, 1 / 6])
-    assert alpha.loc["ood", ["endpoint_auroc", "endpoint_balacc"]].tolist() == pytest.approx(
-        [-0.5, -0.5]
-    )
-    # The representation metrics come from the run the paper reports, at its operating k.
-    assert alpha.loc["id", ["croma", "ri", "mari", "k"]].tolist() == pytest.approx(
-        [0.0, 0.5, 0.5, 11]
-    )
-    assert reduction.groupby("model")["control"].first().to_dict() == {
-        "Alpha": False,
-        "DINOv2-B": True,
-    }
-
-
-def _remove_cell(root: Path) -> None:
-    (root / "output/studies/auc/camelyon/Beta.json").unlink()
-
-
-def _drift_cell(root: Path) -> None:
-    path = root / "output/studies/auc/camelyon/Beta.json"
-    record = json.loads(path.read_text())
-    record["rows"][0][0][1] += 1e-6  # in-domain balanced accuracy, split 0, replicate 0
-    path.write_text(json.dumps(record))
-
-
-def _drop_run_row(root: Path) -> None:
-    import pandas as pd
-    from loaders import metric_csv
-
-    path = root / metric_csv("camelyon")
-    frame = pd.read_csv(path)
-    frame[frame["model"] != "Beta"].to_csv(path, index=False)
-
-
-def _add_run_row(root: Path) -> None:
-    # The run reports an encoder the downstream study never probed.
-    import pandas as pd
-    from loaders import metric_csv
-
-    path = root / metric_csv("camelyon")
-    frame = pd.read_csv(path)
-    extra = frame.iloc[[0]].assign(model="Mettle")
-    pd.concat([frame, extra]).to_csv(path, index=False)
-
-
-@pytest.mark.parametrize(
-    ("damage", "message"),
-    [
-        (_remove_cell, r"camelyon/Beta \(missing\)"),
-        (_drift_cell, r"camelyon/Beta \(stale\)"),
-        (_drop_run_row, r"camelyon/Beta has an AUROC cell but no row in .*metrics.csv"),
-        (_add_run_row, r"camelyon: .*metrics.csv reports Mettle, which has no APD cell"),
-    ],
-    ids=["missing-cell", "stale-cell", "absent-from-run", "unprobed-run-encoder"],
-)
-def test_the_reduction_never_skips_a_cell(tmp_path: Path, damage, message: str) -> None:
-    # A table built from whatever cells happen to be current would silently change its
-    # panel; every expected cell is reduced, or nothing is.
-    import report
-
-    root = _study_root(tmp_path, {"camelyon": ["Alpha", "Beta", "Gamma"]})
-    damage(root)
-
-    with pytest.raises(ValueError, match=message):
-        report.reduce(root)
 
 
 def _synthetic_reduction(panels: dict[str, int], seed: int = 3):
@@ -592,31 +426,12 @@ def test_the_correlations_are_reproducible_from_their_seed() -> None:
     assert first.equals(second)
 
 
-def test_the_study_writes_the_reduction_and_the_correlations_it_reports(
-    tmp_path: Path,
-) -> None:
-    import pandas as pd
-
-    import report
-
-    root = _study_root(tmp_path, {"camelyon": ["Alpha", "Beta", "Gamma", "Delta", "DINOv2-B"]})
-
-    reduction, corr = report.main(root)
-
-    written = pd.read_csv(root / "output/studies/auc/nipd_auroc.csv")
-    written_corr = pd.read_csv(root / "output/studies/auc/nipd_auroc_correlation.csv")
-    assert len(written) == 5 * 2
-    pd.testing.assert_frame_equal(written, reduction, check_dtype=False)
-    pd.testing.assert_frame_equal(written_corr, corr, check_dtype=False)
-    assert set(corr["n"]) == {4}
-
-
 def _sweep_tree(tmp_path: Path) -> tuple[dict, np.ndarray, np.ndarray]:
     """Three APD cells, one of which already has its current AUROC cell."""
     id_acc, ood_acc = _accuracies(), _accuracies(start=0.8)
     for dataset, model in [("pcabiop", "Gamma"), ("camelyon", "Alpha"), ("camelyon", "Beta")]:
-        _apd_cell(tmp_path / "apd" / dataset / f"{model}.json", id_acc, ood_acc)
-    _auc_cell(tmp_path / "auc" / "camelyon" / "Beta.json", id_acc, ood_acc)
+        apd_cell(tmp_path / "apd" / dataset / f"{model}.json", id_acc, ood_acc)
+    auc_cell(tmp_path / "auc" / "camelyon" / "Beta.json", id_acc, ood_acc)
     return dict(auc_dir=tmp_path / "auc", apd_dir=tmp_path / "apd"), id_acc, ood_acc
 
 
@@ -630,7 +445,7 @@ def test_the_sweep_runs_each_pending_cell_once_and_then_has_nothing_to_do(
 
     def runner(dataset: str, model: str) -> int:
         ran.append((dataset, model))
-        _auc_cell(dirs["auc_dir"] / dataset / f"{model}.json", id_acc, ood_acc)
+        auc_cell(dirs["auc_dir"] / dataset / f"{model}.json", id_acc, ood_acc)
         return 0
 
     assert sweep.run(jobs=1, runner=runner, **dirs) == 0
@@ -650,21 +465,7 @@ def test_the_sweep_fails_until_every_cell_is_current(tmp_path: Path) -> None:
 
     def runner(dataset: str, model: str) -> int:
         if dataset == "pcabiop":
-            _auc_cell(dirs["auc_dir"] / dataset / f"{model}.json", id_acc + 1e-6, ood_acc)
+            auc_cell(dirs["auc_dir"] / dataset / f"{model}.json", id_acc + 1e-6, ood_acc)
         return 0
 
     assert sweep.run(jobs=1, runner=runner, **dirs) == 1
-
-
-def test_the_full_reproduction_runs_the_study_after_the_apd_cells_it_rides_on() -> None:
-    repro = ROOT / "scripts" / "repro"
-    if str(repro) not in sys.path:
-        sys.path.insert(0, str(repro))
-    import reproduce_faithful
-
-    labels = [label for label, _, _ in reproduce_faithful.STUDIES]
-    scripts = {label: script for label, script, _ in reproduce_faithful.STUDIES}
-
-    assert labels.index("apd-sweep") < labels.index("auc-sweep") < labels.index("auc-report")
-    assert scripts["auc-sweep"] == "scripts/studies/auc/sweep.py"
-    assert scripts["auc-report"] == "scripts/studies/auc/report.py"
