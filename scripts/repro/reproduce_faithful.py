@@ -94,9 +94,15 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # After the APD sweep: it reads the per-encoder APD cells and apd.csv for its nIPD
     # columns, beside the benchmark runs' per-sample CRoMa.
     ("finetune-pairs", "scripts/studies/finetune_pairs.py", []),
+    # Per-sample probe predictions, then the per-sample margin study that reads the full-tile
+    # records of the tile cohorts and PCaBiop, then the montage drawn from that study. The
+    # records skip any cell already on disk and valid, so a re-run recomputes only what changed.
+    ("probe-records", "scripts/studies/apd/probe_records.py", []),
+    ("sample-shortcut", "scripts/studies/sample_shortcut.py", []),
+    ("margin-montage", "scripts/repro/figures/margin_montage_figure.py", []),
 ]
-#: The studies that take ``--jobs``: the probe sweeps.
-JOBS_STUDIES = {"apd-sweep", "auc-sweep"}
+#: The studies that take ``--jobs``: the probe sweeps and the per-sample probe records.
+JOBS_STUDIES = {"apd-sweep", "auc-sweep", "probe-records"}
 
 #: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
 PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
@@ -189,8 +195,8 @@ def main() -> int:
                    help="Allow the metrics artifact cache. Fast, but proves only that the "
                         "cached numbers are still on disk -- not that they recompute.")
     p.add_argument("--jobs", type=int, default=1,
-                   help="Parallel worker processes for the APD and AUROC probe sweeps "
-                        "(default 1).")
+                   help="Parallel worker processes for the APD and AUROC probe sweeps and "
+                        "the per-sample probe records (default 1).")
     args = p.parse_args()
 
     entries = list(TABLES)
