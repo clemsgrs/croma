@@ -2,9 +2,9 @@
 
 The table and the ``\\FineTune...`` macros both read the study CSV through :func:`load`, which
 fails when the study was never run, no longer matches the pairs ``model_metadata.csv``
-declares, or was computed from a benchmark run or APD table that has since been redone. A
-missing or stale input therefore fails the paper build instead of silently dropping the
-macros a sentence cites or rendering numbers from superseded runs.
+declares, or was computed from a benchmark run, APD table or APD cell that has since been
+redone. A missing or stale input therefore fails the paper build instead of silently
+dropping the macros a sentence cites or rendering numbers from superseded runs.
 """
 
 from __future__ import annotations
@@ -45,18 +45,24 @@ def load(
 ) -> pd.DataFrame:
     """The study CSV, checked against the pairs the metadata declares and the inputs it read.
 
-    The cohorts' runs and the APD study table resolve under ``root``, through
-    ``paper_manifest`` as it stands now. Every row records the sha256 of the files it was
-    computed from (``study.input_rels``); a file that is gone or hashes differently was
-    redone after the study (an encoder joined, the median k moved), so the ranks, k and
-    differences the paper would render from it are stale.
+    The cohorts' runs, the APD study table and the pair members' APD cells resolve under
+    ``root``, through ``paper_manifest`` as it stands now. Every row records the fingerprint
+    of the files it was computed from (``study.input_rels``); a file that is gone or hashes
+    differently was redone after the study (an encoder joined, the median k moved, an APD
+    re-run rewrote a cell), so the ranks, k, differences and intervals the paper would
+    render from it are stale.
     """
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"missing {path}: {REMEDY}")
-    fingerprints = {c for b in study.BENCHMARKS for c in study.input_rels(b)}
-    frame = pd.read_csv(path, dtype={column: str for column in fingerprints})
     pairs = study.finetune_pairs(study.read_metadata() if metadata is None else metadata)
+    fingerprints = {
+        column
+        for p in pairs
+        for b in study.BENCHMARKS
+        for column in study.input_rels(b, (p.parent, p.finetune))
+    }
+    frame = pd.read_csv(path, dtype={column: str for column in fingerprints})
     expected = [(p.finetune, p.parent, b) for p in pairs for b in study.BENCHMARKS]
     found = list(zip(frame["finetune"], frame["parent"], frame["benchmark"]))
     if found != expected:
@@ -70,27 +76,31 @@ def load(
 
 def _require_current_inputs(frame: pd.DataFrame, path: Path, root: Path) -> None:
     """Fail unless each row's input fingerprints match the files under ``root`` now."""
-    digests: dict[Path, str] = {}
-    for benchmark, rows in frame.groupby("benchmark", sort=False):
-        for column, rel in study.input_rels(benchmark).items():
-            if column not in rows.columns:
+    digests: dict[tuple[Path, ...], str] = {}
+    for _, row in frame.iterrows():
+        where = f"the {row['benchmark']} row of {path} for {row['parent']} -> {row['finetune']}"
+        rels = study.input_rels(row["benchmark"], (row["parent"], row["finetune"]))
+        for column, paths in rels.items():
+            if column not in frame.columns:
                 raise CaptionClaimError(
                     f"{path} records no {column}, so it cannot be checked against the inputs "
                     f"it was computed from: {REMEDY}"
                 )
-            source = root / rel
-            if source not in digests:
-                if not source.is_file():
-                    raise CaptionClaimError(
-                        f"{source} is absent, so the {benchmark} rows of {path} cannot be "
-                        f"checked against it: {REMEDY}"
-                    )
-                digests[source] = study.sha256(source)
-            if set(rows[column]) != {digests[source]}:
+            sources = tuple(root / rel for rel in paths)
+            if sources not in digests:
+                for source in sources:
+                    if not source.is_file():
+                        raise CaptionClaimError(
+                            f"{source} is absent, so {where} cannot be checked against it: "
+                            f"{REMEDY}"
+                        )
+                digests[sources] = study.fingerprint(sources)
+            if row[column] != digests[sources]:
+                named = " and ".join(str(source) for source in sources)
                 raise CaptionClaimError(
-                    f"{source} is not the file the {benchmark} rows of {path} were computed "
-                    f"from: it was redone after the study, so their ranks, k and differences "
-                    f"are stale: {REMEDY}"
+                    f"{named} changed after {where} was computed from "
+                    f"{'it' if len(sources) == 1 else 'them'}: the numbers the paper would "
+                    f"render from that row are stale: {REMEDY}"
                 )
 
 

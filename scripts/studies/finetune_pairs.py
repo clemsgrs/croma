@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +20,12 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[2]
-for _p in (REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" / "repro"):
+for _p in (
+    REPO / "src",
+    REPO / "scripts" / "bench",
+    REPO / "scripts" / "repro",
+    REPO / "scripts" / "studies" / "apd",
+):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -364,27 +370,46 @@ SEED = 12345
 OUT_CSV = REPO / "output" / "studies" / "finetune-pairs" / "finetune_pairs.csv"
 #: The APD study table (``scripts/studies/apd``) the nIPD points must reproduce.
 APD_CSV_REL = "output/studies/apd/apd.csv"
+#: One encoder's APD study cell on one dataset: the probe runs the nIPD intervals resample.
+APD_CELL_REL = "output/studies/apd/{dataset}/{model}.json"
 _PER_SAMPLE_COLUMNS = ["model", "sample_id", "group_id", "label", "confounder", HEADLINE_COL]
 
 
-def input_rels(benchmark: str) -> dict[str, str]:
-    """The repo-relative files a cohort's rows are computed from, by fingerprint column.
+def input_rels(benchmark: str, models: Iterable[str]) -> dict[str, tuple[str, ...]]:
+    """The repo-relative files one row is computed from, by fingerprint column.
 
-    Each row records the sha256 of these files: the cohort's ``metrics.csv`` in the run
-    ``paper_manifest`` names, and the APD study table. A benchmark or APD re-run that keeps
-    the pairs (an encoder joins, the median k moves) changes one of them, and
-    ``scripts/repro/_finetune_pairs.load`` recomputes the fingerprints to refuse the stale
-    study. The per-sample file is not fingerprinted: it is large, and the study already
-    refuses per-sample points that do not reproduce ``metrics.csv``.
+    ``models`` are the row's pair members. Each row records the :func:`fingerprint` of each
+    column's files: the cohort's ``metrics.csv`` in the run ``paper_manifest`` names, the APD
+    study table, and the pair members' APD cells on the cohort, in sorted path order. A
+    benchmark or APD re-run that keeps the pairs (an encoder joins, the median k moves)
+    changes one of them, and ``scripts/repro/_finetune_pairs.load`` recomputes the
+    fingerprints to refuse the stale study. The cells are fingerprinted apart from the table
+    because the APD study writes each cell as it finishes and rewrites ``apd.csv`` only at
+    the end of a completed run: an aborted re-run leaves new cells under the old table, and
+    the paired nIPD intervals resample the cells' runs. The per-sample file is not
+    fingerprinted: it is large, and the study already refuses per-sample points that do not
+    reproduce ``metrics.csv``.
     """
     from paper_manifest import by_benchmark
 
-    return {"metrics_sha256": by_benchmark(benchmark).metrics_rel, "apd_sha256": APD_CSV_REL}
+    dataset = _apd_dataset(benchmark)
+    cells = sorted(APD_CELL_REL.format(dataset=dataset, model=model) for model in models)
+    return {
+        "metrics_sha256": (by_benchmark(benchmark).metrics_rel,),
+        "apd_sha256": (APD_CSV_REL,),
+        "apd_cells_sha256": tuple(cells),
+    }
 
 
-def sha256(path: Path) -> str:
-    """The hex sha256 of a file's bytes."""
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+def fingerprint(paths: Iterable[Path]) -> str:
+    """The hex sha256 of the files' bytes, read in sorted path order.
+
+    A single file's fingerprint is its sha256. A missing file raises ``FileNotFoundError``.
+    """
+    digest = hashlib.sha256()
+    for path in sorted((Path(p) for p in paths), key=str):
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
 
 
 def _apd_dataset(benchmark: str) -> str:
@@ -400,12 +425,12 @@ def _apd_inputs(
     benchmark: str, models: list[str], table_path: Path
 ) -> tuple[dict, pd.DataFrame, dict]:
     """The APD cells, study rows (from ``table_path``) and nIPD settings for one cohort."""
-    from loaders import DATASETS, STUDY_DIR, training_correlations
+    from loaders import DATASETS, training_correlations
 
     dataset = _apd_dataset(benchmark)
     cells = {}
     for model in models:
-        path = STUDY_DIR / dataset / f"{model}.json"
+        path = REPO / APD_CELL_REL.format(dataset=dataset, model=model)
         if path.exists():
             cells[model] = json.loads(path.read_text())
     table = pd.read_csv(table_path, keep_default_na=False, na_values=[])
@@ -420,12 +445,11 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
     """One row per fine-tune x cohort: representation scores, nIPD and per-sample shifts.
 
     Each cohort's run is the one ``paper_manifest`` names, so the study inherits the
-    protocol the paper reports and never names one. Each row ends with the sha256 of the
-    files it was computed from (:func:`input_rels`).
+    protocol the paper reports and never names one. Each row ends with the fingerprints of
+    the files it was computed from (:func:`input_rels`).
     """
     from paper_manifest import by_benchmark
 
-    sys.path.insert(0, str(REPO / "scripts" / "studies" / "apd"))
     pairs = finetune_pairs(read_metadata())
     if not pairs:
         raise ValueError(f"model metadata declares no {FINETUNE_ROLE!r} rows")
@@ -433,9 +457,14 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
     frames = []
     for benchmark in BENCHMARKS:
         entry = by_benchmark(benchmark)
-        inputs = {column: REPO / rel for column, rel in input_rels(benchmark).items()}
-        fingerprints = {column: sha256(path) for column, path in inputs.items()}
-        metrics = pd.read_csv(inputs["metrics_sha256"])
+        # Each input is hashed before it is read, so a file rewritten in between fails
+        # ``load`` rather than passing with numbers from bytes its fingerprint never saw.
+        fingerprints = []
+        for pair in pairs:
+            rels = input_rels(benchmark, (pair.parent, pair.finetune))
+            digests = {c: fingerprint(REPO / rel for rel in paths) for c, paths in rels.items()}
+            fingerprints.append({"finetune": pair.finetune, **digests})
+        metrics = pd.read_csv(REPO / entry.metrics_rel)
         _require_roster(pairs, set(metrics["model"].astype(str)), benchmark)
         per_sample = pd.read_csv(REPO / entry.per_sample_rel, usecols=_PER_SAMPLE_COLUMNS)
         per_sample = per_sample[per_sample["model"].isin(models)]
@@ -449,7 +478,7 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
             seed=seed,
             level=level,
         )
-        cells, apd_rows, settings = _apd_inputs(benchmark, models, inputs["apd_sha256"])
+        cells, apd_rows, settings = _apd_inputs(benchmark, models, REPO / APD_CSV_REL)
         downstream = paired_downstream(
             pairs,
             cells,
@@ -461,7 +490,7 @@ def run(*, n_boot: int = N_BOOT, seed: int = SEED, level: float = LEVEL) -> pd.D
             **settings,
         )
         merged = represent.merge(downstream, on=["benchmark", "finetune"], validate="1:1")
-        frames.append(merged.assign(**fingerprints))
+        frames.append(merged.merge(pd.DataFrame(fingerprints), on="finetune", validate="1:1"))
     order = {p.finetune: i for i, p in enumerate(pairs)}
     out = pd.concat(frames, ignore_index=True)
     out = out.sort_values(

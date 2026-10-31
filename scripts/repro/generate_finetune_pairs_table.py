@@ -4,7 +4,7 @@ One block per pair, one row group per tile cohort: parent -> fine-tune, the diff
 (fine-tune minus parent) and its interval. Every number comes from the study CSV
 (``scripts/studies/finetune_pairs.py``) through ``_finetune_pairs.load``, which fails when the
 study is missing, no longer matches the pairs ``model_metadata.csv`` declares, or predates a
-re-run of the benchmark runs or APD table it read. The caption's disclosure,
+re-run of the benchmark runs, APD table or APD cells it read. The caption's disclosure,
 development-selection and exposure statements are generated from the metadata, so none of
 them can outlive the fact behind it.
 

@@ -6,6 +6,7 @@ distribution; the table and macros the study feeds are tested in
 ``test_finetune_pairs_paper.py``.
 """
 
+import hashlib
 import sys
 from pathlib import Path
 
@@ -370,3 +371,24 @@ class TestPairedDownstream:
         cells = {"Base-A": _cell(FALLS_HALF), "Robust-A": _cell(FALLS_QUARTER)}
 
         assert _downstream(cells, seed=11) == _downstream(cells, seed=11)
+
+
+class TestFingerprint:
+    def test_one_files_fingerprint_is_its_sha256(self, tmp_path):
+        path = tmp_path / "metrics.csv"
+        path.write_bytes(b"model,k\nBase-A,11\n")
+
+        assert study.fingerprint([path]) == hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def test_several_files_are_read_in_sorted_path_order_into_one_sha256(self, tmp_path):
+        mascaret, midnight = tmp_path / "Mascaret.json", tmp_path / "Midnight-12k.json"
+        mascaret.write_bytes(b'{"runs": [1]}\n')
+        midnight.write_bytes(b'{"runs": [2]}\n')
+        expected = hashlib.sha256(mascaret.read_bytes() + midnight.read_bytes()).hexdigest()
+
+        assert study.fingerprint([midnight, mascaret]) == expected
+        assert study.fingerprint([mascaret, midnight]) == expected
+
+    def test_a_missing_file_fails(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            study.fingerprint([tmp_path / "absent.json"])

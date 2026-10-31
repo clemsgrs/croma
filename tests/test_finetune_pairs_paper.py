@@ -9,6 +9,7 @@ in ``test_finetune_pairs_study.py``.
 """
 
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -65,7 +66,13 @@ def _metadata(**overrides) -> pd.DataFrame:
 #: (fine-tune, parent) in the order ``_metadata`` lists the fine-tunes.
 STUDY_PAIRS = [("Robust-B", "Base-B"), ("Robust-A", "Base-A")]
 #: The study columns that record the sha256 of the inputs a row was computed from.
-FINGERPRINT_COLUMNS = ["metrics_sha256", "apd_sha256"]
+FINGERPRINT_COLUMNS = ["metrics_sha256", "apd_sha256", "apd_cells_sha256"]
+#: The APD study's dataset key for each cohort, the directory its per-encoder cells sit in.
+APD_DATASETS = {
+    "pathorob-camelyon": "camelyon",
+    "pathorob-tcga-4x4": "tcga_4x4",
+    "pathorob-tolkach-esca": "tolkach",
+}
 
 
 def _study_row(finetune: str, parent: str, benchmark: str, **overrides) -> dict:
@@ -114,21 +121,18 @@ def _study_row(finetune: str, parent: str, benchmark: str, **overrides) -> dict:
         "delta_nipd_ood_hi": 0.001,
         "metrics_sha256": "0" * 64,
         "apd_sha256": "0" * 64,
+        "apd_cells_sha256": "0" * 64,
     }
     row.update(overrides)
     return row
 
 
-def _study(*, fingerprints=None, **cell_overrides) -> pd.DataFrame:
-    """The study CSV for ``STUDY_PAIRS``; ``cell_overrides[(finetune, benchmark)]`` edits one.
-
-    ``fingerprints[benchmark]`` holds the input fingerprints of that cohort's rows.
-    """
+def _study(**cell_overrides) -> pd.DataFrame:
+    """The study CSV for ``STUDY_PAIRS``; ``cell_overrides["finetune|benchmark"]`` edits one."""
     rows = []
     for finetune, parent in STUDY_PAIRS:
         for benchmark in study.BENCHMARKS:
-            extra = dict((fingerprints or {}).get(benchmark, {}))
-            extra.update(cell_overrides.get(f"{finetune}|{benchmark}", {}))
+            extra = cell_overrides.get(f"{finetune}|{benchmark}", {})
             rows.append(_study_row(finetune, parent, benchmark, **extra))
     return pd.DataFrame(rows)
 
@@ -141,29 +145,51 @@ def _apd_csv(root: Path) -> Path:
     return root / "output" / "studies" / "apd" / "apd.csv"
 
 
-def _write_inputs(root: Path) -> dict[str, dict[str, str]]:
-    """Each cohort's ``metrics.csv`` and the APD study table under ``root``, where
-    ``paper_manifest`` resolves them; returns each cohort's fingerprints."""
+def _apd_cell(root: Path, benchmark: str, model: str) -> Path:
+    """One encoder's APD study cell on a cohort: the probe runs its nIPD intervals resample."""
+    return root / "output" / "studies" / "apd" / APD_DATASETS[benchmark] / f"{model}.json"
 
-    def write(path: Path, text: str) -> str:
+
+def _cell_text(model: str, runs: list[float]) -> str:
+    return json.dumps({"model": model, "id_test_accuracies": [runs]}) + "\n"
+
+
+def _write_inputs(root: Path) -> dict[str, dict[str, str]]:
+    """Each cohort's ``metrics.csv``, the APD study table and every pair member's APD cell
+    under ``root``, where the study resolves them; returns each row's fingerprints, keyed
+    ``"finetune|benchmark"``.
+
+    A row's cell fingerprint is one sha256 over its parent's and fine-tune's cells, read in
+    sorted path order, so a single file's fingerprint is that file's sha256.
+    """
+
+    def write(path: Path, text: str) -> bytes:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
-        return hashlib.sha256(path.read_bytes()).hexdigest()
+        return path.read_bytes()
 
     apd = write(_apd_csv(root), "dataset,model,nipd_id,nipd_ood\ncamelyon,Base-A,-0.1,0.0\n")
-    return {
-        benchmark: {
-            "metrics_sha256": write(_metrics_csv(root, benchmark), f"model,k\n{benchmark},11\n"),
-            "apd_sha256": apd,
-        }
-        for benchmark in study.BENCHMARKS
-    }
+    fingerprints = {}
+    for benchmark in study.BENCHMARKS:
+        metrics = write(_metrics_csv(root, benchmark), f"model,k\n{benchmark},11\n")
+        for finetune, parent in STUDY_PAIRS:
+            cells = {
+                _apd_cell(root, benchmark, m): _cell_text(m, [0.9, 0.8, 0.7])
+                for m in (finetune, parent)
+            }
+            cell_bytes = b"".join(write(p, cells[p]) for p in sorted(cells, key=str))
+            fingerprints[f"{finetune}|{benchmark}"] = {
+                "metrics_sha256": hashlib.sha256(metrics).hexdigest(),
+                "apd_sha256": hashlib.sha256(apd).hexdigest(),
+                "apd_cells_sha256": hashlib.sha256(cell_bytes).hexdigest(),
+            }
+    return fingerprints
 
 
 def _current_study(root: Path) -> Path:
     """A study CSV under ``root`` whose fingerprints match the inputs written beside it."""
     path = root / "finetune_pairs.csv"
-    _study(fingerprints=_write_inputs(root)).to_csv(path, index=False)
+    _study(**_write_inputs(root)).to_csv(path, index=False)
     return path
 
 
@@ -205,6 +231,35 @@ class TestLoad:
         with pytest.raises(CaptionClaimError, match=r"(?s)apd\.csv.*finetune_pairs\.py"):
             basis.load(path, metadata=_metadata(), root=tmp_path)
 
+    def test_an_apd_cell_rewritten_under_an_unchanged_apd_table_fails(self, tmp_path):
+        """The APD study writes each cell as it finishes and rewrites ``apd.csv`` only at the
+        end of a completed run, so an aborted re-run leaves new cells under the old table.
+        Permuting a cell's probe runs keeps every nIPD point but moves the paired interval."""
+        path = _current_study(tmp_path)
+        cell = _apd_cell(tmp_path, "pathorob-tcga-4x4", "Base-A")
+        cell.write_text(_cell_text("Base-A", [0.7, 0.9, 0.8]))
+
+        with pytest.raises(
+            CaptionClaimError, match=r"(?s)tcga_4x4/Base-A\.json.*Robust-A.*finetune_pairs\.py"
+        ):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_a_missing_apd_cell_fails_with_its_remedy(self, tmp_path):
+        path = _current_study(tmp_path)
+        _apd_cell(tmp_path, "pathorob-tolkach-esca", "Robust-B").unlink()
+
+        with pytest.raises(
+            CaptionClaimError, match=r"(?s)tolkach/Robust-B\.json.*absent.*finetune_pairs\.py"
+        ):
+            basis.load(path, metadata=_metadata(), root=tmp_path)
+
+    def test_the_cell_of_an_encoder_outside_the_pairs_is_not_an_input(self, tmp_path):
+        path = _current_study(tmp_path)
+        other = _apd_cell(tmp_path, "pathorob-camelyon", "Teacher")
+        other.write_text(_cell_text("Teacher", [0.5]))
+
+        assert len(basis.load(path, metadata=_metadata(), root=tmp_path)) == 6
+
     def test_a_missing_input_fails_with_its_remedy(self, tmp_path):
         path = _current_study(tmp_path)
         _metrics_csv(tmp_path, "pathorob-camelyon").unlink()
@@ -212,21 +267,28 @@ class TestLoad:
         with pytest.raises(CaptionClaimError, match=r"(?s)metrics\.csv.*finetune_pairs\.py"):
             basis.load(path, metadata=_metadata(), root=tmp_path)
 
-    def test_a_study_that_records_no_input_fingerprints_fails(self, tmp_path):
+    @pytest.mark.parametrize("column", FINGERPRINT_COLUMNS)
+    def test_a_study_that_records_no_input_fingerprints_fails(self, tmp_path, column):
         path = _current_study(tmp_path)
-        pd.read_csv(path).drop(columns=FINGERPRINT_COLUMNS).to_csv(path, index=False)
+        pd.read_csv(path).drop(columns=[column]).to_csv(path, index=False)
 
-        with pytest.raises(CaptionClaimError, match="finetune_pairs.py"):
+        with pytest.raises(CaptionClaimError, match=rf"(?s){column}.*finetune_pairs\.py"):
             basis.load(path, metadata=_metadata(), root=tmp_path)
 
-    def test_the_fingerprinted_inputs_are_the_manifest_run_and_the_apd_table(self):
+    def test_the_fingerprinted_inputs_are_the_run_the_apd_table_and_the_pairs_cells(self):
         """The per-sample file is deliberately not fingerprinted: it is large, and the study
-        already refuses per-sample points that do not reproduce ``metrics.csv``."""
-        for benchmark in study.BENCHMARKS:
-            assert study.input_rels(benchmark) == {
-                "metrics_sha256": by_benchmark(benchmark).metrics_rel,
-                "apd_sha256": "output/studies/apd/apd.csv",
+        already refuses per-sample points that do not reproduce ``metrics.csv``. A row's
+        cells are its two encoders', in sorted path order whatever order the pair is given."""
+        for benchmark, dataset in APD_DATASETS.items():
+            assert study.input_rels(benchmark, ("Midnight-12k", "Mascaret")) == {
+                "metrics_sha256": (by_benchmark(benchmark).metrics_rel,),
+                "apd_sha256": ("output/studies/apd/apd.csv",),
+                "apd_cells_sha256": (
+                    f"output/studies/apd/{dataset}/Mascaret.json",
+                    f"output/studies/apd/{dataset}/Midnight-12k.json",
+                ),
             }
+        assert list(study.input_rels("pathorob-camelyon", ("A", "B"))) == FINGERPRINT_COLUMNS
 
 
 class TestMacros:
