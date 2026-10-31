@@ -917,6 +917,23 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         out.append("% Slide encoders vs mean-pooling of their tile encoders (tab:slide-vs-meanpool)")
         out.extend(svm_lines)
         print(f"{'slide-vs-meanpool':16s}     -> {len(svm_lines)} macros", file=sys.stderr)
+
+    # Cohort-subsampling stability (scripts/studies/subsampling_stability.py). Skipped until
+    # the sweep marks the study complete; once marked, a missing replicate or a full-cohort
+    # run that did not reproduce production fails the build instead of dropping macros.
+    subsampling_rel = "output/studies/subsampling-stability"
+    if (root / subsampling_rel / "complete.json").exists():
+        import _subsampling
+
+        sub_lines = _subsampling.macros(_subsampling.load(root / subsampling_rel))
+        out.append(f"% Cohort-subsampling stability: {subsampling_rel}")
+        out.extend(sub_lines)
+        print(f"{'subsampling':16s}        -> {len(sub_lines)} macros", file=sys.stderr)
+    else:
+        print(
+            f"warning: {subsampling_rel} is not complete, skipping subsampling macros",
+            file=sys.stderr,
+        )
     return "\n".join(out) + "\n"
 
 

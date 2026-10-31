@@ -142,6 +142,14 @@ STUDIES = [
     # by generate_paper_values.py unconditionally, so a missing study must fail this build
     # by name rather than be reported as a skip.
     ("generate_distance_variants_table.py", None, ""),
+    # Reads every replicate of the cohort-subsampling study (tab:subsampling-stability and
+    # fig:subsampling-stability); the marker is written only once all of them are on disk.
+    # The PDF the figure float captions is drawn by figures/subsampling_stability_figure.py.
+    (
+        "generate_subsampling_stability_float.py",
+        "output/studies/subsampling-stability/complete.json",
+        "run (or resume) scripts/studies/subsampling_stability.py sweep",
+    ),
 ]
 
 

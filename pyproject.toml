@@ -178,6 +178,7 @@ exclude = [
   "/tests/test_apd_correlation_table.py",
   "/tests/test_slide_vs_meanpool_paper.py",
   "/tests/fixtures/slide_vs_meanpool_table.tex",
+  "/tests/test_subsampling_stability.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 

@@ -67,8 +67,11 @@ from _slide_vs_meanpool import RENDERED_PAIRS as SLIDE_VS_MEANPOOL_PAIRS  # noqa
 #: generators (``generate_mari_vs_ri_tables.py``, ``generate_finetune_pairs_table.py``) and
 #: the ``generate_paper_values.py`` macros. Invoked bare on purpose: each already defaults to
 #: the settings the paper used (``n_boot=2000`` with a fixed seed; ``--iterations 20``), and
-#: re-declaring those here would be one more list to drift. ``--jobs`` is the exception --
-#: it is a property of the machine, not of the protocol.
+#: re-declaring those here would be one more list to drift. ``--jobs`` and the subsampling
+#: sweep's required ``--scratch-root`` are the exceptions -- properties of the machine, not
+#: of the protocol. That scratch root holds only each driver run's working tree (deleted
+#: once the run is recorded) and the per-task logs; the records go under
+#: ``output/studies/``, so resuming the sweep does not depend on it.
 STUDIES: list[tuple[str, str, list[str]]] = [
     ("pretraining-overlap", "scripts/studies/pretraining_overlap.py", []),
     ("typed-neighbour-ranks", "scripts/repro/figures/typed_neighbor_rank_experiment.py", []),
@@ -121,6 +124,15 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # After the runs (its cosine cells must reproduce them) and the APD study (its nIPD
     # correlations are checked against apd_correlation.csv). Resumable; hours on four workers.
     ("distance-variants", "scripts/studies/distance_variants.py", ["sweep", "--workers", "4"]),
+    # Reads only the benchmark runs above: a 100% reproduction check of each tile cohort's
+    # metrics.csv, then 180 subsampled replicates, about 90 CPU-hours (a day on its default
+    # 4 workers). It resumes rather than overwrites -- finished replicates are kept -- so
+    # move output/studies/subsampling-stability/ aside to recompute it from scratch.
+    (
+        "subsampling-stability",
+        "scripts/studies/subsampling_stability.py",
+        ["sweep", "--scratch-root", "/var/tmp/croma-subsampling-stability"],
+    ),
 ]
 #: The studies that take ``--jobs``: the probe sweeps, the per-sample probe records, and the
 #: slide-vs-meanpool evaluation, which scores its arms' APD cells. Each is always told this
