@@ -328,6 +328,7 @@ class TestMacros:
     def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
         import _mari_vs_ri
         import _panel_macros
+        import _uncertainty
         import generate_paper_values as gpv
         import generate_supp_rank_table
 
@@ -337,6 +338,8 @@ class TestMacros:
         monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
         monkeypatch.setattr(_mari_vs_ri, "macros", lambda study: [])
         monkeypatch.setattr(gpv, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_uncertainty, "load", lambda root: None)
+        monkeypatch.setattr(gpv, "_uncertainty_block", lambda study: [])
         monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
         monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
 
