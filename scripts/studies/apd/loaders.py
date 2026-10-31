@@ -571,7 +571,8 @@ def load_joined(apd_csv):
             m["croma"] = (m["croma"] - 1.0) / (m["croma"] + 1.0)
         frames.append(m)
     faith = pd.concat(frames, ignore_index=True)
-    df = apd.merge(faith[["dataset", "model", *CORR_METRICS, "croma_ltm_alpha"]], on=["dataset", "model"], how="inner")
+    tail = ["croma_ltm_alpha", "croma_f0"]
+    df = apd.merge(faith[["dataset", "model", *CORR_METRICS, *tail]], on=["dataset", "model"], how="inner")
     missing = set(zip(apd["dataset"], apd["model"])) - set(zip(df["dataset"], df["model"]))
     if missing:
         print(f"[warn] {len(missing)} (dataset,model) APD rows had no faithful metric and were dropped: {sorted(missing)}")

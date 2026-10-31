@@ -61,17 +61,21 @@ CORE = [
     # Reads the committed model_metadata.csv, the three tile runs' metrics.csv and the APD
     # join; fails, rather than skips, when any is missing.
     ("generate_exposure_tables.py", None, ""),
+    # Reads each run's studies/bootstrap_uncertainty.* and studies/mari_ri_delta.*, plus
+    # output/studies/bootstrap-uncertainty/ (scripts/studies/bootstrap_uncertainty.py and
+    # mari_ri_delta.py). Core for the same reason: the section is input by supp.tex and its
+    # macros are cited, so a missing study fails the build -- _uncertainty.load raises.
+    ("generate_uncertainty_supp_table.py", None, ""),
+    # Reads output/studies/apd/ (apd_experiment.py, then apd_croma_correlation.py). Core for
+    # the same reason: tab:apd-correlation and the CIs of the headline rho(CRoMa, nIPD_ID) are
+    # cited, so a missing or pre-inference correlation CSV fails the build.
+    ("generate_apd_floats.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that
 #: has not been run leaves no artifact, and its table cannot be rebuilt. These skips are
 #: reported by name -- a silent skip is how a cited macro once vanished from the paper.
 STUDIES = [
-    (
-        "generate_uncertainty_supp_table.py",
-        f"{_CAMELYON.run_rel}/results/bootstrap_uncertainty.json",
-        "run scripts/studies/bootstrap_uncertainty.py",
-    ),
     # Reads the live Camelyon run plus the two neighbourhood studies written beside it; the
     # contested-fraction summary stands in for both (they are run together). The macros the
     # text quotes from this table are emitted by generate_paper_values.py, which fails when
@@ -91,11 +95,6 @@ STUDIES = [
     # deliberately not built: the manuscript retired that float in favour of the rank-aggregate
     # Pareto (fig:croma-pareto-rank), and nothing in the reachable tree references it. The
     # generator is kept for its caption-provenance unit tests but produces no paper artifact.
-    (
-        "generate_apd_floats.py",
-        "output/studies/apd/apd_correlation.csv",
-        "run scripts/studies/apd/apd_experiment.py, then apd_croma_correlation.py",
-    ),
     # Reads the three per-cohort studies under output/studies/sample-shortcut/ (PCaBiop, the
     # last one the study writes, stands in for all three), each verified against the sha256
     # of every input it recorded. The macros the text quotes are emitted by

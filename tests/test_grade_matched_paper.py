@@ -300,6 +300,7 @@ class TestMacros:
         import _mari_vs_ri
         import _overlap
         import _panel_macros
+        import _uncertainty
         import generate_paper_values as gpv
         import generate_sample_shortcut_floats
         import generate_supp_rank_table
@@ -316,6 +317,9 @@ class TestMacros:
         monkeypatch.setattr(generate_sample_shortcut_floats, "macros", lambda root: [])
         monkeypatch.setattr(_exposure, "build", lambda root: SimpleNamespace(macros=[]))
         monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
+        monkeypatch.setattr(_uncertainty, "load", lambda root: None)
+        monkeypatch.setattr(gpv, "_uncertainty_block", lambda study: [])
+        monkeypatch.setattr(gpv, "_apd_block", lambda root: [])
 
         with pytest.raises(FileNotFoundError, match="grade_matched_pools.py"):
             gpv.build([], tmp_path, "auto")

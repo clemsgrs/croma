@@ -162,12 +162,24 @@ def _fmt(value: float, decimals: int, percent: bool, bold: bool, signed: bool = 
 
 
 def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
-    """Per-model (lo, hi) CRoMa CI from the sibling bootstrap_uncertainty.csv, if any."""
-    ci_path = metrics_csv.parent / "bootstrap_uncertainty.csv"
+    """Per-model (lo, hi) median-CRoMa CI from the run's studies/bootstrap_uncertainty.csv."""
+    ci_path = metrics_csv.parent.parent / "studies" / "bootstrap_uncertainty.csv"
     if not ci_path.exists():
         return None
     ci = published_models(pd.read_csv(ci_path)).set_index("model")
-    return {m: (float(r["croma_lo"]), float(r["croma_hi"])) for m, r in ci.iterrows()}
+    return {m: (float(r["median_lo"]), float(r["median_hi"])) for m, r in ci.iterrows()}
+
+
+def uncertainty_clause(entry: ResultsTable) -> str:
+    """Point the caption at the benchmark's per-encoder bootstrap table, where one exists."""
+    import _uncertainty
+
+    if entry.prefix not in _uncertainty.PREFIXES:
+        return ""
+    return (
+        r" Bootstrap intervals for each encoder's median, $F(0)$, $\mcode{LTM}_{10}$ and rank "
+        rf"are given in Supplementary Table~\ref{{{_uncertainty.table_label(entry.prefix)}}}."
+    )
 
 
 def _load_frac_neg(metrics_csv: Path, headline_m: int) -> dict[str, float]:
@@ -326,12 +338,12 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
             rf"(confounder: {confounder})."
         )
     ci = (
-        r" \code{CRoMa} brackets are 95\% group-level cluster-bootstrap confidence intervals on "
-        r"the pooled median (Supplementary Table~\ref{tab:bootstrap-uncertainty})."
+        r" \code{CRoMa} brackets are 95\% stratified cluster-bootstrap confidence intervals on "
+        r"the median."
         if with_ci
         else ""
     )
-    return (head + cols + _dagger_clause(entry, exposed) + ci).strip()
+    return (head + cols + _dagger_clause(entry, exposed) + ci + uncertainty_clause(entry)).strip()
 
 
 # --------------------------------------------------------------------------------------
@@ -346,8 +358,9 @@ def build_table(entry: ResultsTable, metrics_csv: Path) -> str:
     croma_ci = _load_croma_ci(metrics_csv) if entry.with_ci else None
     if entry.with_ci and croma_ci is None:
         raise FileNotFoundError(
-            f"{entry.prefix}: with_ci is set but {metrics_csv.parent}/bootstrap_uncertainty.csv "
-            "is absent. Run scripts/studies/bootstrap_uncertainty.py, or clear with_ci."
+            f"{entry.prefix}: with_ci is set but {metrics_csv.parent.parent}/studies/"
+            "bootstrap_uncertainty.csv is absent. Run scripts/studies/bootstrap_uncertainty.py, "
+            "or clear with_ci."
         )
     best = {
         col: (ranked[col].min() if col in MINIMIZE else ranked[col].max())
