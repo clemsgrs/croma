@@ -9,8 +9,8 @@ study (it belongs to the production roster, and so to the shared k) but is dropp
 the load, so no measure can rank it.
 
 A study is read whole or not at all: a missing replicate, or a full-cohort run whose
-reproduction check did not pass, raises :class:`IncompleteStudyError`. Nothing warns and
-skips.
+reproduction check did not pass under its cohort's tolerance, raises
+:class:`IncompleteStudyError`. Nothing warns and skips.
 
 Measures (all on the ranked encoders; "Kendall's tau_K" throughout, so it is never read as
 the MaRI temperature tau):
@@ -78,6 +78,9 @@ class Study:
     #: One row per (cohort, fraction, replicate): the replicate's ``replicate.json``.
     meta: pd.DataFrame
     design: dict
+    #: One row per cohort: how its full-cohort run reproduced production -- ``identical``
+    #: (exact, as text), the cohort's ``tolerance`` and the largest deviation it recorded.
+    reproduction: pd.DataFrame
 
 
 def _records(root: Path, design: dict):
@@ -109,7 +112,7 @@ def load(root: Path | None = None, *, expected: dict | None = None) -> Study:
         )
 
     missing: list[str] = []
-    frames, metas = [], []
+    frames, metas, reproductions = [], [], []
     for cohort, fraction, replicate in _records(root, design):
         where = study.replicate_dir(root, cohort, fraction, replicate)
         needed = [where / study.SCORES, where / study.REPLICATE_META]
@@ -121,9 +124,18 @@ def load(root: Path | None = None, *, expected: dict | None = None) -> Study:
             continue
         if fraction == study.FULL:
             report = json.loads((where / study.REPRODUCTION).read_text(encoding="utf-8"))
-            if report.get("identical") is not True:
+            if not study.reproduction_passed(report, cohort):
                 missing.append(f"{where.relative_to(root)}: reproduction did not pass")
                 continue
+            identical = report.get("identical") is True
+            reproductions.append(
+                {
+                    "cohort": cohort,
+                    "identical": identical,
+                    "tolerance": study.reproduction_tolerance(cohort),
+                    "max_deviation": 0.0 if identical else float(report["max_deviation"]),
+                }
+            )
         meta = json.loads((where / study.REPLICATE_META).read_text(encoding="utf-8"))
         if CONTROL_MODEL not in meta["roster"]:
             raise IncompleteStudyError(
@@ -150,7 +162,12 @@ def load(root: Path | None = None, *, expected: dict | None = None) -> Study:
     for cohort, per_cohort in rosters.groupby(level="cohort"):
         if per_cohort.nunique() != 1:
             raise IncompleteStudyError(f"{cohort}: the replicates ranked different encoders")
-    return Study(scores=scores, meta=pd.DataFrame(metas), design=design)
+    return Study(
+        scores=scores,
+        meta=pd.DataFrame(metas),
+        design=design,
+        reproduction=pd.DataFrame(reproductions),
+    )
 
 
 # --------------------------------------------------------------------------- measures
@@ -301,9 +318,12 @@ def macros(data: Study) -> list[str]:
     ``\<P>SubsampleHalfCromaMinus{Ri,Mari}`` -- the paired difference's median at 50%, with
     ``...Range`` (its 2.5-97.5 percentile range) and ``...Higher`` (replicates where CRoMa's
     tau_K is higher); ``\<P>SubsampleQuarterSharedKRange`` -- the re-selected shared k's range
-    at 25%. ``\SubsampleNReplicates`` is the replicate count those counts are out of.
+    at 25%; ``\<P>SubsampleReproductionTolerance`` and ``...MaxDeviation`` -- the absolute
+    tolerance the full-cohort run was checked against (0: exactly) and the largest deviation
+    from production it recorded. ``\SubsampleNReplicates`` is the replicate count those
+    counts are out of.
     """
-    from _paper_tables import bare_num, num_math
+    from _paper_tables import bare_num, num_math, sci_math
     from paper_manifest import by_benchmark
 
     ranking = ranking_summary(data)
@@ -343,6 +363,12 @@ def macros(data: Study) -> list[str]:
             rf"\newcommand{{\{p}Subsample{MACRO_FRACTION[quarter]}SharedKRange}}"
             rf"{{${int(row['shared_k_min'])}$--${int(row['shared_k_max'])}$}}"
         )
+        row = pick(data.reproduction, cohort=cohort)
+        lines += [
+            rf"\newcommand{{\{p}SubsampleReproductionTolerance}}{{{sci_math(row['tolerance'])}}}",
+            rf"\newcommand{{\{p}SubsampleReproductionMaxDeviation}}"
+            rf"{{{sci_math(row['max_deviation'])}}}",
+        ]
     return lines
 
 

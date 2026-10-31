@@ -9,8 +9,9 @@ production, fails the build rather than shrinking the table -- and writes
 
 The figure's PDF is drawn separately, by ``figures/subsampling_stability_figure.py``, into the
 study's own ``plots/`` directory. Every number comes from the study's records, and every
-caption is a function of the design alone, so a re-run with the same seed rebuilds both files
-byte for byte, and no caption sentence depends on how the results came out.
+caption is a function of the design and of how each full-cohort run reproduced production
+alone, so a re-run with the same seed rebuilds both files byte for byte, and no caption
+sentence depends on how the results came out.
 
 Run: python scripts/repro/generate_subsampling_stability_float.py
 """
@@ -28,7 +29,7 @@ for _p in (REPO / "src", HERE):
         sys.path.insert(0, str(_p))
 
 import _subsampling as S  # noqa: E402
-from _paper_tables import num_math, pct_round, scriptsize_ci  # noqa: E402
+from _paper_tables import num_math, pct_round, sci_math, scriptsize_ci  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 
 OUT_DIR = Path("paper/sections/supp")
@@ -92,6 +93,34 @@ def _k_grid_clause(data: S.Study) -> str:
     return (
         f"The sparse $k$ grid (largest $k={grid_max}$) stays below every subsample's "
         f"usable-neighbour count, so no fraction caps it."
+    )
+
+
+def _join(items: list[str], last: str = " and ") -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + last + items[-1]
+
+
+def _reproduction_clause(data: S.Study) -> str:
+    """One sentence, from the reproduction records: which cohorts' full-cohort runs reproduce
+    production exactly, and which only within their tolerance, with the largest deviation."""
+    record = data.reproduction.set_index("cohort")
+    cohorts = data.design["cohorts"]
+    within = [c for c in cohorts if not record.loc[c, "identical"]]
+    if not within:
+        return "The full-cohort run reproduces every published score exactly."
+    exact = [_cohort(c) for c in cohorts if c not in within]
+    clauses = [f"exactly on {_join(exact)}"] if exact else []
+    clauses += [
+        f"on {_cohort(c)} only within an absolute tolerance of "
+        f"{sci_math(record.loc[c, 'tolerance'])} (largest deviation "
+        f"{sci_math(record.loc[c, 'max_deviation'])})"
+        for c in within
+    ]
+    # Every published run used two BLAS kernels across encoders; these mixed them within one.
+    its = "its published run" if len(within) == 1 else "their published runs"
+    return (
+        f"The full-cohort run reproduces the published scores {_join(clauses, ', and ')}, "
+        f"because {its} mixed two BLAS kernels within an encoder's scores."
     )
 
 
@@ -197,7 +226,8 @@ def _table_caption(data: S.Study) -> str:
         r"\code{CRoMa}'s is higher. Shared $k$ is the range of the re-selected shared $k$ "
         r"over replicates. \code{RI} support is the median over encoders and replicates of "
         r"the share of anchors with a defined \code{RI}, with the full-cohort value in "
-        f"parentheses. {_k_grid_clause(data)} The natural-image control is computed but "
+        f"parentheses. {_k_grid_clause(data)} {_reproduction_clause(data)} "
+        r"The natural-image control is computed but "
         r"excluded from every ranking and summary."
     )
 

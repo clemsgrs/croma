@@ -39,10 +39,11 @@ manifest; nothing is reimplemented. It is scored under two protocols:
 CRoMa does not depend on k, so both protocols score it identically from one shared cache.
 
 The 100% "subsample" is the production manifest itself, and both protocols must reproduce
-the production ``metrics.csv`` exactly -- every stored value, as text -- before any
-subsampled replicate of that cohort is run. The published runs were computed under two
-OpenBLAS GEMM kernels (see ``CANDIDATE_KERNELS``); the check recovers which one each encoder
-used, and every replicate of the cohort reuses it.
+the production ``metrics.csv`` before any subsampled replicate of that cohort is run:
+exactly -- every stored value, as text -- on Camelyon and TCGA-4x4, and within a documented
+absolute tolerance on Tolkach-ESCA (``REPRODUCTION_TOLERANCE``). The published runs were
+computed under two OpenBLAS GEMM kernels (see ``CANDIDATE_KERNELS``); the check recovers
+which one each encoder used, and every replicate of the cohort reuses it.
 
 Outputs go under ``output/studies/subsampling-stability/``; nothing here writes into a
 production ``output/metrics/`` run. The control is computed (it belongs to the production
@@ -64,6 +65,7 @@ import zlib
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -285,6 +287,25 @@ K_STAR = "k_star.json"
 CANDIDATE_KERNELS = ("Cooperlake", "SkylakeX")
 #: Run in this process, on whatever kernel it already has (the tests, and single-kernel use).
 IN_PROCESS = ""
+
+#: Absolute tolerance of each cohort's 100% reproduction check, and the only place it is set.
+#: 0 is exact: every stored value equal as text. Camelyon and TCGA-4x4 are checked exactly,
+#: because each of their encoders reproduces its published row exactly under one kernel.
+#:
+#: Tolkach-ESCA's published run was computed under two BLAS kernels, and they are mixed
+#: within an encoder's row, not only across encoders. The driver caches each artifact on its
+#: own, with no kernel in the cache key, and the run's CRoMa entries outlived a change of its
+#: shared k from 61 to 71. So Mettle's RI, MaRI and tau reproduce only under Cooperlake and
+#: its CRoMa only under SkylakeX, and UNI2-h's CRoMa LTM10 is 1.5e-11 from its SkylakeX value
+#: and equal to neither. No single kernel reproduces either row. Across both kernels, the
+#: largest deviation of a re-run from those rows is 1.8e-5 (Mettle's RI LTM10 under
+#: SkylakeX). 1e-4 clears that more than five-fold and stays below the finest precision any
+#: score is reported at (three decimals). The published numbers are not changed.
+REPRODUCTION_TOLERANCE: dict[str, float] = {
+    "pathorob-camelyon": 0.0,
+    "pathorob-tcga-4x4": 0.0,
+    "pathorob-tolkach-esca": 1e-4,
+}
 
 SINGLE_THREAD = {"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
 
@@ -644,81 +665,158 @@ def _as_written(path: Path) -> pd.DataFrame:
     return pd.read_csv(path, dtype=str, keep_default_na=False)
 
 
-def _differing_columns(new: pd.DataFrame, published: pd.DataFrame) -> list[str]:
-    """Columns whose values differ at all. A ``*_path`` column names where an artifact
-    lives, so it is compared by file name: the re-run writes under its scratch tree."""
+def _number(text: str) -> float:
+    """A stored value as a float (correctly rounded), or NaN if it is not a number."""
+    try:
+        return float(text)
+    except ValueError:
+        return float("nan")
+
+
+def _compare(new: pd.DataFrame, published: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Cell by cell: whether the stored text is equal, and the absolute deviation.
+
+    The deviation is 0 where the text is equal, the numeric distance where both values are
+    numbers, and infinity where they are not. A ``*_path`` column names where an artifact
+    lives, so it is compared by file name: the re-run writes under its scratch tree. The
+    frames must have the same columns and rows.
+    """
+    new, published = new.reset_index(drop=True), published.reset_index(drop=True)
+    same, deviation = {}, {}
+    for column in published.columns:
+        left, right = new[column], published[column]
+        if column.endswith("_path"):
+            left = left.map(lambda p: Path(str(p)).name)
+            right = right.map(lambda p: Path(str(p)).name)
+        equal = left == right
+        distance = (left.map(_number) - right.map(_number)).abs()
+        same[column] = equal
+        deviation[column] = distance.where(~equal, 0.0).fillna(np.inf)
+    return pd.DataFrame(same), pd.DataFrame(deviation)
+
+
+def _differing_columns(
+    new: pd.DataFrame, published: pd.DataFrame, tolerance: float = 0.0
+) -> list[str]:
+    """Columns with a value outside ``tolerance``. At 0 a value must be equal as text; above
+    0 a number may be off by at most ``tolerance``, and any other value must still be equal."""
     if list(new.columns) != list(published.columns):
         return ["<columns>"]
     if len(new) != len(published):
         return ["<rows>"]
-    new, published = new.reset_index(drop=True), published.reset_index(drop=True)
-    differing = []
-    for column in published.columns:
-        if column.endswith("_path"):
-            left = new[column].map(lambda p: Path(str(p)).name)
-            right = published[column].map(lambda p: Path(str(p)).name)
-        else:
-            left, right = new[column], published[column]
-        if not left.equals(right):
-            differing.append(column)
-    return differing
+    same, deviation = _compare(new, published)
+    within = same if tolerance <= 0 else same | (deviation <= tolerance)
+    return [column for column in published.columns if not within[column].all()]
+
+
+def _max_deviation(new: pd.DataFrame, published: pd.DataFrame) -> pd.Series:
+    """Each row's largest absolute deviation over every compared column."""
+    return _compare(new, published)[1].max(axis=1)
+
+
+class Assignment(NamedTuple):
+    """The kernel a model is re-run under, and how far its trial row is from the published one."""
+
+    kernel: str
+    #: The largest absolute deviation over the compared columns; 0 when it is exact.
+    max_deviation: float
+
+
+def reproduction_tolerance(cohort: str) -> float:
+    """``cohort``'s absolute reproduction tolerance (``REPRODUCTION_TOLERANCE``)."""
+    return float(REPRODUCTION_TOLERANCE[cohort])
 
 
 def assign_kernels(
-    trials: dict[str, dict[str, pd.DataFrame]], published: pd.DataFrame
-) -> dict[str, str]:
-    """Each model's kernel: the first candidate under which its fixed-k row reproduces the
-    published row exactly. A model no candidate reproduces fails the check.
+    trials: dict[str, dict[str, pd.DataFrame]],
+    published: pd.DataFrame,
+    *,
+    tolerance: float = 0.0,
+) -> dict[str, Assignment]:
+    """Each model's kernel: the candidate whose fixed-k row reproduces the published row
+    within ``tolerance`` and deviates least from it, the first such candidate on a tie.
+    A model no candidate reproduces fails the check.
+
+    At tolerance 0 every reproducing candidate deviates by 0, so this is the first
+    candidate that reproduces the row exactly.
 
     Only the fixed-k rows sit at the published operating point. A trial runs the whole
     roster under one kernel, so its re-selected shared k is the median of single-kernel k*,
     not the published mixed-kernel one; at equal k its re-selected rows are the fixed-k rows.
     The record run under the assignment is then checked end to end, on both protocols.
     """
-    assignment: dict[str, str] = {}
+    assignment: dict[str, Assignment] = {}
     unmatched: list[str] = []
     for model in published["model"]:
         row = published[published["model"] == model]
+        within: dict[str, float] = {}
         for kernel, frames in trials.items():
             fixed = frames[FIXED_K]
-            if not _differing_columns(fixed[fixed["model"] == model], row):
-                assignment[str(model)] = kernel
-                break
+            fixed = fixed[fixed["model"] == model]
+            if not _differing_columns(fixed, row, tolerance):
+                within[kernel] = float(_max_deviation(fixed, row).iloc[0])
+        if within:
+            kernel = min(within, key=within.__getitem__)  # the first of equals
+            assignment[str(model)] = Assignment(kernel, within[kernel])
         else:
             unmatched.append(str(model))
     if unmatched:
         raise ReproductionError(
             f"{unmatched} reproduce their published row under none of {list(trials)}"
+            + (f" within {tolerance:g}" if tolerance > 0 else "")
         )
     return assignment
 
 
 def check_reproduction(run: ProductionRun, out_dir: Path) -> dict:
-    """Assert both protocols of the 100% record equal the production ``metrics.csv``.
+    """Assert both protocols of the 100% record reproduce the production ``metrics.csv``.
 
-    Every value must match exactly -- there is no tolerance. A pass is recorded as
-    ``reproduction.json`` beside the record; no subsampled replicate of the cohort runs
-    without one.
+    Every value must match within the cohort's ``REPRODUCTION_TOLERANCE`` -- exactly, as
+    text, where that is 0. A pass is recorded as ``reproduction.json`` beside the record,
+    with each model's kernel and its largest deviation over both protocols; no subsampled
+    replicate of the cohort runs without one.
     """
+    tolerance = reproduction_tolerance(run.benchmark)
     report: dict = {"benchmark": run.benchmark, "variants": {}}
     published = _as_written(run.results_dir / "metrics.csv")
+    records = {v: _as_written(Path(out_dir) / v / "metrics.csv") for v in VARIANTS}
     failures = []
-    for variant in VARIANTS:
-        new = _as_written(Path(out_dir) / variant / "metrics.csv")
-        differing = _differing_columns(new, published)
+    for variant, new in records.items():
+        differing = _differing_columns(new, published, tolerance)
         report["variants"][variant] = {"differing_columns": differing}
         if differing:
             failures.append(f"{variant}: {differing}")
     if failures:
         raise ReproductionError(
             f"{run.benchmark}: the 100% subsample does not reproduce "
-            f"{run.results_dir / 'metrics.csv'} -- " + "; ".join(failures)
+            f"{run.results_dir / 'metrics.csv'}"
+            + (f" within {tolerance:g}" if tolerance > 0 else "")
+            + " -- "
+            + "; ".join(failures)
         )
-    report["identical"] = True
+    deviation = pd.concat([_max_deviation(new, published) for new in records.values()], axis=1)
+    by_model = {str(m): float(d) for m, d in zip(published["model"], deviation.max(axis=1))}
+    report["identical"] = all(not _differing_columns(n, published) for n in records.values())
+    report["tolerance"] = tolerance
+    report["max_deviation"] = max(by_model.values())
     report["columns_compared"] = list(published.columns)
     report["kernel_by_model"] = read_replicate(out_dir)["kernel_by_model"]
+    report["max_deviation_by_model"] = by_model
     _atomic_write(Path(out_dir) / REPRODUCTION, json.dumps(report, indent=2) + "\n")
     return report
+
+
+def reproduction_passed(report: dict, cohort: str) -> bool:
+    """Whether a ``reproduction.json`` is a pass under ``cohort``'s tolerance as it stands.
+
+    An identical record passes under any tolerance; any other must record a largest
+    deviation within it, so tightening a tolerance invalidates the records it no longer
+    covers.
+    """
+    if report.get("identical") is True:
+        return True
+    deviation = report.get("max_deviation")
+    return deviation is not None and float(deviation) <= reproduction_tolerance(cohort)
 
 
 def reproduce(
@@ -732,9 +830,9 @@ def reproduce(
     """The 100% record, and the proof that it is the production run.
 
     With several candidate kernels, the full cohort is first run under each
-    (``out_dir/kernel-trials/<kernel>/``), every encoder is assigned the kernel that
-    reproduces its published row, and the record itself is then run under that assignment
-    and checked end to end.
+    (``out_dir/kernel-trials/<kernel>/``; a finished trial is reused), every encoder is
+    assigned the kernel that reproduces its published row within the cohort's tolerance,
+    and the record itself is then run under that assignment and checked end to end.
     """
     out_dir = Path(out_dir)
     if len(candidates) == 1:
@@ -753,7 +851,9 @@ def reproduce(
                     kernels={m: kernel for m in run.roster},
                 )
             trials[kernel] = {v: _as_written(where / v / "metrics.csv") for v in VARIANTS}
-        kernels = assign_kernels(trials, published)
+        tolerance = reproduction_tolerance(run.benchmark)
+        assignment = assign_kernels(trials, published, tolerance=tolerance)
+        kernels = {m: a.kernel for m, a in assignment.items()}
     run_replicate(run, manifest, out_dir=out_dir, scratch=scratch, kernels=kernels)
     return check_reproduction(run, out_dir)
 
@@ -763,7 +863,7 @@ def reproduced(root: Path, cohort: str) -> bool:
     path = replicate_dir(root, cohort, FULL, 0) / REPRODUCTION
     if not path.exists():
         return False
-    return json.loads(path.read_text(encoding="utf-8")).get("identical") is True
+    return reproduction_passed(json.loads(path.read_text(encoding="utf-8")), cohort)
 
 
 # --------------------------------------------------------------------------- the sweep

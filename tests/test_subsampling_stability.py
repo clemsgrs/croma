@@ -9,6 +9,7 @@ encoder and metric, and that the 100% "subsample" is the production run.
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -184,6 +185,25 @@ def _text_metrics(mari: dict[str, str]) -> pd.DataFrame:
     )
 
 
+def _family_metrics(rows: dict[str, tuple[str, str]]) -> pd.DataFrame:
+    """A ``metrics.csv`` as stored text with two column families: ``{model: (ri, croma)}``."""
+    return pd.DataFrame(
+        {
+            "model": list(rows),
+            "ri": [ri for ri, _ in rows.values()],
+            "croma": [croma for _, croma in rows.values()],
+            "embedding_path": [f"/somewhere/{m}.npy" for m in rows],
+        }
+    )
+
+
+def _kernels(assignment: dict) -> dict[str, str]:
+    return {model: assigned.kernel for model, assigned in assignment.items()}
+
+
+TOLKACH = "pathorob-tolkach-esca"
+
+
 class TestReplicates:
     def test_the_production_run_is_read_from_its_own_sidecar_and_metrics(self, toy_production):
         run = study.production_run(TOY_COHORT)
@@ -205,6 +225,8 @@ class TestReplicates:
         assert report["identical"] is True
         assert set(report["variants"]) == {"reselected", "fixed-k"}
         assert report["kernel_by_model"] == {m: "" for m in TOY_MODELS}
+        assert report["tolerance"] == 0.0
+        assert report["max_deviation_by_model"] == {m: 0.0 for m in TOY_MODELS}
         assert study.reproduced(out.parent, TOY_COHORT) is False  # not a study tree
         assert (out / study.REPRODUCTION).exists()
 
@@ -231,7 +253,7 @@ class TestReplicates:
                 v: _text_metrics({"A": "0.2500000000000001", "B": "0.5"}) for v in study.VARIANTS
             },
         }
-        assert study.assign_kernels(candidates, published) == {
+        assert _kernels(study.assign_kernels(candidates, published)) == {
             "A": "Cooperlake",
             "B": "SkylakeX",
         }
@@ -242,7 +264,7 @@ class TestReplicates:
             k: {v: _text_metrics({"A": "0.25"}) for v in study.VARIANTS}
             for k in ("SkylakeX", "Cooperlake")
         }
-        assert study.assign_kernels(candidates, published) == {"A": "SkylakeX"}
+        assert study.assign_kernels(candidates, published) == {"A": ("SkylakeX", 0.0)}
 
     def test_a_model_only_one_variant_reproduces_under_a_kernel_is_not_assigned_it(
         self,
@@ -262,10 +284,93 @@ class TestReplicates:
         exact = _text_metrics({"A": "0.25", "B": "0.5"})
         elsewhere = _text_metrics({"A": "0.3", "B": "0.6"})
         candidates = {"Cooperlake": {study.RESELECTED: elsewhere, study.FIXED_K: exact}}
-        assert study.assign_kernels(candidates, published) == {
+        assert _kernels(study.assign_kernels(candidates, published)) == {
             "A": "Cooperlake",
             "B": "Cooperlake",
         }
+
+    def test_only_tolkach_esca_is_checked_within_a_tolerance(self):
+        assert set(study.REPRODUCTION_TOLERANCE) == set(study.COHORTS)
+        assert {c for c, t in study.REPRODUCTION_TOLERANCE.items() if t > 0} == {TOLKACH}
+
+    def test_a_row_split_across_kernels_by_column_family_is_assigned_within_the_tolerance(
+        self,
+    ):
+        # RI from one kernel and CRoMa from the other, as the published Tolkach-ESCA run
+        # assembled Mettle's row: no kernel reproduces it exactly. The kernel that deviates
+        # least wins, though it is listed second.
+        published = _family_metrics({"M": ("0.5", "0.25")})
+        candidates = {
+            "Cooperlake": {v: _family_metrics({"M": ("0.50002", "0.25")}) for v in study.VARIANTS},
+            "SkylakeX": {v: _family_metrics({"M": ("0.5", "0.25000003")}) for v in study.VARIANTS},
+        }
+        tolerance = study.reproduction_tolerance(TOLKACH)
+        assignment = study.assign_kernels(candidates, published, tolerance=tolerance)
+        assert assignment == {"M": ("SkylakeX", abs(0.25000003 - 0.25))}
+        assert assignment["M"].max_deviation == abs(0.25000003 - 0.25)
+        # Checked exactly, as on Camelyon and TCGA-4x4, the same row reproduces under neither.
+        with pytest.raises(study.ReproductionError, match=r"\['M'\]"):
+            study.assign_kernels(candidates, published)
+
+    def test_a_row_no_kernel_reproduces_within_the_tolerance_still_raises(self):
+        published = _family_metrics({m: ("0.5", "0.25") for m in ("M", "N", "P")})
+        candidates = {}
+        for kernel, ri in (("Cooperlake", "0.501"), ("SkylakeX", "0.4998")):
+            # N is off by more than the tolerance under both kernels; P's numbers match, but
+            # a value that is not a number must still match exactly.
+            trial = _family_metrics({"M": ("0.5", "0.25"), "N": (ri, "0.25"), "P": ("0.5", "0.25")})
+            trial.loc[2, "embedding_path"] = "/somewhere/other.npy"
+            candidates[kernel] = {v: trial for v in study.VARIANTS}
+        with pytest.raises(study.ReproductionError, match=r"\['N', 'P'\] .* within 0\.0001"):
+            study.assign_kernels(
+                candidates, published, tolerance=study.reproduction_tolerance(TOLKACH)
+            )
+
+    def test_a_reproduction_passes_only_within_its_cohort_s_tolerance(self):
+        within = {"identical": False, "max_deviation": 1.1e-7}
+        # An exact record passes anywhere, including one written before tolerances existed.
+        assert study.reproduction_passed({"identical": True}, "pathorob-tcga-4x4")
+        assert study.reproduction_passed(within, TOLKACH)
+        assert not study.reproduction_passed(within, "pathorob-tcga-4x4")
+        assert not study.reproduction_passed({"identical": False, "max_deviation": 2e-4}, TOLKACH)
+        assert not study.reproduction_passed({}, TOLKACH)
+
+    def test_the_recorded_max_deviation_is_the_computed_one(
+        self, toy_production, tmp_path, monkeypatch
+    ):
+        run = study.production_run(TOY_COHORT)
+        full = study.draw_subsample(toy_production, TOY_COHORT, study.FULL, 0)
+        out = tmp_path / "study" / "full"
+        study.reproduce(run, full, out_dir=out, scratch=tmp_path / "scratch", candidates=("",))
+        published = study._as_written(run.results_dir / "metrics.csv")
+        # One model's MaRI is off under one protocol and its CRoMa under the other.
+        record = {}
+        for variant, column, shift in (
+            (study.FIXED_K, "mari", 3e-5),
+            (study.RESELECTED, "croma", -7e-6),
+        ):
+            path = out / variant / "metrics.csv"
+            frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+            frame.loc[1, column] = repr(float(frame.loc[1, column]) + shift)
+            frame.to_csv(path, index=False)
+            record[column] = abs(float(frame.loc[1, column]) - float(published.loc[1, column]))
+        tolerance = study.reproduction_tolerance(TOLKACH)
+        monkeypatch.setitem(study.REPRODUCTION_TOLERANCE, TOY_COHORT, tolerance)
+
+        report = study.check_reproduction(run, out)
+        computed = max(record.values())
+        assert report["max_deviation_by_model"] == {
+            m: computed if m == TOY_MODELS[1] else 0.0 for m in TOY_MODELS
+        }
+        assert report["max_deviation"] == computed
+        assert (report["identical"], report["tolerance"]) == (False, tolerance)
+        assert json.loads((out / study.REPRODUCTION).read_text()) == report
+        assert study.reproduction_passed(report, TOY_COHORT)
+        # Tightening the tolerance invalidates a record it no longer covers.
+        monkeypatch.setitem(study.REPRODUCTION_TOLERANCE, TOY_COHORT, 0.0)
+        assert not study.reproduction_passed(report, TOY_COHORT)
+        with pytest.raises(study.ReproductionError, match=r"fixed-k: \['mari'\]"):
+            study.check_reproduction(run, out)
 
     def test_a_replicate_records_its_shared_k_every_k_star_and_ri_support(
         self, toy_production, tmp_path
@@ -537,6 +642,23 @@ class TestMeasures:
         with pytest.raises(measures.IncompleteStudyError, match="reproduction"):
             measures.load(root, expected=design)
 
+    def test_a_full_cohort_reproduced_only_within_a_tolerance_it_lacks_fails_the_load(
+        self, small_study
+    ):
+        root, design = small_study
+        full = study.replicate_dir(root, "pathorob-camelyon", study.FULL, 0)
+        within = {"identical": False, "tolerance": 1e-4, "max_deviation": 1e-7}
+        (full / study.REPRODUCTION).write_text(json.dumps(within) + "\n")
+        with pytest.raises(measures.IncompleteStudyError, match="reproduction"):
+            measures.load(root, expected=design)
+
+    def test_an_exact_study_says_so_in_one_sentence(self, small_study):
+        root, design = small_study
+        data = measures.load(root, expected=design)
+        assert floats._reproduction_clause(data) == (
+            "The full-cohort run reproduces every published score exactly."
+        )
+
     def test_a_study_drawn_under_another_design_fails_the_load(self, small_study):
         root, _ = small_study
         with pytest.raises(measures.IncompleteStudyError, match="design"):
@@ -554,6 +676,16 @@ import subsampling_stability_figure as figure  # noqa: E402
 PANEL = ("Alpha", "Beta", "Gamma", "Delta", "Epsilon", "Zeta")
 GRID = (1, 3, 5, 7, 9, 11, 21, 31, 41, 51, 61, 71, 81, 91)
 FULL_K = {"pathorob-camelyon": 11, "pathorob-tcga-4x4": 81, "pathorob-tolkach-esca": 71}
+#: How each full-cohort run reproduced production: exactly, but Tolkach-ESCA within tolerance.
+REPRODUCTION_RECORD = {
+    "pathorob-camelyon": {"identical": True},
+    "pathorob-tcga-4x4": {"identical": True},
+    "pathorob-tolkach-esca": {
+        "identical": False,
+        "tolerance": 1e-4,
+        "max_deviation": 1.1091463059109685e-07,
+    },
+}
 
 
 def _write_real_design_study(root: Path, seed: int) -> None:
@@ -602,7 +734,8 @@ def _write_real_design_study(root: Path, seed: int) -> None:
             where = study.replicate_dir(root, cohort, fraction, replicate)
             study.record_replicate(where, frame, meta)
             if fraction == study.FULL:
-                (where / study.REPRODUCTION).write_text('{"identical": true}\n')
+                record = json.dumps(REPRODUCTION_RECORD[cohort])
+                (where / study.REPRODUCTION).write_text(record + "\n")
 
 
 @pytest.fixture(scope="module")
@@ -626,6 +759,15 @@ class TestRendering:
         body = [line for line in tex.splitlines() if line.rstrip().endswith(r"\\")]
         header_rows = 3
         assert len(body) == 3 * len(measures.METRICS) + 3 * 3 + header_rows
+
+    def test_the_table_caption_states_how_each_full_cohort_run_reproduced(self, real_design_study):
+        caption = _caption(floats.build_table(real_design_study))
+        assert (
+            "The full-cohort run reproduces the published scores exactly on Camelyon and "
+            "TCGA-4x4, and on Tolkach-ESCA only within an absolute tolerance of $10^{-4}$ "
+            r"(largest deviation $1.1\times10^{-7}$), because its published run mixed two "
+            "BLAS kernels within an encoder's scores."
+        ) in caption
 
     def test_the_figure_float_includes_the_rendered_figure(self, real_design_study):
         tex = floats.build_figure(real_design_study)
@@ -676,6 +818,8 @@ class TestRendering:
                 for stat in ("", "Range", "Higher"):
                     assert f"{prefix}SubsampleHalfCromaMinus{against}{stat}" in names
             assert f"{prefix}SubsampleQuarterSharedKRange" in names
+            for stat in ("Tolerance", "MaxDeviation"):
+                assert f"{prefix}SubsampleReproduction{stat}" in names
         assert not any(c.isdigit() for name in names for c in name)
 
     def test_a_macro_carries_the_number_it_names(self, real_design_study):
@@ -684,6 +828,11 @@ class TestRendering:
         lines = measures.macros(real_design_study)
         (line,) = [l for l in lines if r"{\TolkachSubsampleHalfKendallMari}" in l]
         assert line.endswith("{" + f"${row['tau_k_median']:.2f}$" + "}")
+        assert r"\newcommand{\TolkachSubsampleReproductionTolerance}{$10^{-4}$}" in lines
+        assert (
+            r"\newcommand{\TolkachSubsampleReproductionMaxDeviation}{$1.1\times10^{-7}$}" in lines
+        )
+        assert r"\newcommand{\CamelyonSubsampleReproductionMaxDeviation}{$0$}" in lines
 
 
 class TestPaperValues:
