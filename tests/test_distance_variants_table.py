@@ -280,7 +280,10 @@ def test_a_study_that_has_not_been_summarised_fails_the_build(tmp_path):
 def test_an_output_edited_after_the_study_wrote_it_is_refused(tmp_path):
     _write_study(tmp_path / "study", tmp_path)
     measures = pd.read_csv(tmp_path / "study" / study.MEASURES)
-    measures.loc[1, "sign_changes"] = 0
+    # A real change of value: a CSV round trip alone may or may not rewrite the bytes,
+    # depending on the pandas version, so it cannot be what this test relies on.
+    whitened = (measures["benchmark"] == "pathorob-camelyon") & (measures["variant"] == "whitened")
+    measures.loc[whitened, "sign_changes"] += 1
     measures.to_csv(tmp_path / "study" / study.MEASURES, index=False)
 
     with pytest.raises(CaptionClaimError, match="measures.csv"):
