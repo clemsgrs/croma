@@ -235,7 +235,12 @@ def extract_pair(
     study_dir: Path,
     limit: int | None = None,
 ) -> None:
-    """Re-run one pair on both cohorts, sequentially; finished cohorts are skipped."""
+    """Re-run one pair on both cohorts, sequentially; finished cohorts are skipped.
+
+    slide2vec runs with the run directory as its working directory, so every path it is
+    handed is absolute. ``study_dir`` is made absolute, not resolved, so recorded paths
+    keep the spelling they were given (``output/`` is a symlink).
+    """
     import subprocess
 
     import yaml
@@ -245,7 +250,7 @@ def extract_pair(
         env.setdefault(key, value)
     Path(env["HF_MODULES_CACHE"]).mkdir(parents=True, exist_ok=True)
 
-    run_root = study_dir / "runs" / pair.slide_model
+    run_root = Path(study_dir).absolute() / "runs" / pair.slide_model
     run_root.mkdir(parents=True, exist_ok=True)
     for cohort in COHORTS:
         cohort_rows = _cohort_rows(rows, cohort)
@@ -698,6 +703,26 @@ def check_published_arms(metrics: pd.DataFrame, slide_arms: list[str]) -> None:
             raise ValueError(f"{arm}: study metrics {a} differ from the published run {b}")
 
 
+def _write_text_atomic(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` through a sibling temporary file and a rename."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+
+
+def _apd_source_record(out_dir: Path, model: str) -> Path:
+    """The record of the source content an arm's APD cell was computed from."""
+    return out_dir / "pcabiop" / f"{model}.source.json"
+
+
+def _recorded_source_sha256(out_dir: Path, model: str) -> str | None:
+    path = _apd_source_record(out_dir, model)
+    if not path.exists():
+        return None
+    return json.loads(path.read_text()).get("sha256")
+
+
 def run_downstream(
     models: list[str],
     *,
@@ -705,14 +730,27 @@ def run_downstream(
     study_dir: Path,
     jobs: int,
     recompute: bool = False,
-) -> tuple[pd.DataFrame, dict]:
+) -> tuple[pd.DataFrame, dict, dict[str, str]]:
     """The PCaBiop APD driver for every arm, into the study directory (resumable).
 
     The APD loader reads ``layout.embeddings_dir("pcabiop")``. Each arm's full pcabiop
     matrix (from ``sources``, see :func:`arm_sources`) is copied into a ``pcabiop``
     tileset under ``study_dir/bench/``, and the driver runs with the layout rebound there,
     as the representation arm does. The APD workers are forked, so they inherit that root.
+
+    The APD driver resumes a cell (``study_dir/apd/pcabiop/<model>.json``) by model name
+    alone, but an arm keeps its name when its matrix changes (a re-reduction, an
+    ``--embeddings-dir`` override, a new published ``<M>.npy``). So the sha256 of each
+    source file's content (read once; the staged copy is loaded from that same read) is
+    recorded beside its cell (``<model>.source.json``). It is a content hash, not
+    ``embedding_fingerprint``, whose mtime changes on every re-stage. Without
+    ``recompute``, a cell is reused only when its recorded hash matches the current
+    source; a cell with no record or another hash is **recomputed**, not refused.
+    ``recompute`` recomputes every cell. Returns ``(apd, cells, sha256)``, with ``sha256``
+    mapping each arm to its source hash.
     """
+    import hashlib
+    import io
     import multiprocessing
 
     import apd_experiment
@@ -724,21 +762,43 @@ def run_downstream(
             f"'fork' start method, not {multiprocessing.get_start_method()!r} (or --jobs 1)"
         )
     out_dir = study_dir / "apd"
+    # Read each source once: the hash recorded is the hash of exactly what is staged.
+    matrices, sha256 = {}, {}
+    for model in models:
+        data = Path(sources[model]).read_bytes()
+        sha256[model] = hashlib.sha256(data).hexdigest()
+        matrices[model] = np.load(io.BytesIO(data))
+    stale = [m for m in models if recompute or _recorded_source_sha256(out_dir, m) != sha256[m]]
+    # A stale record goes before its cell is recomputed: a run that dies in between must
+    # not leave a new cell under the old hash.
+    for model in stale:
+        _apd_source_record(out_dir, model).unlink(missing_ok=True)
+    current = [m for m in models if m not in stale]
+    frames = []
     saved_root = layout.OUTPUT_ROOT
     layout.OUTPUT_ROOT = study_dir / "bench"
     try:
         directory = layout.embeddings_dir(TILESET)
         directory.mkdir(parents=True, exist_ok=True)
         for model in models:
-            np.save(directory / f"{model}.npy", np.load(sources[model]))
-        apd = apd_experiment.run(
-            ["pcabiop"], models, iterations=apd_experiment.CANONICAL_ITERATIONS,
-            out_dir=out_dir, overwrite=recompute, jobs=jobs,
-        )
+            np.save(directory / f"{model}.npy", matrices[model])
+        for group, overwrite in ((stale, True), (current, False)):
+            if group:  # the APD driver reads an empty model list as "every model"
+                frames.append(
+                    apd_experiment.run(
+                        ["pcabiop"], group, iterations=apd_experiment.CANONICAL_ITERATIONS,
+                        out_dir=out_dir, overwrite=overwrite, jobs=jobs,
+                    )
+                )
     finally:
         layout.OUTPUT_ROOT = saved_root
+    for model in models:
+        record = {"model": model, "source": str(sources[model]), "sha256": sha256[model]}
+        _write_text_atomic(_apd_source_record(out_dir, model), json.dumps(record, indent=2) + "\n")
+    apd = pd.concat(frames, ignore_index=True).drop_duplicates(["dataset", "model"], keep="last")
+    apd = apd[(apd["dataset"] == "pcabiop") & apd["model"].isin(models)].reset_index(drop=True)
     cells = {m: json.loads((out_dir / "pcabiop" / f"{m}.json").read_text()) for m in models}
-    return apd[apd["dataset"] == "pcabiop"], cells
+    return apd, cells, sha256
 
 
 def arm_summary(
@@ -776,9 +836,11 @@ def evaluate(
     ``published_dir`` (by default ``PCABIOP_DIR``), read-only. ``recompute`` bypasses the
     benchmark's metrics cache and the APD resume cache, as the one-command reproduction
     does.
-    """
-    import importlib.metadata
 
+    Scoring needs no encoder package: each pair's slide2vec version is the one ``extract``
+    recorded in ``extraction.json``, ``null`` where the record has none. All three
+    artifacts are assembled before any is written, so a failure leaves none of them new.
+    """
     import apd_experiment
     from croma.metrics.croma import CROMA_HEADLINE_M
     from loaders import DATASETS, training_correlations
@@ -800,7 +862,7 @@ def evaluate(
         models, rows=rows, study_dir=study_dir, sources=sources, recompute=recompute,
     )
     check_published_arms(metrics, [slide for _, slide, _ in arms])
-    apd, cells = run_downstream(
+    apd, cells, source_sha256 = run_downstream(
         models, sources=sources, study_dir=study_dir, jobs=jobs, recompute=recompute
     )
 
@@ -814,23 +876,24 @@ def evaluate(
         chance=1.0 / len(DATASETS["pcabiop"]["biological_classes"]),
     )
     summary = arm_summary(arms, metrics, apd)
-    summary.to_csv(study_dir / "summary.csv", index=False)
-    differences.to_csv(study_dir / "differences.csv", index=False)
 
-    extraction = study_dir / "extraction.json"
+    extraction_path = study_dir / "extraction.json"
+    extraction = json.loads(extraction_path.read_text()) if extraction_path.exists() else None
     provenance = {
         "study": STUDY_NAME,
         "pairs": {
             p: {
                 **{k: v for k, v in vars(PAIRS_BY_MODEL[p]).items()},
                 "reproduction": records[p],
+                # Recorded by ``extract``; records written before the field have none.
+                "slide2vec_version": ((extraction or {}).get(p) or {}).get("slide2vec_version"),
             }
             for p in pairs
         },
         "declared_pairs": [pair.slide_model for pair in PAIRS],
         "arm_sources": {model: str(path) for model, path in sources.items()},
-        "extraction": json.loads(extraction.read_text()) if extraction.exists() else None,
-        "slide2vec_version": importlib.metadata.version("slide2vec"),
+        "arm_source_sha256": source_sha256,
+        "extraction": extraction,
         "representation": {
             "benchmark": BENCHMARK, "protocol": _published_run().protocol,
             "argv": bench_argv, "croma_headline_m": int(CROMA_HEADLINE_M),
@@ -846,8 +909,14 @@ def evaluate(
             "shared_draw": "one draw for every arm of every pair",
         },
     }
-    (study_dir / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
-    print(f"[evaluate] wrote summary.csv, differences.csv, provenance.json to {study_dir}")
+    artifacts = {
+        "summary.csv": summary.to_csv(index=False),
+        "differences.csv": differences.to_csv(index=False),
+        "provenance.json": json.dumps(provenance, indent=2) + "\n",
+    }
+    for name, text in artifacts.items():
+        _write_text_atomic(study_dir / name, text)
+    print(f"[evaluate] wrote {', '.join(artifacts)} to {study_dir}")
 
 
 # ---------------------------------------------------------------------------
@@ -887,13 +956,25 @@ def _limited(rows: pd.DataFrame, limit: int | None) -> pd.DataFrame:
     return pd.concat([_cohort_rows(rows, c).head(limit) for c in COHORTS])
 
 
+def _installed_version(package: str) -> str | None:
+    """The installed version of ``package``, ``None`` if it has no package metadata."""
+    import importlib.metadata
+
+    try:
+        return importlib.metadata.version(package)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
 def _cmd_extract(args) -> int:
+    """Run ``extract``; ``extraction.json`` records, per pair, the slide2vec that ran it."""
     import time
 
     rows = _pcabiop_rows()
     study_dir = Path(args.study_dir)
     record_path = study_dir / "extraction.json"
     record = json.loads(record_path.read_text()) if record_path.exists() else {}
+    slide2vec_version = _installed_version("slide2vec")
     for model in args.pairs:
         pair = PAIRS_BY_MODEL[model]
         free = _gpu_free_mib()
@@ -907,7 +988,12 @@ def _cmd_extract(args) -> int:
             free = _gpu_free_mib()
         started = time.strftime("%F %T")
         extract_pair(pair, rows=rows, study_dir=study_dir, limit=args.limit)
-        record[model] = {"status": "done", "started": started, "finished": time.strftime("%F %T")}
+        record[model] = {
+            "status": "done",
+            "started": started,
+            "finished": time.strftime("%F %T"),
+            "slide2vec_version": slide2vec_version,
+        }
         study_dir.mkdir(parents=True, exist_ok=True)
         record_path.write_text(json.dumps(record, indent=2) + "\n")
     study_dir.mkdir(parents=True, exist_ok=True)
@@ -1009,6 +1095,9 @@ def main(argv: list[str] | None = None) -> int:
                 help="bypass the benchmark metrics cache and the APD resume cache",
             )
     args = parser.parse_args(argv)
+    # Absolute, not resolved: slide2vec runs in another working directory, and the paths
+    # recorded in sidecars and provenance keep the ``output/`` symlink as given.
+    args.study_dir = Path(args.study_dir).absolute()
     commands = {
         "extract": _cmd_extract, "status": _cmd_status,
         "reduce": _cmd_reduce, "evaluate": _cmd_evaluate,
