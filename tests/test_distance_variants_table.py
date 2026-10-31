@@ -83,7 +83,7 @@ def _measures() -> pd.DataFrame:
 
 #: Camelyon's run, as the stale-cell check reads it: two encoders' pooled cosine scores.
 _RUN = "runs/camelyon"
-_RUN_METRICS = "model,croma,croma_f0\nE1,0.25,0.125\nE2,-0.0625,0.5\n"
+_RUN_METRICS = "model,croma,croma_f0,croma_ltm_alpha\nE1,0.25,0.125,-0.375\nE2,-0.0625,0.5,-0.75\n"
 
 #: UNI2-h's largest per-unit deviation from the Tolkach-ESCA run, under SkylakeX.
 _TOLKACH_DEVIATION = 1.3573229706853596e-08
@@ -140,6 +140,7 @@ def _write_study(
             "variant": ["cosine"] * 2,
             "median": [0.25, -0.0625],
             "f0": [0.125, 0.5],
+            "ltm10": [-0.375, -0.75],
         }
     ).to_csv(root / study.SUMMARY, index=False)
     (repo / "inputs").mkdir(parents=True, exist_ok=True)
@@ -314,4 +315,14 @@ def test_cells_scored_before_the_run_was_rescored_are_refused(tmp_path):
     (tmp_path / _RUN / "metrics.csv").write_text(_RUN_METRICS.replace("0.25", "0.2500001"))
 
     with pytest.raises(CaptionClaimError, match="re-scored"):
+        dvs.load(tmp_path / "study", repo=tmp_path)
+
+
+def test_cells_scored_before_a_rescore_that_moved_only_the_tail_are_refused(tmp_path):
+    # Panel a ranks LTM10 too, so a re-score that leaves the median and F(0) alone and
+    # moves only the tail must still be caught.
+    _write_study(tmp_path / "study", tmp_path)
+    (tmp_path / _RUN / "metrics.csv").write_text(_RUN_METRICS.replace("-0.375", "-0.3750001"))
+
+    with pytest.raises(CaptionClaimError, match="ltm10 differs from the run's croma_ltm_alpha"):
         dvs.load(tmp_path / "study", repo=tmp_path)

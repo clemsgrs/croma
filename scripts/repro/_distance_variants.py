@@ -157,17 +157,20 @@ def _check_reproduction(provenance: dict, benchmarks: list[str]) -> None:
             )
 
 
-#: The run's pooled columns the cosine cells must equal, within the benchmark's tolerance.
-_RUN_COLUMNS = {"median": "croma", "f0": "croma_f0"}
+#: The run's pooled columns the cosine cells must equal, within the benchmark's tolerance:
+#: every pooled score the table reads (panel a ranks both the median and LTM10).
+_RUN_COLUMNS = {"median": "croma", "f0": "croma_f0", "ltm10": "croma_ltm_alpha"}
 
 
 def _check_cosine_matches_run(summary: pd.DataFrame, benchmark: str, results_dir: Path) -> None:
-    """Cosine's pooled median and F(0) per encoder are the run's, or the cells are stale.
+    """Cosine's pooled median, F(0) and LTM10 per encoder are the run's, or the cells are
+    stale.
 
     The study scores a cell once and keeps it, so a run re-scored after its cells were
     computed but before the summary would otherwise pass every digest check: the summary
-    re-hashes the new ``metrics.csv``. Comparing the numbers themselves closes that gap. They
-    must be equal, or within the benchmark's ``REPRODUCTION_TOLERANCE`` where it is not 0.
+    re-hashes the new ``metrics.csv``. Comparing the numbers themselves closes that gap,
+    including for a re-score that moves only the tail. They must be equal, or within the
+    benchmark's ``REPRODUCTION_TOLERANCE`` where it is not 0.
     """
     tolerance = study.reproduction_tolerance(benchmark)
     metrics = pd.read_csv(results_dir / "metrics.csv", float_precision="round_trip")
