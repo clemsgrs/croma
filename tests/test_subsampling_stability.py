@@ -775,6 +775,20 @@ class TestRendering:
         assert r"\includegraphics" in tex and "subsampling_stability.pdf" in tex
         assert "[!htbp]" in tex
 
+    def test_the_figure_caption_states_the_nominal_fraction_and_each_cohort_s_units(
+        self, real_design_study
+    ):
+        """The declared counts only approximate 25/50/75% (Tolkach-ESCA keeps 40/60/80%)."""
+        caption = _caption(floats.build_figure(real_design_study))
+        assert "nominal" in caption
+        for units in (
+            "Camelyon $4/8/13$ of $17$ slides",
+            "TCGA-4x4 $3/6/9$ of $12$ slides",
+            "Tolkach-ESCA $2/3/4$ of $5$ case blocks",
+        ):
+            assert units in caption
+        assert "share of units kept" not in caption
+
     def test_rebuilding_is_byte_for_byte(self, real_design_study, tmp_path):
         first, second = tmp_path / "a", tmp_path / "b"
         for out in (first, second):

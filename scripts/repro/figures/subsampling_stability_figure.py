@@ -2,10 +2,14 @@
 
 One column per tile cohort. The top row draws Kendall's tau_K between each replicate's
 ranking of the pathology encoders and the same metric's full-cohort ranking against the
-share of units kept per class x centre cell (median line, interquartile band; the full
-cohort sits at tau_K = 1). The bottom row draws the median over encoders of each encoder's
-2.5-97.5 percentile rank range across replicates. RI and MaRI appear twice: solid at the
+nominal subsampling fraction (median line, interquartile band; the full cohort sits at
+tau_K = 1). The bottom row draws the median over encoders of each encoder's 2.5-97.5
+percentile rank range across replicates. RI and MaRI appear twice: solid at the
 re-selected shared k, dashed at the full-cohort shared k.
+
+The fraction is nominal: each draw keeps the design's declared unit count per class x
+centre cell, which only approximates it (Tolkach-ESCA keeps 2/3/4 of 5 case blocks, so
+40/60/80%). The caption states every cohort's counts.
 
   output/studies/subsampling-stability/plots/pdf/subsampling_stability.pdf
 
@@ -100,7 +104,7 @@ def render(data: S.Study, out: Path = OUT) -> Path:
         top.axhline(1.0, color=plotstyle.REFERENCE_LINE_COLOR, lw=plotstyle.LW_REFERENCE, ls=":")
         top.set_ylim(None, 1.03)
         bottom.set_ylim(0, None)
-        bottom.set_xlabel("Units kept per class × centre cell")
+        bottom.set_xlabel("Subsampling fraction (nominal)")
     axes[0][0].set_ylabel(r"Kendall $\tau_K$ vs full cohort")
     axes[1][0].set_ylabel("Median rank range (2.5-97.5%)")
     P._finalize_figure(
