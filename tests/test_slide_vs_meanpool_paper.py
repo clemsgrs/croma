@@ -162,6 +162,35 @@ def test_the_caption_names_rendered_and_missing_pairs_and_the_reproduction_resul
     assert "Declared pairs not shown" not in caption
 
 
+def test_when_no_pair_reproduces_the_caption_still_states_the_criterion(tmp_path):
+    # The real re-runs: no pair reproduces on every slide, so every slide arm is a re-run.
+    # The caption must still give the cosine criterion, and no sentence may lean on one
+    # about reproduced pairs that is not there.
+    import json
+
+    basis, table = _repro()
+    study_dir = _write_study(tmp_path / "study")
+    path = study_dir / "provenance.json"
+    provenance = json.loads(path.read_text())
+    for i, record in enumerate(provenance["pairs"].values()):
+        record["reproduction"].update(
+            reproduced=False, n_reproduced=10 * i, min_cosine=0.5 + 0.1 * i
+        )
+    path.write_text(json.dumps(provenance))
+
+    caption = _caption(table.build(basis.load(study_dir)))
+
+    assert "They did not" not in caption
+    assert (
+        r"Re-run slide embeddings reproduced the published ones (per-slide cosine "
+        r"$\geq0.999$ on every slide) for none of the pairs, so each pair's re-run slide "
+        r"embeddings form its slide arm: TITAN, $0$ of $1{,}324$ slides reproduced (minimum "
+        r"cosine $0.500$); MOOZY, $10$ of $1{,}324$ slides reproduced (minimum cosine "
+        r"$0.600$); PRISM2, $20$ of $1{,}324$ slides reproduced (minimum cosine $0.700$); "
+        r"PRISM, $30$ of $1{,}324$ slides reproduced (minimum cosine $0.800$). "
+    ) in caption
+
+
 def test_every_declared_pair_is_either_rendered_or_recorded_as_not_run(tmp_path):
     # A declared pair is never dropped silently: left out of the table, it must be one the
     # study recorded as not run, with a reason.

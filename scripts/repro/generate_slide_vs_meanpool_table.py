@@ -124,18 +124,34 @@ def _caption(basis: Basis) -> str:
         "the slide arm is the slide encoder's embedding and the mean-pool arm is the "
         "unweighted mean of the same tile embeddings. ",
     ]
+    def reproduced(p: str) -> str:
+        r = records[p]
+        return (
+            f"{_count(r['n_reproduced'])} of {_count(r['n_slides'])} slides reproduced "
+            rf"(minimum cosine ${float(r['min_cosine']):.3f}$)"
+        )
+
+    criterion = (
+        "Re-run slide embeddings reproduced the published ones (per-slide cosine "
+        rf"$\geq{threshold:g}$ on every slide) for "
+    )
     if kept:
         parts.append(
-            "Re-run slide embeddings reproduced the published ones (per-slide cosine "
-            rf"$\geq{threshold:g}$ on every slide) for {_series(kept)}, whose published "
-            "embeddings form the slide arm. "
+            criterion + f"{_series(kept)}, whose published embeddings form the slide arm. "
         )
-    for p in rerun:
-        r = records[p]
+        for p in rerun:
+            parts.append(
+                f"They did not for {p}: {reproduced(p)}, so its re-run slide embeddings "
+                "form the slide arm. "
+            )
+    else:
+        # No sentence about reproduced pairs to refer back to: state the criterion once,
+        # then give every pair's count.
         parts.append(
-            f"They did not for {p}: {_count(r['n_reproduced'])} of {_count(r['n_slides'])} "
-            rf"slides reproduced (minimum cosine ${float(r['min_cosine']):.3f}$), so its "
-            "re-run slide embeddings form the slide arm. "
+            criterion
+            + "none of the pairs, so each pair's re-run slide embeddings form its slide arm: "
+            + "; ".join(f"{p}, {reproduced(p)}" for p in rerun)
+            + ". "
         )
     parts += [
         rf"bio bacc, median \code{{CRoMa}}$(m{{=}}{m})$, $F(0)$ and $\mcode{{LTM}}_{{10}}$ are "
