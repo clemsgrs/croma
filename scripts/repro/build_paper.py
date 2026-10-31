@@ -58,6 +58,9 @@ CORE = [
     # the committed metadata. Core rather than a study: generate_paper_values.py cites the
     # same CSV, and a missing or stale study must fail the build, never skip it.
     ("generate_finetune_pairs_table.py", None, ""),
+    # Reads the committed model_metadata.csv, the three tile runs' metrics.csv and the APD
+    # join; fails, rather than skips, when any is missing.
+    ("generate_exposure_tables.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that

@@ -161,6 +161,7 @@ exclude = [
   "/tests/test_acquisition_table.py",
   "/tests/test_dataset_cardinality.py",
   "/tests/test_panel_macros.py",
+  "/tests/test_exposure_matrix.py",
   "/tests/test_results_table_layout.py",
   "/tests/test_split_schedule_table.py",
   "/tests/test_sample_shortcut_floats.py",
