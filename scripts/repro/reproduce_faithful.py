@@ -114,6 +114,9 @@ STUDIES: list[tuple[str, str, list[str]]] = [
      ["reduce", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
     ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
      ["evaluate", "--recompute", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
+    # After the runs (its cosine cells must reproduce them) and the APD study (its nIPD
+    # correlations are checked against apd_correlation.csv). Resumable; hours on four workers.
+    ("distance-variants", "scripts/studies/distance_variants.py", ["sweep", "--workers", "4"]),
 ]
 #: The studies that take ``--jobs``: the probe sweeps, the per-sample probe records, and the
 #: slide-vs-meanpool evaluation, which scores its arms' APD cells. Each is always told this

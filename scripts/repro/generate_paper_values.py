@@ -837,6 +837,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     # operating k, the control, TCGA-2x2, APD vs nIPD, and the typed-neighbour coverage.
     # Unlike the study blocks below, these never warn and skip -- a missing input raises.
     from _panel_macros import panel_macros
+    from generate_distance_variants_table import macros as distance_variant_macros
     from generate_sample_shortcut_floats import macros as sample_shortcut_macros
     from generate_supp_rank_table import macros as typed_neighbour_macros
 
@@ -851,6 +852,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     from _exposure import build as build_exposure
 
     out.extend(build_exposure(root).macros)
+    out.extend(distance_variant_macros(root))
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel
