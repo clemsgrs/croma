@@ -292,13 +292,65 @@ class TestAssociations:
 
         table = _infer(with_noise)
 
-        pd.testing.assert_frame_equal(table, _infer(tied))
+        def reported(t: pd.DataFrame) -> pd.DataFrame:
+            return t[~t["kind"].str.endswith("_as_returned")]
+
+        pd.testing.assert_frame_equal(reported(table), reported(_infer(tied)))
         ranked = tied[camelyon]
         assert _row(table, "camelyon", "downstream", "ilisi")["estimate"] == pytest.approx(
             spearmanr(ranked["ilisi"], ranked["nipd_id"]).statistic
         )
         assert study.at_ilisi_floor(noisy).all()
         assert not study.at_ilisi_floor(rest).any()
+
+    def test_ilisi_is_also_ranked_as_returned_to_show_what_the_floor_tie_changes(self) -> None:
+        # The reported iLISI rows tie the floor. The *_as_returned rows rank the values
+        # scib-metrics returned instead, on the same encoder draw, so the head-to-head is
+        # still paired. They carry intervals only and stay outside the BH family.
+        eps = float(np.finfo(np.float32).eps)
+        per_encoder = _per_encoder()
+        camelyon = (per_encoder["dataset"] == "camelyon") & per_encoder["ranked"]
+        returned = per_encoder.loc[camelyon, "ilisi"].to_numpy().copy()
+        returned[:4] = [3 * eps, -eps, 0.0, 2 * eps]
+        per_encoder.loc[camelyon, "ilisi"] = returned
+        ranked = per_encoder[camelyon]
+        croma, nipd = ranked["croma"].to_numpy(), ranked["nipd_id"].to_numpy()
+        draws = encoder_bootstrap_draws(N_RANKED, n_boot=300, seed=7)
+
+        table = _infer(per_encoder)
+
+        untied = _row(table, "camelyon", "downstream_as_returned", "ilisi")
+        direct = np.array([spearmanr(returned[i], nipd[i]).statistic for i in draws])
+        assert untied["estimate"] == pytest.approx(spearmanr(returned, nipd).statistic)
+        assert (untied["ci_lo"], untied["ci_hi"]) == pytest.approx(
+            tuple(np.nanpercentile(direct, [2.5, 97.5]))
+        )
+        assert untied["estimate"] != pytest.approx(
+            _row(table, "camelyon", "downstream", "ilisi")["estimate"]
+        )
+        delta = _row(table, "camelyon", "head_to_head_as_returned", "ilisi")
+        paired = np.array([spearmanr(croma[i], nipd[i]).statistic for i in draws]) - direct
+        assert delta["estimate"] == pytest.approx(
+            spearmanr(croma, nipd).statistic - untied["estimate"]
+        )
+        assert (delta["ci_lo"], delta["ci_hi"]) == pytest.approx(
+            tuple(np.nanpercentile(paired, [2.5, 97.5]))
+        )
+
+        sensitivity = table[table["kind"].str.endswith("_as_returned")]
+        assert len(sensitivity) == 2 * len(COHORTS)
+        assert set(sensitivity["metric"]) == {"ilisi"}
+        assert sensitivity["p_value"].isna().all() and sensitivity["q_value"].isna().all()
+        # Off the floor, the two readings are one ranking and so the same rows.
+        for dataset in ("tcga_4x4", "tolkach"):
+            for kind in ("downstream", "head_to_head"):
+                same = _row(table, dataset, f"{kind}_as_returned", "ilisi")
+                tied = _row(table, dataset, kind, "ilisi")
+                assert (same["estimate"], same["ci_lo"], same["ci_hi"]) == (
+                    tied["estimate"],
+                    tied["ci_lo"],
+                    tied["ci_hi"],
+                )
 
     def test_inference_is_deterministic(self) -> None:
         pd.testing.assert_frame_equal(_infer(_per_encoder()), _infer(_per_encoder()))

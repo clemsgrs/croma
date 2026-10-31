@@ -145,6 +145,13 @@ def at_ilisi_floor(values) -> np.ndarray:
     return np.abs(np.asarray(values, dtype=float)) <= ILISI_FLOOR_TOLERANCE
 
 
+#: The floor tie is a call, so its sensitivity is recorded too: iLISI's downstream and
+#: head-to-head rows again, ranked as scib-metrics returned the values (no tie), under these
+#: kinds. They share the cohort's encoder draw, carry intervals only and stay outside the BH
+#: family.
+AS_RETURNED = {"downstream": "downstream_as_returned", "head_to_head": "head_to_head_as_returned"}
+
+
 def l2_normalise(features: np.ndarray) -> np.ndarray:
     """Unit-norm rows: Euclidean distance is then monotone in the cosine distance."""
     features = np.asarray(features, dtype=np.float64)
@@ -231,15 +238,18 @@ def _infer_cohort(
 
     One encoder draw is shared by every correlation in the cohort, so the two
     correlations a head-to-head difference subtracts are paired replicate by replicate.
-    iLISI values on the floor are set to it first, so they tie rather than rank on rounding.
+    iLISI values on the floor are set to it first, so they tie rather than rank on rounding;
+    the :data:`AS_RETURNED` rows repeat iLISI's downstream and head-to-head rows without
+    that tie.
     """
+    returned = ranked
     ranked = ranked.assign(ilisi=ranked["ilisi"].mask(at_ilisi_floor(ranked["ilisi"]), 0.0))
     n = len(ranked)
     draws = encoder_bootstrap_draws(n, n_boot=n_boot, seed=seed)
 
-    def infer(metric: str, target: str):
+    def infer(metric: str, target: str, frame: pd.DataFrame = ranked):
         return spearman_inference(
-            ranked[metric].to_numpy(dtype=float),
+            frame[metric].to_numpy(dtype=float),
             ranked[target].to_numpy(dtype=float),
             level=level,
             seed=seed,
@@ -270,6 +280,11 @@ def _infer_cohort(
         row("head_to_head", m, TARGET, downstream[CROMA].difference_ci(downstream[m]))
         for m in BASELINES
     ]
+    untied = infer("ilisi", TARGET, returned)
+    rows += [
+        row(AS_RETURNED["downstream"], "ilisi", TARGET, untied.ci),
+        row(AS_RETURNED["head_to_head"], "ilisi", TARGET, downstream[CROMA].difference_ci(untied)),
+    ]
     return rows
 
 
@@ -291,7 +306,10 @@ def associations(
     * ``downstream``: rho(metric, nIPD_ID) for CRoMa and each baseline, with a CI, a
       permutation p and a Benjamini--Hochberg q over every downstream row in the frame
       (the family of this table, separate from ``tab:apd-correlation``'s);
-    * ``head_to_head``: rho(CRoMa, nIPD_ID) - rho(baseline, nIPD_ID), with a paired CI.
+    * ``head_to_head``: rho(CRoMa, nIPD_ID) - rho(baseline, nIPD_ID), with a paired CI;
+    * ``downstream_as_returned`` and ``head_to_head_as_returned`` (:data:`AS_RETURNED`):
+      iLISI's two rows again with its values ranked as returned, without the floor tie, a
+      sensitivity check with CIs only.
     """
     rows: list[dict] = []
     for dataset in pd.unique(per_encoder["dataset"]):
@@ -507,7 +525,10 @@ def build(runs: dict, cells: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame, di
         "features": "L2-normalised; the *_raw columns score the raw features",
         "same_group_neighbours": "included (CRoMa excludes them)",
         "ilisi_floor_tolerance": ILISI_FLOOR_TOLERANCE,
-        "ilisi_floor": "values within the tolerance of 0 are set to 0 (tied) before ranking",
+        "ilisi_floor": (
+            "values within the tolerance of 0 are set to 0 (tied) before ranking; the "
+            "*_as_returned rows rank them as returned, as a sensitivity check"
+        ),
         "runs": {dataset: entry.metrics_rel for dataset, entry in runs.items()},
         "downstream": "output/studies/apd/apd_metrics_joined.csv",
         "inference": {

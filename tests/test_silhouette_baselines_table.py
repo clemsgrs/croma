@@ -166,6 +166,48 @@ class TestTable:
         assert "$3$, $0$ and $1$ of the $10$" in caption
         assert "Camelyon, TCGA-4x4 and Tolkach-ESCA" in caption
 
+    def test_caption_gives_ilisi_ranked_as_returned_where_the_floor_tie_moves_a_rank(
+        self, tmp_path: Path
+    ) -> None:
+        # Camelyon's four floor values are ordered by rounding as returned, so tying them
+        # moves ranks; Tolkach-ESCA's single floor value moves none. The caption gives the
+        # untied rho and delta for Camelyon only, from the study's *_as_returned rows.
+        eps = float(np.finfo(np.float32).eps)
+        per_encoder = _per_encoder()
+        per_encoder["ilisi"] = 0.05 + per_encoder["ilisi"].abs()
+        floor = {"camelyon": [3 * eps, -eps, 0.0, 2 * eps], "tolkach": [eps]}
+        for dataset, values in floor.items():
+            rows = per_encoder.index[(per_encoder["dataset"] == dataset) & per_encoder["ranked"]]
+            per_encoder.loc[rows[: len(values)], "ilisi"] = values
+        paths = _write(tmp_path, per_encoder=per_encoder)
+        table = pd.read_csv(paths["correlation_csv"])
+
+        def cell(kind: str) -> str:
+            row = table[
+                (table["dataset"] == "camelyon")
+                & (table["kind"] == kind)
+                & (table["metric"] == "ilisi")
+            ].iloc[0]
+            text = f"${row['estimate']:.2f}$ $[{row['ci_lo']:.2f}, {row['ci_hi']:.2f}]$"
+            return text.replace("-0.00", "0.00")
+
+        caption = _caption(gsb.build_table(gsb.load(**paths)))
+
+        sentence = caption[caption.index("Ranked as returned") :]
+        assert (
+            f"{cell('downstream_as_returned')} and {cell('head_to_head_as_returned')}" in sentence
+        )
+        assert cell("downstream_as_returned") != cell("downstream")
+        assert "on Camelyon;" in sentence and "Tolkach" not in sentence
+        assert sentence.startswith("Ranked as returned, without the tie,")
+        assert "on Camelyon; elsewhere the tie moves no rank." in sentence
+        assert len(re.findall(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", caption)) <= 350
+
+    def test_caption_says_so_when_the_floor_tie_moves_no_rank(self, tmp_path: Path) -> None:
+        caption = _caption(gsb.build_table(gsb.load(**_write(tmp_path))))
+        assert "iLISI's rows are the same: the tie moves no rank." in caption
+        assert "would be" not in caption and "elsewhere" not in caption
+
     def test_caption_is_within_the_word_limit(self, tmp_path: Path) -> None:
         # Counted as the paper's own legend check counts: every alphanumeric run, LaTeX
         # command names included, against the journal's 350-word cap.
@@ -196,6 +238,24 @@ class TestClaims:
         table.loc[table["kind"] == "downstream", "q_value"] = table["p_value"]
         baselines = gsb.load(**_write(tmp_path, per_encoder=per_encoder, table=table))
         with pytest.raises(CaptionClaimError, match="Benjamini"):
+            gsb.build_table(baselines)
+
+    def test_a_table_without_the_untied_ilisi_rows_fails(self, tmp_path: Path) -> None:
+        per_encoder = _per_encoder()
+        table = study.associations(per_encoder, n_boot=200, n_permutations=300)
+        table = table[~table["kind"].str.endswith("_as_returned")]
+        baselines = gsb.load(**_write(tmp_path, per_encoder=per_encoder, table=table))
+        with pytest.raises(KeyError, match="as_returned"):
+            gsb.build_table(baselines)
+
+    def test_untied_rows_that_disagree_with_an_unmoved_ranking_raise(self, tmp_path: Path) -> None:
+        # No floor value moves a rank here, so the untied rows must be the reported ones.
+        per_encoder = _per_encoder()
+        table = study.associations(per_encoder, n_boot=200, n_permutations=300)
+        stale = (table["dataset"] == "tolkach") & (table["kind"] == "downstream_as_returned")
+        table.loc[stale, "estimate"] += 0.01
+        baselines = gsb.load(**_write(tmp_path, per_encoder=per_encoder, table=table))
+        with pytest.raises(CaptionClaimError, match="tolkach"):
             gsb.build_table(baselines)
 
     def test_a_missing_study_artifact_fails_rather_than_skips(self, tmp_path: Path) -> None:

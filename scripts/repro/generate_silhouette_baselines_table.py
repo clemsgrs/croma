@@ -3,14 +3,16 @@
 Reads the study ``scripts/studies/silhouette_baselines.py`` writes under
 ``output/studies/silhouette-baselines/`` and renders, per cohort, the two agreement
 correlations with median CRoMa, the three correlations with in-domain nIPD, and the two
-head-to-head differences. Nothing is computed here: the estimates, intervals, p and q
-values are the study's, and so are the caption's settings (implementation version, kNN,
-perplexity, resample and permutation counts).
+head-to-head differences. The caption adds iLISI's rho and delta ranked as returned,
+without the floor tie, on each cohort where that tie moves a rank. Nothing is computed
+here: the estimates, intervals, p and q values are the study's, and so are the caption's
+settings (implementation version, kNN, perplexity, resample and permutation counts).
 
 A missing study artifact fails the build; there is no skip. The caption's claims are
 checked before it is printed: the natural-image control is in the study's join and out of
 every correlation, the CRoMa row is the rho ``tab:apd-correlation`` reports for the same
-cohort, and the q values are Benjamini--Hochberg over exactly the family the caption names.
+cohort, the q values are Benjamini--Hochberg over exactly the family the caption names,
+and where the floor tie moves no rank the untied rows equal the reported ones.
 
 Usage:
   python scripts/repro/generate_silhouette_baselines_table.py
@@ -126,6 +128,37 @@ class Baselines:
             counts.append(int(study.at_ilisi_floor(ranked["ilisi"]).sum()))
         return counts
 
+    def cohorts_where_the_ilisi_tie_moves_a_rank(self) -> list[str]:
+        """Cohorts, in table order, on which tying the iLISI floor changes the ranking.
+
+        Everywhere else the untied (``*_as_returned``) rows rank the same encoders the same
+        way, so they must equal the reported rows; a difference means a stale table.
+        """
+        moved = []
+        columns = ["estimate", "ci_lo", "ci_hi"]
+        for dataset in self.cohorts:
+            joined = self.per_encoder[self.per_encoder["dataset"] == dataset]
+            returned = joined.loc[joined["ranked"].astype(bool), "ilisi"].astype(float)
+            tied = returned.mask(study.at_ilisi_floor(returned), 0.0)
+            untied = {kind: self.row(dataset, k, "ilisi") for kind, k in study.AS_RETURNED.items()}
+            if not returned.rank().equals(tied.rank()):
+                moved.append(dataset)
+                continue
+            for kind, row in untied.items():
+                reported = self.row(dataset, kind, "ilisi")
+                if not np.allclose(
+                    row[columns].to_numpy(dtype=float),
+                    reported[columns].to_numpy(dtype=float),
+                    rtol=0,
+                    atol=1e-12,
+                ):
+                    raise CaptionClaimError(
+                        f"{dataset}: tying the iLISI floor moves no rank, yet the "
+                        f"{study.AS_RETURNED[kind]} row differs from the {kind} row; the study "
+                        "table is stale"
+                    )
+        return moved
+
     def downstream_family(self) -> pd.DataFrame:
         """The Benjamini--Hochberg family the caption names, verified against its q values."""
         family = self.table[self.table["kind"] == "downstream"]
@@ -214,6 +247,31 @@ def _series(items: list[str]) -> str:
     return items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
 
 
+def _ilisi_tie_sensitivity(baselines: Baselines) -> str:
+    """The caption's floor-tie sensitivity: iLISI's untied rho and delta where they move."""
+    moved = baselines.cohorts_where_the_ilisi_tie_moves_a_rank()
+    if not moved:
+        return " Ranked as returned, without the tie, iLISI's rows are the same: the tie moves no rank."
+    parts = []
+    for dataset in moved:
+        rho, delta = (
+            baselines.row(dataset, study.AS_RETURNED[kind], "ilisi")
+            for kind in ("downstream", "head_to_head")
+        )
+        parts.append(
+            f"{_estimate(rho['estimate'])} {_interval(rho['ci_lo'], rho['ci_hi'])} and "
+            f"{_estimate(delta['estimate'])} {_interval(delta['ci_lo'], delta['ci_hi'])} on "
+            f"{_cohort_label(dataset)}"
+        )
+    sentence = (
+        r" Ranked as returned, without the tie, iLISI's $\rho$ with \code{nIPD}$_\mathrm{ID}$ "
+        rf"and $\Delta\rho$ would be {_series(parts)}"
+    )
+    if len(moved) < len(baselines.cohorts):
+        sentence += "; elsewhere the tie moves no rank"
+    return sentence + "."
+
+
 def _caption(baselines: Baselines) -> str:
     prov = baselines.provenance
     inference = prov["inference"]
@@ -251,7 +309,8 @@ def _caption(baselines: Baselines) -> str:
         rf"permutation $p$ over ${_thousands(inference['n_permutations'])}$ permutations; $q$ "
         rf"applies the Benjamini--Hochberg correction across the ${len(family)}$ downstream "
         r"associations in this table, a family separate from Table~\ref{tab:apd-correlation}'s. "
-        r"Agreement and head-to-head rows carry intervals only.}"
+        r"Agreement and head-to-head rows carry intervals only."
+        f"{_ilisi_tie_sensitivity(baselines)}}}"
     )
 
 
