@@ -225,7 +225,7 @@ def _figure(results: dict[str, basis.CohortResult]) -> list[str]:
     choices = [basis.montage_choice(results[c]) for c in basis.TILE_COHORTS]
     picked = "; ".join(
         rf"{_short(results[c.cohort])}: {c.model} (AUROC {bare_num(c.auroc)}), "
-        rf"{_cell_text(c.cell)}, {c.n_flipped_in_cell} of {c.n_in_cell} tiles flipped"
+        rf"{_cell_text(c.cell)}, ${_n(c.n_flipped_in_cell)}$ of ${_n(c.n_in_cell)}$ tiles flipped"
         for c in choices
     )
     n = basis.MONTAGE_TILES

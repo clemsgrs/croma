@@ -361,6 +361,14 @@ class TestTables:
         guard = r"\resizebox{\ifdim\width>\linewidth\linewidth\else\width\fi}{!}{%"
         assert tex.count(guard) == 3
 
+    def test_the_montage_caption_names_each_cohort_s_pick_and_its_flip_count(self, tmp_path):
+        _all_cohorts(tmp_path)
+
+        figure = _float(_generator().build(tmp_path), "fig:margin-montage")
+
+        assert "Camelyon: Beta (AUROC 0.70), tumor, UMCU, $3$ of $11$ tiles flipped" in figure
+        assert "TCGA-4x4: Beta" in figure
+
     def test_floats_follow_the_paper_placement_convention(self, tmp_path):
         _all_cohorts(tmp_path)
 
