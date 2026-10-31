@@ -346,8 +346,7 @@ def load_data(model, dataset):
     emb = np.load(layout.embeddings_dir(cfg["src"]) / f"{model}.npy")
     assert len(emb) == len(md), f"{model}/{dataset}: {len(emb)} emb vs {len(md)} meta rows"
 
-    md_id = md[md["subset"] == "ID"]
-    md_ood = md[md["subset"] == "OOD"]
+    md_id, md_ood = _partition(md)
 
     return Cohort(
         embeddings=emb[md_id.index.to_numpy()],
@@ -356,6 +355,68 @@ def load_data(model, dataset):
         ood_embeddings=emb[md_ood.index.to_numpy()],
         ood_labels=np.array([bio.index(b) for b in md_ood["biological_class"]]),
         group_ids=list(md_id[APD_METADATA_GROUP_COLUMN]),
+    )
+
+
+def _partition(md):
+    """The cohort's ID and OOD metadata rows, in metadata (and so embedding) order."""
+    return md[md["subset"] == "ID"], md[md["subset"] == "OOD"]
+
+
+#: What identifies a cohort row as a tile, for a study that writes one record per row:
+#: tile identity (``sample_id``, ``image_path``; CONTEXT.md) plus the independence group,
+#: biological class and centre, so a record joins other per-row artifacts by key rather
+#: than by position. ``image_path`` is empty for a slide-level tileset, which has none.
+TILE_KEY_COLUMNS = ("sample_id", "image_path", "group_id", "label", "confounder")
+
+
+def cohort_tile_keys(dataset):
+    """The tile keys of a cohort's ID and OOD rows, in the order ``load_data`` returns them.
+
+    Read off the tileset manifest, which is row-aligned with the embedding matrix and with
+    PathoROB's metadata CSV -- the alignment ``load_data`` relies on but only checks by row
+    count. Here it is checked row by row (independence group, class, centre, and the tile
+    named in the metadata), because a record keyed by the wrong tile would join cleanly and
+    be wrong.
+    """
+    cfg = DATASETS[dataset]
+    md = pd.read_csv(REPO / cfg["metadata"], dtype=str, keep_default_na=False)
+    manifest = pd.read_csv(
+        layout.tileset_manifest(cfg["src"]), dtype=str, keep_default_na=False
+    )
+    if len(manifest) != len(md):
+        raise ValueError(
+            f"{dataset}: the tileset manifest holds {len(manifest)} rows, the metadata "
+            f"{len(md)}; they must be row-aligned"
+        )
+    tile = md[APD_METADATA_GROUP_COLUMN]
+    if "patch_id" in md:
+        tile = tile + "__" + md["patch_id"]
+    # A tile's sample_id is its slide and patch, plus whatever the tileset appended
+    # (TCGA's shard name); a slide-level tileset's is the slide itself.
+    same_tile = [
+        sample == prefix or sample.startswith(prefix + "__")
+        for sample, prefix in zip(manifest["sample_id"], tile)
+    ]
+    aligned = (
+        pd.Series(same_tile, index=manifest.index)
+        & (manifest["group_id"] == md[APD_METADATA_GROUP_COLUMN])
+        & (manifest["label"] == md["biological_class"])
+        & (manifest["confounder"] == md["medical_center"])
+    )
+    if not aligned.all():
+        first = int(np.flatnonzero(~aligned.to_numpy())[0])
+        raise ValueError(
+            f"{dataset}: tileset manifest row {first} is not metadata row {first} "
+            f"({manifest.iloc[first].to_dict()} vs {md.iloc[first].to_dict()})"
+        )
+    if "image_path" not in manifest:
+        manifest["image_path"] = ""
+    keys = manifest[list(TILE_KEY_COLUMNS)]
+    md_id, md_ood = _partition(md)
+    return (
+        keys.loc[md_id.index].reset_index(drop=True),
+        keys.loc[md_ood.index].reset_index(drop=True),
     )
 
 

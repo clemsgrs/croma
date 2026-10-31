@@ -15,7 +15,12 @@ import numpy as np
 import pytest
 
 from croma import apd, nipd
-from croma.downstream import pathorob_schedule, probe_sweep, probe_sweep_over_test_sets
+from croma.downstream import (
+    pathorob_schedule,
+    probe_sweep,
+    probe_sweep_over_test_sets,
+    probe_sweep_with_predictions,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 VENDORED = ROOT / "src" / "croma" / "downstream" / "_pathorob.py"
@@ -571,3 +576,386 @@ def test_the_library_never_imports_torch() -> None:
         code = module.read_text(encoding="utf-8")
 
         assert "import torch" not in code, f"{module} imports torch"
+
+
+# --- The prediction record -------------------------------------------------------------
+#
+# A study that asks *which* held-out rows a confounded probe gets wrong needs every probe's
+# predictions, not only its score. The record rides on the sweep's own probes, so the first
+# property it has to keep is that it changes nothing the sweep already reports.
+
+
+def _unseen_confounder():
+    unseen_x = np.array([[0.0, 4.0, 0.0, 0.0], [2.0, 4.0, 0.0, 0.0]] * 3, dtype=float)
+    unseen_y = np.array([0, 1] * 3)
+    return unseen_x, unseen_y
+
+
+def test_recording_predictions_leaves_every_accuracy_matrix_bit_identical() -> None:
+    # Recording draws no random numbers and refits nothing, so the matrices must be the very
+    # bits the plain sweep returns -- not merely close to them. An approximate match would
+    # hide a recorder that perturbed the generator the arrangement reads.
+    embeddings, confounders, labels = _synthetic_cells()
+    common = dict(
+        schedule=_schedule(favourable_slides=(4, 3, 2)),
+        test_sets={"unseen_confounder": _unseen_confounder()},
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=3,
+        seed=5,
+    )
+
+    plain = probe_sweep_over_test_sets(embeddings, confounders, labels, **common)
+    recorded = probe_sweep_with_predictions(embeddings, confounders, labels, **common)
+
+    assert set(recorded.accuracies) == set(plain)
+    for name, matrix in plain.items():
+        assert np.array_equal(recorded.accuracies[name], matrix)
+
+
+def _balanced_accuracy_from_margins(true_labels, margins, classes):
+    """What sklearn's ``predict`` makes of ``decision_function``: sign when binary, else argmax."""
+    from sklearn.metrics import balanced_accuracy_score
+
+    if margins.shape[1] == 1:
+        predicted = classes[(margins[:, 0] > 0).astype(int)]
+    else:
+        predicted = classes[margins.argmax(axis=1)]
+    return balanced_accuracy_score(true_labels, predicted)
+
+
+def test_the_held_out_margins_are_the_ones_each_in_domain_accuracy_was_scored_on() -> None:
+    # The record is only worth joining to anything if row r of a replicate's margins is the
+    # prediction for held-out row held_out[r]. The sweep's own accuracy matrix is the
+    # independent witness: re-scoring the recorded margins against the labels of the
+    # recorded rows has to give back every entry, split by split and replicate by replicate.
+    embeddings, confounders, labels = _synthetic_cells()
+    # A noisier cloud than the default, so the probes make mistakes and an accuracy below
+    # 1.0 can tell a correct row assignment from a shuffled one.
+    embeddings = embeddings + np.random.default_rng(3).normal(scale=0.9, size=embeddings.shape)
+    record = probe_sweep_with_predictions(
+        embeddings,
+        confounders,
+        labels,
+        schedule=_schedule(favourable_slides=(4, 2, 0)),
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=3,
+        seed=5,
+    )
+
+    in_domain = record.accuracies["in_domain"]
+    assert (in_domain < 1.0).any()
+    n_splits, iterations = in_domain.shape
+    assert record.held_out.shape[0] == iterations
+    assert record.margins["in_domain"].shape[:3] == (n_splits, iterations, record.held_out.shape[1])
+    assert record.margins["in_domain"].shape[3] == 1  # binary: one decision column
+    for split in range(n_splits):
+        for replicate in range(iterations):
+            rows = record.held_out[replicate]
+            rescored = _balanced_accuracy_from_margins(
+                labels[rows], record.margins["in_domain"][split, replicate], record.classes
+            )
+            assert rescored == in_domain[split, replicate]
+
+
+def _three_class_cells(rows_per_cell: int = ROWS_PER_CELL, seed: int = 0):
+    """A 3-confounder x 3-class tileset, noisy enough that the probes make mistakes."""
+    rng = np.random.default_rng(seed)
+    rows, confounders, labels = [], [], []
+    for confounder in range(3):
+        for label in range(3):
+            centre = np.zeros(4)
+            centre[label] += 1.5
+            centre[3] += 1.5 * confounder
+            rows.append(centre + rng.normal(scale=0.8, size=(rows_per_cell, 4)))
+            confounders.extend([confounder] * rows_per_cell)
+            labels.extend([label] * rows_per_cell)
+    return np.concatenate(rows), np.array(confounders), np.array(labels)
+
+
+def _three_class_schedule(favourable_slides=(3, 5), rows_per_slide=ROWS_PER_SLIDE):
+    """Split 0 balanced; later splits favour the diagonal and take from the rest."""
+    schedule = []
+    for favourable in favourable_slides:
+        rest = (9 - favourable) // 2
+        split_map = [
+            (i, j, (favourable if i == j else rest) * rows_per_slide)
+            for i in range(3)
+            for j in range(3)
+        ]
+        schedule.append((split_map, 7))
+    return schedule
+
+
+def test_a_multiclass_probe_records_one_decision_column_per_class_on_every_test_set() -> None:
+    # Off the binary case, a margin is a vector: the probe's score for every class, whose
+    # argmax is its prediction. A named test set gets the same treatment as the held-out
+    # rows, row for row in the caller's order, so its accuracy is recoverable from it too.
+    embeddings, confounders, labels = _three_class_cells()
+    unseen_x = embeddings[::7] + np.array([0.0, 0.0, 0.0, 3.0])
+    unseen_y = labels[::7]
+    record = probe_sweep_with_predictions(
+        embeddings,
+        confounders,
+        labels,
+        schedule=_three_class_schedule(),
+        test_sets={"unseen_confounder": (unseen_x, unseen_y)},
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=2,
+        seed=9,
+    )
+
+    assert record.classes.tolist() == [0, 1, 2]
+    unseen = record.margins["unseen_confounder"]
+    assert unseen.shape == (2, 2, len(unseen_x), 3)
+    assert record.margins["in_domain"].shape[3] == 3
+    assert (record.accuracies["unseen_confounder"] < 1.0).any()
+    for split in range(2):
+        for replicate in range(2):
+            rows = record.held_out[replicate]
+            assert _balanced_accuracy_from_margins(
+                labels[rows], record.margins["in_domain"][split, replicate], record.classes
+            ) == (record.accuracies["in_domain"][split, replicate])
+            assert _balanced_accuracy_from_margins(
+                unseen_y, unseen[split, replicate], record.classes
+            ) == (record.accuracies["unseen_confounder"][split, replicate])
+
+
+def test_the_record_keeps_the_regularisation_each_probe_was_refitted_with() -> None:
+    # PathoROB's validation search picks C from a fixed logarithmic grid; the record keeps
+    # the pick, per split and replicate, because a margin's scale depends on it.
+    embeddings, confounders, labels = _synthetic_cells()
+    record = probe_sweep_with_predictions(
+        embeddings,
+        confounders,
+        labels,
+        schedule=_schedule(),
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=2,
+    )
+    grid = 10 ** np.linspace(-8, 4, 15)
+
+    assert record.best_c.shape == (2, 2)
+    assert all(np.isclose(grid, c, rtol=1e-12, atol=0).any() for c in record.best_c.ravel())
+
+
+# --- Fewer training tiles per slide ----------------------------------------------------
+#
+# A low-data regime keeps the protocol and thins its training set: each training and
+# validation slide gives up most of its rows, while which slides train, which are held
+# out, and every test row stay exactly where the full-tile sweep put them.
+
+
+def test_asking_for_every_tile_of_a_slide_reproduces_the_full_tile_sweep_bit_for_bit() -> None:
+    # "All of a slide's rows" is the full-tile sweep, so it has to be the full-tile sweep to
+    # the bit, through the reduced-tile code path rather than around it.
+    embeddings, confounders, labels = _synthetic_cells()
+    common = dict(
+        schedule=_schedule(favourable_slides=(4, 3, 2)),
+        test_sets={"unseen_confounder": _unseen_confounder()},
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=3,
+        seed=5,
+    )
+
+    full = probe_sweep_over_test_sets(embeddings, confounders, labels, **common)
+    every_tile = probe_sweep_over_test_sets(
+        embeddings, confounders, labels, train_rows_per_slide=ROWS_PER_SLIDE, **common
+    )
+
+    assert set(every_tile) == set(full)
+    for name, matrix in full.items():
+        assert np.array_equal(every_tile[name], matrix)
+
+
+def test_fewer_training_tiles_hold_out_the_very_rows_the_full_tile_sweep_holds_out() -> None:
+    # The low-data comparison is only a comparison if the probes are graded on the same
+    # rows: same held-out in-domain rows replicate by replicate, same named test set row
+    # for row. What changes is the probe, which saw a third of each slide.
+    embeddings, confounders, labels = _synthetic_cells()
+    embeddings = embeddings + np.random.default_rng(3).normal(scale=0.9, size=embeddings.shape)
+    unseen_x, unseen_y = _unseen_confounder()
+    common = dict(
+        schedule=_schedule(favourable_slides=(4, 2, 0)),
+        test_sets={"unseen_confounder": (unseen_x, unseen_y)},
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=3,
+        seed=5,
+    )
+
+    full = probe_sweep_with_predictions(embeddings, confounders, labels, **common)
+    thin = probe_sweep_with_predictions(
+        embeddings, confounders, labels, train_rows_per_slide=1, **common
+    )
+
+    assert np.array_equal(thin.held_out, full.held_out)
+    assert thin.margins["unseen_confounder"].shape == full.margins["unseen_confounder"].shape
+    for split in range(3):
+        for replicate in range(3):
+            rows = thin.held_out[replicate]
+            assert _balanced_accuracy_from_margins(
+                labels[rows], thin.margins["in_domain"][split, replicate], thin.classes
+            ) == (thin.accuracies["in_domain"][split, replicate])
+            assert _balanced_accuracy_from_margins(
+                unseen_y, thin.margins["unseen_confounder"][split, replicate], thin.classes
+            ) == (thin.accuracies["unseen_confounder"][split, replicate])
+    assert not np.array_equal(thin.margins["in_domain"], full.margins["in_domain"])
+
+
+def test_the_tiles_a_slide_keeps_are_a_function_of_the_seed() -> None:
+    # Reproducible like the rest of the sweep: the same seed keeps the same rows, and
+    # nothing else -- the tile draw has no seed of its own to forget to pass.
+    embeddings, confounders, labels = _synthetic_cells()
+    common = dict(
+        schedule=_schedule(),
+        rows_per_slide=ROWS_PER_SLIDE,
+        iterations=2,
+        train_rows_per_slide=1,
+    )
+
+    first = probe_sweep_with_predictions(embeddings, confounders, labels, seed=5, **common)
+    again = probe_sweep_with_predictions(embeddings, confounders, labels, seed=5, **common)
+    other = probe_sweep_with_predictions(embeddings, confounders, labels, seed=6, **common)
+
+    assert np.array_equal(first.margins["in_domain"], again.margins["in_domain"])
+    assert not np.array_equal(first.held_out, other.held_out)
+
+
+def test_a_cohort_with_its_own_arrangement_keeps_it_at_fewer_tiles() -> None:
+    # Tolkach-ESCA's arrangement pushes a drawn set of cases to the held-out tail. The
+    # rows are thinned after it runs, so the cases it pushed back are still the ones held
+    # out -- here, the impostor rows it moves to the tail are what the probe is graded on.
+    embeddings, confounders, labels, impostors = _cells_with_impostors()
+    embeddings = np.repeat(embeddings, 2, axis=0)
+    confounders = np.repeat(confounders, 2)
+    labels = np.repeat(labels, 2)
+    impostors = {row for impostor in impostors for row in (2 * impostor, 2 * impostor + 1)}
+
+    def impostors_to_the_tail(cells, rng):
+        for cell_row in cells:
+            for slides in cell_row:
+                rng.shuffle(slides)
+                slides.sort(key=lambda slide: slide[0] in impostors)
+        return cells
+
+    common = dict(
+        schedule=_schedule(favourable_slides=(5, 3), balanced_load=5, rows_per_slide=2),
+        rows_per_slide=2,
+        iterations=2,
+        validation_fraction=0.2,
+        arrange_slides=impostors_to_the_tail,
+    )
+
+    full = probe_sweep_with_predictions(embeddings, confounders, labels, **common)
+    thin = probe_sweep_with_predictions(
+        embeddings, confounders, labels, train_rows_per_slide=1, **common
+    )
+
+    assert np.array_equal(thin.held_out, full.held_out)
+    assert impostors <= set(thin.held_out[0].tolist())
+
+
+def _training_calls(monkeypatch, sweep_kwargs, embeddings, confounders, labels):
+    """Every (training rows, validation rows) the sweep hands PathoROB's trainer, in order.
+
+    The trainer is where the sweep's slicing becomes a probe, so it is the one place the
+    row counts are observable; the last feature column carries each row's index so the
+    rows can be read back off the matrices the trainer receives.
+    """
+    import croma.downstream.probe as probe_module
+
+    calls = []
+    trainer = probe_module.train_logistic_regression
+
+    def spy(train_x, train_y, val_x, val_y, test_xs, test_ys, **kwargs):
+        calls.append((train_x[:, -1].astype(int).tolist(), val_x[:, -1].astype(int).tolist()))
+        return trainer(train_x, train_y, val_x, val_y, test_xs, test_ys, **kwargs)
+
+    monkeypatch.setattr(probe_module, "train_logistic_regression", spy)
+    indexed = np.column_stack([embeddings, np.arange(len(embeddings), dtype=float)])
+    probe_sweep(indexed, confounders, labels, **sweep_kwargs)
+    monkeypatch.setattr(probe_module, "train_logistic_regression", trainer)
+    return calls
+
+
+def test_every_training_slide_gives_the_same_number_of_tiles_and_validation_shrinks_alike(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The low-data sweep is the full-tile sweep with each training slide thinned: the same
+    # slides train, each contributing exactly `train_rows_per_slide` of its rows, so every
+    # cell is scaled alike and the schedule's Cramér's V does not move. Validation is cut
+    # from the same rows, by the same factor, but never below one row per cell.
+    rows_per_slide, kept = 6, 2
+    embeddings, confounders, labels = _synthetic_cells(rows_per_cell=10 * rows_per_slide)
+    common = dict(
+        schedule=_schedule(favourable_slides=(4, 2), rows_per_slide=rows_per_slide),
+        rows_per_slide=rows_per_slide,
+        iterations=2,
+        seed=5,
+    )
+
+    full = _training_calls(monkeypatch, common, embeddings, confounders, labels)
+    thin = _training_calls(
+        monkeypatch,
+        dict(common, train_rows_per_slide=kept),
+        embeddings,
+        confounders,
+        labels,
+    )
+
+    def cell(row):
+        return int(confounders[row]), int(labels[row])
+
+    assert len(thin) == len(full)
+    for (full_train, full_val), (thin_train, thin_val) in zip(full, thin):
+        # Rows are laid out slide by slide, so a row's slide is its position over the
+        # slide length.
+        slides = {}
+        for row in thin_train:
+            slides.setdefault(row // rows_per_slide, []).append(row)
+        assert set(slides) == {row // rows_per_slide for row in full_train}
+        assert all(len(rows) == kept for rows in slides.values())
+        assert set(thin_train) <= set(full_train)
+
+        full_counts = {c: [cell(r) for r in full_train].count(c) for c in map(cell, full_train)}
+        thin_counts = {c: [cell(r) for r in thin_train].count(c) for c in map(cell, thin_train)}
+        assert thin_counts == {c: n * kept // rows_per_slide for c, n in full_counts.items()}
+
+        assert set(thin_val) <= set(full_val)
+        for c in set(map(cell, full_val)):
+            full_n = [cell(r) for r in full_val].count(c)
+            thin_n = [cell(r) for r in thin_val].count(c)
+            assert thin_n == max(1, full_n * kept // rows_per_slide)
+
+
+@pytest.mark.parametrize("train_rows_per_slide", [0, ROWS_PER_SLIDE + 1])
+def test_a_slide_cannot_contribute_fewer_than_one_tile_or_more_than_it_carries(
+    train_rows_per_slide: int,
+) -> None:
+    embeddings, confounders, labels = _synthetic_cells()
+
+    with pytest.raises(ValueError, match="train_rows_per_slide"):
+        probe_sweep(
+            embeddings,
+            confounders,
+            labels,
+            schedule=_schedule(),
+            rows_per_slide=ROWS_PER_SLIDE,
+            train_rows_per_slide=train_rows_per_slide,
+        )
+
+
+def test_thinning_needs_training_blocks_made_of_whole_slides() -> None:
+    # "Each training slide keeps n rows" has no meaning for a block that ends mid-slide.
+    embeddings, confounders, labels = _synthetic_cells()
+    (split_map, max_train_slides), confounded = _schedule()
+    ragged = [(i, j, take - 1 if (i, j) == (0, 0) else take) for i, j, take in split_map]
+
+    with pytest.raises(ValueError, match="whole number"):
+        probe_sweep(
+            embeddings,
+            confounders,
+            labels,
+            schedule=[(ragged, max_train_slides), confounded],
+            rows_per_slide=ROWS_PER_SLIDE,
+            train_rows_per_slide=1,
+        )

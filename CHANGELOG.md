@@ -102,6 +102,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Link-preview metadata (Open Graph) on every documentation page, via
   `sphinxext-opengraph` in the `docs` extra: sharing a docs URL now renders a title, a
   per-page description and the dataset-montage image instead of a bare link.
+- `croma.downstream.probe_sweep_with_predictions` runs the confounder-biased probe sweep
+  and keeps every probe's decision margins on each test set, the held-out rows they belong
+  to and the chosen regularisation, in a `ProbeSweepRecord`. Its accuracy matrices are
+  bit-identical to `probe_sweep_over_test_sets`; recording draws no random numbers.
+- `train_rows_per_slide` on every form of the sweep, for a low-data regime: each training
+  slide contributes that many of its rows and validation shrinks by the same factor, while
+  the slides, the held-out rows and every test set stay the full-tile sweep's. Unset, or
+  equal to `rows_per_slide`, the sweep is unchanged to the bit.
+- `scripts/studies/apd/probe_records.py` writes one prediction record per cohort, encoder
+  and training-tile level under `output/studies/probe-records/`, keyed by tile identity;
+  every full-tile record must reproduce its APD cell to within 1e-9.
 
 ### Removed
 

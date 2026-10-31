@@ -82,6 +82,27 @@ def validation_fraction(rows_per_slide):
     return None if rows_per_slide > 1 else VAL_FRACTION
 
 
+def sweep_arguments(dataset, cohort):
+    """The sweep's protocol for ``dataset``: everything it is called with but the rows.
+
+    Schedule, OOD test set, slide length, seed, validation rule and slide arrangement. One
+    place, because a second study re-running this sweep -- the probe-record study does --
+    has to run exactly this one for its accuracies to be the cells written here.
+    """
+    rows_per_slide = DATASETS[dataset]["num_patches_per_slide"]
+    return dict(
+        schedule=split_schedule(dataset, rows_per_slide),
+        test_sets={OUT_OF_DOMAIN: (cohort.ood_embeddings, cohort.ood_labels)},
+        rows_per_slide=rows_per_slide,
+        seed=PROBE_SEED,
+        # PathoROB's own rule at patch level; at slide level it underflows to zero, so the
+        # study states a fraction instead -- one of its two documented slide-level
+        # deviations, the other being loaders._pcabiop_split_map's schedule.
+        validation_fraction=validation_fraction(rows_per_slide),
+        arrange_slides=arrangement_for(dataset, cohort.group_ids),
+    )
+
+
 def compute(model, dataset, iterations=20):
     """Run the confounder-biased probe sweep for one (model, dataset) and reduce it.
 
@@ -90,24 +111,14 @@ def compute(model, dataset, iterations=20):
     later reporting decision needs) derives from them without re-running the sweep, which
     is the expensive part.
     """
-    cfg = DATASETS[dataset]
-    rows_per_slide = cfg["num_patches_per_slide"]
     cohort = load_data(model, dataset)
 
     accuracies = probe_sweep_over_test_sets(
         cohort.embeddings,
         cohort.confounders,
         cohort.labels,
-        schedule=split_schedule(dataset, rows_per_slide),
-        test_sets={OUT_OF_DOMAIN: (cohort.ood_embeddings, cohort.ood_labels)},
-        rows_per_slide=rows_per_slide,
         iterations=iterations,
-        seed=PROBE_SEED,
-        # PathoROB's own rule at patch level; at slide level it underflows to zero, so the
-        # study states a fraction instead -- one of its two documented slide-level
-        # deviations, the other being loaders._pcabiop_split_map's schedule.
-        validation_fraction=validation_fraction(rows_per_slide),
-        arrange_slides=arrangement_for(dataset, cohort.group_ids),
+        **sweep_arguments(dataset, cohort),
     )
     id_accuracies, ood_accuracies = accuracies[IN_DOMAIN], accuracies[OUT_OF_DOMAIN]
     return dict(

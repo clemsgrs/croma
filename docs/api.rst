@@ -94,12 +94,28 @@ protocol.
 
 .. autofunction:: croma.downstream.probe_sweep_over_test_sets
 
+Recording every probe's predictions
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The sweep discards each probe once it is scored. This form runs the same sweep -- same
+probes, accuracy matrices identical to the bit -- and keeps every probe's decision margins
+on each test set, the held-out rows they belong to, and the regularisation it was refitted
+with, so a later analysis can ask which rows a confounded probe gets wrong.
+
+.. autofunction:: croma.downstream.probe_sweep_with_predictions
+
+.. autoclass:: croma.downstream.ProbeSweepRecord
+
+Every form of the sweep also takes ``train_rows_per_slide`` for a low-data regime: each
+training slide contributes only that many of its rows and validation shrinks by the same
+factor, while the slides, the held-out rows and every test set stay the full-tile sweep's.
+
 PathoROB's schedules
 ^^^^^^^^^^^^^^^^^^^^
 
 .. autofunction:: croma.downstream.pathorob_schedule
 
-These two, and ``croma.downstream.IN_DOMAIN`` -- the key the sweep's own held-out matrix
+These, and ``croma.downstream.IN_DOMAIN`` -- the key the sweep's own held-out matrix
 comes back under -- are reachable under ``croma.downstream`` but are not promoted to the
 top level, so they carry no stability promise.
 
