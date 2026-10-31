@@ -34,8 +34,10 @@ def _write_pcabiop(root: Path, models: list[str], n_rows: int = 4) -> Path:
 
 
 def test_the_pcabiop_apd_roster_is_the_published_slide_panel(tmp_path, monkeypatch):
-    # Study arms are written beside the published slide embeddings, so a default APD run
-    # that took every .npy in the directory would fold them into the published panel.
+    # Study arms live in the study's outputs, but one can still reach the published
+    # directory (an ``--embeddings-dir`` override, or a reduction from before the study
+    # kept its arms to itself). A default APD run that took every .npy in that directory
+    # would then fold it into the published panel.
     import apd_experiment
     import layout
 
@@ -139,22 +141,35 @@ def _write_run(run_root: Path) -> None:
             np.save(directory / f"{sid}.npy", np.asarray(payload[sid], dtype=np.float16))
 
 
-def _reduce(tmp_path: Path, published: np.ndarray):
+def _published(tmp_path: Path, published) -> Path:
+    """A stand-in for the published ``output/embeddings/pcabiop/``, holding ``TITAN.npy``."""
+    directory = tmp_path / "published" / "pcabiop"
+    directory.mkdir(parents=True, exist_ok=True)
+    np.save(directory / "TITAN.npy", np.asarray(published, dtype=np.float32))
+    return directory
+
+
+def _study_arms(tmp_path: Path) -> Path:
+    """Where the study arms land by default: inside the study's own outputs."""
+    return tmp_path / "study" / "embeddings" / "pcabiop"
+
+
+def _reduce(tmp_path: Path, published: np.ndarray, embeddings_dir: Path | None = None):
     import slide_vs_meanpool as study
 
-    embeddings = tmp_path / "embeddings" / "pcabiop"
-    embeddings.mkdir(parents=True, exist_ok=True)
-    np.save(embeddings / "TITAN.npy", np.asarray(published, dtype=np.float32))
-    run_root = tmp_path / "runs" / "TITAN"
+    published_dir = _published(tmp_path, published)
+    run_root = tmp_path / "study" / "runs" / "TITAN"
     _write_run(run_root)
+    override = {} if embeddings_dir is None else {"embeddings_dir": embeddings_dir}
     record = study.reduce_pair(
         study.PAIRS_BY_MODEL["TITAN"],
         rows=ROWS,
         run_root=run_root,
-        embeddings_dir=embeddings,
         study_dir=tmp_path / "study",
+        published_dir=published_dir,
+        **override,
     )
-    return record, embeddings
+    return record, embeddings_dir or _study_arms(tmp_path)
 
 
 def test_the_mean_pooled_arm_is_the_plain_mean_of_each_slides_tiles(tmp_path):
@@ -206,7 +221,7 @@ def test_a_rerun_that_does_not_reproduce_becomes_the_slide_arm(tmp_path):
 def test_reduction_never_overwrites_an_existing_different_embedding(tmp_path):
     import slide_vs_meanpool as study
 
-    embeddings = tmp_path / "embeddings" / "pcabiop"
+    embeddings = _study_arms(tmp_path)
     embeddings.mkdir(parents=True)
     np.save(embeddings / "TITAN-meanpool.npy", np.ones((3, 2), dtype=np.float32))
 
@@ -228,10 +243,8 @@ def test_reducing_an_unfinished_extraction_names_the_extraction_step(tmp_path):
     # an absent or partial run must say what is missing and how to produce it.
     import slide_vs_meanpool as study
 
-    embeddings = tmp_path / "embeddings" / "pcabiop"
-    embeddings.mkdir(parents=True)
-    np.save(embeddings / "TITAN.npy", np.zeros((3, 2), dtype=np.float32))
-    run_root = tmp_path / "runs" / "TITAN"
+    published = _published(tmp_path, np.zeros((3, 2)))
+    run_root = tmp_path / "study" / "runs" / "TITAN"
     _write_run(run_root)
     (run_root / "par" / "slide_embeddings" / "q1.npy").unlink()
 
@@ -240,10 +253,135 @@ def test_reducing_an_unfinished_extraction_names_the_extraction_step(tmp_path):
             study.PAIRS_BY_MODEL["TITAN"],
             rows=ROWS,
             run_root=run_root,
-            embeddings_dir=embeddings,
             study_dir=tmp_path / "study",
+            published_dir=published,
         )
-    assert not (embeddings / "TITAN-meanpool.npy").exists()
+    assert not (_study_arms(tmp_path) / "TITAN-meanpool.npy").exists()
+
+
+# --- where the study arms live ---------------------------------------------------------
+
+
+def test_the_default_arm_directory_is_in_the_study_outputs_not_the_published_tileset():
+    import slide_vs_meanpool as study
+
+    default = study.study_embeddings_dir(study.STUDY_DIR)
+
+    assert default == study.STUDY_DIR / "embeddings" / "pcabiop"
+    assert not default.is_relative_to(study.PCABIOP_DIR)
+
+
+def test_reduce_writes_the_study_arms_into_the_study_outputs_by_default(tmp_path, monkeypatch):
+    # Other branches' PCaBiop APD sweeps glob the published directory for models, so the
+    # study arms never land there unless an override asks for it.
+    import slide_vs_meanpool as study
+
+    published = _published(tmp_path, [SLIDES["p1"], [-1.0, 3.0], SLIDES["q1"]])  # p2 differs
+    ROWS.to_csv(published / "manifest.csv", index=False)
+    before = {p.name: p.read_bytes() for p in published.iterdir()}
+    study_dir = tmp_path / "study"
+    _write_run(study_dir / "runs" / "TITAN")
+    monkeypatch.setattr(study, "PCABIOP_DIR", published)
+
+    assert study.main(["reduce", "--study-dir", str(study_dir), "--pairs", "TITAN"]) == 0
+
+    assert sorted(p.name for p in _study_arms(tmp_path).iterdir()) == [
+        "TITAN-meanpool.npy",
+        "TITAN-meanpool.npy.json",
+        "TITAN-rerun.npy",
+        "TITAN-rerun.npy.json",
+    ]
+    # The published directory is read (row order, the published TITAN.npy), never written.
+    assert {p.name: p.read_bytes() for p in published.iterdir()} == before
+
+
+def test_an_override_into_the_published_directory_still_never_touches_a_published_file(
+    tmp_path,
+):
+    published = [SLIDES["p1"], [-1.0, 3.0], SLIDES["q1"]]
+    published_dir = tmp_path / "published" / "pcabiop"
+
+    record, embeddings = _reduce(tmp_path, published=published, embeddings_dir=published_dir)
+
+    assert record["slide_arm"] == "TITAN-rerun"
+    assert (embeddings / "TITAN-meanpool.npy").exists()
+    np.testing.assert_array_equal(np.load(published_dir / "TITAN.npy"), published)
+
+
+def test_evaluate_reads_study_arms_from_the_study_outputs_and_published_arms_read_only(
+    tmp_path,
+):
+    import slide_vs_meanpool as study
+
+    published = _published(tmp_path, np.zeros((3, 2)))
+    arms = _study_arms(tmp_path)
+    arms.mkdir(parents=True)
+    for name in ("TITAN-meanpool", "MOOZY-rerun", "MOOZY-meanpool"):
+        np.save(arms / f"{name}.npy", np.ones((3, 2), dtype=np.float32))
+    models = ["TITAN", "TITAN-meanpool", "MOOZY-rerun", "MOOZY-meanpool"]
+
+    sources = study.arm_sources(models, embeddings_dir=arms, published_dir=published)
+
+    assert sources == {
+        "TITAN": published / "TITAN.npy",
+        "TITAN-meanpool": arms / "TITAN-meanpool.npy",
+        "MOOZY-rerun": arms / "MOOZY-rerun.npy",
+        "MOOZY-meanpool": arms / "MOOZY-meanpool.npy",
+    }
+    # A study arm is never looked up beside the published embeddings, even if one is there.
+    np.save(published / "PRISM2-meanpool.npy", np.ones((3, 2), dtype=np.float32))
+    with pytest.raises(FileNotFoundError, match=r"PRISM2-meanpool.*reduce"):
+        study.arm_sources(["PRISM2-meanpool"], embeddings_dir=arms, published_dir=published)
+
+
+def test_the_downstream_driver_scores_the_arms_from_their_sources(tmp_path, monkeypatch):
+    # The APD loader reads ``layout.embeddings_dir("pcabiop")``; the study stages its arms
+    # in a study-local root for it, as it does for the benchmark runner.
+    import apd_experiment
+    import layout
+    import slide_vs_meanpool as study
+
+    published = _published(tmp_path, [[1.0, 0.0], [0.0, 1.0], [1.0, 1.0]])
+    arms = _study_arms(tmp_path)
+    arms.mkdir(parents=True)
+    np.save(arms / "TITAN-meanpool.npy", np.full((3, 2), 7.0, dtype=np.float32))
+    models = ["TITAN", "TITAN-meanpool"]
+    sources = study.arm_sources(models, embeddings_dir=arms, published_dir=published)
+    seen = {}
+
+    def fake_run(datasets, models, *, iterations, out_dir, overwrite, jobs):
+        import json
+
+        for model in models:
+            seen[model] = np.load(layout.embeddings_dir("pcabiop") / f"{model}.npy")
+            cell = Path(out_dir) / "pcabiop" / f"{model}.json"
+            cell.parent.mkdir(parents=True, exist_ok=True)
+            cell.write_text(json.dumps({"model": model}))
+        return pd.DataFrame({"dataset": "pcabiop", "model": list(models)})
+
+    monkeypatch.setattr(apd_experiment, "run", fake_run)
+    output_root = layout.OUTPUT_ROOT
+
+    apd, cells = study.run_downstream(models, sources=sources, study_dir=tmp_path / "study", jobs=1)
+
+    np.testing.assert_array_equal(seen["TITAN"], np.load(published / "TITAN.npy"))
+    np.testing.assert_array_equal(seen["TITAN-meanpool"], np.full((3, 2), 7.0))
+    assert set(cells) == set(models) and apd["model"].tolist() == models
+    assert layout.OUTPUT_ROOT == output_root
+
+
+def test_evaluate_defaults_to_the_study_arm_directory(tmp_path, monkeypatch):
+    import slide_vs_meanpool as study
+
+    captured = {}
+    monkeypatch.setattr(study, "evaluate", lambda pairs, **kwargs: captured.update(kwargs))
+
+    study.main(["evaluate", "--study-dir", str(tmp_path / "study")])
+    assert captured["embeddings_dir"] == _study_arms(tmp_path)
+    assert captured["published_dir"] == study.PCABIOP_DIR
+
+    study.main(["evaluate", "--study-dir", str(tmp_path / "study"), "--embeddings-dir", "x"])
+    assert captured["embeddings_dir"] == Path("x")
 
 
 def test_each_cohort_rerun_embeds_exactly_its_pcabiop_slides_in_row_order():
@@ -544,8 +682,8 @@ def test_the_paper_values_carry_the_paired_differences_or_fail_on_a_missing_pair
 
 
 def test_the_published_slide_payloads_carry_exactly_the_slide_panel():
-    """Study arms live beside the published slide embeddings and in the study directory;
-    the results payload and the site built from it must never list one."""
+    """Study arms live in the study directory; the results payload and the site built
+    from it must never list one."""
     import slide_vs_meanpool as study
     from loaders import slide_panel
 
@@ -578,3 +716,8 @@ def test_the_full_reproduction_reduces_then_evaluates_the_study():
     assert position("slide_vs_meanpool.py reduce") < position(
         "slide_vs_meanpool.py evaluate --recompute"
     )
+    # Both steps take the study-root default for the arms, so evaluate reads what reduce
+    # wrote and neither writes beside the published embeddings.
+    study_commands = [c for c in commands if "slide_vs_meanpool.py" in c]
+    assert len(study_commands) == 2
+    assert not any("--embeddings-dir" in c for c in study_commands)

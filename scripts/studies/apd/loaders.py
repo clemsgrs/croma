@@ -81,8 +81,9 @@ def pathorob_tile_panel(metadata_path: Path | None = None) -> pd.DataFrame:
 
 
 #: APD datasets whose roster is the published slide panel rather than every ``.npy`` in
-#: the tileset directory. Study arms (e.g. ``TITAN-meanpool``) are written beside the
-#: published slide embeddings, so a directory glob would fold them into the panel.
+#: the tileset directory. Study arms (e.g. ``TITAN-meanpool``) live in their study's
+#: outputs, but any extra ``.npy`` that reaches the published directory (an override, a
+#: stale copy) would otherwise be folded into the panel by a directory glob.
 SLIDE_PANEL_DATASETS = ("pcabiop",)
 
 

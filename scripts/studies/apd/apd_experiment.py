@@ -150,8 +150,8 @@ def _reductions(res, *, chance, cramers_v):
 def model_list(dataset):
     available = {p.stem for p in layout.embeddings_dir(DATASETS[dataset]["src"]).glob("*.npy")}
     if dataset in SLIDE_PANEL_DATASETS:
-        # Study arms sit beside the published slide embeddings; they join an APD run only
-        # when named explicitly (``--models``), never through the default roster.
+        # The roster is the published slide panel, not the directory: a study arm or any
+        # other extra .npy there joins an APD run only when named (``--models``).
         expected = slide_panel()
         missing = sorted(set(expected) - available)
         if missing:

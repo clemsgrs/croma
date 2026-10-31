@@ -22,18 +22,25 @@ Subcommands (run in this order):
     slide embeddings with the published ``output/embeddings/pcabiop/<MODEL>.npy`` (per-slide
     cosine), and choose the slide arm: the published embedding when every slide reproduces
     (cosine >= ``REPRODUCTION_COSINE``), the re-run otherwise. Writes ``<MODEL>-meanpool.npy``
-    (and ``<MODEL>-rerun.npy`` when the re-run is the slide arm) beside the published files,
-    each with a sidecar recording its source runs, tile encoder and per-slide tile counts.
+    (and ``<MODEL>-rerun.npy`` when the re-run is the slide arm) into the study's own
+    ``embeddings/pcabiop/`` (``--embeddings-dir`` overrides), each with a sidecar recording
+    its source runs, tile encoder and per-slide tile counts.
 ``evaluate``
     Score both arms of every reduced pair: the benchmark runner on the in-domain cohort
     (biological kNN balanced accuracy, median CRoMa, F(0), LTM_10 at the headline m) and
     the PCaBiop APD driver (nIPD_ID, nIPD_OOD), then paired differences slide - mean-pool:
     CRoMa summaries on one stratified slide bootstrap shared by every arm, nIPD with its
-    spread over the paired probe replicates.
+    spread over the paired probe replicates. Study arms are read from the study's
+    ``embeddings/pcabiop/``; a published slide arm from ``output/embeddings/pcabiop/``.
 
-The study arms never enter the published slide panel: the benchmark runs in a study-local
-output root, the APD roster for PCaBiop is the slide panel from ``model_metadata.csv``
-(study arms join only when named), and the results payload reads the published runs only.
+Everything this study writes stays under its study directory
+(``output/studies/slide-vs-meanpool/``): the re-runs, the derived arms, and the study-local
+output root (``bench/``) that the benchmark runner and the APD driver run in. The published
+``output/embeddings/pcabiop/`` is only read (its row-order manifest and the published slide
+embeddings). The study arms never enter the published slide panel: they are not in the
+published directory, the APD roster for PCaBiop is the slide panel from
+``model_metadata.csv`` (study arms join only when named), and the results payload reads
+the published runs only.
 """
 
 from __future__ import annotations
@@ -298,6 +305,15 @@ RERUN_SUFFIX = "-rerun"
 SUBSET_COHORT = {"ID": "panda", "OOD": "par"}
 
 
+def study_embeddings_dir(study_dir: Path) -> Path:
+    """Where the study's derived arms live: ``<study_dir>/embeddings/pcabiop/``.
+
+    The mean-pooled and re-run arms are study outputs. They are kept out of the published
+    ``output/embeddings/pcabiop/``, which APD sweeps read for their models.
+    """
+    return Path(study_dir) / "embeddings" / TILESET
+
+
 def _load_embedding(directory: Path, sample_id: str) -> np.ndarray:
     """One saved embedding: slide2vec writes ``.pt``; ``.npy`` is accepted too."""
     pt = directory / f"{sample_id}.pt"
@@ -354,8 +370,8 @@ def reduce_pair(
     *,
     rows: pd.DataFrame,
     run_root: Path,
-    embeddings_dir: Path,
     study_dir: Path,
+    embeddings_dir: Path | None = None,
     published_dir: Path | None = None,
 ) -> dict:
     """Build the pair's mean-pooled arm and choose its slide arm from one re-run.
@@ -363,11 +379,16 @@ def reduce_pair(
     ``rows`` is the pcabiop row-order contract (``sample_id``, ``subset``), indexed by
     pcabiop row number; every matrix written follows it. The mean-pooled arm is the
     unweighted mean of each slide's tile embeddings. The re-run's slide embeddings are
-    compared, slide by slide, with the published ``<slide_model>.npy`` (read from
-    ``published_dir``, by default ``embeddings_dir``); the per-slide cosines go to
-    ``study_dir/reproduction/<slide_model>.csv`` and the returned record says which slide
-    arm the pair uses. Arms are written to ``embeddings_dir``.
+    compared, slide by slide, with the published ``<slide_model>.npy`` (read, never
+    written, from ``published_dir``, by default ``PCABIOP_DIR``); the per-slide cosines go
+    to ``study_dir/reproduction/<slide_model>.csv`` and the returned record says which
+    slide arm the pair uses. Arms are written to ``embeddings_dir``, by default
+    :func:`study_embeddings_dir` of ``study_dir``. They are always suffixed
+    (``-meanpool``, ``-rerun``), so even an override pointing at the published directory
+    never writes a published ``<slide_model>.npy``.
     """
+    embeddings_dir = embeddings_dir or study_embeddings_dir(study_dir)
+    published_dir = published_dir or PCABIOP_DIR
     sample_ids = rows["sample_id"].astype(str).tolist()
     cohorts = [SUBSET_COHORT[s] for s in rows["subset"]]
     unfinished = []
@@ -396,7 +417,7 @@ def reduce_pair(
     meanpool = np.stack(pooled).astype(np.float32)
     rerun = np.stack(slides).astype(np.float32)
 
-    published = np.load((published_dir or embeddings_dir) / f"{pair.slide_model}.npy")
+    published = np.load(published_dir / f"{pair.slide_model}.npy")
     published = published[rows.index.to_numpy()]
     if published.shape != rerun.shape:
         raise ValueError(
@@ -580,20 +601,44 @@ def _published_run():
     return by_benchmark(BENCHMARK)
 
 
+def arm_sources(
+    models: list[str], *, embeddings_dir: Path, published_dir: Path
+) -> dict[str, Path]:
+    """The pcabiop matrix each arm is read from.
+
+    A published slide-panel name (the slide arm of a pair that reproduced) is read from
+    ``published_dir``, read-only. Every study arm (``-meanpool``, ``-rerun``) is read from
+    the study's ``embeddings_dir`` and only there, even if a file of that name sits in the
+    published directory.
+    """
+    sources, missing = {}, []
+    for model in models:
+        directory = published_dir if model in PAIRS_BY_MODEL else embeddings_dir
+        sources[model] = directory / f"{model}.npy"
+        if not sources[model].exists():
+            missing.append(str(sources[model]))
+    if missing:
+        raise FileNotFoundError(
+            f"no embeddings at {missing}: study arms are read from {embeddings_dir}; "
+            "run `python scripts/studies/slide_vs_meanpool.py reduce` first"
+        )
+    return sources
+
+
 def run_representation(
     models: list[str],
     *,
     rows: pd.DataFrame,
     study_dir: Path,
-    embeddings_dir: Path,
+    sources: dict[str, Path],
     recompute: bool = False,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """The benchmark runner on the in-domain cohort, for every arm, in a study-local root.
 
-    The arms' in-domain rows are written as a ``panda-wsi`` tileset under
-    ``study_dir/bench/``, and the published run's own replay flags are passed back, so the
-    only thing that differs from the published PCaBiop run is the embeddings. Returns
-    ``(metrics, per_sample, benchmark_argv)``.
+    The arms' in-domain rows (read from ``sources``, see :func:`arm_sources`) are written
+    as a ``panda-wsi`` tileset under ``study_dir/bench/``, and the published run's own
+    replay flags are passed back, so the only thing that differs from the published
+    PCaBiop run is the embeddings. Returns ``(metrics, per_sample, benchmark_argv)``.
     """
     import benchmark
     import layout
@@ -621,7 +666,7 @@ def run_representation(
         directory.mkdir(parents=True, exist_ok=True)
         tileset.to_csv(layout.tileset_manifest(BENCH_TILESET), index=False)
         for model in models:
-            matrix = np.load(embeddings_dir / f"{model}.npy")[take]
+            matrix = np.load(sources[model])[take]
             np.save(directory / f"{model}.npy", matrix.astype(np.float32))
         sys.argv = ["benchmark.py", *argv]
         if benchmark.main() != 0:
@@ -654,16 +699,44 @@ def check_published_arms(metrics: pd.DataFrame, slide_arms: list[str]) -> None:
 
 
 def run_downstream(
-    models: list[str], *, study_dir: Path, jobs: int, recompute: bool = False
+    models: list[str],
+    *,
+    sources: dict[str, Path],
+    study_dir: Path,
+    jobs: int,
+    recompute: bool = False,
 ) -> tuple[pd.DataFrame, dict]:
-    """The PCaBiop APD driver for every arm, into the study directory (resumable)."""
-    import apd_experiment
+    """The PCaBiop APD driver for every arm, into the study directory (resumable).
 
+    The APD loader reads ``layout.embeddings_dir("pcabiop")``. Each arm's full pcabiop
+    matrix (from ``sources``, see :func:`arm_sources`) is copied into a ``pcabiop``
+    tileset under ``study_dir/bench/``, and the driver runs with the layout rebound there,
+    as the representation arm does. The APD workers are forked, so they inherit that root.
+    """
+    import multiprocessing
+
+    import apd_experiment
+    import layout
+
+    if jobs > 1 and multiprocessing.get_start_method() != "fork":
+        raise RuntimeError(
+            "the APD workers must inherit the study-local output root; this needs the "
+            f"'fork' start method, not {multiprocessing.get_start_method()!r} (or --jobs 1)"
+        )
     out_dir = study_dir / "apd"
-    apd = apd_experiment.run(
-        ["pcabiop"], models, iterations=apd_experiment.CANONICAL_ITERATIONS,
-        out_dir=out_dir, overwrite=recompute, jobs=jobs,
-    )
+    saved_root = layout.OUTPUT_ROOT
+    layout.OUTPUT_ROOT = study_dir / "bench"
+    try:
+        directory = layout.embeddings_dir(TILESET)
+        directory.mkdir(parents=True, exist_ok=True)
+        for model in models:
+            np.save(directory / f"{model}.npy", np.load(sources[model]))
+        apd = apd_experiment.run(
+            ["pcabiop"], models, iterations=apd_experiment.CANONICAL_ITERATIONS,
+            out_dir=out_dir, overwrite=recompute, jobs=jobs,
+        )
+    finally:
+        layout.OUTPUT_ROOT = saved_root
     cells = {m: json.loads((out_dir / "pcabiop" / f"{m}.json").read_text()) for m in models}
     return apd[apd["dataset"] == "pcabiop"], cells
 
@@ -691,14 +764,18 @@ def evaluate(
     pairs: list[str],
     *,
     study_dir: Path,
-    embeddings_dir: Path,
     jobs: int,
+    embeddings_dir: Path | None = None,
+    published_dir: Path | None = None,
     recompute: bool = False,
 ) -> None:
     """Score both arms of every pair and write the study's three artifacts.
 
-    ``recompute`` bypasses the benchmark's metrics cache and the APD resume cache, as the
-    one-command reproduction does.
+    Study arms are read from ``embeddings_dir`` (by default :func:`study_embeddings_dir`
+    of ``study_dir``, where ``reduce`` writes them); a published slide arm from
+    ``published_dir`` (by default ``PCABIOP_DIR``), read-only. ``recompute`` bypasses the
+    benchmark's metrics cache and the APD resume cache, as the one-command reproduction
+    does.
     """
     import importlib.metadata
 
@@ -713,13 +790,19 @@ def evaluate(
     arms = [(p, records[p]["slide_arm"], records[p]["meanpool_arm"]) for p in pairs]
     models = [m for _, slide, meanpool in arms for m in (slide, meanpool)]
     rows = _pcabiop_rows()
+    sources = arm_sources(
+        models,
+        embeddings_dir=embeddings_dir or study_embeddings_dir(study_dir),
+        published_dir=published_dir or PCABIOP_DIR,
+    )
 
     metrics, per_sample, bench_argv = run_representation(
-        models, rows=rows, study_dir=study_dir, embeddings_dir=embeddings_dir,
-        recompute=recompute,
+        models, rows=rows, study_dir=study_dir, sources=sources, recompute=recompute,
     )
     check_published_arms(metrics, [slide for _, slide, _ in arms])
-    apd, cells = run_downstream(models, study_dir=study_dir, jobs=jobs, recompute=recompute)
+    apd, cells = run_downstream(
+        models, sources=sources, study_dir=study_dir, jobs=jobs, recompute=recompute
+    )
 
     headline = f"croma_m{int(CROMA_HEADLINE_M)}"
     per_sample = per_sample.rename(columns={headline: "croma"})[
@@ -745,6 +828,7 @@ def evaluate(
             for p in pairs
         },
         "declared_pairs": [pair.slide_model for pair in PAIRS],
+        "arm_sources": {model: str(path) for model, path in sources.items()},
         "extraction": json.loads(extraction.read_text()) if extraction.exists() else None,
         "slide2vec_version": importlib.metadata.version("slide2vec"),
         "representation": {
@@ -770,7 +854,9 @@ def evaluate(
 # command line
 # ---------------------------------------------------------------------------
 
+#: The study root: re-runs, derived arms (:func:`study_embeddings_dir`) and results.
 STUDY_DIR = REPO / "output" / "studies" / STUDY_NAME
+#: The published PCaBiop tileset: read for its row order and published slide arms only.
 PCABIOP_DIR = REPO / "output" / "embeddings" / TILESET
 REPRODUCTION_JSON = "reproduction.json"
 
@@ -842,6 +928,13 @@ def _cmd_status(args) -> int:
     return 0
 
 
+def _embeddings_dir(args) -> Path:
+    """``--embeddings-dir`` if given, else the study's own arm directory."""
+    if args.embeddings_dir is not None:
+        return Path(args.embeddings_dir)
+    return study_embeddings_dir(Path(args.study_dir))
+
+
 def _cmd_reduce(args) -> int:
     rows = _limited(_pcabiop_rows(), args.limit)
     study_dir = Path(args.study_dir)
@@ -852,8 +945,8 @@ def _cmd_reduce(args) -> int:
             PAIRS_BY_MODEL[model],
             rows=rows,
             run_root=study_dir / "runs" / model,
-            embeddings_dir=Path(args.embeddings_dir),
             study_dir=study_dir,
+            embeddings_dir=_embeddings_dir(args),
             published_dir=PCABIOP_DIR,
         )
         records[model] = record
@@ -871,8 +964,9 @@ def _cmd_evaluate(args) -> int:
     evaluate(
         args.pairs,
         study_dir=Path(args.study_dir),
-        embeddings_dir=Path(args.embeddings_dir),
         jobs=args.jobs,
+        embeddings_dir=_embeddings_dir(args),
+        published_dir=PCABIOP_DIR,
         recompute=args.recompute,
     )
     return 0
@@ -901,7 +995,12 @@ def main(argv: list[str] | None = None) -> int:
                 "--pairs", nargs="+", default=required_pairs, choices=list(PAIRS_BY_MODEL)
             )
         if name in ("reduce", "evaluate"):
-            cmd.add_argument("--embeddings-dir", default=str(PCABIOP_DIR))
+            cmd.add_argument(
+                "--embeddings-dir",
+                default=None,
+                help="where the study arms are written and read "
+                "(default: <study-dir>/embeddings/pcabiop)",
+            )
         if name == "evaluate":
             cmd.add_argument("--jobs", type=int, default=3, help="parallel APD processes")
             cmd.add_argument(

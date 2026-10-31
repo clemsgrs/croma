@@ -96,7 +96,8 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("finetune-pairs", "scripts/studies/finetune_pairs.py", []),
     # tab:slide-vs-meanpool. Prerequisite outside this pipeline: the GPU re-extraction
     # `scripts/studies/slide_vs_meanpool.py extract` (hours per pair; run it detached).
-    # Without it, reduce fails naming the pair, cohort and that command.
+    # Without it, reduce fails naming the pair, cohort and that command. Both steps use
+    # the study-root default for the arms (output/studies/slide-vs-meanpool/embeddings/).
     ("slide-vs-meanpool-reduce", "scripts/studies/slide_vs_meanpool.py", ["reduce"]),
     ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
      ["evaluate", "--recompute"]),
