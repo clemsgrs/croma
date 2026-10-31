@@ -8,8 +8,6 @@ re-run made cells stale, does only the work left. It exits 0 only once every exp
 cell is current.
 
     python scripts/studies/auc/sweep.py --jobs 3
-
-``run_sweep.sh`` does the same from the shell, for a detached launch.
 """
 
 from __future__ import annotations
