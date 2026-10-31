@@ -101,6 +101,14 @@ STUDIES = [
     # skipped, so a missing or stale study fails the build -- _grade_matched.load raises,
     # and generate_paper_values.py fails on the same study for its macros.
     ("generate_grade_matched_table.py", None, "run scripts/studies/grade_matched_pools.py"),
+    # tab:nipd-auroc (nIPD from AUROC beside balanced accuracy). No required input: it is
+    # never skipped, so a missing or stale AUROC cell fails the build -- _nipd_auroc.load
+    # raises, and generate_paper_values.py fails on the same cells for its macros.
+    (
+        "generate_nipd_auroc_table.py",
+        None,
+        "run scripts/studies/auc/sweep.py, then scripts/studies/auc/report.py",
+    ),
 ]
 
 

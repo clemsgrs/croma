@@ -168,6 +168,7 @@ exclude = [
   "/tests/test_scale_scatter.py",
   "/tests/test_mari_vs_ri_tables.py",
   "/tests/test_grade_matched_paper.py",
+  "/tests/test_nipd_auroc_paper.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
