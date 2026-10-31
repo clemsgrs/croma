@@ -326,35 +326,55 @@ def test_a_variant_that_cannot_be_computed_fails(drop, keep, match):
         ex.sensitivity(_scores(), drop=drop, keep=keep)
 
 
-def _rank_pareto():
-    """Two benchmarks, four encoders. Mean ranks by hand, full panel (median, tail):
+def _rank_inputs() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Two benchmarks, four encoders: median CRoMa and LTM_10 values. Tail ranks are 3, 2, 1, 4
+    on both. Mean ranks by hand, full panel (median, tail):
     P (1.5, 3), Q (2, 2), R (3.5, 1), S (3, 4) -> frontier R, Q, P.
     Without S and re-ranked: P (1.5, 3), Q (1.5, 2), R (3, 1) -> Q now ties P's median and has
     the milder tail, so the frontier is R, Q."""
-    from _rank_pareto import RankPareto
-
     models = ["P", "Q", "R", "S"]
     medians = pd.DataFrame({"b1": [0.9, 0.7, 0.6, 0.8], "b2": [0.8, 0.9, 0.7, 0.6]}, index=models)
-    tails = pd.DataFrame({"b1": [3, 2, 1, 4], "b2": [3, 2, 1, 4]}, index=models)
-    return RankPareto(
+    tails = pd.DataFrame(
+        {"b1": [-0.3, -0.2, -0.1, -0.4], "b2": [-0.3, -0.2, -0.1, -0.4]}, index=models
+    )
+    return medians, tails
+
+
+def test_the_mean_rank_frontier_is_re_ranked_among_the_encoders_kept():
+    from _rank_pareto import RankPareto
+
+    medians, tails = _rank_inputs()
+    rp = RankPareto(
         medians=medians,
         median_ranks=medians.rank(ascending=False, method="first").astype(int),
-        tail_ranks=tails,
+        tail_ranks=tails.rank(ascending=False, method="first").astype(int),
         exposed=frozenset({"S"}),
         adversarial="b2",
     )
 
-
-def test_the_mean_rank_frontier_is_re_ranked_among_the_encoders_kept():
-    rp = _rank_pareto()
-
-    assert ex.rank_frontier(rp, {"P", "Q", "R", "S"}) == ("R", "Q", "P") == rp.frontier
-    assert ex.rank_frontier(rp, {"P", "Q", "R"}) == ("R", "Q")
+    assert ex.rank_frontier(medians, tails, {"P", "Q", "R", "S"}) == ("R", "Q", "P") == rp.frontier
+    assert ex.rank_frontier(medians, tails, {"P", "Q", "R"}) == ("R", "Q")
 
 
 def test_a_rank_frontier_over_unknown_encoders_fails():
     with pytest.raises(ex.CaptionClaimError, match="T"):
-        ex.rank_frontier(_rank_pareto(), {"P", "Q", "T"})
+        ex.rank_frontier(*_rank_inputs(), {"P", "Q", "T"})
+
+
+def test_rank_inputs_are_each_benchmarks_median_and_tail_over_the_ranked_panel():
+    frame = _scores()
+    medians, tails = ex.rank_inputs({"b1": frame, "b2": frame.iloc[::-1]})
+
+    assert list(medians.index) == ["A", "B", "C", "D", "E"]  # the control is a floor
+    assert list(medians.columns) == ["b1", "b2"]
+    assert medians.loc["B", "b2"] == 0.4 and tails.loc["D", "b1"] == 0.0
+
+
+def test_rank_inputs_over_benchmarks_that_rank_different_panels_fail():
+    frame = _scores()
+
+    with pytest.raises(ex.CaptionClaimError, match="E"):
+        ex.rank_inputs({"b1": frame, "b2": frame[frame["model"] != "E"]})
 
 
 def _write_inputs(root: Path, *, join_croma: list[float] | None = None) -> None:
@@ -517,6 +537,103 @@ def test_an_input_that_changed_after_it_was_fingerprinted_is_refused(tmp_path):
 def test_a_missing_input_fails_the_whole_build(tmp_path):
     with pytest.raises(FileNotFoundError):
         ex.build(tmp_path)
+
+
+#: A six-encoder panel in registry spellings, one (median, LTM_10) per encoder on every
+#: benchmark. UNI leads both axes and Mascaret, which leads the checkout's mean-rank panel,
+#: trails both; among the disclosed-unexposed encoders RudolfV 2 leads.
+_PANEL = {
+    "UNI": (0.6, 0.1),
+    "RudolfV 2": (0.5, 0.0),
+    "CONCH": (0.4, -0.1),
+    "CONCHv1.5": (0.3, -0.2),
+    "GPFM": (0.2, -0.3),
+    "Mascaret": (0.1, -0.4),
+    "DINOv2-B": (-0.2, -0.9),
+}
+
+
+def _write_panel(root: Path) -> None:
+    """The Camelyon, TCGA-4x4 and Tolkach-ESCA runs and their APD join, under ``root`` only."""
+    from _panel_macros import APD_JOINED_CSV
+    from loaders import DATASETS
+    from paper_manifest import by_prefix
+
+    models = list(_PANEL)
+    croma = [_PANEL[m][0] for m in models]
+    joined = []
+    for prefix in ex.SENSITIVITY_PREFIXES:
+        entry = by_prefix(prefix)
+        metrics = root / entry.metrics_rel
+        metrics.parent.mkdir(parents=True)
+        pd.DataFrame(
+            {"model": models, "croma": croma, "croma_ltm_alpha": [_PANEL[m][1] for m in models]}
+        ).to_csv(metrics, index=False)
+        (dataset,) = [k for k, spec in DATASETS.items() if spec["benchmark"] == entry.benchmark]
+        joined.append(
+            pd.DataFrame(
+                {
+                    "dataset": dataset,
+                    "model": models,
+                    "croma": croma,
+                    "nipd_id": [-0.01, -0.03, -0.02, -0.05, -0.04, -0.06, -0.2],
+                    "nipd_ood": [-0.02, -0.01, -0.04, -0.03, -0.06, -0.05, -0.3],
+                }
+            )
+        )
+    path = root / APD_JOINED_CSV
+    path.parent.mkdir(parents=True)
+    pd.concat(joined).to_csv(path, index=False)
+
+
+def test_the_mean_rank_rows_read_the_runs_under_the_build_root(tmp_path):
+    _write_panel(tmp_path)
+
+    built = ex.build(tmp_path)
+
+    lines = built.drop_exposed_tex.splitlines()
+    assert _row(lines, "Mean rank", 0)[1:3] == ["All ranked", "6"]
+    assert _row(lines, "Mean rank", 0)[5] == "UNI"
+    # GPFM and Mascaret are exposed on TCGA-4x4 (GPFM on Camelyon too), so both leave.
+    assert _row(lines, "Mean rank", 1)[1:3] == ["Drop exposed", "4"]
+    assert _row(lines, "Mean rank", 1)[5] == "UNI"
+    assert _row(lines, "Mean rank", 2)[1:3] == ["Disclosed, not exposed", "3"]
+    assert _row(lines, "Mean rank", 2)[5] == "RudolfV-2"
+    assert r"\newcommand{\TileRankFrontierDisclosedUnexposedModels}{RudolfV-2}" in built.macros
+
+
+def test_a_run_replaced_after_its_scores_were_read_is_refused(tmp_path, monkeypatch):
+    """The header must hash the bytes the scores came from: an input is fingerprinted before
+    it is read, so a replacement between the read and the hash cannot pass as the source."""
+    _write_panel(tmp_path)
+    read = ex.load_scores
+
+    def read_then_replace(root, entry):
+        frame = read(root, entry)
+        if entry.prefix == "Camelyon":
+            path = Path(root) / entry.metrics_rel
+            path.write_text(path.read_text().replace("0.6", "0.65"))
+        return frame
+
+    monkeypatch.setattr(ex, "load_scores", read_then_replace)
+
+    with pytest.raises(ex.CaptionClaimError, match="changed while"):
+        ex.build(tmp_path)
+
+
+def test_the_full_panel_mean_rank_frontier_is_the_overview_figures(monkeypatch):
+    """tab:drop-exposed and the mean-rank overview figure name the same frontier."""
+    from _rank_pareto import load as load_rank_pareto
+
+    monkeypatch.chdir(ROOT)  # ``_cross_benchmark.load`` reads its runs relative to the cwd
+    try:
+        built = ex.build(ROOT)
+        expected = load_rank_pareto().frontier
+    except FileNotFoundError as missing:
+        pytest.skip(f"output/ is not tracked: {missing}")
+
+    lines = built.drop_exposed_tex.splitlines()
+    assert _row(lines, "Mean rank", 0)[5] == ", ".join(expected)
 
 
 # --- macros ----------------------------------------------------------------------------------

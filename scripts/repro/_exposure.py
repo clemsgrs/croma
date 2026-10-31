@@ -491,28 +491,52 @@ def sensitivity(
     )
 
 
-def rank_frontier(rp, kept: set[str]) -> tuple[str, ...]:
+def rank_inputs(scores: dict[str, pd.DataFrame]) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Median CRoMa (margin) and LTM_10, encoder x benchmark, over the ranked panel.
+
+    ``scores`` maps a benchmark to its ``load_scores`` frame, so the mean-rank rows read the
+    same runs, under the same root, as the per-benchmark rows. The per-run columns are aligned
+    into one frame as ``_cross_benchmark.load`` aligns them, so the ``method="first"`` tie rule
+    sees the rows in the order the overview figure's ranks do. Every benchmark must rank the
+    same panel: a mean rank over encoders some benchmark never ranked is not a mean.
+    """
+    columns = {
+        label: frame[frame["model"] != CONTROL_MODEL].set_index("model")
+        for label, frame in scores.items()
+    }
+    (first, panel), *rest = ((label, set(f.index)) for label, f in columns.items())
+    for label, other in rest:
+        if other != panel:
+            raise CaptionClaimError(
+                f"{label} does not rank {first}'s panel; only in {label} {sorted(other - panel)}, "
+                f"only in {first} {sorted(panel - other)}. The mean-rank rows need one panel."
+            )
+    medians = pd.DataFrame({label: f["croma"] for label, f in columns.items()})
+    tails = pd.DataFrame({label: f["croma_ltm_alpha"] for label, f in columns.items()})
+    return medians, tails.reindex(medians.index)
+
+
+def rank_frontier(medians: pd.DataFrame, tails: pd.DataFrame, kept: set[str]) -> tuple[str, ...]:
     """The cross-benchmark mean-rank frontier over ``kept`` only, every rank re-taken among them.
 
-    ``rp`` is a ``_rank_pareto.RankPareto``. Ranks are relative to who competes, so a dropped
-    encoder must leave the ranking, not just the plot: median ranks are re-taken from the kept
-    medians, tail ranks from the kept tail ranks (an order-preserving re-rank), both with the
-    tie rule ``_rank_pareto`` uses. The frontier is ``RankPareto.frontier`` on the result.
+    ``medians`` and ``tails`` are ``rank_inputs``. Ranks are relative to who competes, so a
+    dropped encoder must leave the ranking, not just the plot: both ranks are taken among the
+    kept encoders (1 = highest median, 1 = mildest tail), with the tie rule ``_rank_pareto``
+    uses. The frontier is ``RankPareto.frontier``, the primitive the overview figure rings;
+    its exposure and adversarial fields play no part in it.
     """
-    from dataclasses import replace
+    from _rank_pareto import RankPareto
 
-    unknown = sorted(set(kept) - set(rp.models))
+    unknown = sorted(set(kept) - set(medians.index))
     if unknown:
         raise CaptionClaimError(f"rank frontier: {unknown} are not in the ranked panel.")
-    order = [m for m in rp.models if m in kept]
-    medians = rp.medians.loc[order]
-    sub = replace(
-        rp,
-        medians=medians,
-        median_ranks=medians.rank(ascending=False, method="first").astype(int),
-        tail_ranks=rp.tail_ranks.loc[order].rank(ascending=True, method="first").astype(int),
-        exposed=frozenset(rp.exposed & set(order)),
-        bio_ranks=None,
+    order = [m for m in medians.index if m in kept]
+    sub = RankPareto(
+        medians=medians.loc[order],
+        median_ranks=medians.loc[order].rank(ascending=False, method="first").astype(int),
+        tail_ranks=tails.loc[order].rank(ascending=False, method="first").astype(int),
+        exposed=frozenset(),
+        adversarial="",
     )
     return sub.frontier
 
@@ -713,6 +737,24 @@ def exposure_macros(
     return lines
 
 
+def _run_input(root: Path, entry) -> Path:
+    """``entry``'s ``metrics.csv`` under ``root``; a missing run fails with what to re-run."""
+    path = Path(root) / entry.metrics_rel
+    if not path.is_file():
+        raise FileNotFoundError(f"{entry.prefix}: missing {path}; re-run the benchmark.")
+    return path
+
+
+def _join_input(root: Path) -> Path:
+    """The APD join under ``root``; a missing join fails with what to re-run."""
+    from _panel_macros import APD_JOINED_CSV
+
+    path = Path(root) / APD_JOINED_CSV
+    if not path.is_file():
+        raise FileNotFoundError(f"missing {path}; run scripts/studies/apd/apd_croma_correlation.py.")
+    return path
+
+
 def load_scores(root: Path, entry) -> pd.DataFrame:
     """One row per encoder of ``entry``'s run: median CRoMa (margin) and LTM_10 from the run's
     ``metrics.csv``, nIPD_ID and nIPD_OOD from the APD join, in published spellings.
@@ -722,18 +764,10 @@ def load_scores(root: Path, entry) -> pd.DataFrame:
     the join was built from another run and its nIPD cannot be paired with these scores.
     """
     import numpy as np
-    from _panel_macros import APD_JOINED_CSV
     from _paper_tables import croma_as_margin
     from loaders import DATASETS
 
-    metrics_path = Path(root) / entry.metrics_rel
-    if not metrics_path.is_file():
-        raise FileNotFoundError(f"{entry.prefix}: missing {metrics_path}; re-run the benchmark.")
-    joined_path = Path(root) / APD_JOINED_CSV
-    if not joined_path.is_file():
-        raise FileNotFoundError(
-            f"missing {joined_path}; run scripts/studies/apd/apd_croma_correlation.py."
-        )
+    metrics_path, joined_path = _run_input(root, entry), _join_input(root)
     (dataset,) = [k for k, spec in DATASETS.items() if spec["benchmark"] == entry.benchmark]
     metrics = published_models(pd.read_csv(metrics_path)).set_index("model")
     joined = published_models(pd.read_csv(joined_path))
@@ -802,21 +836,15 @@ class Built:
     macros: list[str]
 
 
-def _rank_variants(blocks: dict[str, BenchmarkSensitivity], matrix: ExposureMatrix):
+def _rank_variants(scores: dict[str, pd.DataFrame], matrix: ExposureMatrix):
     """The mean-rank frontier on the full panel, without encoders exposed on any of the three
-    benchmarks, and on the encoders disclosed and unexposed on all three."""
-    from _rank_pareto import load as load_rank_pareto
+    benchmarks, and on the encoders disclosed and unexposed on all three. ``scores`` is keyed
+    by manifest prefix."""
     from paper_manifest import by_prefix
 
-    rp = load_rank_pareto()
-    panel = set(rp.models)
-    for prefix, block in blocks.items():
-        if set(block.variants[0].kept) != panel:
-            raise CaptionClaimError(
-                f"{prefix}: its ranked panel is not the mean-rank panel; the rank variants would "
-                "drop encoders the benchmark never ranked."
-            )
-    benchmarks = [by_prefix(p).benchmark for p in blocks]
+    medians, tails = rank_inputs(scores)
+    panel = set(medians.index)
+    benchmarks = [by_prefix(p).benchmark for p in scores]
     exposed_any = set().union(*(matrix.drop_exposed(b, panel) for b in benchmarks))
     clean_all = set.intersection(*(matrix.disclosed_unexposed(b, panel) for b in benchmarks))
     order = tuple(sorted(panel))
@@ -829,26 +857,32 @@ def _rank_variants(blocks: dict[str, BenchmarkSensitivity], matrix: ExposureMatr
         if len(kept) < 2:
             raise CaptionClaimError(f"mean-rank {name}: {len(kept)} encoders kept, no frontier.")
         variants.append(
-            RankVariant(name, tuple(m for m in order if m in kept), rank_frontier(rp, kept))
+            RankVariant(
+                name, tuple(m for m in order if m in kept), rank_frontier(medians, tails, kept)
+            )
         )
     return tuple(variants)
 
 
 def build(root: Path = REPO) -> Built:
-    """Read every input once, refuse on a missing or moving one, and render.
+    """Read every input once, under ``root``, refuse on a missing or moving one, and render.
 
-    The mean-rank variants read the three runs through ``_rank_pareto.load``, as the overview
-    figure does, from the repository's own ``output/`` tree.
+    The mean-rank variants are ranked from the same scores as the per-benchmark rows, so the
+    whole table, and the fingerprints in its header, describe one set of runs.
     """
     from _panel_macros import APD_JOINED_CSV
     from paper_manifest import by_prefix
 
     entries = [by_prefix(p) for p in SENSITIVITY_PREFIXES]
-    scores = {e.prefix: load_scores(root, e) for e in entries}
-    metadata_rel = str(METADATA.relative_to(REPO))
-    md_prints = fingerprints(REPO, [metadata_rel])
+    # Hash before reading: a fingerprint taken after the read could describe a replacement
+    # written in between, and the closing check would then pass over the old scores.
+    for entry in entries:
+        _run_input(root, entry)
+    _join_input(root)
+    md_prints = fingerprints(REPO, [str(METADATA.relative_to(REPO))])
     run_prints = fingerprints(root, [e.metrics_rel for e in entries] + [APD_JOINED_CSV])
 
+    scores = {e.prefix: load_scores(root, e) for e in entries}
     matrix = exposure_matrix(load_metadata())
     blocks = {}
     for entry in entries:
@@ -861,7 +895,7 @@ def build(root: Path = REPO) -> Built:
                 keep=matrix.disclosed_unexposed(entry.benchmark, roster),
             ),
         )
-    ranks = _rank_variants(blocks, matrix)
+    ranks = _rank_variants(scores, matrix)
 
     built = Built(
         matrix_tex=render_matrix(matrix, md_prints),
