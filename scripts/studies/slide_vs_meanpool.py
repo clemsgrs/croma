@@ -221,6 +221,31 @@ def cohort_progress(cohort_dir: Path, sample_ids: list[str]) -> tuple[int, int]:
     return int(done), len(sample_ids)
 
 
+def _cohort_slides(rows: pd.DataFrame, cohort: str, limit: int | None) -> pd.DataFrame:
+    """One cohort's pcabiop rows, the first ``limit`` of them for a smoke run."""
+    cohort_rows = _cohort_rows(rows, cohort)
+    return cohort_rows if limit is None else cohort_rows.head(limit)
+
+
+def pair_run_root(study_dir: Path, pair: Pair) -> Path:
+    """Where ``extract`` re-runs ``pair``: ``<study_dir>/runs/<MODEL>``, made absolute."""
+    return Path(study_dir).absolute() / "runs" / pair.slide_model
+
+
+def pair_complete(
+    pair: Pair, rows: pd.DataFrame, *, study_dir: Path, limit: int | None = None
+) -> bool:
+    """Whether every slide of both cohorts (the first ``limit`` of each, if given) has a
+    tile and a slide embedding in ``pair``'s re-run, so ``extract`` has nothing to do."""
+    run_root = pair_run_root(study_dir, pair)
+    for cohort in COHORTS:
+        ids = _cohort_slides(rows, cohort, limit)["sample_id"].astype(str).tolist()
+        done, total = cohort_progress(run_root / cohort, ids)
+        if done != total:
+            return False
+    return True
+
+
 def source_config_path(pair: Pair, cohort: str) -> Path:
     """The published run config a cohort's re-run starts from."""
     if cohort == "panda" and pair.panda_config_replayable:
@@ -235,7 +260,8 @@ def extract_pair(
     study_dir: Path,
     limit: int | None = None,
 ) -> None:
-    """Re-run one pair on both cohorts, sequentially; finished cohorts are skipped.
+    """Re-run one pair on both cohorts, sequentially; finished cohorts are skipped, and a
+    finished pair (:func:`pair_complete`) touches nothing.
 
     slide2vec runs with the run directory as its working directory, so every path it is
     handed is absolute. ``study_dir`` is made absolute, not resolved, so recorded paths
@@ -245,17 +271,19 @@ def extract_pair(
 
     import yaml
 
+    if pair_complete(pair, rows, study_dir=study_dir, limit=limit):
+        print(f"[extract] {pair.slide_model}: both cohorts done, skipping", flush=True)
+        return
+
     env = dict(os.environ)
     for key, value in EXTRACTION_ENV_DEFAULTS.items():
         env.setdefault(key, value)
     Path(env["HF_MODULES_CACHE"]).mkdir(parents=True, exist_ok=True)
 
-    run_root = Path(study_dir).absolute() / "runs" / pair.slide_model
+    run_root = pair_run_root(study_dir, pair)
     run_root.mkdir(parents=True, exist_ok=True)
     for cohort in COHORTS:
-        cohort_rows = _cohort_rows(rows, cohort)
-        if limit is not None:
-            cohort_rows = cohort_rows.head(limit)
+        cohort_rows = _cohort_slides(rows, cohort, limit)
         sample_ids = cohort_rows["sample_id"].astype(str).tolist()
         done, total = cohort_progress(run_root / cohort, sample_ids)
         if done == total:
@@ -509,6 +537,13 @@ TAIL_ALPHA = 0.10
 #: statistics; the nIPD rows come from the probe replicates.
 CROMA_STATISTICS = {"median_croma": "median", "f0": "f0", "ltm": "ltm"}
 NIPD_STATISTICS = {"nipd_id": "id_test_accuracies", "nipd_ood": "ood_test_accuracies"}
+#: How the nIPD rows' ``spread`` and ``n`` are taken, recorded in ``provenance.json``.
+NIPD_SPREAD_RULE = (
+    "sample standard deviation (ddof=1) of the per-replicate slide - mean-pool nIPD "
+    "differences, over the probe replicates where both arms' own nIPD is defined (balanced "
+    "baseline above chance); n is that count, and the spread is NaN when n < 2. The point "
+    "estimate is the difference of the arms' nIPD over all replicates."
+)
 
 
 def paired_differences(
@@ -535,7 +570,13 @@ def paired_differences(
     ``apd_cells`` maps each arm to its APD accuracy matrices (``(n_splits, n_replicates)``).
     The probe replicates are paired across arms (same seeds, same splits), so each nIPD
     difference is reported with the standard deviation of its per-replicate differences:
-    descriptive spread, not an interval.
+    descriptive spread, not an interval. The point estimate is the difference of the two
+    arms' nIPD over all replicates. A single replicate has an nIPD of its own only when its
+    balanced baseline scores above chance (the rule :func:`croma.nipd` applies to the mean
+    baseline), so the spread is the sample standard deviation over the replicates where
+    both arms' nIPD is defined, ``n`` is how many those are, and the spread is NaN when
+    fewer than 2 remain (:data:`NIPD_SPREAD_RULE`). With every replicate defined, this is
+    the standard deviation over all of them.
     """
     from croma import nipd
     from croma.metrics.bootstrap import shared_draw_tail_statistics
@@ -573,17 +614,20 @@ def paired_differences(
             point = nipd(a, cramers_v=cramers_v, chance=chance) - nipd(
                 b, cramers_v=cramers_v, chance=chance
             )
+            # Row 0 is the balanced baseline; a replicate whose baseline is at or below
+            # chance has no nIPD of its own, in either arm.
+            defined = [j for j in range(a.shape[1]) if a[0, j] > chance and b[0, j] > chance]
             per_replicate = np.array(
                 [
                     nipd(a[:, [j]], cramers_v=cramers_v, chance=chance)
                     - nipd(b[:, [j]], cramers_v=cramers_v, chance=chance)
-                    for j in range(a.shape[1])
+                    for j in defined
                 ]
             )
             spread = float(np.std(per_replicate, ddof=1)) if len(per_replicate) > 1 else np.nan
             rows.append(
                 dict(pair=pair, statistic=statistic, point=float(point), lo=np.nan, hi=np.nan,
-                     spread=spread, n=int(a.shape[1]))
+                     spread=spread, n=len(defined))
             )
     return pd.DataFrame(rows)
 
@@ -902,6 +946,7 @@ def evaluate(
             "dataset": "pcabiop", "iterations": apd_experiment.CANONICAL_ITERATIONS,
             "probe_seed": apd_experiment.PROBE_SEED,
             "validation_fraction": apd_experiment.VAL_FRACTION,
+            "nipd_spread": NIPD_SPREAD_RULE,
         },
         "bootstrap": {
             "seed": BOOTSTRAP_SEED, "n_boot": BOOTSTRAP_N, "level": BOOTSTRAP_LEVEL,
@@ -967,16 +1012,25 @@ def _installed_version(package: str) -> str | None:
 
 
 def _cmd_extract(args) -> int:
-    """Run ``extract``; ``extraction.json`` records, per pair, the slide2vec that ran it."""
+    """Run ``extract``; ``extraction.json`` records, per pair, the slide2vec that ran it.
+
+    A pair whose re-run is already complete is skipped before the GPU is probed, and its
+    record is left as the run that embedded it wrote it: nothing waits for a GPU it does
+    not need, and a pass with nothing to do never restamps a record.
+    """
     import time
 
     rows = _pcabiop_rows()
     study_dir = Path(args.study_dir)
     record_path = study_dir / "extraction.json"
     record = json.loads(record_path.read_text()) if record_path.exists() else {}
+    unchanged = copy.deepcopy(record)
     slide2vec_version = _installed_version("slide2vec")
     for model in args.pairs:
         pair = PAIRS_BY_MODEL[model]
+        if pair_complete(pair, rows, study_dir=study_dir, limit=args.limit):
+            print(f"[extract] {model}: both cohorts done; skipped, its record kept", flush=True)
+            continue
         free = _gpu_free_mib()
         if not pair.required and free < GPU_FREE_MIB:
             print(f"[extract] {model}: optional and the GPU is busy ({free:.0f} MiB free); skipped")
@@ -996,8 +1050,9 @@ def _cmd_extract(args) -> int:
         }
         study_dir.mkdir(parents=True, exist_ok=True)
         record_path.write_text(json.dumps(record, indent=2) + "\n")
-    study_dir.mkdir(parents=True, exist_ok=True)
-    record_path.write_text(json.dumps(record, indent=2) + "\n")
+    if record != unchanged:
+        study_dir.mkdir(parents=True, exist_ok=True)
+        record_path.write_text(json.dumps(record, indent=2) + "\n")
     return 0
 
 

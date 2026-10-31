@@ -102,8 +102,11 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
      ["evaluate", "--recompute"]),
 ]
-#: The studies that take ``--jobs``: the probe sweeps.
-JOBS_STUDIES = {"apd-sweep", "auc-sweep"}
+#: The studies that take ``--jobs``: the probe sweeps, and the slide-vs-meanpool evaluation,
+#: which scores its arms' APD cells. Each is always told this run's count, 1 included: the
+#: sweeps default to one worker, but the evaluation defaults to three, so leaving the flag
+#: out would run three workers on a serial reproduction.
+JOBS_STUDIES = {"apd-sweep", "auc-sweep", "slide-vs-meanpool-evaluate"}
 
 #: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
 PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
@@ -121,6 +124,15 @@ BENCHMARK_ENV: dict[str, dict[str, str]] = {
 STUDY_ENV: dict[str, dict[str, str]] = {
     "grade-matched": PANDA_BLAS_ENV,
 }
+
+
+def study_command(label: str, script: str, extra: list[str], *, jobs: int) -> list[str]:
+    """The command one ``STUDIES`` entry runs, with this run's ``--jobs`` for a
+    :data:`JOBS_STUDIES` entry."""
+    cmd = [sys.executable, str(REPO / script), *extra]
+    if label in JOBS_STUDIES:
+        cmd += ["--jobs", str(int(jobs))]
+    return cmd
 
 
 def _run(cmd: list[str], *, label: str, dry_run: bool, env: dict[str, str] | None = None) -> None:
@@ -197,7 +209,7 @@ def main() -> int:
                         "cached numbers are still on disk -- not that they recompute.")
     p.add_argument("--jobs", type=int, default=1,
                    help="Parallel worker processes for the APD and AUROC probe sweeps "
-                        "(default 1).")
+                        "and the slide-vs-meanpool evaluation (default 1).")
     args = p.parse_args()
 
     entries = list(TABLES)
@@ -219,9 +231,7 @@ def main() -> int:
 
     if not args.skip_studies:
         for label, script, extra in STUDIES:
-            cmd = [sys.executable, str(REPO / script), *extra]
-            if label in JOBS_STUDIES and args.jobs > 1:
-                cmd += ["--jobs", str(int(args.jobs))]
+            cmd = study_command(label, script, extra, jobs=args.jobs)
             _run(cmd, label=label, dry_run=args.dry_run, env=STUDY_ENV.get(label))
 
     _run([sys.executable, str(REPO / "scripts/repro/build_paper.py")],

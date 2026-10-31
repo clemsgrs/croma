@@ -668,6 +668,92 @@ def test_extract_records_the_slide2vec_version_behind_each_pair(tmp_path, monkey
     assert record["TITAN"]["slide2vec_version"] == "7.1.4"
 
 
+#: The record ``extract`` wrote when it finished a pair.
+DONE_RECORD = {
+    "status": "done",
+    "started": "2026-10-20 09:00:00",
+    "finished": "2026-10-20 13:00:00",
+    "slide2vec_version": "7.1.4",
+}
+
+
+def _complete_pair_on_a_cpu_host(tmp_path: Path, monkeypatch, model: str) -> Path:
+    """A study dir whose ``model`` re-run is finished, seen from a host with no free GPU.
+
+    ``extraction.json`` holds the record of the finished run. Waiting for the GPU,
+    launching slide2vec and a slide2vec other than the recorded one are all made visible,
+    so a pass with nothing to do can be checked to touch none of them.
+    """
+    import json
+    import subprocess
+    import time
+
+    import slide_vs_meanpool as study
+
+    study_dir = tmp_path / "study"
+    _write_run(study_dir / "runs" / model)
+    (study_dir / "extraction.json").write_text(json.dumps({model: DONE_RECORD}, indent=2) + "\n")
+    monkeypatch.setattr(study, "_pcabiop_rows", lambda: ROWS)
+    monkeypatch.setattr(study, "_gpu_free_mib", lambda: 0.0)  # what a CPU host reports
+    monkeypatch.setattr(study, "_installed_version", lambda name: "9.9.9")
+
+    def no_sleep(seconds):
+        raise AssertionError(f"waited {seconds}s for a GPU that a finished pair does not need")
+
+    def no_launch(*args, **kwargs):
+        raise AssertionError("launched slide2vec for a finished pair")
+
+    monkeypatch.setattr(time, "sleep", no_sleep)
+    monkeypatch.setattr(subprocess, "run", no_launch)
+    return study_dir
+
+
+def test_a_finished_optional_pair_keeps_its_record_when_the_gpu_is_busy(tmp_path, monkeypatch):
+    import json
+
+    import slide_vs_meanpool as study
+
+    assert not study.PAIRS_BY_MODEL["PRISM"].required
+    study_dir = _complete_pair_on_a_cpu_host(tmp_path, monkeypatch, "PRISM")
+
+    assert study.main(["extract", "--study-dir", str(study_dir), "--pairs", "PRISM"]) == 0
+
+    # Not "skipped (GPU busy)": the pair ran, and its record says when and with what.
+    assert json.loads((study_dir / "extraction.json").read_text()) == {"PRISM": DONE_RECORD}
+
+
+def test_a_finished_required_pair_neither_waits_for_the_gpu_nor_restamps_its_record(
+    tmp_path, monkeypatch
+):
+    import json
+
+    import slide_vs_meanpool as study
+
+    assert study.PAIRS_BY_MODEL["TITAN"].required
+    study_dir = _complete_pair_on_a_cpu_host(tmp_path, monkeypatch, "TITAN")
+
+    assert study.main(["extract", "--study-dir", str(study_dir), "--pairs", "TITAN"]) == 0
+
+    # The times and the slide2vec version stay those of the run that embedded the slides.
+    assert json.loads((study_dir / "extraction.json").read_text()) == {"TITAN": DONE_RECORD}
+
+
+def test_a_pair_is_complete_only_when_both_its_cohorts_are(tmp_path):
+    import slide_vs_meanpool as study
+
+    pair, study_dir = study.PAIRS_BY_MODEL["TITAN"], tmp_path / "study"
+    assert not study.pair_complete(pair, ROWS, study_dir=study_dir)
+
+    run_root = study.pair_run_root(study_dir, pair)
+    _write_run(run_root)
+    assert study.pair_complete(pair, ROWS, study_dir=study_dir)
+
+    (run_root / "panda" / "slide_embeddings" / "p2.npy").unlink()
+    assert not study.pair_complete(pair, ROWS, study_dir=study_dir)
+    # A smoke run's limit counts only the first slides of each cohort.
+    assert study.pair_complete(pair, ROWS, study_dir=study_dir, limit=1)
+
+
 # --- paired differences ---------------------------------------------------------------
 
 #: Cramer's V schedule and chance level of a three-split toy probe sweep.
@@ -755,6 +841,51 @@ def test_nipd_differences_carry_their_spread_over_paired_probe_replicates():
     assert nipd_id["n"] == 2
     nipd_ood = diff.loc[("A", "nipd_ood")]
     assert (nipd_ood["point"], nipd_ood["spread"]) == (pytest.approx(0.5), pytest.approx(0.0))
+
+
+#: Two probe replicates whose balanced baselines straddle chance: the first has no nIPD of
+#: its own, but their mean baseline (0.60) is above chance, so the cell's nIPD exists.
+BELOW_CHANCE = [0.49, 0.49, 0.49]
+ABOVE_CHANCE = [0.71, 0.71, 0.71]
+
+
+def test_a_replicate_at_or_below_chance_leaves_the_nipd_comparison_standing():
+    per_sample = _per_sample({"A": np.linspace(-0.5, 0.5, 40), "A-meanpool": np.zeros(40)})
+    cell = _cell(id_columns=[BELOW_CHANCE, ABOVE_CHANCE], ood_columns=[FLAT, FLAT])
+    cells = {"A": cell, "A-meanpool": cell}
+
+    diff = _differences(per_sample, cells, [("A", "A", "A-meanpool")])
+
+    # Identical arms: the aggregate difference is defined and zero. One replicate is left
+    # to measure the spread over, and one difference has no sample standard deviation.
+    nipd_id = diff.loc[("A", "nipd_id")]
+    assert nipd_id["point"] == 0.0
+    assert nipd_id["n"] == 1
+    assert np.isnan(nipd_id["spread"])
+    nipd_ood = diff.loc[("A", "nipd_ood")]
+    assert (nipd_ood["point"], nipd_ood["spread"], nipd_ood["n"]) == (0.0, 0.0, 2)
+
+
+def test_the_nipd_spread_is_over_the_replicates_both_arms_define():
+    per_sample = _per_sample({"A": np.linspace(-0.5, 0.5, 40), "A-meanpool": np.zeros(40)})
+    cells = {
+        "A": _cell(id_columns=[FLAT, FLAT, FALL], ood_columns=[FLAT, FLAT, FLAT]),
+        # The mean-pooled arm's first replicate is below chance, so that replicate drops
+        # out of the pair's spread, although the slide arm's first replicate is defined.
+        "A-meanpool": _cell(
+            id_columns=[BELOW_CHANCE, ABOVE_CHANCE, FLAT], ood_columns=[FLAT, FLAT, FLAT]
+        ),
+    }
+
+    diff = _differences(per_sample, cells, [("A", "A", "A-meanpool")])
+
+    # The point estimate still averages all three replicates in each arm: the slide arm's
+    # mean curve is 0.9, 0.8333, 0.7667 (g = 0, -1/6, -1/3, area -1/6) and the mean-pooled
+    # arm's is flat at 0.7 (area 0). The spread is over replicates 2 and 3 only.
+    nipd_id = diff.loc[("A", "nipd_id")]
+    assert nipd_id["point"] == pytest.approx(-1.0 / 6.0)
+    assert nipd_id["spread"] == pytest.approx(np.std([0.0, -0.5], ddof=1))
+    assert nipd_id["n"] == 2
 
 
 def test_paired_differences_are_reproducible_from_their_seed():
@@ -972,3 +1103,27 @@ def test_the_full_reproduction_reduces_then_evaluates_the_study():
     study_commands = [c for c in commands if "slide_vs_meanpool.py" in c]
     assert len(study_commands) == 2
     assert not any("--embeddings-dir" in c for c in study_commands)
+
+
+def test_the_reproduction_runs_the_evaluation_with_its_own_worker_count_even_serially():
+    # The evaluation's own default is 3 APD workers, so a reproduction asked for one worker
+    # must say so. One rule covers every study that takes --jobs: it is always told the
+    # count, 1 included (the probe sweeps default to 1, so for them that changes nothing).
+    _repro()
+    import reproduce_faithful
+
+    studies = {label: (label, script, extra) for label, script, extra in reproduce_faithful.STUDIES}
+
+    def command(label: str, jobs: int) -> list[str]:
+        return reproduce_faithful.study_command(*studies[label], jobs=jobs)
+
+    assert "slide-vs-meanpool-evaluate" in reproduce_faithful.JOBS_STUDIES
+    evaluate = command("slide-vs-meanpool-evaluate", jobs=1)
+    assert evaluate[-2:] == ["--jobs", "1"]
+    assert "--recompute" in evaluate
+    assert command("slide-vs-meanpool-evaluate", jobs=4)[-2:] == ["--jobs", "4"]
+    for sweep in ("apd-sweep", "auc-sweep"):
+        assert command(sweep, jobs=1)[-2:] == ["--jobs", "1"]
+        assert command(sweep, jobs=4)[-2:] == ["--jobs", "4"]
+    assert "--jobs" not in command("slide-vs-meanpool-reduce", jobs=4)
+    assert "--jobs" not in command("auc-report", jobs=4)
