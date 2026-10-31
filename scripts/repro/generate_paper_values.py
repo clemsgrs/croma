@@ -816,6 +816,11 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append("% Robustness fine-tune vs parent (supp tab:finetune-pairs)")
     out.extend(_load_finetune_pair_macros(root))
     out.extend(sample_shortcut_macros(root))
+    # The exposure counts and the drop-exposed sensitivity, from the build that renders
+    # tab:exposure-matrix and tab:drop-exposed; a missing input raises here too.
+    from _exposure import build as build_exposure
+
+    out.extend(build_exposure(root).macros)
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel
