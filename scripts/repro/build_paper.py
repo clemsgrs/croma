@@ -130,6 +130,18 @@ STUDIES = [
     # required input: a missing or stale study fails the build -- _probe_reductions.load
     # raises, and generate_paper_values.py fails on the same study for its macros.
     ("generate_low_data_table.py", None, "run scripts/studies/probe_reductions.py"),
+    # tab:slide-vs-meanpool. Skipped by name until the study has been evaluated; once it
+    # has, a pair the table renders without study output fails the generator, and so does a
+    # declared pair left out that the study did not record as not run, with a reason.
+    (
+        "generate_slide_vs_meanpool_table.py",
+        "output/studies/slide-vs-meanpool/differences.csv",
+        "run scripts/studies/slide_vs_meanpool.py extract, reduce, then evaluate",
+    ),
+    # tab:distance-variants. No required input on purpose: the macros it feeds are emitted
+    # by generate_paper_values.py unconditionally, so a missing study must fail this build
+    # by name rather than be reported as a skip.
+    ("generate_distance_variants_table.py", None, ""),
 ]
 
 

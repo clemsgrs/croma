@@ -837,6 +837,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     # operating k, the control, TCGA-2x2, APD vs nIPD, and the typed-neighbour coverage.
     # Unlike the study blocks below, these never warn and skip -- a missing input raises.
     from _panel_macros import panel_macros
+    from generate_distance_variants_table import macros as distance_variant_macros
     from generate_sample_shortcut_floats import macros as sample_shortcut_macros
     from generate_supp_rank_table import macros as typed_neighbour_macros
 
@@ -851,6 +852,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     from _exposure import build as build_exposure
 
     out.extend(build_exposure(root).macros)
+    out.extend(distance_variant_macros(root))
 
     ss_prefix, ss_rel = SS_SHELL_SUMMARY
     ss_path = root / ss_rel
@@ -909,7 +911,31 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     out.append("% Low-data rho(CRoMa, nIPD_ID) (tab:low-data): output/studies/probe-reductions")
     out.extend(low_data_lines)
     print(f"{'low data':16s}        -> {len(low_data_lines)} macros", file=sys.stderr)
+
+    svm_lines = _slide_vs_meanpool_macros(root)
+    if svm_lines:
+        out.append("% Slide encoders vs mean-pooling of their tile encoders (tab:slide-vs-meanpool)")
+        out.extend(svm_lines)
+        print(f"{'slide-vs-meanpool':16s}     -> {len(svm_lines)} macros", file=sys.stderr)
     return "\n".join(out) + "\n"
+
+
+def _slide_vs_meanpool_macros(root: Path) -> list[str]:
+    """Slide-minus-mean-pool paired differences (``tab:slide-vs-meanpool``).
+
+    A study that has not been run is skipped by name, like every study block here. Once it
+    has run, every pair the table renders must be in its output: a missing pair raises
+    rather than dropping that pair's macros. A declared pair the study recorded as not run
+    has no macros.
+    """
+    import _slide_vs_meanpool as svm
+
+    study_dir = root / svm.STUDY_REL
+    if not (study_dir / "differences.csv").exists():
+        print(f"warning: missing {study_dir}/differences.csv, skipping slide-vs-meanpool macros",
+              file=sys.stderr)
+        return []
+    return svm.macros(svm.load(study_dir))
 
 
 def main() -> None:

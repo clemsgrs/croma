@@ -80,6 +80,23 @@ def pathorob_tile_panel(metadata_path: Path | None = None) -> pd.DataFrame:
     return panel[["model", "parent_model", "variant_role", "ranked"]]
 
 
+#: APD datasets whose roster is the published slide panel rather than every ``.npy`` in
+#: the tileset directory. Study arms (e.g. ``TITAN-meanpool``) live in their study's
+#: outputs, but any extra ``.npy`` that reaches the published directory (an override, a
+#: stale copy) would otherwise be folded into the panel by a directory glob.
+SLIDE_PANEL_DATASETS = ("pcabiop",)
+
+
+def slide_panel(metadata_path: Path | None = None) -> list[str]:
+    """Return the published slide panel, in ``panel_order``, from the model metadata."""
+    path = metadata_path or REPO / "scripts" / "bench" / "model_metadata.csv"
+    metadata = pd.read_csv(path)
+    panel = metadata.loc[metadata["panel"] == "slide"].sort_values("panel_order")
+    if panel.empty:
+        raise ValueError(f"no slide panel in {path}")
+    return panel["model"].tolist()
+
+
 #: Column naming the independence unit in the APD metadata CSVs. croma's canonical
 #: manifests call this ``group_id``, but the APD metadata is PathoROB's own published
 #: file -- joined against the source manifests on ``(slide_id, patch_id)`` -- and

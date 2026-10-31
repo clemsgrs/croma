@@ -162,6 +162,7 @@ exclude = [
   "/tests/test_dataset_cardinality.py",
   "/tests/test_panel_macros.py",
   "/tests/test_exposure_matrix.py",
+  "/tests/test_distance_variants_table.py",
   "/tests/test_results_table_layout.py",
   "/tests/test_split_schedule_table.py",
   "/tests/test_sample_shortcut_floats.py",
@@ -175,6 +176,8 @@ exclude = [
   "/tests/test_finetune_pairs_paper.py",
   "/tests/test_uncertainty_supp.py",
   "/tests/test_apd_correlation_table.py",
+  "/tests/test_slide_vs_meanpool_paper.py",
+  "/tests/fixtures/slide_vs_meanpool_table.tex",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
