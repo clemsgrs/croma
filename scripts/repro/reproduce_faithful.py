@@ -64,11 +64,10 @@ from run_config import (  # noqa: E402
 #: Every study whose output a ``build_paper.py`` generator reads: the ones its STUDIES
 #: generators read, plus ``mari_vs_ri.py`` and ``finetune_pairs.py``, which feed CORE
 #: generators (``generate_mari_vs_ri_tables.py``, ``generate_finetune_pairs_table.py``) and
-#: the ``generate_paper_values.py`` macros. Invoked
-#: bare on purpose: each already defaults to the settings the paper used (``n_boot=2000``
-#: with a fixed seed; ``--iterations 20``), and re-declaring those here would be one more
-#: list to drift. ``--jobs`` is the exception -- it is a property of the machine, not of the
-#: protocol.
+#: the ``generate_paper_values.py`` macros. Invoked bare on purpose: each already defaults to
+#: the settings the paper used (``n_boot=2000`` with a fixed seed; ``--iterations 20``), and
+#: re-declaring those here would be one more list to drift. ``--jobs`` is the exception --
+#: it is a property of the machine, not of the protocol.
 STUDIES: list[tuple[str, str, list[str]]] = [
     ("pretraining-overlap", "scripts/studies/pretraining_overlap.py", []),
     ("typed-neighbour-ranks", "scripts/repro/figures/typed_neighbor_rank_experiment.py", []),

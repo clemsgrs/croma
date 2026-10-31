@@ -325,6 +325,24 @@ class TestMacros:
 
         assert "FineTuneRobustTwoCamelyonCromaDelta" in self._macros(frame)
 
+    def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
+        import _mari_vs_ri
+        import _panel_macros
+        import generate_paper_values as gpv
+        import generate_supp_rank_table
+
+        # The blocks before this one read other studies and live runs, some relative to the
+        # repo rather than ``root``, and several raise when those are absent. Stub them so
+        # the test sees only the missing fine-tune study, on a clean clone too.
+        monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
+        monkeypatch.setattr(_mari_vs_ri, "macros", lambda study: [])
+        monkeypatch.setattr(gpv, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
+        monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
+
+        with pytest.raises(FileNotFoundError, match="finetune_pairs.py"):
+            gpv.build([], tmp_path, "auto")
+
 
 # --- the rendered table ------------------------------------------------------------------
 
