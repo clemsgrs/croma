@@ -5,8 +5,9 @@ benchmark -- ranking agreement for median CRoMa and LTM10, sign changes of the m
 the medians over encoders of |delta F(0)| and per-sample sign agreement. Panel (b) gives
 rho(median CRoMa, nIPD) under every geometry, cosine's first, on the three cohorts with
 downstream cells. A footer reports the retained whitening dimensions and Camelyon's 90% /
-99% whitening sensitivity. ``macros`` emits the numbers the text may quote; they carry
-numbers, not verdicts.
+99% whitening sensitivity, and the caption states how the cosine reference reproduced each
+run: exactly, or within the benchmark's tolerance with the largest deviation. ``macros``
+emits the numbers the text may quote; they carry numbers, not verdicts.
 
 Every number is read from the study (``_distance_variants.load``), which refuses a missing,
 incomplete or stale study; nothing here computes a statistic, so a rebuild is
@@ -26,7 +27,13 @@ if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
 import _distance_variants as dvs  # noqa: E402
-from _paper_tables import CaptionClaimError, bare_num, num_math, scriptsize_ci  # noqa: E402
+from _paper_tables import (  # noqa: E402
+    CaptionClaimError,
+    bare_num,
+    num_math,
+    sci_math,
+    scriptsize_ci,
+)
 from paper_manifest import by_benchmark  # noqa: E402
 
 OUT = Path("paper/sections/supp/distance_variants.tex")
@@ -137,6 +144,38 @@ def _footer(data: dvs.DistanceVariants) -> str:
     )
 
 
+def _join(items: list[str], last: str = " and ") -> str:
+    return items[0] if len(items) == 1 else ", ".join(items[:-1]) + last + items[-1]
+
+
+def _encoders(n: int) -> str:
+    return "one encoder" if n == 1 else f"${n}$ encoders"
+
+
+def _reproduction_sentence(data: dvs.DistanceVariants) -> str:
+    """One sentence, from the study's provenance: on which benchmarks the cosine reference
+    reproduces the runs' per-sample values exactly, and on which only within its tolerance,
+    with the largest deviation and how many encoders no kernel reproduces exactly."""
+    within = [b for b in dvs.BENCHMARK_ORDER if not data.reproduction(b)["identical"]]
+    if not within:
+        return "The cosine reference reproduces every run's per-sample values exactly."
+    exact = [by_benchmark(b).short_name for b in dvs.BENCHMARK_ORDER if b not in within]
+    clauses = [f"exactly on {_join(exact)}"] if exact else []
+    for b in within:
+        record = data.reproduction(b)
+        clauses.append(
+            f"on {by_benchmark(b).short_name} only within an absolute tolerance of "
+            f"{sci_math(float(record['tolerance']))} (largest deviation "
+            f"{sci_math(float(record['max_deviation']))}, for "
+            f"{_encoders(len(record['within_tolerance']))} that no BLAS kernel reproduces "
+            f"exactly)"
+        )
+    return (
+        f"The cosine reference reproduces the runs' per-sample values "
+        f"{_join(clauses, ', and ')}."
+    )
+
+
 def build(data: dvs.DistanceVariants | None = None) -> str:
     data = dvs.load() if data is None else data
     n = _n_encoders(data)
@@ -186,13 +225,15 @@ def build(data: dvs.DistanceVariants | None = None) -> str:
         "\t"
         + r"\caption{\textbf{\code{CRoMa} under alternative typed-neighbour distances.} "
         + r"Every tile benchmark is re-scored at $m=5$, with its own evaluation design and "
-        + r"neighbour search, under three geometries besides the cosine reference, which "
-        + r"reproduces each run's per-sample values exactly: Euclidean distance on "
-        + r"L2-normalized features, Euclidean distance on the raw features, and Euclidean "
+        + r"neighbour search, under three geometries besides the cosine reference, the run's "
+        + r"own computation: Euclidean distance on L2-normalized features, Euclidean "
+        + r"distance on the raw features, and Euclidean "
         + r"distance after PCA whitening, which keeps the fewest leading components "
         + r"explaining $95\%$ of the variance of the evaluated samples and scales each to "
         + r"unit variance (a Mahalanobis distance under the truncated covariance; no labels "
-        + r"or centres are used). (a) Agreement with cosine over the "
+        + r"or centres are used). "
+        + _reproduction_sentence(data)
+        + r" (a) Agreement with cosine over the "
         + rf"${n}$ ranked encoders of each benchmark: Spearman $\rho$ between the encoder "
         + r"rankings by median \code{CRoMa} and by $\mcode{LTM}_{10}$, the number of encoders "
         + r"whose median changes sign (a median $\leq 0$ counts as confounder-dominant, as in "
@@ -237,6 +278,17 @@ def macro_lines(data: dvs.DistanceVariants) -> list[str]:
             rho = float(data.row(benchmark, variant)["rho_nipd_id"])
             suffix = VARIANT_NAMES[variant][1]
             lines.append(rf"\newcommand{{\DistanceNipdIdRho{suffix}{cohort}}}{{{bare_num(rho)}}}")
+    # The absolute tolerance each benchmark's cosine reproduction was checked within (0:
+    # exactly) and the largest per-unit deviation from its run it recorded.
+    for benchmark in dvs.BENCHMARK_ORDER:
+        cohort = by_benchmark(benchmark).prefix
+        record = data.reproduction(benchmark)
+        lines += [
+            rf"\newcommand{{\DistanceReproductionTolerance{cohort}}}"
+            rf"{{{sci_math(float(record['tolerance']))}}}",
+            rf"\newcommand{{\DistanceReproductionMaxDeviation{cohort}}}"
+            rf"{{{sci_math(float(record['max_deviation']))}}}",
+        ]
     return lines
 
 

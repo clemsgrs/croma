@@ -1,4 +1,5 @@
-"""The distance-variants study: whitening, the cosine reproduction check, and the measures.
+"""The distance-variants study: whitening, the measures, and the cosine reproduction check
+with its per-benchmark tolerance.
 
 Paper-free on purpose (it stays in the sdist): nothing here imports ``scripts/repro`` or
 reads ``output/``. The table and macros built from the study are tested in
@@ -7,6 +8,7 @@ reads ``output/``. The table and macros built from the study are tested in
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -168,6 +170,77 @@ def test_sign_agreement_reads_zero_as_confounder_dominant_as_f0_does():
 
 
 # --------------------------------------------------------------------------------------
+# The reproduction tolerance.
+# --------------------------------------------------------------------------------------
+
+TOLKACH = "pathorob-tolkach-esca"
+EXACT_BENCHMARKS = ("pathorob-camelyon", "pathorob-tcga-2x2", "pathorob-tcga-4x4")
+
+
+def _attempt(deviation: float, n_mismatched: int = 1) -> dict:
+    """A cosine attempt record, as far as choosing a kernel reads it."""
+    identical = deviation == 0.0
+    return {
+        "reproduction": {
+            "identical": identical,
+            "max_abs_deviation": deviation,
+            "n_mismatched": 0 if identical else n_mismatched,
+        }
+    }
+
+
+#: UNI2-h on Tolkach-ESCA: neither kernel reproduces the run exactly, SkylakeX deviates least.
+_UNI2H = {"Cooperlake": _attempt(4.636704759031218e-07, 8854), "SkylakeX": _attempt(1.36e-08)}
+
+
+def test_only_tolkach_esca_is_checked_within_a_tolerance():
+    assert set(dv.REPRODUCTION_TOLERANCE) == set(dv.BENCHMARKS)
+    assert {b for b, t in dv.REPRODUCTION_TOLERANCE.items() if t > 0} == {TOLKACH}
+    assert dv.reproduction_tolerance(TOLKACH) == 1e-4
+
+
+def test_within_tolkachs_tolerance_the_kernel_that_deviates_least_is_accepted():
+    choice = dv.choose_kernel(_UNI2H, dv.reproduction_tolerance(TOLKACH))
+
+    assert choice == dv.Assignment("SkylakeX", 1.36e-08)
+
+
+def test_an_exact_kernel_deviates_least_and_the_first_of_equals_wins():
+    tolerance = dv.reproduction_tolerance(TOLKACH)
+    exact_second = {"Cooperlake": _attempt(1e-9), "SkylakeX": _attempt(0.0)}
+    both_exact = {"Cooperlake": _attempt(0.0), "SkylakeX": _attempt(0.0)}
+
+    assert dv.choose_kernel(exact_second, tolerance) == dv.Assignment("SkylakeX", 0.0)
+    assert dv.choose_kernel(both_exact, 0.0) == dv.Assignment("Cooperlake", 0.0)
+
+
+@pytest.mark.parametrize("benchmark", EXACT_BENCHMARKS)
+def test_the_same_deviation_on_an_exact_benchmark_is_refused(benchmark):
+    assert dv.choose_kernel(_UNI2H, dv.reproduction_tolerance(benchmark)) is None
+
+
+def test_a_deviation_above_the_tolerance_is_refused():
+    above = {"Cooperlake": _attempt(2.0e-4), "SkylakeX": _attempt(1.5e-4)}
+
+    assert dv.choose_kernel(above, dv.reproduction_tolerance(TOLKACH)) is None
+
+
+def test_a_record_passes_only_within_its_benchmarks_tolerance_as_it_stands():
+    exact = {"reproduction": {"identical": True, "max_abs_deviation": 0.0}}
+    within = {"reproduction": {"identical": False}, "max_deviation": 1.36e-08}
+    above = {"reproduction": {"identical": False}, "max_deviation": 2.0e-4}
+    # A record no tolerance accepted (it carries no max_deviation) never passes.
+    unaccepted = {"reproduction": {"identical": False, "max_abs_deviation": 1.36e-08}}
+
+    assert dv.reproduction_passed(exact, "pathorob-camelyon")
+    assert dv.reproduction_passed(exact, TOLKACH)
+    assert dv.reproduction_passed(within, TOLKACH)
+    assert not dv.reproduction_passed(within, "pathorob-camelyon")
+    assert not dv.reproduction_passed(above, TOLKACH)
+    assert not dv.reproduction_passed(unaccepted, TOLKACH)
+
+
+# --------------------------------------------------------------------------------------
 # One encoder x benchmark, end to end against a real driver run.
 # --------------------------------------------------------------------------------------
 
@@ -209,7 +282,7 @@ def _toy_run(bench_env):
     return run, load_view("toy")
 
 
-def _run_unit(root, run, view, *, last=False):
+def _run_unit(root, run, view, *, kernel="test", within_tolerance=False):
     return dv.run_unit(
         root,
         run,
@@ -217,10 +290,29 @@ def _run_unit(root, run, view, *, last=False):
         features=view.features("M1"),
         rows=view.rows,
         manifest=view.eval_manifest,
-        kernel="test",
-        last=last,
+        kernel=kernel,
+        within_tolerance=within_tolerance,
         embedding_sha256="0" * 64,
     )
+
+
+def _shift_stored_value(run, by: float, row: int = 3) -> None:
+    """Move one of the run's stored per-sample values by ``by``."""
+    stored = pd.read_csv(run.per_sample_csv("M1"), float_precision="round_trip")
+    stored.loc[row, "croma_m5"] = stored.loc[row, "croma_m5"] + by
+    stored.to_csv(run.per_sample_csv("M1"), index=False)
+
+
+def _toy_design(run) -> dict:
+    return {
+        "benchmarks": {
+            "toy": {
+                "results_dir": str(run.results_dir),
+                "models": ["M1"],
+                "variants": [{"name": v.name} for v in dv.VARIANTS],
+            }
+        }
+    }
 
 
 def test_the_cosine_variant_reproduces_the_runs_stored_values_bit_for_bit(bench_env, tmp_path):
@@ -242,29 +334,92 @@ def test_the_cosine_variant_reproduces_the_runs_stored_values_bit_for_bit(bench_
     assert 1 <= dv.read_cell(root, "toy", "M1", "whitened")["n_components"] <= 12
 
 
-def test_a_reference_that_does_not_reproduce_blocks_the_summary(bench_env, tmp_path):
+def test_a_unit_within_tolkachs_tolerance_is_scored_under_the_kernel_that_deviates_least(
+    bench_env, tmp_path, monkeypatch
+):
     run, view = _toy_run(bench_env)
-    stored = pd.read_csv(run.per_sample_csv("M1"), float_precision="round_trip")
-    stored.loc[3, "croma_m5"] = np.nextafter(stored.loc[3, "croma_m5"], 2.0)
-    stored.to_csv(run.per_sample_csv("M1"), index=False)
+    monkeypatch.setitem(dv.REPRODUCTION_TOLERANCE, "toy", dv.reproduction_tolerance(TOLKACH))
+    _shift_stored_value(run, 2e-8)
     root = tmp_path / "study"
 
-    assert _run_unit(root, run, view) == dv.NOT_REPRODUCED
+    # Not exact under SkylakeX: an attempt is recorded, and no cell.
+    assert _run_unit(root, run, view, kernel="SkylakeX") == dv.NOT_REPRODUCED
     assert dv.read_cell(root, "toy", "M1", "cosine") is None
+    attempt = dv.read_attempts(root, "toy", "M1")["SkylakeX"]
+    deviation = attempt["reproduction"]["max_abs_deviation"]
+    assert deviation == pytest.approx(2e-8, rel=1e-6)
+    # Accepting a kernel within tolerance needs every candidate tried.
+    with pytest.raises(RuntimeError, match="Cooperlake"):
+        _run_unit(root, run, view, kernel="SkylakeX", within_tolerance=True)
 
-    assert _run_unit(root, run, view, last=True) == 0
+    # One process has one kernel, so Cooperlake's attempt is written by hand.
+    def cooperlake_deviates(by: float) -> None:
+        record = json.loads(json.dumps(attempt))
+        record.update(kernel="Cooperlake")
+        record["reproduction"].update(max_abs_deviation=by, n_mismatched=38)
+        dv.attempt_path(root, "toy", "M1", "Cooperlake").write_text(json.dumps(record))
+
+    # SkylakeX is refused while Cooperlake deviates less ...
+    cooperlake_deviates(1e-9)
+    assert _run_unit(root, run, view, kernel="SkylakeX", within_tolerance=True) == (
+        dv.NOT_REPRODUCED
+    )
+    assert dv.read_cell(root, "toy", "M1", "cosine") is None
+    # ... and accepted once it deviates least, as on UNI2-h.
+    cooperlake_deviates(4.6e-7)
+    assert dv.choose_kernel(dv.read_attempts(root, "toy", "M1"), 1e-4).kernel == "SkylakeX"
+    assert _run_unit(root, run, view, kernel="SkylakeX", within_tolerance=True) == 0
+
     cosine = dv.read_cell(root, "toy", "M1", "cosine")
-    assert cosine["reproduced"] is False
+    assert cosine["kernel"] == "SkylakeX" and cosine["reproduced"] is True
+    assert cosine["reproduction"]["identical"] is False
     assert cosine["reproduction"]["n_mismatched"] == 1
-    record = {
-        "benchmarks": {
-            "toy": {
-                "results_dir": str(run.results_dir),
-                "models": ["M1"],
-                "variants": [{"name": v.name} for v in dv.VARIANTS],
-            }
+    assert (cosine["tolerance"], cosine["max_deviation"]) == (1e-4, deviation)
+    assert cosine["kernel_deviations"] == {"Cooperlake": 4.6e-7, "SkylakeX": deviation}
+    for name in ("normalised-euclidean", "euclidean", "whitened"):
+        assert dv.read_cell(root, "toy", "M1", name)["kernel"] == "SkylakeX"
+
+    design = _toy_design(run)
+    assert dv.reproduction_summary(root, design) == {
+        "toy": {
+            "tolerance": 1e-4,
+            "identical": False,
+            "max_deviation": deviation,
+            "within_tolerance": {
+                "M1": {"kernel": "SkylakeX", "max_deviation": deviation, "n_mismatched": 1}
+            },
         }
     }
+    # Tightening the tolerance invalidates the record it no longer covers.
+    monkeypatch.setitem(dv.REPRODUCTION_TOLERANCE, "toy", 0.0)
     (root / dv.DESIGN).write_text("{}")
     with pytest.raises(dv.IncompleteStudyError, match="does not reproduce"):
-        dv.summarise(root, record, apd_correlation_csv=None)
+        dv.summarise(root, design, apd_correlation_csv=None)
+
+
+@pytest.mark.parametrize(
+    "tolerance_of, shift",
+    [("pathorob-camelyon", 2e-8), (TOLKACH, 2e-4)],
+    ids=["same-deviation-on-an-exact-benchmark", "above-tolkachs-tolerance"],
+)
+def test_a_unit_outside_its_tolerance_is_refused(
+    bench_env, tmp_path, monkeypatch, tolerance_of, shift
+):
+    run, view = _toy_run(bench_env)
+    monkeypatch.setitem(dv.REPRODUCTION_TOLERANCE, "toy", dv.reproduction_tolerance(tolerance_of))
+    _shift_stored_value(run, shift)
+    root = tmp_path / "study"
+
+    for kernel in dv.CANDIDATE_KERNELS:
+        assert _run_unit(root, run, view, kernel=kernel) == dv.NOT_REPRODUCED
+    attempts = dv.read_attempts(root, "toy", "M1")
+    assert dv.choose_kernel(attempts, dv.reproduction_tolerance("toy")) is None
+    for kernel in dv.CANDIDATE_KERNELS:
+        assert _run_unit(root, run, view, kernel=kernel, within_tolerance=True) == (
+            dv.NOT_REPRODUCED
+        )
+
+    assert dv.read_cell(root, "toy", "M1", "cosine") is None
+    (root / dv.DESIGN).write_text("{}")
+    with pytest.raises(dv.IncompleteStudyError, match="cells missing"):
+        dv.summarise(root, _toy_design(run), apd_correlation_csv=None)

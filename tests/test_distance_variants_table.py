@@ -85,9 +85,42 @@ def _measures() -> pd.DataFrame:
 _RUN = "runs/camelyon"
 _RUN_METRICS = "model,croma,croma_f0\nE1,0.25,0.125\nE2,-0.0625,0.5\n"
 
+#: UNI2-h's largest per-unit deviation from the Tolkach-ESCA run, under SkylakeX.
+_TOLKACH_DEVIATION = 1.3573229706853596e-08
 
-def _write_study(root: Path, repo: Path, measures: pd.DataFrame | None = None) -> None:
+
+def _reproduction(tolkach_deviation: float = _TOLKACH_DEVIATION) -> dict:
+    """``provenance.json``'s reproduction block: exact everywhere but Tolkach-ESCA."""
+    block = {
+        b: {"tolerance": 0.0, "identical": True, "max_deviation": 0.0, "within_tolerance": {}}
+        for b in dvs.BENCHMARK_ORDER
+    }
+    if tolkach_deviation:
+        block["pathorob-tolkach-esca"] = {
+            "tolerance": 1e-4,
+            "identical": False,
+            "max_deviation": tolkach_deviation,
+            "within_tolerance": {
+                "UNI2-h": {
+                    "kernel": "SkylakeX",
+                    "max_deviation": tolkach_deviation,
+                    "n_mismatched": 1,
+                }
+            },
+        }
+    else:
+        block["pathorob-tolkach-esca"]["tolerance"] = 1e-4
+    return block
+
+
+def _write_study(
+    root: Path,
+    repo: Path,
+    measures: pd.DataFrame | None = None,
+    reproduction: dict | None = None,
+) -> None:
     measures = _measures() if measures is None else measures
+    reproduction = _reproduction() if reproduction is None else reproduction
     root.mkdir(parents=True)
     design = {
         "benchmarks": {
@@ -119,6 +152,7 @@ def _write_study(root: Path, repo: Path, measures: pd.DataFrame | None = None) -
             "embeddings:pathorob-camelyon:E1": "0" * 64,
         },
         "outputs": {name: study.sha256(root / name) for name in (study.SUMMARY, study.MEASURES)},
+        "reproduction": reproduction,
     }
     (root / study.PROVENANCE).write_text(json.dumps(provenance))
 
@@ -169,7 +203,73 @@ def test_macros_carry_the_minimum_rank_rho_the_sign_changes_and_the_nipd_rho(dat
     assert r"\newcommand{\DistanceSignChanges}{13}" in lines
     assert r"\newcommand{\DistanceNipdIdRhoCosineCamelyon}{0.95}" in lines
     assert r"\newcommand{\DistanceNipdIdRhoWhitenedTolkach}{0.80}" in lines
-    assert not any("TcgaTwoByTwo" in line for line in lines)
+    assert not any("NipdIdRho" in line and "TcgaTwoByTwo" in line for line in lines)
+
+
+def _caption(tex: str) -> str:
+    return tex[tex.index(r"\caption{") : tex.index(r"\label{")]
+
+
+def test_the_caption_states_how_the_cosine_reference_reproduced_each_run(data):
+    caption = _caption(table.build(data))
+
+    assert (
+        "The cosine reference reproduces the runs' per-sample values exactly on Camelyon, "
+        "TCGA-2x2 and TCGA-4x4, and on Tolkach-ESCA only within an absolute tolerance of "
+        r"$10^{-4}$ (largest deviation $1.4\times10^{-8}$, for one encoder that no BLAS "
+        "kernel reproduces exactly)."
+    ) in caption
+    assert "reproduces each run's per-sample values exactly" not in caption
+
+
+@pytest.mark.parametrize(
+    "deviation, sentence",
+    [
+        (
+            2.5e-6,
+            r"on Tolkach-ESCA only within an absolute tolerance of $10^{-4}$ (largest "
+            r"deviation $2.5\times10^{-6}$, for one encoder that",
+        ),
+        (0.0, "The cosine reference reproduces every run's per-sample values exactly."),
+    ],
+    ids=["within-tolerance", "all-exact"],
+)
+def test_the_reproduction_sentence_renders_from_the_recorded_deviation(
+    tmp_path, deviation, sentence
+):
+    _write_study(tmp_path / "study", tmp_path, reproduction=_reproduction(deviation))
+
+    caption = _caption(table.build(dvs.load(tmp_path / "study", repo=tmp_path)))
+
+    assert sentence in caption
+
+
+def test_macros_carry_each_benchmarks_reproduction_tolerance_and_deviation(data):
+    lines = table.macro_lines(data)
+
+    assert r"\newcommand{\DistanceReproductionToleranceTolkach}{$10^{-4}$}" in lines
+    assert r"\newcommand{\DistanceReproductionMaxDeviationTolkach}{$1.4\times10^{-8}$}" in lines
+    assert r"\newcommand{\DistanceReproductionToleranceCamelyon}{$0$}" in lines
+    assert r"\newcommand{\DistanceReproductionMaxDeviationTcgaTwoByTwo}{$0$}" in lines
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        lambda block: block.pop("pathorob-tolkach-esca"),
+        lambda block: block["pathorob-tolkach-esca"].update(tolerance=1e-3),
+        lambda block: block["pathorob-tolkach-esca"].update(max_deviation=2e-4),
+        lambda block: block["pathorob-camelyon"].update(identical=False, max_deviation=1e-9),
+    ],
+    ids=["missing", "not-the-studys-tolerance", "above-tolerance", "exact-benchmark-inexact"],
+)
+def test_a_reproduction_record_the_study_would_not_accept_is_refused(tmp_path, edit):
+    reproduction = _reproduction()
+    edit(reproduction)
+    _write_study(tmp_path / "study", tmp_path, reproduction=reproduction)
+
+    with pytest.raises(CaptionClaimError, match="reproduc"):
+        dvs.load(tmp_path / "study", repo=tmp_path)
 
 
 def test_a_study_that_has_not_been_summarised_fails_the_build(tmp_path):

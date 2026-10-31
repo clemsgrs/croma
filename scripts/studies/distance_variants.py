@@ -20,11 +20,15 @@ fewest leading principal components explaining at least 95% of the variance, eac
 unit variance. Camelyon is also run at 90% and 99% as a sensitivity check.
 
 **Reproduction.** The cosine variant is the run's own computation, and the study refuses to
-summarise unless every cosine per-sample value equals the run's stored ``croma_m5`` exactly.
-A published run was computed under one of two OpenBLAS GEMM kernels, which round float32
-distances differently enough to reorder near-tied neighbours, so each (benchmark, encoder)
-recovers its kernel by trying the candidates in turn (each in a process of its own, since a
-core type is fixed when OpenBLAS loads) and computes every other variant under the same one.
+summarise unless every cosine per-sample value matches the run's stored ``croma_m5``:
+exactly on Camelyon, TCGA-2x2 and TCGA-4x4, and within a documented absolute tolerance on
+Tolkach-ESCA (``REPRODUCTION_TOLERANCE``). A published run was computed under one of two
+OpenBLAS GEMM kernels, which round float32 distances differently enough to reorder
+near-tied neighbours, so each (benchmark, encoder) recovers its kernel by trying the
+candidates in turn (each in a process of its own, since a core type is fixed when OpenBLAS
+loads) and computes every other variant under the same one. The first kernel that
+reproduces exactly is kept; when none does, the one that deviates least is, provided it is
+within the benchmark's tolerance.
 
 **Measures** (``summarise``) are per benchmark x variant against cosine, over the ranked
 encoders (the natural-image control excluded): Spearman rho between the rankings by median
@@ -57,6 +61,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -148,9 +153,75 @@ SINGLE_THREAD = {"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1", "OPENBLAS_NUM_T
 #: A unit worker's exit code when the cosine reference did not reproduce under its kernel.
 NOT_REPRODUCED = 3
 
+#: Absolute per-unit tolerance of each benchmark's cosine reproduction check, and the only
+#: place it is set. 0 is exact: every per-sample value equal to the run's stored
+#: ``croma_m5``. Camelyon, TCGA-2x2 and TCGA-4x4 are checked exactly, because each of their
+#: encoders reproduces its run exactly under one kernel.
+#:
+#: On Tolkach-ESCA one encoder's run reproduces exactly under neither kernel. UNI2-h's
+#: per-sample values match SkylakeX on 8,999 of 9,000 units, and the stored value of the
+#: last is 1.4e-8 from both kernels' (which agree there); Cooperlake differs on 8,854 units,
+#: by up to 4.6e-7. The subsampling-stability study found the same run's UNI2-h CRoMa LTM10
+#: equal to neither kernel's, and checks that run within 1e-4; this study applies the same
+#: tolerance. It clears the deviation by orders of magnitude and stays below the finest
+#: precision any score is reported at (three decimals). The published numbers are not
+#: changed.
+REPRODUCTION_TOLERANCE: dict[str, float] = {
+    "pathorob-camelyon": 0.0,
+    "pathorob-tcga-2x2": 0.0,
+    "pathorob-tcga-4x4": 0.0,
+    "pathorob-tolkach-esca": 1e-4,
+}
+
 
 class IncompleteStudyError(RuntimeError):
     """The study is missing a cell, or a reference that did not reproduce."""
+
+
+class Assignment(NamedTuple):
+    """The kernel a unit is scored under, and how far its cosine re-score is from the run."""
+
+    kernel: str
+    #: The largest absolute per-unit deviation; 0 when it is exact.
+    max_deviation: float
+
+
+def reproduction_tolerance(benchmark: str) -> float:
+    """``benchmark``'s absolute reproduction tolerance (``REPRODUCTION_TOLERANCE``)."""
+    return float(REPRODUCTION_TOLERANCE[benchmark])
+
+
+def choose_kernel(attempts: dict[str, dict], tolerance: float) -> Assignment | None:
+    """The kernel whose cosine re-score reproduces the run within ``tolerance`` and deviates
+    least from it, the first such candidate (in ``attempts``' order) on a tie; ``None`` when
+    no candidate does.
+
+    ``attempts`` maps each kernel to its cosine record. At tolerance 0 every reproducing
+    candidate deviates by 0, so this is the first candidate that reproduces exactly.
+    """
+    within: dict[str, float] = {}
+    for kernel, record in attempts.items():
+        check = record["reproduction"]
+        deviation = 0.0 if check["identical"] else float(check["max_abs_deviation"])
+        if deviation <= tolerance:
+            within[kernel] = deviation
+    if not within:
+        return None
+    kernel = min(within, key=within.__getitem__)  # the first of equals
+    return Assignment(kernel, within[kernel])
+
+
+def reproduction_passed(record: dict, benchmark: str) -> bool:
+    """Whether a cosine record passes ``benchmark``'s reproduction check as it stands.
+
+    An identical record passes under any tolerance; any other must record a largest
+    deviation (``max_deviation``, written only when a tolerance accepted it) within it, so
+    tightening a tolerance invalidates the records it no longer covers.
+    """
+    if record["reproduction"]["identical"] is True:
+        return True
+    deviation = record.get("max_deviation")
+    return deviation is not None and float(deviation) <= reproduction_tolerance(benchmark)
 
 
 # --------------------------------------------------------------------------- geometry
@@ -385,6 +456,21 @@ def read_cell_values(root: Path, benchmark: str, model: str, name: str) -> pd.Da
     )
 
 
+def attempt_path(root: Path, benchmark: str, model: str, kernel: str) -> Path:
+    """Where a cosine re-score that did not reproduce exactly under ``kernel`` is recorded."""
+    return cell_dir(root, benchmark, model) / f"{COSINE.name}.{kernel}.attempt.json"
+
+
+def read_attempts(root: Path, benchmark: str, model: str) -> dict[str, dict]:
+    """The recorded cosine attempts of one unit, by kernel, in ``CANDIDATE_KERNELS`` order."""
+    attempts = {}
+    for kernel in CANDIDATE_KERNELS:
+        path = attempt_path(root, benchmark, model, kernel)
+        if path.exists():
+            attempts[kernel] = json.loads(path.read_text(encoding="utf-8"))
+    return attempts
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
@@ -439,15 +525,19 @@ def run_unit(
     rows: np.ndarray,
     manifest: pd.DataFrame,
     kernel: str | None,
-    last: bool,
+    within_tolerance: bool = False,
     embedding_sha256: str,
 ) -> int:
     """Every variant of one encoder x benchmark not yet on disk; cosine first.
 
-    Returns :data:`NOT_REPRODUCED` (writing nothing but an attempt record) when the cosine
-    re-score differs from the run's stored values and ``last`` is false; with ``last`` the
-    cell is written with ``reproduced: false`` and the other variants still run, so the
-    deviation is on record and ``summarise`` refuses.
+    When the cosine re-score differs from the run's stored values, returns
+    :data:`NOT_REPRODUCED` and writes nothing but an attempt record
+    (``cosine.<kernel>.attempt.json``). With ``within_tolerance`` -- once every candidate
+    kernel has an attempt on record and none reproduced exactly -- the re-score is accepted
+    instead, if ``kernel`` deviates least of all the candidates and within the benchmark's
+    ``REPRODUCTION_TOLERANCE``: the cosine record then carries that ``tolerance``, its
+    ``max_deviation`` and every candidate's deviation, and the other variants run under the
+    same kernel. Otherwise it returns :data:`NOT_REPRODUCED` and writes nothing.
     """
     base = {
         "benchmark": run.benchmark,
@@ -474,10 +564,15 @@ def run_unit(
             "reproduction": check,
             "reproduced": check["identical"],
         }
-        if not check["identical"] and not last:
-            attempt = cell_dir(root, run.benchmark, model) / f"cosine.{kernel}.attempt.json"
-            _atomic_text(attempt, _json(record))
-            return NOT_REPRODUCED
+        if not check["identical"]:
+            if not within_tolerance:
+                path = attempt_path(root, run.benchmark, model, str(kernel))
+                _atomic_text(path, _json(record))
+                return NOT_REPRODUCED
+            accepted = _accept_within_tolerance(root, run.benchmark, model, kernel, record)
+            if accepted is None:
+                return NOT_REPRODUCED
+            record = accepted
         write_cell(root, record, frame)
     elif cosine.get("kernel") != kernel:
         raise RuntimeError(
@@ -503,6 +598,36 @@ def run_unit(
         }
         write_cell(root, record, per_sample_frame(result, manifest))
     return 0
+
+
+def _accept_within_tolerance(
+    root: Path, benchmark: str, model: str, kernel: str | None, record: dict
+) -> dict | None:
+    """``record`` marked as reproduced within ``benchmark``'s tolerance, or ``None``.
+
+    It is accepted only when every candidate kernel has been tried and ``kernel`` is the one
+    :func:`choose_kernel` picks: within the tolerance and deviating least.
+    """
+    attempts = {**read_attempts(root, benchmark, model), str(kernel): record}
+    untried = [k for k in CANDIDATE_KERNELS if k not in attempts]
+    if untried:
+        raise RuntimeError(
+            f"{benchmark} / {model}: accepting a kernel within tolerance needs an attempt "
+            f"under every candidate, but {untried} were not tried"
+        )
+    tolerance = reproduction_tolerance(benchmark)
+    choice = choose_kernel(attempts, tolerance)
+    if choice is None or choice.kernel != kernel:
+        return None
+    return {
+        **record,
+        "reproduced": True,
+        "tolerance": tolerance,
+        "max_deviation": choice.max_deviation,
+        "kernel_deviations": {
+            k: float(a["reproduction"]["max_abs_deviation"]) for k, a in attempts.items()
+        },
+    }
 
 
 def _summary_fields(result) -> dict:
@@ -698,23 +823,27 @@ def sweep(root: Path, record: dict, *, workers: int) -> int:
     """Run every unfinished unit, ``workers`` processes at a time, each on one BLAS thread.
 
     A unit whose cosine re-score does not reproduce under one kernel is re-queued under the
-    next; the kernel that last reproduced a benchmark is tried first for its other encoders.
+    next; the kernel that last reproduced a benchmark exactly is tried first for its other
+    encoders. When no candidate reproduces exactly, the unit is re-run under the one that
+    deviates least, provided it is within the benchmark's ``REPRODUCTION_TOLERANCE``, and
+    accepted there (``unit --within-tolerance``); otherwise it fails.
     """
     root = Path(root)
-    queue: list[tuple[str, str, list[str]]] = []
+    # (benchmark, model, kernels still to try, whether to accept within tolerance)
+    queue: list[tuple[str, str, list[str], bool]] = []
     for benchmark, model in units(record):
         if unit_finished(root, record, benchmark, model):
             continue
         cosine = read_cell(root, benchmark, model, COSINE.name)
         kernels = [cosine["kernel"]] if cosine else []
-        queue.append((benchmark, model, kernels))
+        queue.append((benchmark, model, kernels, False))
     preferred: dict[str, str] = {}
-    running: dict[subprocess.Popen, tuple[str, str, list[str], str]] = {}
+    running: dict[subprocess.Popen, tuple[str, str, list[str], str, bool]] = {}
     failures: list[str] = []
     _log(f"sweep: {len(queue)} units to run on {workers} workers in {root}")
     while queue or running:
         while queue and len(running) < workers:
-            benchmark, model, kernels = queue.pop(0)
+            benchmark, model, kernels, settle = queue.pop(0)
             if not kernels:
                 first = preferred.get(benchmark, CANDIDATE_KERNELS[0])
                 kernels = [first] + [k for k in CANDIDATE_KERNELS if k != first]
@@ -723,24 +852,54 @@ def sweep(root: Path, record: dict, *, workers: int) -> int:
             log_path.parent.mkdir(parents=True, exist_ok=True)
             argv = [sys.executable, str(Path(__file__).resolve())]
             argv += ["unit", "--root", str(root), "--benchmark", benchmark, "--model", model]
-            argv += ["--kernel", kernel] + ([] if rest else ["--last"])
+            argv += ["--kernel", kernel] + (["--within-tolerance"] if settle else [])
             env = {**os.environ, **SINGLE_THREAD, "OPENBLAS_CORETYPE": kernel}
             with open(log_path, "ab") as log:
                 proc = subprocess.Popen(argv, env=env, cwd=REPO, stdout=log, stderr=log)
-            running[proc] = (benchmark, model, rest, kernel)
-            _log(f"start {benchmark} / {model} under {kernel}")
+            running[proc] = (benchmark, model, rest, kernel, settle)
+            how = " within tolerance" if settle else ""
+            _log(f"start {benchmark} / {model} under {kernel}{how}")
         time.sleep(2.0)
         for proc in [p for p in running if p.poll() is not None]:
-            benchmark, model, rest, kernel = running.pop(proc)
+            benchmark, model, rest, kernel, settle = running.pop(proc)
             if proc.returncode == 0:
                 cosine = read_cell(root, benchmark, model, COSINE.name) or {}
-                if cosine.get("reproduced"):
+                exact = bool(cosine.get("reproduction", {}).get("identical"))
+                if exact:
                     preferred[benchmark] = kernel
-                tag = "reproduced" if cosine.get("reproduced") else "NOT REPRODUCED"
+                    tag = "reproduced"
+                elif cosine and reproduction_passed(cosine, benchmark):
+                    tag = (
+                        f"reproduced within {cosine['tolerance']:g}, largest deviation "
+                        f"{cosine['max_deviation']:.3g}"
+                    )
+                else:
+                    tag = "NOT REPRODUCED"
                 _log(f"done  {benchmark} / {model} under {kernel} (cosine {tag})")
             elif proc.returncode == NOT_REPRODUCED and rest:
                 _log(f"retry {benchmark} / {model}: cosine differs under {kernel}")
-                queue.insert(0, (benchmark, model, rest))
+                queue.insert(0, (benchmark, model, rest, False))
+            elif proc.returncode == NOT_REPRODUCED and not settle:
+                tolerance = reproduction_tolerance(benchmark)
+                attempts = read_attempts(root, benchmark, model)
+                choice = choose_kernel(attempts, tolerance)
+                if choice is None:
+                    failures.append(f"{benchmark} / {model}")
+                    deviations = {
+                        k: a["reproduction"]["max_abs_deviation"] for k, a in attempts.items()
+                    }
+                    _log(
+                        f"FAIL  {benchmark} / {model}: cosine reproduces under none of "
+                        f"{list(CANDIDATE_KERNELS)} within {tolerance:g} "
+                        f"(largest deviations {deviations})"
+                    )
+                else:
+                    _log(
+                        f"settle {benchmark} / {model}: no kernel reproduces exactly; "
+                        f"{choice.kernel} deviates least ({choice.max_deviation:.3g}, within "
+                        f"{tolerance:g})"
+                    )
+                    queue.insert(0, (benchmark, model, [choice.kernel], True))
             else:
                 failures.append(f"{benchmark} / {model}")
                 _log(f"FAIL  {benchmark} / {model} under {kernel}: exit {proc.returncode}")
@@ -762,7 +921,8 @@ def summarise(
 ) -> pd.DataFrame:
     """``summary.csv``, ``measures.csv`` and ``provenance.json`` from a complete study.
 
-    Refuses on a missing cell and on any cosine reference that did not reproduce. When
+    Refuses on a missing cell and on any cosine reference that did not reproduce within its
+    benchmark's tolerance (:func:`reproduction_summary`, recorded in the provenance). When
     ``apd_correlation_csv`` is given, cosine's nIPD correlations must equal the ones
     ``tab:apd-correlation`` reports, so both tables read the same association.
     """
@@ -776,6 +936,7 @@ def summarise(
     ]
     if missing:
         raise IncompleteStudyError(f"{len(missing)} cells missing, e.g. {missing[:5]}")
+    reproduced = reproduction_summary(root, record)
     rows, inputs = [], {}
     for benchmark, spec in record["benchmarks"].items():
         results_dir = REPO / spec["results_dir"]
@@ -783,11 +944,6 @@ def summarise(
             inputs[_rel(results_dir / name)] = sha256(results_dir / name)
         for model in spec["models"]:
             cosine = read_cell(root, benchmark, model, COSINE.name)
-            if not cosine["reproduced"]:
-                raise IncompleteStudyError(
-                    f"{benchmark} / {model}: the cosine re-score does not reproduce the run "
-                    f"({cosine['reproduction']['n_mismatched']} units differ)"
-                )
             inputs[_rel(Path(cosine["reproduction"]["reference"]))] = cosine["reproduction"][
                 "reference_sha256"
             ]
@@ -827,9 +983,50 @@ def summarise(
         "design_sha256": sha256(root / DESIGN),
         "inputs": dict(sorted(inputs.items())),
         "outputs": {SUMMARY: sha256(root / SUMMARY), MEASURES: sha256(root / MEASURES)},
+        "reproduction": reproduced,
     }
     _atomic_text(root / PROVENANCE, _json(provenance))
     return table
+
+
+def reproduction_summary(root: Path, record: dict) -> dict[str, dict]:
+    """How each benchmark's cosine cells reproduce its run, for ``provenance.json``.
+
+    Per benchmark: its ``tolerance``, whether every encoder reproduces exactly
+    (``identical``), the largest per-unit deviation over its encoders (``max_deviation``),
+    and each encoder that reproduces only within the tolerance, with its kernel, deviation
+    and number of differing units. Raises :class:`IncompleteStudyError` on a cosine cell
+    that does not pass :func:`reproduction_passed` as the tolerance now stands.
+    """
+    summary = {}
+    for benchmark, spec in record["benchmarks"].items():
+        tolerance = reproduction_tolerance(benchmark)
+        within, deviations = {}, [0.0]
+        for model in spec["models"]:
+            cosine = read_cell(root, benchmark, model, COSINE.name)
+            check = cosine["reproduction"]
+            if not reproduction_passed(cosine, benchmark):
+                raise IncompleteStudyError(
+                    f"{benchmark} / {model}: the cosine re-score does not reproduce the run"
+                    + (f" within {tolerance:g}" if tolerance > 0 else "")
+                    + f" ({check['n_mismatched']} units differ, largest deviation "
+                    f"{float(check['max_abs_deviation']):.3g})"
+                )
+            if check["identical"]:
+                continue
+            deviations.append(float(cosine["max_deviation"]))
+            within[model] = {
+                "kernel": cosine["kernel"],
+                "max_deviation": float(cosine["max_deviation"]),
+                "n_mismatched": int(check["n_mismatched"]),
+            }
+        summary[benchmark] = {
+            "tolerance": tolerance,
+            "identical": not within,
+            "max_deviation": max(deviations),
+            "within_tolerance": within,
+        }
+    return summary
 
 
 def load_nipd(path: Path = APD_CSV) -> pd.DataFrame:
@@ -884,7 +1081,7 @@ def _unit_main(args: argparse.Namespace) -> int:
         rows=view.rows,
         manifest=view.eval_manifest,
         kernel=kernel,
-        last=args.last,
+        within_tolerance=args.within_tolerance,
         embedding_sha256=embedding,
     )
     _log(f"{args.benchmark} / {args.model}: exit {code} after {time.perf_counter() - started:.0f}s")
@@ -909,7 +1106,12 @@ def main(argv: list[str] | None = None) -> int:
     commands["unit"].add_argument("--benchmark", required=True, choices=BENCHMARKS)
     commands["unit"].add_argument("--model", required=True)
     commands["unit"].add_argument("--kernel", required=True)
-    commands["unit"].add_argument("--last", action="store_true")
+    commands["unit"].add_argument(
+        "--within-tolerance",
+        action="store_true",
+        help="every candidate kernel has been tried and none reproduced exactly: accept this "
+        "one if it deviates least, within the benchmark's tolerance",
+    )
     args = parser.parse_args(argv)
     args.root = args.root.absolute()
 

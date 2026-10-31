@@ -90,6 +90,16 @@ def bare_num(value: float, decimals: int = 2) -> str:
     return body
 
 
+def sci_math(value: float, digits: int = 2) -> str:
+    r"""Math-mode scientific literal at ``digits`` significant digits, e.g.
+    ``$1.1\times10^{-7}$``; a unit mantissa is dropped (``$10^{-4}$``) and 0 is ``$0$``."""
+    if value == 0:
+        return "$0$"
+    mantissa, exponent = f"{value:.{digits - 1}e}".split("e")
+    power = f"10^{{{int(exponent)}}}"
+    return f"${power}$" if float(mantissa) == 1 else rf"${mantissa}\times{power}$"
+
+
 def pct_round(value: float) -> str:
     r"""Percent literal from a fraction, rounded to a whole percent, e.g. ``70\%``."""
     return rf"{int(round(value * 100))}\%"
