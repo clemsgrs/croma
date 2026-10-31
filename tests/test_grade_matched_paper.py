@@ -294,12 +294,20 @@ class TestMacros:
         assert sum("Slides}" in line for line in lines) == 10
 
     def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
+        import _mari_vs_ri
         import _overlap
+        import _panel_macros
         import generate_paper_values as gpv
+        import generate_supp_rank_table
 
-        # Two blocks before this one read live runs relative to the repo, not ``root``;
-        # stub them so the test sees only the missing study, on a clean clone too.
-        monkeypatch.setattr(gpv, "_load_rank_frontier_change_macros", lambda: [])
+        # The blocks before this one read other studies and live runs, some relative to the
+        # repo rather than ``root``, and several raise when those are absent. Stub them so
+        # the test sees only the missing grade-matched study, on a clean clone too.
+        monkeypatch.setattr(_mari_vs_ri, "load", lambda root: None)
+        monkeypatch.setattr(_mari_vs_ri, "macros", lambda study: [])
+        monkeypatch.setattr(gpv, "_load_rank_frontier_macros", lambda: [])
+        monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
+        monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
         monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
 
         with pytest.raises(FileNotFoundError, match="grade_matched_pools.py"):
