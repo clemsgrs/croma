@@ -42,6 +42,7 @@ Usage:
 """
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -74,6 +75,7 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # live Camelyon run).
     ("contested-fraction", "scripts/studies/contested_fraction_experiment.py", []),
     ("bootstrap-uncertainty", "scripts/studies/bootstrap_uncertainty.py", []),
+    ("grade-matched", "scripts/studies/grade_matched_pools.py", []),
     # Last because it is far and away the longest: a full probe sweep over every
     # model-dataset pair, hours rather than minutes.
     ("apd-sweep", "scripts/studies/apd/apd_experiment.py", ["--overwrite"]),
@@ -82,15 +84,32 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("mari-vs-ri", "scripts/studies/mari_vs_ri.py", []),
 ]
 
+#: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
+PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
 
-def _run(cmd: list[str], *, label: str, dry_run: bool) -> None:
-    printable = " ".join(str(c) for c in cmd)
+#: Environment a benchmark run needs on top of the caller's, keyed by benchmark name. The
+#: grade-matched study checks its full pool against ``panda``'s ``per_sample_metrics.csv``
+#: exactly, so ``panda`` must be recomputed in the same numerical setting as the study.
+BENCHMARK_ENV: dict[str, dict[str, str]] = {
+    "panda": PANDA_BLAS_ENV,
+}
+
+#: Environment a study needs on top of the caller's. The grade-matched study asserts that
+#: its full SO pool reproduces the panda run's CRoMa bit for bit, which holds only on the
+#: BLAS kernel and thread count the run was computed with (see its module docstring).
+STUDY_ENV: dict[str, dict[str, str]] = {
+    "grade-matched": PANDA_BLAS_ENV,
+}
+
+
+def _run(cmd: list[str], *, label: str, dry_run: bool, env: dict[str, str] | None = None) -> None:
+    printable = " ".join([*(f"{k}={v}" for k, v in (env or {}).items()), *map(str, cmd)])
     if dry_run:
         print(f"[{label}] {printable}", flush=True)
         return
     print(f"[{label}] {printable}", flush=True)
     started = time.monotonic()
-    subprocess.run(cmd, check=True, cwd=REPO)
+    subprocess.run(cmd, check=True, cwd=REPO, env={**os.environ, **env} if env else None)
     print(f"[{label}] done in {time.monotonic() - started:.0f}s", flush=True)
 
 
@@ -136,7 +155,7 @@ def run_benchmark(entry, *, recompute: bool, dry_run: bool) -> None:
     ]
     if recompute:
         cmd.append("--recompute-metrics")
-    _run(cmd, label=entry.prefix, dry_run=dry_run)
+    _run(cmd, label=entry.prefix, dry_run=dry_run, env=BENCHMARK_ENV.get(entry.benchmark))
     if not dry_run:
         print(f"[{entry.prefix}] metrics -> {entry.metrics_rel}", flush=True)
 
@@ -181,7 +200,7 @@ def main() -> int:
             cmd = [sys.executable, str(REPO / script), *extra]
             if label == "apd-sweep" and args.jobs > 1:
                 cmd += ["--jobs", str(int(args.jobs))]
-            _run(cmd, label=label, dry_run=args.dry_run)
+            _run(cmd, label=label, dry_run=args.dry_run, env=STUDY_ENV.get(label))
 
     _run([sys.executable, str(REPO / "scripts/repro/build_paper.py")],
          label="build-paper", dry_run=args.dry_run)
