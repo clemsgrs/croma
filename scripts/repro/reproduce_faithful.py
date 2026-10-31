@@ -95,6 +95,12 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     # After the APD sweep: it reads the per-encoder APD cells and apd.csv for its nIPD
     # columns, beside the benchmark runs' per-sample CRoMa.
     ("finetune-pairs", "scripts/studies/finetune_pairs.py", []),
+    # Per-sample probe predictions, then the per-sample margin study that reads the full-tile
+    # records of the tile cohorts and PCaBiop, then the montage drawn from that study. The
+    # records skip any cell already on disk and valid, so a re-run recomputes only what changed.
+    ("probe-records", "scripts/studies/apd/probe_records.py", []),
+    ("sample-shortcut", "scripts/studies/sample_shortcut.py", []),
+    ("margin-montage", "scripts/repro/figures/margin_montage_figure.py", []),
     # tab:slide-vs-meanpool. Prerequisite outside this pipeline: the GPU re-extraction
     # `scripts/studies/slide_vs_meanpool.py extract` (hours per pair; run it detached).
     # Without it, reduce fails naming the pair, cohort and that command. Both steps use
@@ -106,11 +112,11 @@ STUDIES: list[tuple[str, str, list[str]]] = [
     ("slide-vs-meanpool-evaluate", "scripts/studies/slide_vs_meanpool.py",
      ["evaluate", "--recompute", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
 ]
-#: The studies that take ``--jobs``: the probe sweeps, and the slide-vs-meanpool evaluation,
-#: which scores its arms' APD cells. Each is always told this run's count, 1 included: the
-#: sweeps default to one worker, but the evaluation defaults to three, so leaving the flag
-#: out would run three workers on a serial reproduction.
-JOBS_STUDIES = {"apd-sweep", "auc-sweep", "slide-vs-meanpool-evaluate"}
+#: The studies that take ``--jobs``: the probe sweeps, the per-sample probe records, and the
+#: slide-vs-meanpool evaluation, which scores its arms' APD cells. Each is always told this
+#: run's count, 1 included: the sweeps default to one worker, but the evaluation defaults to
+#: three, so leaving the flag out would run three workers on a serial reproduction.
+JOBS_STUDIES = {"apd-sweep", "auc-sweep", "probe-records", "slide-vs-meanpool-evaluate"}
 
 #: The BLAS kernel and thread count the published PCaBiop (``panda``) run was computed in.
 PANDA_BLAS_ENV: dict[str, str] = {"OPENBLAS_CORETYPE": "SKYLAKEX", "OPENBLAS_NUM_THREADS": "4"}
@@ -212,8 +218,9 @@ def main() -> int:
                    help="Allow the metrics artifact cache. Fast, but proves only that the "
                         "cached numbers are still on disk -- not that they recompute.")
     p.add_argument("--jobs", type=int, default=1,
-                   help="Parallel worker processes for the APD and AUROC probe sweeps "
-                        "and the slide-vs-meanpool evaluation (default 1).")
+                   help="Parallel worker processes for the APD and AUROC probe sweeps, "
+                        "the per-sample probe records and the slide-vs-meanpool evaluation "
+                        "(default 1).")
     args = p.parse_args()
 
     entries = list(TABLES)

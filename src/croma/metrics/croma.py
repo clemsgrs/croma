@@ -222,7 +222,17 @@ def _iterative_typed_neighbor_search(
     m: int,
     start_k: int,
     k_growth_factor: float,
+    scan=None,
 ) -> tuple[np.ndarray, np.ndarray, _CRoMaSearchMeta]:
+    """Fill ``m`` slots of each of two neighbour types per sample, growing ``k`` until done.
+
+    ``scan`` decides which neighbour fills which slot. It defaults to CRoMa's own typing
+    (``_scan_typed_neighbors_for_query_rows``: SO into the first array, OS into the
+    second) and takes the same keyword arguments; a study that needs another two-way typing
+    of the same cross-group neighbours passes its own instead of re-implementing the search.
+    """
+    if scan is None:
+        scan = _scan_typed_neighbors_for_query_rows
     n_samples = int(len(labels))
     so_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
     os_dists = np.full((n_samples, int(m)), np.inf, dtype=float)
@@ -284,7 +294,7 @@ def _iterative_typed_neighbor_search(
                 kmax=int(k_current),
             )
 
-            newly_defined = _scan_typed_neighbors_for_query_rows(
+            newly_defined = scan(
                 labels=labels,
                 centers=centers,
                 query_indices=batch_indices,

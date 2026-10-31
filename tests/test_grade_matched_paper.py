@@ -294,10 +294,14 @@ class TestMacros:
         assert sum("Slides}" in line for line in lines) == 10
 
     def test_the_values_file_fails_without_the_study(self, tmp_path, monkeypatch):
+        from types import SimpleNamespace
+
+        import _exposure
         import _mari_vs_ri
         import _overlap
         import _panel_macros
         import generate_paper_values as gpv
+        import generate_sample_shortcut_floats
         import generate_supp_rank_table
 
         # The blocks before this one read other studies and live runs, some relative to the
@@ -309,6 +313,8 @@ class TestMacros:
         monkeypatch.setattr(_panel_macros, "panel_macros", lambda root: [])
         monkeypatch.setattr(generate_supp_rank_table, "macros", lambda root: [])
         monkeypatch.setattr(gpv, "_load_finetune_pair_macros", lambda root: [])
+        monkeypatch.setattr(generate_sample_shortcut_floats, "macros", lambda root: [])
+        monkeypatch.setattr(_exposure, "build", lambda root: SimpleNamespace(macros=[]))
         monkeypatch.setattr(_overlap, "PER_SAMPLE", tmp_path / "absent.csv")
 
         with pytest.raises(FileNotFoundError, match="grade_matched_pools.py"):

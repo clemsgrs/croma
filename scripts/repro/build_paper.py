@@ -58,6 +58,9 @@ CORE = [
     # the committed metadata. Core rather than a study: generate_paper_values.py cites the
     # same CSV, and a missing or stale study must fail the build, never skip it.
     ("generate_finetune_pairs_table.py", None, ""),
+    # Reads the committed model_metadata.csv, the three tile runs' metrics.csv and the APD
+    # join; fails, rather than skips, when any is missing.
+    ("generate_exposure_tables.py", None, ""),
 ]
 
 #: Generators whose input is a *study* artifact rather than a benchmark run. A study that
@@ -92,6 +95,16 @@ STUDIES = [
         "generate_apd_floats.py",
         "output/studies/apd/apd_correlation.csv",
         "run scripts/studies/apd/apd_experiment.py, then apd_croma_correlation.py",
+    ),
+    # Reads the three per-cohort studies under output/studies/sample-shortcut/ (PCaBiop, the
+    # last one the study writes, stands in for all three), each verified against the sha256
+    # of every input it recorded. The macros the text quotes are emitted by
+    # generate_paper_values.py, which fails when the study is missing or stale. The montage
+    # PDF it captions is drawn by figures/margin_montage_figure.py.
+    (
+        "generate_sample_shortcut_floats.py",
+        "output/studies/sample-shortcut/pcabiop/cohort.json",
+        "run scripts/studies/sample_shortcut.py",
     ),
     # Reads each tile run's croma_m_sweep_metrics.csv (Camelyon guarded as representative;
     # the three are produced together). Absent only when a run was benchmarked without the
