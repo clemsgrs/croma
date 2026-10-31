@@ -133,9 +133,10 @@ def _exposure(frame: pd.DataFrame, metadata: pd.DataFrame) -> dict[str, list[str
     return exposed
 
 
-def _rows(row: pd.Series, daggered: bool) -> list[str]:
+def _rows(row: pd.Series, daggered: bool, percent: str) -> list[str]:
+    """A cohort's three rows; ``percent`` is the caption's level, so the CI label shares it."""
     cohort = by_benchmark(row["benchmark"]).short_name + (r"$^{\dagger}$" if daggered else "")
-    values, deltas, intervals = [cohort], [r"\quad $\Delta$"], [r"\quad 95\% CI"]
+    values, deltas, intervals = [cohort], [r"\quad $\Delta$"], [rf"\quad {percent} CI"]
     for stem, decimals, has_interval in COLUMNS:
         parent = bare_num(row[f"parent_{stem}"], decimals)
         finetune = bare_num(row[f"finetune_{stem}"], decimals)
@@ -158,6 +159,8 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
     if list(dict.fromkeys(frame["finetune"])) != [p.finetune for p in pairs]:
         raise CaptionClaimError("the study's fine-tunes are not the pairs the metadata declares")
     exposed = _exposure(frame, metadata)
+    level = float(_single(frame, "level"))
+    percent = f"{level * 100:g}\\%"
 
     lines = [
         r"\begin{table}[!htbp]",
@@ -178,15 +181,14 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         lines.append(rf"\multicolumn{{{N_COLUMNS}}}{{l}}{{\textbf{{{title}}}}} \\")
         for _, row in frame[frame["finetune"] == pair.finetune].iterrows():
             members = exposed.get(row["benchmark"], [])
-            lines += _rows(row, any(m in members for m in (pair.parent, pair.finetune)))
+            daggered = any(m in members for m in (pair.parent, pair.finetune))
+            lines += _rows(row, daggered, percent)
 
     selections = list(dict.fromkeys(p.benchmark_selection for p in pairs if p.benchmark_selection))
     unworded = [s for s in selections if s not in SELECTION_LEGENDS]
     if unworded:
         raise CaptionClaimError(f"no legend wording for benchmark_selection {unworded}")
 
-    level = float(_single(frame, "level"))
-    percent = f"{level * 100:g}\\%"
     caption = [
         r"\textbf{Each robustness-targeted fine-tune against its parent encoder.}",
         "The pairs are read from the model metadata: every tile encoder declared a "

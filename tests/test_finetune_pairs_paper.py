@@ -84,7 +84,8 @@ def _study_row(finetune: str, parent: str, benchmark: str, **overrides) -> dict:
         "k": 11,
         "strata": "confounder" if benchmark == "pathorob-tolkach-esca" else "label+confounder",
         "n_boot": 2000,
-        "level": 0.95,
+        # Not the study's 0.95 default, so a level the table hard-codes cannot pass.
+        "level": 0.90,
         "seed": 12345,
         "n_ranked": 26,
         "parent_croma": 0.10,
@@ -378,6 +379,15 @@ class TestTable:
         assert delta[-1] == r"$+11$ \\"
         assert ci[1:3] == ["$[0.15, 0.20]$", "$[-0.355, -0.272]$"]
         assert ci[4:7] == ["", "$[0.039, 0.106]$", "$[-0.011, 0.001]$"]
+
+    def test_the_ci_rows_are_labelled_with_the_studys_confidence_level(self):
+        tex = _render()
+        rows = [line for line in tex.splitlines() if not line.startswith(r"\caption{")]
+        labels = [line.split(" & ")[0] for line in rows if line.startswith(r"\quad")]
+
+        assert r"\quad 90\% CI" in labels
+        assert not any(r"95\% CI" in line for line in rows)
+        assert r"its 90\% interval" in _caption(tex)
 
     def test_the_caption_is_one_line_within_the_journal_word_limit(self):
         caption = _caption(_render())
