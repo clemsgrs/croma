@@ -213,6 +213,14 @@ class TestTable:
         assert cells[4:8] == ["---"] * 4
         assert "---" not in cells[2:4] + cells[8:10]
 
+    def test_a_binary_cohort_missing_from_the_sensitivity_rows_is_refused(self, study):
+        # The caption says the dashes mark the multiclass cohorts: a binary cohort the
+        # probe reductions never reached must fail the build, not read as multiclass.
+        sens_spec = _sens_spec()
+
+        with pytest.raises(CaptionClaimError, match="pcabiop"):
+            self._tex(study, sens_spec[sens_spec["cohort"] != "pcabiop"])
+
     def test_sensitivity_on_camelyon_has_its_interval_and_q_and_on_pcabiop_its_exact_p(self, study):
         sens_spec = _sens_spec(
             cells={

@@ -534,13 +534,12 @@ def run(
             )
         )
 
-        if cohort not in low_data:
-            continue
-        chance = 1.0 / len(DATASETS[cohort]["biological_classes"])
         full = full_tiles(cohort)
         for model in models:
-            # The full level is the APD study's own cell, which tab:apd-correlation reads; a
-            # full-tile record, where there is one, must still reproduce it.
+            # The full level is the APD study's own cell, which tab:apd-correlation and the
+            # AUROC study read; a full-tile record, where there is one, must still reproduce
+            # it. Every cohort's cells are checked and fingerprinted, not only the low-data
+            # ones', so a re-run cell makes the sensitivity and specificity rows stale too.
             cell = _apd_cell(root, cohort, model, inputs)
             recorded = accuracies.get((cohort, full, model))
             tolerance = probe_records.REPRODUCTION_TOLERANCE
@@ -549,6 +548,10 @@ def run(
             ):
                 raise ValueError(f"{cohort}/{model}: the full-tile record no longer reproduces")
             accuracies[(cohort, full, model)] = cell
+
+        if cohort not in low_data:
+            continue
+        chance = 1.0 / len(DATASETS[cohort]["biological_classes"])
         ranked = sorted(m for m in models if m != CONTROL_MODEL)
         croma_replicates[cohort] = _croma_replicates(
             root, cohort, ranked, n_boot or LOW_DATA_N_BOOT, inputs

@@ -32,12 +32,15 @@ import probe_reductions as study  # noqa: E402
 RANKED = ["E0", "E1", "E2", "E3"]
 CONTROL = "DINOv2-B"
 CROMA = {"E0": 0.1, "E1": 0.2, "E2": 0.3, "E3": 0.4, CONTROL: -0.2}
+#: PCaBiop's shape: binary, slide encoders without the control, and records at its full
+#: tile level only (one embedding per slide) -- a binary cohort that is not a low-data one.
+SLIDE = {"S0": 0.1, "S1": 0.2, "S2": 0.3, "S3": 0.4, "S4": 0.5}
 ITERATIONS = 2
 #: Small resampling counts keep the run fast; the outputs must report whichever were used.
 FAST = dict(n_boot=40, n_permutations=60)
 
 
-def _camelyon_scores(index: int, n_splits: int):
+def _binary_scores(index: int, n_splits: int):
     """Encoder ``index``'s (sensitivity, specificity) per (split, replicate), both arms.
 
     Every probe starts perfect. Sensitivity halves from split ``4 + index`` on and
@@ -62,15 +65,24 @@ def _margins(sens: np.ndarray, spec: np.ndarray) -> np.ndarray:
     return margins
 
 
-def _write_record(path: Path, scores: dict, *, tiles: int, v: list[float], shift: float = 0.0):
-    """A camelyon record of eight in-domain rows (even rows tumour) and four OOD rows."""
-    # Each replicate holds out two tumour rows, then two normal rows: rows 6 and 7 never.
+def _write_record(
+    path: Path,
+    scores: dict,
+    *,
+    tiles: int,
+    v: list[float],
+    shift: float = 0.0,
+    classes: tuple[str, str] = ("normal", "tumor"),
+):
+    """A binary record of eight in-domain rows (even rows diseased) and four OOD rows."""
+    healthy, disease = classes
+    # Each replicate holds out two diseased rows, then two healthy rows: rows 6 and 7 never.
     held_out = np.array([[0, 2, 1, 3], [2, 4, 3, 5]])
-    id_label = np.array(["tumor" if r % 2 == 0 else "normal" for r in range(8)])
+    id_label = np.array([disease if r % 2 == 0 else healthy for r in range(8)])
     arrays = {
         "meta": json.dumps(
             {
-                "biological_classes": ["normal", "tumor"],
+                "biological_classes": [healthy, disease],
                 "cramers_v": list(v),
                 "n_splits": len(v),
                 "tiles_per_slide": tiles,
@@ -83,7 +95,7 @@ def _write_record(path: Path, scores: dict, *, tiles: int, v: list[float], shift
         "id_group_id": np.array([f"g{r // 2}" for r in range(8)]),
         "id_label": id_label,
         "id_confounder": np.array(["RUMC"] * 4 + ["UMCU"] * 4),
-        "ood_label": np.array(["tumor", "tumor", "normal", "normal"]),
+        "ood_label": np.array([disease, disease, healthy, healthy]),
     }
     for name, (sens, spec) in scores.items():
         arrays[f"margins_{name}"] = _margins(sens, spec)
@@ -92,12 +104,33 @@ def _write_record(path: Path, scores: dict, *, tiles: int, v: list[float], shift
     np.savez(path, **arrays)
 
 
+def _write_apd_cell(path: Path, scores: dict) -> None:
+    """The APD study's cell: the balanced accuracies the full-tile sweep scored."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                f"{arm}_test_accuracies": ((s[0] + s[1]) / 2).tolist()
+                for arm, s in zip(("id", "ood"), scores.values())
+            }
+        )
+    )
+
+
+def _write_metrics(path: Path, croma: dict, k: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        {"model": list(croma), "croma": list(croma.values()), "ri": 0.5, "mari": 0.5, "k": k}
+    ).to_csv(path, index=False)
+
+
 @pytest.fixture(scope="module")
 def tree(tmp_path_factory) -> Path:
-    """A checkout-shaped tree for Camelyon at 300 and 3 tiles per slide.
+    """A checkout-shaped tree for Camelyon at 300 and 3 tiles per slide, and PCaBiop at 1.
 
-    The full-tile APD cell holds the full-tile record's accuracies. The 3-tile records'
-    balanced accuracies sit 0.1 lower at every probe.
+    Each full-tile APD cell holds the full-tile record's accuracies. Camelyon's 3-tile
+    records' balanced accuracies sit 0.1 lower at every probe. PCaBiop's slide encoders
+    behave as Camelyon's tile encoders, over PCaBiop's own V grid.
     """
     from loaders import training_correlations
     from paper_manifest import by_benchmark
@@ -107,36 +140,33 @@ def tree(tmp_path_factory) -> Path:
     run = by_benchmark("pathorob-camelyon")
     models = [*RANKED, CONTROL]
     for i, model in enumerate(models):
-        scores = _camelyon_scores(min(i, 3), len(v))
+        scores = _binary_scores(min(i, 3), len(v))
         for tiles, shift in ((300, 0.0), (3, 0.1)):
             path = root / study.RECORDS_REL / "camelyon" / f"tiles-{tiles}" / f"{model}.npz"
             _write_record(path, scores, tiles=tiles, v=v, shift=shift)
-        cell = root / study.APD_REL / "camelyon" / f"{model}.json"
-        cell.parent.mkdir(parents=True, exist_ok=True)
-        cell.write_text(
-            json.dumps(
-                {
-                    f"{arm}_test_accuracies": ((s[0] + s[1]) / 2).tolist()
-                    for arm, s in zip(("id", "ood"), scores.values())
-                }
-            )
-        )
-    metrics = root / run.metrics_rel
-    metrics.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(
-        {"model": models, "croma": [CROMA[m] for m in models], "ri": 0.5, "mari": 0.5, "k": 11}
-    ).to_csv(metrics, index=False)
+        _write_apd_cell(root / study.APD_REL / "camelyon" / f"{model}.json", scores)
+    _write_metrics(root / run.metrics_rel, {m: CROMA[m] for m in models}, k=11)
     replicates = root / run.studies_rel / "bootstrap_replicates.npz"
     replicates.parent.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(3)
     medians = np.array([CROMA[m] for m in models]) + rng.normal(0, 0.01, (FAST["n_boot"], 5))
     np.savez(replicates, models=np.array(models), median=medians)
-    study.run(root, runs={"camelyon": (300, 3)}, **FAST)
+
+    v_slide = training_correlations("pcabiop")
+    for i, model in enumerate(SLIDE):
+        scores = _binary_scores(i, len(v_slide))
+        path = root / study.RECORDS_REL / "pcabiop" / "tiles-1" / f"{model}.npz"
+        _write_record(path, scores, tiles=1, v=v_slide, classes=("benign", "cancer"))
+        _write_apd_cell(root / study.APD_REL / "pcabiop" / f"{model}.json", scores)
+    _write_metrics(root / by_benchmark("panda").metrics_rel, SLIDE, k=3)
+
+    study.run(root, runs={"camelyon": (300, 3), "pcabiop": (1,)}, **FAST)
     return root
 
 
-def _read(root: Path, name: str) -> pd.DataFrame:
-    return pd.read_csv(root / study.STUDY_REL / name, keep_default_na=False, na_values=[""])
+def _read(root: Path, name: str, cohort: str | None = None) -> pd.DataFrame:
+    frame = pd.read_csv(root / study.STUDY_REL / name, keep_default_na=False, na_values=[""])
+    return frame if cohort is None else frame[frame["cohort"] == cohort]
 
 
 class TestRun:
@@ -146,12 +176,12 @@ class TestRun:
         assert coverage.loc["camelyon", "rows"] == 8
         assert coverage.loc["camelyon", "never_held_out"] == 2
         assert coverage.loc["camelyon", "share_never_held_out"] == pytest.approx(0.25)
-        counts = _read(tree, "held_out_counts.csv")
+        counts = _read(tree, "held_out_counts.csv", "camelyon")
         assert counts["times_held_out"].tolist() == [1, 1, 2, 2, 1, 1, 0, 0]
         assert counts["sample_id"].tolist() == [f"s{r}" for r in range(8)]
 
     def test_every_probe_is_scored_for_sensitivity_and_specificity(self, tree):
-        probes = _read(tree, "sens_spec_probes.csv")
+        probes = _read(tree, "sens_spec_probes.csv", "camelyon")
 
         # Five encoders x two regimes x eight splits x two replicates.
         assert len(probes) == 5 * 2 * 8 * 2
@@ -159,7 +189,7 @@ class TestRun:
         assert e0.groupby("split")["sensitivity"].mean().tolist() == [1.0] * 4 + [0.5] * 4
 
     def test_a_specificity_without_skill_at_balance_has_no_nipd(self, tree):
-        sens_spec = _read(tree, "sens_spec.csv").set_index(["model", "regime"])
+        sens_spec = _read(tree, "sens_spec.csv", "camelyon").set_index(["model", "regime"])
 
         assert np.isnan(sens_spec.loc[("E3", "ood"), "nipd_spec"])
         assert sens_spec.loc[("E3", "ood"), "spec_v0"] == pytest.approx(0.5)
@@ -168,7 +198,7 @@ class TestRun:
         assert sens_spec.loc[("E3", "id"), "nipd_spec"] == pytest.approx(0.0)
 
     def test_sensitivity_and_specificity_rhos_form_the_tile_cohorts_family(self, tree):
-        corr = _read(tree, "correlations.csv")
+        corr = _read(tree, "correlations.csv", "camelyon")
         rows = corr[corr["analysis"] == "sens_spec"].set_index(["regime", "target"])
 
         # The less robust the encoder, the earlier it loses sensitivity and specificity.
@@ -180,6 +210,16 @@ class TestRun:
         assert rows.loc[("ood", "nipd_spec"), "undefined"] == "E3"
         assert rows["in_family"].all() and rows["q_value"].notna().all()
         assert set(rows["n_boot"]) == {FAST["n_boot"]}
+
+    def test_the_slide_cohort_is_descriptive_outside_the_family(self, tree):
+        corr = _read(tree, "correlations.csv", "pcabiop")
+        rows = corr[corr["analysis"] == "sens_spec"]
+
+        assert len(rows) == 4
+        assert not rows["in_family"].any() and rows["q_value"].isna().all()
+        assert set(rows["permutation"]) == {"exact"}
+        # PCaBiop is binary but holds no reduced level: never a low-data cohort.
+        assert _read(tree, "low_data.csv", "pcabiop").empty
 
     def test_the_low_data_summary_reads_the_full_level_from_the_apd_cell(self, tree):
         low = _read(tree, "low_data.csv").set_index(["tiles", "model"])
@@ -216,6 +256,31 @@ class TestRun:
         assert "output/studies/probe-records/camelyon/tiles-3/E0.npz" in info["inputs"]
         assert "output/studies/apd/camelyon/E0.json" in info["inputs"]
         assert info["low_data_cohorts"] == ["camelyon"]
+        assert info["binary_cohorts"] == ["camelyon", "pcabiop"]
+
+    def test_a_binary_cohort_without_low_data_fingerprints_its_apd_cells(self, tree):
+        # Its sensitivity and specificity rows sit beside the AUROC study's, which reads
+        # these cells: a re-run cell must make the study stale on every cohort.
+        info = json.loads((tree / study.STUDY_REL / "study.json").read_text())
+
+        for model in SLIDE:
+            assert f"output/studies/apd/pcabiop/{model}.json" in info["inputs"]
+
+    @pytest.mark.parametrize("cohort, model", [("camelyon", "E1"), ("pcabiop", "S1")])
+    def test_a_full_tile_record_that_no_longer_reproduces_its_cell_fails_the_run(
+        self, tree, tmp_path, cohort, model
+    ):
+        import shutil
+
+        root = tmp_path / "checkout"
+        shutil.copytree(tree, root)
+        cell = root / study.APD_REL / cohort / f"{model}.json"
+        accuracies = json.loads(cell.read_text())
+        accuracies["id_test_accuracies"][0][0] -= 0.05
+        cell.write_text(json.dumps(accuracies))
+
+        with pytest.raises(ValueError, match=f"{cohort}/{model}: .*no longer reproduces"):
+            study.run(root, tmp_path / "out", runs={"camelyon": (300, 3), "pcabiop": (1,)}, **FAST)
 
     def test_a_missing_record_fails_the_run(self, tree, tmp_path):
         with pytest.raises(FileNotFoundError, match="tiles-30"):
@@ -263,6 +328,22 @@ class TestBasis:
         with pytest.raises(CaptionClaimError, match="E1.json"):
             basis.load(root)
 
+    def test_a_changed_apd_cell_of_a_binary_cohort_without_low_data_is_refused(
+        self, tree, tmp_path
+    ):
+        # A partial re-run must not pair current AUROC rows with stale sensitivity and
+        # specificity rows on PCaBiop either.
+        import _probe_reductions as basis
+        from _paper_tables import CaptionClaimError
+
+        root = _copy_study(tree, tmp_path)
+        relative = study.APD_REL / "pcabiop" / "S1.json"
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text((tree / relative).read_text() + " ")
+
+        with pytest.raises(CaptionClaimError, match="pcabiop/S1.json"):
+            basis.load(root)
+
     def test_a_current_study_loads_its_tables(self, tree):
         import _probe_reductions as basis
 
@@ -270,7 +351,7 @@ class TestBasis:
 
         assert loaded.low_data_cohorts == ["camelyon"]
         assert loaded.tile_levels("camelyon") == [300, 3]
-        assert len(loaded.sens_spec_correlations) == 4
+        assert len(loaded.sens_spec_correlations) == 2 * 4
         assert loaded.n_ranked == 4
 
 

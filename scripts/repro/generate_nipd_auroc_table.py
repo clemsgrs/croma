@@ -88,15 +88,20 @@ def _row(study: NipdAuroc, lead: str, x: str, y: str) -> str:
 
 
 def _sens_spec_cell(sens_spec: pd.DataFrame, dataset: str, regime: str, target: str) -> str:
+    # The caption says the dash marks a multiclass cohort, so only a multiclass cohort gets
+    # one; a binary cohort without its row is a missing result, not a dash.
+    if len(DATASETS[dataset]["biological_classes"]) != 2:
+        return DASH
     rows = sens_spec[
         (sens_spec["cohort"] == dataset)
         & (sens_spec["regime"] == regime)
         & (sens_spec["target"] == target)
     ]
     if rows.empty:
-        if dataset in set(sens_spec["cohort"]):
-            raise KeyError(f"no {target} correlation for ({dataset}, {regime})")
-        return DASH
+        raise CaptionClaimError(
+            f"{dataset} is binary but has no {target} correlation ({regime}); re-run "
+            "scripts/studies/probe_reductions.py"
+        )
     if len(rows) != 1:
         raise KeyError(f"more than one {target} correlation for ({dataset}, {regime})")
     row = rows.iloc[0]
