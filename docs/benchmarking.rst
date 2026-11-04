@@ -84,7 +84,10 @@ gated-weight smoke test (``CROMA_RUN_WAIV_SMOKE=1`` / ``CROMA_RUN_RUDOLFV2_SMOKE
 the default offline suite skips. Exact preprocessing contracts and immutable checkpoint
 revisions live in the model registry.
 
-Mettle is also a remote-code checkpoint, but its pins (``transformers>=4.48``,
-``timm>=1.0.15``) fit the shared environment, so it needs no venv of its own. Its loader
-refuses weights whose SHA-256 differs from the model card's, and its opt-in smoke test is
-``CROMA_RUN_METTLE_SMOKE=1``.
+Mettle comes as two remote-code checkpoints that share one ``mettle`` backend: Mettle-1
+(registry key ``Mettle``) and its later fine-tune Mettle-1.5 (``Mettle-1.5``). Only their
+weights differ: both run the checkpoint's own processor, then ``model.encode`` at the
+3072-d ``cls_mean`` view, in FP32. Their pins (``transformers>=4.48``, ``timm>=1.0.15``)
+fit the shared environment, so neither needs a venv of its own. The loader pins one
+weights SHA-256 per checkpoint and refuses weights that differ from it. The opt-in smoke
+test, ``CROMA_RUN_METTLE_SMOKE=1``, runs both checkpoints.
