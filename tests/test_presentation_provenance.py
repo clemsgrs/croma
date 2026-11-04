@@ -304,15 +304,44 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
     )
 
 
-def test_published_names_restyle_the_rudolfv_family_and_nothing_else() -> None:
-    """The registry keeps the spaced checkpoint names (embedding files, metrics rows,
-    extraction records); every reader-facing surface prints the dashed form. The mapping
-    is data, not code: the ``published_name`` column of model_metadata.csv."""
+def test_published_names_restyle_the_rudolfv_family_and_mettle_and_nothing_else() -> None:
+    """The registry keeps the checkpoint names it embedded under (embedding files, metrics
+    rows, extraction records); every reader-facing surface prints the published form: the
+    dashed RudolfV-2 family, and Mettle under its authors' new name for the same
+    checkpoint. The mapping is data, not code: the ``published_name`` column of
+    model_metadata.csv."""
     assert style.PUBLISHED_MODEL_NAMES == {
         "RudolfV 2": "RudolfV-2",
         "RudolfV 2-B": "RudolfV-2-B",
         "RudolfV 2-S": "RudolfV-2-S",
+        "Mettle": "Mettle-1 (Pre-release)",
     }
+
+
+def test_the_short_form_is_printed_only_where_a_call_site_asks_for_it() -> None:
+    """``Mettle-1`` is for text drawn inside figures, where the full name does not fit;
+    every other surface -- tables, captions, macro bodies, results/ -- keeps the full
+    name. A blank ``published_short_name`` falls back to the published name, and that to
+    the registry name."""
+    assert style.published_model_name("Mettle") == "Mettle-1 (Pre-release)"
+    assert style.published_model_name("Mettle", short=True) == "Mettle-1"
+    # Either published spelling shortens, so a call site can shorten a published frame.
+    assert style.published_model_name("Mettle-1 (Pre-release)", short=True) == "Mettle-1"
+    assert style.published_model_name("Mettle-1", short=True) == "Mettle-1"
+    assert style.published_model_name("RudolfV 2", short=True) == "RudolfV-2"
+    assert style.published_model_name("RudolfV-2-B", short=True) == "RudolfV-2-B"
+    assert style.published_model_name("UNI", short=True) == "UNI"
+    renamed = style.published_models(pd.DataFrame({"model": ["Mettle", "UNI"]}))
+    assert list(renamed["model"]) == ["Mettle-1 (Pre-release)", "UNI"]
+
+
+def test_the_short_form_resolves_to_the_registry_identity() -> None:
+    assert style.registry_model_name("Mettle-1") == "Mettle"
+    assert style.registry_model_name("Mettle-1 (Pre-release)") == "Mettle"
+    assert style.published_model_name("Mettle-1") == "Mettle-1 (Pre-release)"
+    assert style.color_for_model("Mettle-1") == style.color_for_model("Mettle")
+    assert style.family_for_model("Mettle-1") == "hoptimus"
+    assert style.model_sort_key("Mettle-1") == style.model_sort_key("Mettle")
 
 
 def test_a_published_name_resolves_to_its_registry_identity_in_the_style_maps() -> None:

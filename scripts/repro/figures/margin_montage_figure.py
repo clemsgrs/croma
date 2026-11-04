@@ -78,10 +78,12 @@ def render(root: Path = REPO, out_dir: Path | None = None, *, n: int = basis.MON
     for b, (cohort, choice) in enumerate(choices):
         top = margin + b * (block_h + cohort_gap)
         short = basis.load(cohort, root).run.short_name or cohort
+        # Figure text prints the short published name; the caption keeps the full one.
+        model = plotstyle.published_model_name(choice.model, short=True)
         fig.text(
             (margin + label_w) / fig_w,
             1 - (top + 0.04) / fig_h,
-            f"{short}: {choice.model}, {_cell_text(choice.cell)}",
+            f"{short}: {model}, {_cell_text(choice.cell)}",
             ha="left",
             va="top",
             fontsize=plotstyle.FS_TITLE,

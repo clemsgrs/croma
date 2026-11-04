@@ -32,6 +32,13 @@
   // above-chance margin. Curves ending at or below this are reported as a collapse.
   var COLLAPSE = -0.9;
 
+  // A label drawn inside a plot prints the model's short name: its published name without
+  // a trailing qualifier ("Mettle-1 (Pre-release)" -> "Mettle-1"), the same short form as
+  // the figures' published_short_name. Titles, readouts and aria labels keep the full name.
+  function shortName(name) {
+    return String(name).replace(/\s+\([^()]*\)$/, "");
+  }
+
   function createView(payload) {
     if (!payload || payload.schema_version !== 2 || !Array.isArray(payload.cohorts)) {
       throw new Error("Unsupported nIPD publication payload");
@@ -456,7 +463,7 @@
       }
       // Every point is named on hover or focus; the selected model and the control
       // keep their name on permanently.
-      group.appendChild(svgText(x(point.x) + 9, y(point.y) - 9, point.model,
+      group.appendChild(svgText(x(point.x) + 9, y(point.y) - 9, shortName(point.model),
         "croma-nipd-association-label" + (selected || point.isControl ? " is-pinned" : "")));
       var title = svgEl("title");
       title.textContent = point.model;
@@ -558,7 +565,8 @@
       group.appendChild(svgEl("rect", {
         x: 0, y: y - 22, width: OVERVIEW_WIDTH, height: 44, class: "croma-nipd-hit",
       }));
-      group.appendChild(svgText(OVERVIEW_LEFT - 10, y + 4, model.model, "croma-nipd-model-label"));
+      group.appendChild(svgText(OVERVIEW_LEFT - 10, y + 4, shortName(model.model),
+        "croma-nipd-model-label"));
       group.appendChild(svgEl("circle", { cx: x(result.nipd), cy: y, r: 5, class: "croma-nipd-dot" }));
       group.appendChild(svgText(OVERVIEW_NIPD_COLUMN, y + 4, percent(result.nipd), "croma-nipd-value"));
       group.appendChild(svgText(OVERVIEW_END_COLUMN, y + 4, endOfRangeText(result),
@@ -842,6 +850,7 @@
     boot: boot,
     contextYDomain: contextYDomain,
     createView: createView,
+    shortName: shortName,
     splitSignSegments: splitSignSegments,
   };
 });

@@ -205,7 +205,8 @@ def main():
         key=lambda m: (plotstyle.model_sort_key(m), m),
     )
     for model in legend_models:
-        axes[0][0].plot([], [], color=plotstyle.color_for_model(model), label=model,
+        axes[0][0].plot([], [], color=plotstyle.color_for_model(model),
+                        label=plotstyle.published_model_name(model, short=True),
                         **SERIES_STYLE)
 
     fig.text(0.55, 0.147, "Training data correlation (Cramér's $V$)",

@@ -247,3 +247,16 @@ def test_wsis_tiles_cell_collapses_a_uniform_missing_token() -> None:
     assert gmt._wsis_tiles_cell("n/d", "n/d", "card") == "n/d"
     # A half-known cell keeps both halves rather than collapsing.
     assert gmt._wsis_tiles_cell("$350$k", "n/d", "card") == "$350$k / n/d"
+
+
+def test_the_summary_prints_mettle_under_its_full_published_name() -> None:
+    # main() restyles the frame before building; a table always prints the full name.
+    from plotting.style import published_models
+
+    metadata = published_models(gmt.load_metadata(), columns=("model", "parent_model"))
+    body = gmt.summary_table_body(metadata)
+
+    row = r"Mettle-1 (Pre-release)~\cite{mettle} & acquisition-robustness fine-tune of"
+    assert row in body
+    assert "Mettle~" not in body
+    assert "Mettle-1~" not in body

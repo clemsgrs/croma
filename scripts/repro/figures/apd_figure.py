@@ -176,7 +176,8 @@ def _render_dataset(dset: str, dlabel: str, joined, correlations, *,
         if focused and j == 0:
             for model in top_models:
                 ax_top.plot(
-                    [], [], color=plotstyle.color_for_model(model), label=model,
+                    [], [], color=plotstyle.color_for_model(model),
+                    label=plotstyle.published_model_name(model, short=True),
                     markeredgecolor="white", markeredgewidth=0.35, **SERIES_STYLE,
                 )
         plotstyle.set_panel_title(ax_top, col_label)

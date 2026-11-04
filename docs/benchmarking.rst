@@ -85,7 +85,11 @@ the default offline suite skips. Exact preprocessing contracts and immutable che
 revisions live in the model registry.
 
 Mettle comes as two remote-code checkpoints that share one ``mettle`` backend: Mettle-1
-(registry key ``Mettle``) and its later fine-tune Mettle-1.5 (``Mettle-1.5``). Only their
+(Pre-release), at `slideflow-labs/mettle-1
+<https://huggingface.co/slideflow-labs/mettle-1>`__, and its later fine-tune Mettle-1.5,
+at `slideflow-labs/mettle-1.5 <https://huggingface.co/slideflow-labs/mettle-1.5>`__. The
+registry keys them ``Mettle`` and ``Mettle-1.5``; ``Mettle`` loads
+``slideflow-labs/Mettle``, which redirects to ``slideflow-labs/mettle-1``. Only their
 weights differ: both run the checkpoint's own processor, then ``model.encode`` at the
 3072-d ``cls_mean`` view, in FP32. Their pins (``transformers>=4.48``, ``timm>=1.0.15``)
 fit the shared environment, so neither needs a venv of its own. The loader pins one

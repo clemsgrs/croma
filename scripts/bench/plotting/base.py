@@ -220,7 +220,9 @@ def _draw_model_scatter(
         ax.axvline(x=vline, **ref_kw)
 
     for model, x, y in points:
-        label = rf"{model} $\dagger$" if model in exposed else model
+        # The legend is text inside the figure: it prints the short published name.
+        label = plotstyle.published_model_name(model, short=True)
+        label = rf"{label} $\dagger$" if model in exposed else label
         ax.scatter(
             [x],
             [y],

@@ -64,12 +64,14 @@ def main() -> None:
                 mfc=(color if robust else "white"),
                 mec=color, mew=1.2,
             )
-        # end labels with CRoMa value, coloured by model (dagger = TCGA-exposed)
+        # end labels with CRoMa value, coloured by model (dagger = TCGA-exposed); the
+        # short published name, as all text drawn inside a figure
+        label = plotstyle.published_model_name(model, short=True)
         ax.text(-0.06, cb.rank_of(model, names[0]),
-                f"{model}{tag}  {cb.croma.loc[model, names[0]]:.2f}",
+                f"{label}{tag}  {cb.croma.loc[model, names[0]]:.2f}",
                 ha="right", va="center", fontsize=plotstyle.FS_ANNOT, color=color)
         ax.text(len(names) - 1 + 0.06, cb.rank_of(model, names[-1]),
-                f"{cb.croma.loc[model, names[-1]]:.2f}  {model}{tag}",
+                f"{cb.croma.loc[model, names[-1]]:.2f}  {label}{tag}",
                 ha="left", va="center", fontsize=plotstyle.FS_ANNOT, color=color)
 
     ax.set_xticks(xs)

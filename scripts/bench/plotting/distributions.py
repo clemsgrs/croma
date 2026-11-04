@@ -178,7 +178,7 @@ def _draw_croma_sample_distributions(ax, model_data: list[dict]) -> None:
         ax.text(
             -0.02,
             row_center,
-            str(d["model"]),
+            plotstyle.published_model_name(str(d["model"]), short=True),
             transform=ax.get_yaxis_transform(),
             ha="right",
             va="center",
