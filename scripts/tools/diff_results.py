@@ -131,8 +131,8 @@ def _compare_json(before: object, after: object, where: str, result: Comparison)
     if isinstance(before, dict) and isinstance(after, dict):
         # Dicts keyed by model name (the distribution payload, PROVENANCE's per-model k)
         # are joined on registry identity, like the CSV rows.
-        old = {registry_model_name(k): k for k in before}
-        new = {registry_model_name(k): k for k in after}
+        old = _keys_by_identity(before, where, result)
+        new = _keys_by_identity(after, where, result)
         for identity in sorted(set(old) | set(new)):
             if identity not in old or identity not in new:
                 side = "before" if identity in old else "after"
@@ -154,6 +154,16 @@ def _compare_json(before: object, after: object, where: str, result: Comparison)
         result.number(float(before), float(after), where)
     elif before != after:
         result.problems.append(f"{where}: {before!r} -> {after!r}")
+
+
+def _keys_by_identity(obj: dict, where: str, result: Comparison) -> dict[str, str]:
+    keys: dict[str, str] = {}
+    for key in obj:
+        identity = registry_model_name(key)
+        if identity in keys:
+            result.problems.append(f"{where}: two keys for {identity!r}")
+        keys[identity] = key
+    return keys
 
 
 def _is_json_number(value: object) -> bool:

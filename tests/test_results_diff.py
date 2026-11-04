@@ -61,6 +61,19 @@ def test_a_name_that_maps_to_a_different_identity_is_a_missing_row_not_a_rename(
     assert not comparison.name_only
 
 
+def test_two_json_keys_for_one_identity_are_reported_not_merged():
+    before = {"models": {"Mettle": [0, 3, 1]}}
+    after = {"models": {"Mettle": [999, 0, 0], "Mettle-1 (Pre-release)": [0, 3, 1]}}
+
+    comparison = dr.compare(
+        {"results/distributions.json": json.dumps(before)},
+        {"results/distributions.json": json.dumps(after)},
+    )
+
+    assert not comparison.name_only
+    assert any("two keys for 'Mettle'" in problem for problem in comparison.problems)
+
+
 def test_provenance_differs_only_in_its_export_date_and_checksums_by_design():
     before = {"exported": "2026-10-05", "files": {"results/a.csv": "x"}, "k": {"UNI": 3}}
     after = {"exported": "2026-11-04", "files": {"results/a.csv": "y"}, "k": {"UNI": 3}}
