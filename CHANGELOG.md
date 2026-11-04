@@ -36,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Mettle is now published as Mettle-1 (Pre-release), its authors' new name for the same
+  checkpoint (`slideflow-labs/mettle-1`). No value changed.
 - The documented rationale for MaRI's automatic `tau` is corrected, in the
   `croma.metrics.tau` module docstring and in "Choosing `tau`" on the metrics page. It used
   to read `exp(-d / tau)` as if each anchor's nearest neighbour sat at distance zero, which

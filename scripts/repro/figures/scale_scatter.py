@@ -301,7 +301,7 @@ def render_scale_scatter(frame: pd.DataFrame, out_path: Path = DEFAULT_OUT) -> P
         radius_pts = float(np.sqrt(sizes[i] / np.pi))
         dx, dy, ha, va = _label_offset(_LABEL_DIR.get(model, "above"), radius_pts)
         ax.annotate(
-            model,
+            plotstyle.published_model_name(model, short=True),
             (xs[i], ys[i]),
             xytext=(dx, dy),
             textcoords="offset points",

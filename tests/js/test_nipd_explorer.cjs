@@ -396,3 +396,27 @@ test("swap transfers active focus and readouts without clearing the pair", async
   );
   assert.equal(mount.querySelectorAll(".croma-nipd-series").length, 2);
 });
+
+test("labels drawn inside a plot print the short name; titles and readouts keep the full one", async () => {
+  // A published name can carry a qualifier ("Mettle-1 (Pre-release)") too long to sit
+  // beside a point or in the overview's label column; the figure text drops it.
+  const fixture = publicationFixture();
+  fixture.cohorts[0].models[1].model = "Mettle-1 (Pre-release)";
+  const { mount } = await bootFixture(async () => ({ ok: true, json: async () => fixture }));
+
+  const points = mount.querySelectorAll(".croma-nipd-association-point");
+  assert.deepEqual(
+    points.map((point) => point.querySelector(".croma-nipd-association-label").textContent),
+    ["Atlas", "Mettle-1", "Cygnus", "DINOv2-B"],
+  );
+  assert.equal(points[1].querySelector("title").textContent, "Mettle-1 (Pre-release)");
+  assert.match(points[1].getAttribute("aria-label"), /^Mettle-1 \(Pre-release\), pathology encoder/);
+
+  const row = mount.querySelectorAll(".croma-nipd-model")[1];
+  assert.equal(row.querySelector(".croma-nipd-model-label").textContent, "Mettle-1");
+  assert.match(row.getAttribute("aria-label"), /^Mettle-1 \(Pre-release\), nIPD/);
+
+  row.dispatch("keydown", { key: "Enter" });
+  assert.match(mount.querySelector(".croma-nipd-detail").textContent,
+    /Mettle-1 \(Pre-release\) normalized performance change/);
+});

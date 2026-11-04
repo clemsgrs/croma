@@ -369,6 +369,18 @@ class TestTables:
         assert "Camelyon: Beta (AUROC 0.70), tumor, UMCU, $3$ of $11$ tiles flipped" in figure
         assert "TCGA-4x4: Beta" in figure
 
+    def test_the_montage_caption_keeps_the_full_published_name(self, tmp_path):
+        # The figure's title prints the short form; the caption is text, so it does not.
+        panel = [("Mettle" if p[0] == "Beta" else p[0], *p[1:]) for p in PANEL]
+        make_study(tmp_path, "camelyon", panel=panel)
+        make_study(tmp_path, "tcga_4x4", panel=panel)
+        make_study(tmp_path, "pcabiop", panel=panel, colour=False)
+
+        figure = _float(_generator().build(tmp_path), "fig:margin-montage")
+
+        assert "Camelyon: Mettle-1 (Pre-release) (AUROC 0.70)" in figure
+        assert "TCGA-4x4: Mettle-1 (Pre-release) (AUROC" in figure
+
     def test_floats_follow_the_paper_placement_convention(self, tmp_path):
         _all_cohorts(tmp_path)
 
@@ -472,3 +484,23 @@ class TestMarginMontageFigure:
         assert first == tmp_path / "plots" / "pdf" / "margin_montage.pdf"
         assert (tmp_path / "plots" / "png" / "margin_montage.png").is_file()
         assert again.read_bytes() == payload
+
+    def test_the_title_prints_the_encoder_s_short_published_name(self, tmp_path, monkeypatch):
+        # Beta sits at the lower-median AUROC, so the montage picks it; here it is Mettle,
+        # whose full published name does not fit a title line beside the cell.
+        panel = [("Mettle" if p[0] == "Beta" else p[0], *p[1:]) for p in PANEL]
+        for cohort in ("camelyon", "tcga_4x4"):
+            make_study(tmp_path, cohort, panel=panel)
+        figure = _figure_module()
+        titles: list[str] = []
+        monkeypatch.setattr(
+            figure.plt,
+            "close",
+            lambda fig: titles.extend(t.get_text() for t in fig.texts if t.get_weight() == "bold"),
+        )
+
+        figure.render(tmp_path, tmp_path / "plots", n=3)
+
+        assert len(titles) == 2
+        assert all(": Mettle-1, " in title for title in titles), titles
+        assert not any("Pre-release" in title for title in titles)

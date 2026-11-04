@@ -627,9 +627,12 @@ def test_with_selection_inserts_the_column_after_tcga_exposed():
 
 
 def test_only_mettle_is_published_as_benchmark_selected():
-    """The one disclosure on record (ADR-0020). A second needs its own review."""
+    """The one disclosure on record (ADR-0020). A second needs its own review. Mettle is
+    published under its authors' new name for the same checkpoint."""
     aggregate = pd.read_csv(RESULTS / "cross_benchmark.csv")
-    assert aggregate.loc[aggregate["benchmark_selected"], "model"].tolist() == ["Mettle"]
+    assert aggregate.loc[aggregate["benchmark_selected"], "model"].tolist() == [
+        "Mettle-1 (Pre-release)"
+    ]
 
 
 def test_each_cohort_publishes_exposure_to_its_own_source():

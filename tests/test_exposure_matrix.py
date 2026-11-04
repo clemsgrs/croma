@@ -742,7 +742,7 @@ UNDISCLOSED = {
     "Prov-GigaPath",
     "Hibou-B",
     "Hibou-L",
-    "Mettle",
+    "Mettle-1 (Pre-release)",
 }
 DISCLOSED_UNEXPOSED = {"CONCH", "CONCHv1.5", "RudolfV-2", "RudolfV-2-B", "RudolfV-2-S"}
 
@@ -757,7 +757,8 @@ def test_tile_rows_come_first_then_the_slide_panel_then_the_control():
     panels = [row.panel for row in rows]
     assert panels == ["tile"] * 26 + ["slide"] * 5 + ["control"]
     assert rows[-1].model == "DINOv2-B"
-    # Published spellings: the registry's "RudolfV 2" is printed "RudolfV-2".
+    # Published spellings: the registry's "RudolfV 2" is printed "RudolfV-2", and its
+    # "Mettle" is printed "Mettle-1 (Pre-release)".
     assert {row.model for row in rows if row.panel == "tile"} == (
         TCGA_EXPOSED | UNDISCLOSED | DISCLOSED_UNEXPOSED
     )

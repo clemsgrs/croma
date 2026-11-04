@@ -57,7 +57,7 @@ def test_every_cohort_table_has_an_exposure_legend_and_a_selection_state():
     """Each cohort page shades by its own source; the join with the model-level selection
     flag must be total for every tile cohort, and every cohort needs a legend wording."""
     selected = rt.selection_map()
-    assert {model for model, flag in selected.items() if flag} == {"Mettle"}
+    assert {model for model, flag in selected.items() if flag} == {"Mettle-1 (Pre-release)"}
     for slug in ("camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"):
         assert slug in rt.EXPOSURE_LEGENDS
         exposure = rt.cohort_exposure_map(slug)
@@ -74,3 +74,15 @@ def test_the_site_and_readme_word_the_selection_legend_alike():
     import export_results as er
 
     assert er.SELECTION_LEGEND == f"‡ {rt.SELECTION_LEGEND}"
+
+
+def test_a_published_name_with_spaces_and_parentheses_passes_through_the_value_role():
+    """The role splits ``name(args)`` on its outer parentheses and commas, so a published
+    name such as "Mettle-1 (Pre-release)" can be quoted in prose like any other."""
+    import resultsvalue as rv
+
+    text = "value(camelyon, Mettle-1 (Pre-release), croma)"
+    rendered, messages = rv.results_value_role("results-value", text, text, 1, inliner=None)
+
+    assert messages == []
+    assert rendered[0].astext() == "0.20"

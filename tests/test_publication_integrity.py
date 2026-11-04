@@ -39,7 +39,7 @@ EXPECTED_PANEL = {
     "Hibou-L",
     "MUSK",
     "Mascaret",
-    "Mettle",
+    "Mettle-1 (Pre-release)",
     "Midnight-12k",
     "Phaet",
     "Phikon",
@@ -225,11 +225,12 @@ def test_provenance_guard_accepts_the_expanded_family_relationships() -> None:
 def test_provenance_twin_is_the_live_nearest_neighbour_not_a_pinned_name() -> None:
     # Mettle joins with a differenced-probe gap (0.880 - 0.556 = 0.324) one thousandth from
     # Midnight-12k's (0.323), closer than CONCHv1.5 (0.319). The twin macro follows it, and
-    # the wide-margin claim is checked against Mettle: 0.396 / 0.114 = 3.5x.
+    # the wide-margin claim is checked against Mettle: 0.396 / 0.114 = 3.5x. The frame is
+    # published, as main() loads it, so the macro body prints Mettle's published name.
     rows = [
         ("Midnight-12k", 0.882, 0.559, 0.396),
         ("Mascaret", 0.876, 0.434, 0.270),
-        ("Mettle", 0.880, 0.556, 0.114),
+        ("Mettle-1 (Pre-release)", 0.880, 0.556, 0.114),
         ("CONCHv1.5", 0.811, 0.492, 0.153),
         ("CONCH", 0.790, 0.487, 0.146),
         ("H-optimus-1", 0.878, 0.676, 0.088),
@@ -239,7 +240,7 @@ def test_provenance_twin_is_the_live_nearest_neighbour_not_a_pinned_name() -> No
 
     macros = "\n".join(paper_values._provenance_macros(frame))
 
-    assert r"\newcommand{\ProvenanceTwinModel}{Mettle}" in macros
+    assert r"\newcommand{\ProvenanceTwinModel}{Mettle-1 (Pre-release)}" in macros
     assert r"\newcommand{\ProvenanceTwinCroma}{$0.11$}" in macros
     assert r"\newcommand{\ProvenanceCromaFold}{$3.5\times$}" in macros
 

@@ -59,13 +59,13 @@
     }
   },
   "files": {
-    "results/camelyon.csv": "2c205add73b43d71dda265a83eba8fc5e8a826e85c68cb991fe0d96517d73308",
-    "results/cross_benchmark.csv": "392a08ac2fdfda027ea0be35d7737974ecfcf6dbafe6c85b1f6c2888b4cfbb04",
-    "results/distributions.json": "8711ee85cb2969d2ea5587133376bd83a36c573cc1d642a1ffa2807fa2607fc5",
-    "results/nipd.csv": "942606695224c529a2e921dba677a5427638735ddb972621cfd3f30a0466d2ef",
-    "results/nipd.json": "c64d63f434d4c0f2fed9c4922c2b225aaa4ea1913e00ae369afe78e37b6b1a5a",
+    "results/camelyon.csv": "622ade4febd6c64d7be97660686ec9a5613e470e22e5853bae3b040484a8bd35",
+    "results/cross_benchmark.csv": "4dddcbe1f3d450f603c318c061135ef78aa16ca7a07380d3d122886e228c2caa",
+    "results/distributions.json": "f7611fd1780f5361ea67f74d7a2e6cb1aa9ca15225a9cfaef72a36173dd8e2d3",
+    "results/nipd.csv": "f3227b4b797c7a76c8340855b803aa7d570ef96bfeba16aa13783373d7e7248e",
+    "results/nipd.json": "75e8cb06487ef0ba70da6baa79a3dfc303c050a86e643660b9617183ef5e6504",
     "results/pcabiop.csv": "681915b2718a8ff579a29848fdef8691532ee8fca57b5a78d73c1360b31e8d61",
-    "results/tcga-4x4.csv": "d1b95313961f4a23fb1da7e209323c19ad30517eec82efb66d41ffd67bca4944",
-    "results/tolkach-esca.csv": "a97b9748a5fda23db5bb8902022e89ccf29174ebfc425113abc1c2cb04e3fd4c"
+    "results/tcga-4x4.csv": "b342ed2e22790a30f8ded3cc10050c8ee3714eeb8055fa339be7606240b96d79",
+    "results/tolkach-esca.csv": "7882f4a9cdda426d1a5d956d97779eb196b6e0cf35943c215b8e9e22acc80144"
   }
 }

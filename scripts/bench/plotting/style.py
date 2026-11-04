@@ -338,28 +338,48 @@ def title_with_subtitle(ax, title: str, subtitle: str) -> None:
 # ``published_name`` column so the rename is auditable next to the rest of the
 # model's identity, and the accessors below resolve either spelling so a renamed
 # frame keeps its family hue, tone and canonical position.
+#
+# A published name can be too long for text drawn inside a figure ("Mettle-1
+# (Pre-release)" beside a point). ``published_short_name`` is the form for there; a
+# blank cell means the published name. Only a call site that asks for it (``short=True``)
+# gets it: tables, captions, macro bodies and results/ always print the full name.
 # ---------------------------------------------------------------------------
-def _load_published_names(path: Path = _MODEL_METADATA) -> dict[str, str]:
+def _load_published_names(
+    path: Path = _MODEL_METADATA, column: str = "published_name"
+) -> dict[str, str]:
     names: dict[str, str] = {}
     with path.open(newline="") as handle:
         for row in csv.DictReader(handle):
-            published = str(row.get("published_name") or "").strip()
+            published = str(row.get(column) or "").strip()
             if published and published != str(row["model"]):
                 names[str(row["model"])] = published
     return names
 
 
 PUBLISHED_MODEL_NAMES = _load_published_names()
-_REGISTRY_NAME = {published: registry for registry, published in PUBLISHED_MODEL_NAMES.items()}
+PUBLISHED_SHORT_NAMES = _load_published_names(column="published_short_name")
+_REGISTRY_NAME = {
+    name: registry
+    for names in (PUBLISHED_MODEL_NAMES, PUBLISHED_SHORT_NAMES)
+    for registry, name in names.items()
+}
 
 
-def published_model_name(model: str) -> str:
-    """The reader-facing spelling of a registry model name (identity when unchanged)."""
-    return PUBLISHED_MODEL_NAMES.get(str(model), str(model))
+def published_model_name(model: str, short: bool = False) -> str:
+    """The reader-facing spelling of a model name (identity when unchanged).
+
+    ``model`` may be the registry name or either published spelling. ``short=True``
+    gives the form for text drawn inside figures, falling back to the full published
+    name when the model has no shorter one.
+    """
+    registry = registry_model_name(model)
+    if short and registry in PUBLISHED_SHORT_NAMES:
+        return PUBLISHED_SHORT_NAMES[registry]
+    return PUBLISHED_MODEL_NAMES.get(registry, registry)
 
 
 def registry_model_name(model: str) -> str:
-    """The registry spelling behind a published name (identity when unchanged)."""
+    """The registry spelling behind a published or short name (identity when unchanged)."""
     return _REGISTRY_NAME.get(str(model), str(model))
 
 

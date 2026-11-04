@@ -336,13 +336,16 @@ METADATA = ROOT / "scripts" / "bench" / "model_metadata.csv"
 TCGA_DOMAIN = "tcga"
 
 #: Published display names. The benchmark registry's identity keys keep their historical
-#: spelling ("RudolfV 2" with a space) because they name embedding files, metrics rows,
-#: and extraction records; every *published* artifact restyles them at this one boundary,
-#: so the site, README, and figures rename together while ``output/`` stays untouched.
+#: spelling ("RudolfV 2" with a space, "Mettle" for the checkpoint its authors now call
+#: Mettle-1) because they name embedding files, metrics rows, and extraction records;
+#: every *published* artifact restyles them at this one boundary, so the site, README, and
+#: figures rename together while ``output/`` stays untouched. Always the full published
+#: name: the short form (``published_short_name``) is for text inside figures only.
 PUBLISHED_NAMES = {
     "RudolfV 2": "RudolfV-2",
     "RudolfV 2-B": "RudolfV-2-B",
     "RudolfV 2-S": "RudolfV-2-S",
+    "Mettle": "Mettle-1 (Pre-release)",
 }
 
 

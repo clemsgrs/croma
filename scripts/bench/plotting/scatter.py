@@ -75,8 +75,10 @@ def _pareto_colorbar(fig, mappable, *, label: str, low_is_best: bool = False) ->
 
 
 def _daggered(name: str, exposed: set[str] | frozenset[str]) -> str:
-    """The display label for a point: the model name, daggered when exposed."""
-    return rf"{name} $\dagger$" if name in exposed else name
+    """The display label for a point: the model's short published name, daggered when
+    exposed. ``exposed`` holds the names as the rows carry them."""
+    label = plotstyle.published_model_name(name, short=True)
+    return rf"{label} $\dagger$" if name in exposed else label
 
 
 def _display_len(label: str) -> int:
