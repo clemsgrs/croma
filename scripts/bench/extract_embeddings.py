@@ -71,8 +71,12 @@ _METTLE_STD = (0.211883, 0.230117, 0.177517)
 _METTLE_PIL_BICUBIC = 3
 _METTLE_FEATURE_VIEW = "cls_mean"
 _METTLE_WEIGHTS_FILE = "model.safetensors"
-# From the model card; the pinned revision's weights must hash to exactly this.
-_METTLE_WEIGHTS_SHA256 = "7754ef463e79dd13b072247b56db39791c884db10774e354d76f76367093ce4a"
+# Each checkpoint's pinned revision must hash to exactly its entry here: Mettle-1's from
+# its model card, Mettle-1.5's from its weights_manifest.json and verification.json.
+_METTLE_WEIGHTS_SHA256_BY_MODEL_ID = {
+    "slideflow-labs/Mettle": "7754ef463e79dd13b072247b56db39791c884db10774e354d76f76367093ce4a",
+    "slideflow-labs/mettle-1.5": "fbef2e4d4d65fedc00e33304f28f390651b498bbe57a322ca7703f8e81b06bc4",
+}
 
 _WAIV_POOLING_CONTRACTS = ("canonical", "cls-mean-patch", "cls-only")
 _RUDOLFV2_POOLING_CONTRACTS = ("canonical", "cls-only")
@@ -270,6 +274,7 @@ class _MettleExtractionConfig:
     normalization_std: tuple[float, float, float] = _METTLE_STD
     register_tokens: int = _METTLE_NUM_REGISTERS
     feature_view: str = _METTLE_FEATURE_VIEW
+    weights_sha256: str | None = None
 
     def details(self, pooling: str = "canonical") -> dict:
         if pooling != "canonical":
@@ -277,7 +282,7 @@ class _MettleExtractionConfig:
                 f"unknown Mettle pooling contract {pooling!r}; expected ['canonical']"
             )
         return {
-            "weights_sha256": _METTLE_WEIGHTS_SHA256,
+            "weights_sha256": self.weights_sha256,
             "preprocessing": {
                 "source": "checkpoint-processor",
                 "resize": [self.input_size, self.input_size],
@@ -347,6 +352,19 @@ def _waiv_extraction_config(spec: ModelSpec) -> _WaivExtractionConfig:
     return dataclasses.replace(
         _BACKEND_EXTRACTION_CONFIGS["waiv"],
         patch_tokens=int(patch_tokens),
+    )
+
+
+def _mettle_extraction_config(spec: ModelSpec) -> _MettleExtractionConfig:
+    try:
+        weights_sha256 = _METTLE_WEIGHTS_SHA256_BY_MODEL_ID[spec.model_id]
+    except KeyError:
+        raise ValueError(
+            f"no pinned weights SHA-256 for Mettle checkpoint {spec.model_id!r}"
+        ) from None
+    return dataclasses.replace(
+        _BACKEND_EXTRACTION_CONFIGS["mettle"],
+        weights_sha256=weights_sha256,
     )
 
 
@@ -589,7 +607,9 @@ def _model_extraction_details(spec: ModelSpec, pooling: str = "canonical") -> di
         return recipe.details() if recipe is not None else {}
     if spec.backend == "waiv":
         return _waiv_extraction_config(spec).details(pooling)
-    if spec.backend in ("rudolfv2", "mettle"):
+    if spec.backend == "mettle":
+        return _mettle_extraction_config(spec).details(pooling)
+    if spec.backend == "rudolfv2":
         return config.details(pooling)
     if pooling != "canonical":
         raise ValueError(
@@ -781,7 +801,7 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
     if spec.backend == "mettle":
         from huggingface_hub import hf_hub_download
 
-        config = _BACKEND_EXTRACTION_CONFIGS["mettle"]
+        config = _mettle_extraction_config(spec)
         config.details(pooling)
         pinned = {"trust_remote_code": True, "revision": spec.checkpoint_revision}
         _verify_sha256(
@@ -790,7 +810,7 @@ def _load_model_and_transform(spec: ModelSpec, device, *, pooling: str = "canoni
                 filename=_METTLE_WEIGHTS_FILE,
                 revision=spec.checkpoint_revision,
             ),
-            _METTLE_WEIGHTS_SHA256,
+            config.weights_sha256,
         )
         processor = AutoImageProcessor.from_pretrained(spec.model_id, **pinned)
         config.check_processor(processor)

@@ -113,11 +113,21 @@ def _build_model_registry():
             timm_kwargs={"init_values": 1e-5, "dynamic_img_size": False},
             mixed_precision=True,
         ),
+        # Mettle-1 (Pre-release). The hub now redirects slideflow-labs/Mettle to
+        # slideflow-labs/mettle-1 with byte-identical weights; the id stays as is because
+        # it is the one this checkpoint's recorded extraction contracts carry.
         "Mettle": ModelSpec(
             backend="mettle",
             model_id="slideflow-labs/Mettle",
             extract="raw",
             checkpoint_revision="8270e5d5a7749c117fff91051111cace6c6baa51",
+            embedding_dim=3072,
+        ),
+        "Mettle-1.5": ModelSpec(
+            backend="mettle",
+            model_id="slideflow-labs/mettle-1.5",
+            extract="raw",
+            checkpoint_revision="0ab55fcbf1b8d4e3c73885fc56f822fb568ff570",
             embedding_dim=3072,
         ),
         "H0-mini": ModelSpec(

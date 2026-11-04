@@ -78,6 +78,7 @@ ALIGNED_MODELS = {
     "RudolfV 2-B": "rudolfv2",
     "RudolfV 2-S": "rudolfv2",
     "Mettle": "mettle",
+    "Mettle-1.5": "mettle",
     "Midnight-12k": "midnight",
     "CONCH": "conch_v1",
     "CONCHv1.5": "conch_v1_5",

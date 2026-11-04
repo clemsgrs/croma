@@ -1,5 +1,6 @@
 import contextlib
 import hashlib
+import json
 import sys
 import types
 from pathlib import Path
@@ -13,7 +14,9 @@ SCRIPTS = ROOT / "scripts" / "bench"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import layout
 import model_registry as mr
+from embedding_artifacts import sidecar_path
 
 
 def _load_rudolfv2_embed_with_published_tokens(
@@ -537,6 +540,15 @@ def test_waiv_embedding_extraction_publishes_finite_fp32_vectors(
 
 _METTLE_REVISION = "8270e5d5a7749c117fff91051111cace6c6baa51"
 _METTLE_SHA256 = "7754ef463e79dd13b072247b56db39791c884db10774e354d76f76367093ce4a"
+_METTLE_1_5_REVISION = "0ab55fcbf1b8d4e3c73885fc56f822fb568ff570"
+# weights_manifest.json and verification.json of the pinned Mettle-1.5 revision.
+_METTLE_1_5_SHA256 = "fbef2e4d4d65fedc00e33304f28f390651b498bbe57a322ca7703f8e81b06bc4"
+# (registry name, model_id, revision, weights SHA-256) of every Mettle checkpoint.
+_METTLE_CHECKPOINTS = [
+    ("Mettle", "slideflow-labs/Mettle", _METTLE_REVISION, _METTLE_SHA256),
+    ("Mettle-1.5", "slideflow-labs/mettle-1.5", _METTLE_1_5_REVISION, _METTLE_1_5_SHA256),
+]
+_METTLE_IDS = [checkpoint[0] for checkpoint in _METTLE_CHECKPOINTS]
 
 
 def _mettle_processor(**overrides):
@@ -599,56 +611,96 @@ def _patch_mettle_boundaries(monkeypatch, ee, tmp_path, *, processor, weights, c
     )
 
 
-def test_registry_includes_pinned_fp32_mettle() -> None:
-    spec = mr._build_model_registry()["Mettle"]
+@pytest.mark.parametrize(
+    ("name", "model_id", "revision", "_sha256"), _METTLE_CHECKPOINTS, ids=_METTLE_IDS
+)
+def test_registry_includes_pinned_fp32_mettle(name, model_id, revision, _sha256) -> None:
+    spec = mr._build_model_registry()[name]
 
     assert spec == mr.ModelSpec(
         backend="mettle",
-        model_id="slideflow-labs/Mettle",
+        model_id=model_id,
         extract="raw",
         mixed_precision=False,
-        checkpoint_revision=_METTLE_REVISION,
+        checkpoint_revision=revision,
         embedding_dim=3072,
     )
 
 
+@pytest.mark.parametrize(
+    ("name", "model_id", "revision", "_sha256"), _METTLE_CHECKPOINTS, ids=_METTLE_IDS
+)
 def test_mettle_loader_verifies_pinned_weights_then_encodes_cls_mean(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extraction_module
+    name,
+    model_id,
+    revision,
+    _sha256,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    extraction_module,
 ) -> None:
     ee = extraction_module
-    spec = mr._build_model_registry()["Mettle"]
+    spec = mr._build_model_registry()[name]
     calls: list[tuple] = []
     processor = _mettle_processor()
     _patch_mettle_boundaries(
         monkeypatch, ee, tmp_path, processor=processor, weights=b"weights", calls=calls
     )
-    monkeypatch.setattr(ee, "_METTLE_WEIGHTS_SHA256", hashlib.sha256(b"weights").hexdigest())
+    monkeypatch.setitem(
+        ee._METTLE_WEIGHTS_SHA256_BY_MODEL_ID,
+        model_id,
+        hashlib.sha256(b"weights").hexdigest(),
+    )
     batch = object()
 
     _model, _transform, embed_fn = ee._load_model_and_transform(spec, "cpu")
     embedding = embed_fn(batch)
 
-    pinned = {"trust_remote_code": True, "revision": _METTLE_REVISION}
+    pinned = {"trust_remote_code": True, "revision": revision}
     assert embedding == ("embedding", "cls_mean")
     assert calls == [
         (
             "download",
             {
-                "repo_id": "slideflow-labs/Mettle",
+                "repo_id": model_id,
                 "filename": "model.safetensors",
-                "revision": _METTLE_REVISION,
+                "revision": revision,
             },
         ),
-        ("processor", "slideflow-labs/Mettle", pinned),
-        ("model", "slideflow-labs/Mettle", pinned),
+        ("processor", model_id, pinned),
+        ("model", model_id, pinned),
         ("eval",),
         ("to", "cpu"),
         ("encode", batch, "cls_mean"),
     ]
 
 
-def test_mettle_registry_pins_the_model_card_weights_hash(extraction_module) -> None:
-    assert extraction_module._METTLE_WEIGHTS_SHA256 == _METTLE_SHA256
+def test_mettle_refuses_a_checkpoint_without_a_pinned_weights_hash(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extraction_module
+) -> None:
+    ee = extraction_module
+    spec = mr.ModelSpec(
+        backend="mettle",
+        model_id="slideflow-labs/mettle-2",
+        extract="raw",
+        checkpoint_revision="0" * 40,
+        embedding_dim=3072,
+    )
+    calls: list[tuple] = []
+    _patch_mettle_boundaries(
+        monkeypatch,
+        ee,
+        tmp_path,
+        processor=_mettle_processor(),
+        weights=b"weights",
+        calls=calls,
+    )
+
+    with pytest.raises(ValueError, match="slideflow-labs/mettle-2"):
+        ee._model_extraction_details(spec)
+    with pytest.raises(ValueError, match="slideflow-labs/mettle-2"):
+        ee._load_model_and_transform(spec, "cpu")
+    assert calls == []
 
 
 def test_mettle_loader_refuses_weights_that_do_not_match_the_pinned_hash(
@@ -692,14 +744,21 @@ def test_mettle_loader_refuses_a_processor_that_departs_from_the_recorded_contra
         weights=b"weights",
         calls=calls,
     )
-    monkeypatch.setattr(ee, "_METTLE_WEIGHTS_SHA256", hashlib.sha256(b"weights").hexdigest())
+    monkeypatch.setitem(
+        ee._METTLE_WEIGHTS_SHA256_BY_MODEL_ID,
+        "slideflow-labs/Mettle",
+        hashlib.sha256(b"weights").hexdigest(),
+    )
 
     with pytest.raises(ValueError, match="preprocessor"):
         ee._load_model_and_transform(mr._build_model_registry()["Mettle"], "cpu")
 
 
+@pytest.mark.parametrize(
+    ("name", "model_id", "revision", "sha256"), _METTLE_CHECKPOINTS, ids=_METTLE_IDS
+)
 def test_mettle_artifact_contract_is_fp32_3072_with_checkpoint_native_pooling(
-    tmp_path: Path, extraction_module
+    name, model_id, revision, sha256, tmp_path: Path, extraction_module
 ) -> None:
     ee = extraction_module
     manifest_path = tmp_path / "manifest.csv"
@@ -715,16 +774,18 @@ def test_mettle_artifact_contract_is_fp32_3072_with_checkpoint_native_pooling(
 
     contract = ee.build_embedding_artifact_contract(
         manifest_path=manifest_path,
-        spec=mr._build_model_registry()["Mettle"],
+        spec=mr._build_model_registry()[name],
         batch_size=64,
         device_arg="cuda",
     )
 
     assert contract.precision == "float32"
     assert contract.output_shape == (2, 3072)
-    assert contract.checkpoint_revision == _METTLE_REVISION
+    assert contract.checkpoint_revision == revision
     extraction = contract.extraction_contract
-    assert extraction["weights_sha256"] == _METTLE_SHA256
+    assert extraction["backend"] == "mettle"
+    assert extraction["model_id"] == model_id
+    assert extraction["weights_sha256"] == sha256
     assert extraction["pooling"] == {
         "method": "checkpoint-native:model.encode",
         "feature_view": "cls_mean",
@@ -740,6 +801,85 @@ def test_mettle_artifact_contract_is_fp32_3072_with_checkpoint_native_pooling(
         "normalization_mean": [0.707223, 0.578729, 0.703617],
         "normalization_std": [0.211883, 0.230117, 0.177517],
     }
+
+
+# Mettle-1's provenance exactly as its published extraction recorded it in every
+# output/embeddings/<tileset>/Mettle.npy.json. Building anything else for "Mettle" makes
+# artifact_is_reusable refuse those four artifacts, i.e. forces a re-extraction.
+_METTLE_1_RECORDED_PROVENANCE = {
+    "checkpoint_revision": _METTLE_REVISION,
+    "precision": "float32",
+    "extraction_contract": {
+        "version": 1,
+        "backend": "mettle",
+        "model_id": "slideflow-labs/Mettle",
+        "extract": "raw",
+        "timm_kwargs": {},
+        "weights_sha256": _METTLE_SHA256,
+        "preprocessing": {
+            "source": "checkpoint-processor",
+            "resize": [224, 224],
+            "resize_interpolation": "bicubic",
+            "center_crop": None,
+            "input_scaling": "uint8-to-unit-float",
+            "normalization_mean": [0.707223, 0.578729, 0.703617],
+            "normalization_std": [0.211883, 0.230117, 0.177517],
+        },
+        "pooling": {
+            "method": "checkpoint-native:model.encode",
+            "feature_view": "cls_mean",
+            "register_tokens_excluded": 4,
+            "output_normalization": "none",
+        },
+    },
+}
+_METTLE_1_TILESETS = (
+    "pathorob-camelyon",
+    "pathorob-tcga-2x2",
+    "pathorob-tcga-4x4",
+    "pathorob-tolkach-esca",
+)
+
+
+def _recorded_mettle_1_provenance(source: str) -> dict:
+    """The pinned provenance, or the one a local tileset's sidecar records."""
+    if source == "pinned":
+        return _METTLE_1_RECORDED_PROVENANCE
+    sidecar = sidecar_path(layout.embedding_path(source, "Mettle"))
+    if not sidecar.is_file():
+        pytest.skip(f"no local Mettle-1 sidecar at {sidecar}")
+    return json.loads(sidecar.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("source", ["pinned", *_METTLE_1_TILESETS])
+def test_mettle_1_builds_the_contract_its_existing_embeddings_record(
+    source: str, tmp_path: Path, extraction_module
+) -> None:
+    recorded = _recorded_mettle_1_provenance(source)
+    manifest_path = tmp_path / "manifest.csv"
+    pd.DataFrame(
+        {
+            "sample_id": ["a"],
+            "image_path": ["a.png"],
+            "label": ["x"],
+            "confounder": ["c"],
+            "group_id": ["a"],
+        }
+    ).to_csv(manifest_path, index=False)
+
+    contract = extraction_module.build_embedding_artifact_contract(
+        manifest_path=manifest_path,
+        spec=mr._build_model_registry()["Mettle"],
+        batch_size=64,
+        device_arg="cuda",
+    )
+
+    built = {
+        "checkpoint_revision": contract.checkpoint_revision,
+        "precision": contract.precision,
+        "extraction_contract": contract.extraction_contract,
+    }
+    assert built == {field: recorded[field] for field in built}
 
 
 def test_mettle_rejects_explicit_alternative_pooling(tmp_path: Path, extraction_module) -> None:
