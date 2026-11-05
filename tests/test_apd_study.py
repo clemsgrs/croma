@@ -344,6 +344,7 @@ EXPANDED_PATHOROB_MODELS = [
     "Mascaret",
     "Phaet",
     "Mettle",
+    "Mettle-1.5",
     "DINOv2-B",
 ]
 
@@ -359,7 +360,7 @@ def test_the_pathorob_downstream_panel_is_explicit_and_relationship_aware() -> N
     assert panel.loc[panel["ranked"], "model"].tolist() == EXPANDED_PATHOROB_MODELS[:-1]
     assert panel.loc[~panel["ranked"], "model"].tolist() == ["DINOv2-B"]
     assert panel.set_index("model").loc[
-        ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "Mascaret", "Phaet"],
+        ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "Mascaret", "Phaet", "Mettle-1.5"],
         ["parent_model", "variant_role"],
     ].fillna("").to_dict("index") == {
         "RudolfV 2": {"parent_model": "", "variant_role": "teacher"},
@@ -377,6 +378,10 @@ def test_the_pathorob_downstream_panel_is_explicit_and_relationship_aware() -> N
         },
         "Phaet": {
             "parent_model": "Phikon-v2",
+            "variant_role": "robustness-finetune",
+        },
+        "Mettle-1.5": {
+            "parent_model": "H-optimus-0",
             "variant_role": "robustness-finetune",
         },
     }

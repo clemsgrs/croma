@@ -235,6 +235,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "Mascaret": ("waiv", 0, 27),
         "Phaet": ("waiv", 1, 28),
         "Mettle": ("hoptimus", 3, 29),
+        "Mettle-1.5": ("hoptimus", 4, 30),
     }
     actual_identity = {
         model: (
@@ -276,6 +277,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "Mascaret",
         "Phaet",
         "Mettle",
+        "Mettle-1.5",
         "DINOv2-B",
     ]
     assert {model: style.MODEL_FAMILY_MAP[model] for model in expected_identity} == {
@@ -285,6 +287,7 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "Mascaret": "waiv",
         "Phaet": "waiv",
         "Mettle": "hoptimus",
+        "Mettle-1.5": "hoptimus",
     }
     assert {model: style.MODEL_TONE_INDEX[model] for model in expected_identity} == {
         "RudolfV 2": 0,
@@ -293,15 +296,33 @@ def test_machine_readable_families_give_new_models_stable_styles_and_insertion_o
         "Mascaret": 0,
         "Phaet": 1,
         "Mettle": 3,
+        "Mettle-1.5": 4,
     }
     assert len({style.color_for_model(model) for model in ["Mascaret", "Phaet"]}) == 2
-    # Mettle is the hoptimus family's fourth member: its own tone, not H-optimus-1's.
-    hoptimus = ["H-optimus-1", "H-optimus-0", "H0-mini", "Mettle"]
-    assert len({style.color_for_model(model) for model in hoptimus}) == 4
-    assert (
-        len({style.color_for_model(model) for model in ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"]})
-        == 3
-    )
+    # Mettle-1.5 is the hoptimus family's fifth member: its own tone, not H-optimus-1's
+    # (the tone index wraps modulo the family's palette length).
+    hoptimus = ["H-optimus-1", "H-optimus-0", "H0-mini", "Mettle", "Mettle-1.5"]
+    assert len({style.color_for_model(model) for model in hoptimus}) == 5
+    rudolfv2 = ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S"]
+    assert len({style.color_for_model(model) for model in rudolfv2}) == 3
+    # The two blue families never share a tone.
+    assert len({style.color_for_model(model) for model in hoptimus + rudolfv2}) == 8
+
+
+def _relative_luminance(hex_colour: str) -> float:
+    """WCAG 2 relative luminance of an ``#rrggbb`` colour."""
+    channels = [int(hex_colour[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def test_every_family_ramp_runs_light_to_dark() -> None:
+    """Tones distinguish a family's members by lightness, lightest first. A member added to
+    a family retunes its ramp; it is not appended darker than the ramp's last tone."""
+    for family, tones in style.FAMILY_PALETTE.items():
+        luminance = [_relative_luminance(tone) for tone in tones]
+        assert luminance == sorted(luminance, reverse=True), family
+        assert len(set(tones)) == len(tones), family
 
 
 def test_published_names_restyle_the_rudolfv_family_and_mettle_and_nothing_else() -> None:

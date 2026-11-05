@@ -20,7 +20,7 @@ import json
 from plotting import style
 
 print(json.dumps({
-    "order_tail": style.CANONICAL_MODEL_ORDER[-7:],
+    "order_tail": style.CANONICAL_MODEL_ORDER[-8:],
     "families": {
         model: style.MODEL_FAMILY_MAP[model]
         for model in ["RudolfV 2", "RudolfV 2-B", "RudolfV 2-S", "Mascaret", "Phaet"]
@@ -49,6 +49,7 @@ print(json.dumps({
             "Mascaret",
             "Phaet",
             "Mettle",
+            "Mettle-1.5",
             "DINOv2-B",
         ],
         "families": {

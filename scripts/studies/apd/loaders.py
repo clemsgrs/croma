@@ -37,10 +37,10 @@ from plotting.style import CONTROL_MODEL  # noqa: E402
 #: PCaBiop are separate studies and are deliberately outside the expanded tile panel.
 PATHOROB_DOWNSTREAM_DATASETS = ("camelyon", "tcga_4x4", "tolkach")
 
-#: Fixed panel cardinality: 26 pathology encoders plus one natural-image floor (25 after
-#: issue #132, plus Mettle). Model identity and relationships themselves remain owned by
-#: model_metadata.csv.
-PATHOROB_PATHOLOGY_MODELS = 26
+#: Fixed panel cardinality: 27 pathology encoders plus one natural-image floor (25 after
+#: issue #132, plus Mettle and Mettle-1.5). Model identity and relationships themselves
+#: remain owned by model_metadata.csv.
+PATHOROB_PATHOLOGY_MODELS = 27
 PATHOROB_PANEL_MODELS = PATHOROB_PATHOLOGY_MODELS + 1
 
 

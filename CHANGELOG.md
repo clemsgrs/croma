@@ -38,6 +38,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Mettle is now published as Mettle-1 (Pre-release), its authors' new name for the same
   checkpoint (`slideflow-labs/mettle-1`). No value changed.
+- Mettle-1.5 has its tile-panel identity in `model_metadata.csv`: panel order 27, with the
+  DINOv2-B control moved to 28. The PathoROB downstream studies (APD, the probe records,
+  the fine-tune pairs) now admit a panel of 27 pathology encoders. Its published results
+  follow separately.
+- The hoptimus family's colour ramp is retuned from four tones to five for Mettle-1.5. It
+  still runs light to dark, now in cobalt blue, held apart from the RudolfV-2 blues, so
+  H-optimus-1, H-optimus-0, H0-mini and Mettle-1 change shade in every figure.
 - The documented rationale for MaRI's automatic `tau` is corrected, in the
   `croma.metrics.tau` module docstring and in "Choosing `tau`" on the metrics page. It used
   to read `exp(-d / tau)` as if each anchor's nearest neighbour sat at distance zero, which
