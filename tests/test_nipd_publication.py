@@ -77,23 +77,23 @@ def test_package_release_preserves_publication_provenance(monkeypatch: pytest.Mo
 
     _exporter().validate_payload(published)
 
-    assert published["provenance"]["croma_version"] == "1.0.0"
+    assert published["provenance"]["croma_version"] == "1.0.1"
 
 
 def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
     published = _payload()
     expected = {
         "camelyon": {
-            "id": (26, 0.945982906, 0.3039544444),
-            "ood": (26, 0.7442735043, 0.1144040624),
+            "id": (27, 0.9505494505, 0.3070911931),
+            "ood": (27, 0.7515262515, 0.1141749489),
         },
         "tcga-4x4": {
-            "id": (26, 0.9042735043, 0.2402571277),
-            "ood": (26, 0.8851282051, 0.3945676619),
+            "id": (27, 0.9041514042, 0.2409950689),
+            "ood": (27, 0.8974358974, 0.3974057293),
         },
         "tolkach-esca": {
-            "id": (26, 0.9309401709, 0.0957444143),
-            "ood": (26, 0.7285470085, 0.0285616383),
+            "id": (27, 0.9291819292, 0.0959925773),
+            "ood": (27, 0.742979243, 0.028614917),
         },
     }
     for cohort in published["cohorts"][:3]:
@@ -157,7 +157,7 @@ def test_summary_csv_is_the_complete_tabular_view_of_the_payload() -> None:
         rows = list(csv.DictReader(handle))
 
     expected_rows = 2 * sum(len(cohort["models"]) for cohort in payload["cohorts"])
-    assert len(rows) == expected_rows == 172
+    assert len(rows) == expected_rows == 178
     assert list(rows[0]) == [
         "cohort",
         "regime",

@@ -38,6 +38,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Mettle is now published as Mettle-1 (Pre-release), its authors' new name for the same
   checkpoint (`slideflow-labs/mettle-1`). No value changed.
+- Mettle-1.5 has its tile-panel identity in `model_metadata.csv`: panel order 27, with the
+  DINOv2-B control moved to 28. The PathoROB downstream studies (APD, the probe records,
+  the fine-tune pairs) now admit a panel of 27 pathology encoders.
+- Adding Mettle-1.5 to the tile panel left every cohort's shared operating point where it
+  was: Camelyon `k = 11`, TCGA-4×4 `k = 81`, Tolkach-ESCA `k = 71`, now the lower median
+  over 28 encoders. No other encoder's published value changed, nIPD included; their
+  aggregate ranks move by at most one place.
+- Each tile cohort's CRoMa–nIPD association (Spearman's ρ and the trend line) is now
+  computed over 27 ranked encoders, Mettle-1.5 included, so it moves. ρ for ID / OOD:
+  Camelyon 0.946 / 0.744 → 0.951 / 0.752, TCGA-4×4 0.904 / 0.885 → 0.904 / 0.897,
+  Tolkach-ESCA 0.931 / 0.729 → 0.929 / 0.743. PCaBiop's is unchanged.
+- The README's count of the panel, above its results table, is now generated with the
+  table. Hand-typed, it still read twenty-six encoders.
+- The hoptimus family's colour ramp is retuned from four tones to five for Mettle-1.5. It
+  still runs light to dark, now in cobalt blue, held apart from the RudolfV-2 blues, so
+  H-optimus-1, H-optimus-0, H0-mini and Mettle-1 change shade in every figure.
 - The documented rationale for MaRI's automatic `tau` is corrected, in the
   `croma.metrics.tau` module docstring and in "Choosing `tau`" on the metrics page. It used
   to read `exp(-d / tau)` as if each anchor's nearest neighbour sat at distance zero, which
@@ -116,6 +132,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mettle (`slideflow-labs/Mettle`), a scanner-robustness fine-tune of H-optimus-0, joins the
   tile panel on Camelyon, TCGA-4×4 and Tolkach-ESCA, with its nIPD cells. Median CRoMa
   (m = 5) 0.204 / 0.114 / 0.367; mean rank 6.3, fifth of 26 ranked encoders.
+- Mettle-1.5 (`slideflow-labs/mettle-1.5`), an acquisition-robustness fine-tune of
+  H-optimus-0 from Mettle-1's authors, joins the tile panel on Camelyon, TCGA-4×4 and
+  Tolkach-ESCA, with its nIPD cells. Median CRoMa (m = 5) 0.277 / 0.149 / 0.426; mean rank
+  3.3, second of 27 ranked encoders, and it joins Mascaret on the Pareto frontier. Its rows
+  are unshaded: its fine-tuning corpus is undisclosed, so no cohort overlap is declared, and
+  its authors have disclosed no benchmark selection.
 - Yellow row shading for encoders whose authors disclosed using PathoROB RI on these
   cohorts during development, e.g. in checkpoint selection, with its legend beneath every
   table that shows it (‡ in the README, which cannot shade). Mettle's authors used

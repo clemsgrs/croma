@@ -125,7 +125,7 @@ COHORTS: tuple[Cohort, ...] = (
 
 #: The slide-level cohort: PCaBiop, five whole-slide encoders over 1,000 PANDA biopsy
 #: slides. Published as its own page, never in the aggregate: a five-encoder rank next to
-#: a 25-encoder rank would read as comparable when it is not. It is reported at ``k-star``
+#: the tile panel's rank would read as comparable when it is not. It is reported at ``k-star``
 #: (each encoder at its own kNN-optimal k) because with five models the shared median is
 #: dominated by panel composition -- adding one encoder moved the would-be shared k from
 #: 3 to 9.
@@ -277,7 +277,7 @@ def build_aggregate_table(per_cohort: dict[str, pd.DataFrame]) -> pd.DataFrame:
 
     The natural-image control remains in the table with its cohort measurements, but is
     excluded from the ranks and frontier and shown last. It calibrates the panel rather
-    than competing with the 25 pathology encoders, so assigning it an ordinal rank would
+    than competing with the pathology encoders, so assigning it an ordinal rank would
     contradict the comparison the table claims to make.
 
     Only models present in every cohort take part; a model scored on two of three has no
@@ -572,7 +572,7 @@ def export(cohorts: tuple[Cohort, ...] = ALL_COHORTS) -> dict[str, str]:
         )
 
     # The aggregate ranks are a tile-panel claim: the slide cohort's five-encoder roster
-    # shares no comparable rank with the 26-model panel, so it never enters here.
+    # shares no comparable rank with the tile panel, so it never enters here.
     tile_slugs = [c.slug for c in cohorts if c.panel == "tile"]
     aggregate = build_aggregate_table({slug: tables[slug] for slug in tile_slugs})
     roster = set(aggregate["model"])
@@ -602,6 +602,8 @@ README_END = "<!-- results:end -->"
 
 DOCS = "https://clemsgrs.github.io/croma"
 
+PATHOROB = "https://arxiv.org/abs/2507.17845"
+
 
 def render_readme(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
     """The README with its results region replaced by the current aggregate.
@@ -630,8 +632,15 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
     headers = ["Model", "mean rank", "CRoMa rank", "tail rank"] + [
         f"{labels[c]}<br>CRoMa/LTM₁₀" for c in cohort_columns
     ]
+    n_ranked = int((~aggregate["is_control"]).sum())
 
+    # The panel count is generated with the table: hand-typed above the region, it went
+    # stale each time an encoder joined.
     lines = [
+        "",
+        f"The panel holds {len(aggregate)} encoders — {n_ranked} pathology foundation models "
+        f"and one natural-image control (†) — scored on {len(cohort_columns)} tile cohorts "
+        f"from [PathoROB]({PATHOROB}).",
         "",
         "| " + " | ".join(headers) + " |",
         "| --- |" + " ---: |" * (len(headers) - 1),
@@ -656,7 +665,7 @@ def _readme_block(aggregate: pd.DataFrame, meta: dict[str, dict]) -> str:
 
     lines += [
         "",
-        f"Top {README_TOP} of {int((~aggregate['is_control']).sum())} ranked pathology "
+        f"Top {README_TOP} of {n_ranked} ranked pathology "
         f"encoders, over {len(cohort_columns)} tile cohorts; the DINOv2-B control is shown "
         f"unranked in the full table. The CRoMa and tail ranks are the means of that "
         f"encoder's within-cohort "

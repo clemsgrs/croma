@@ -125,7 +125,9 @@ FAMILY_PALETTE: dict[str, list[str]] = {
     "uni": ["#4cc183", "#1f9d55"],  # green
     "conch": ["#ee4d5a", "#c2222f"],  # red (cooler, away from orange)
     "phikon": ["#9b80e6", "#5b3fc4"],  # violet
-    "hoptimus": ["#67b0d0", "#2f86b8", "#1f5f88", "#123f60"],  # steel blue (4 tones)
+    # Cobalt blue (5 tones), held off rudolfv2's sky blues: OKLab dE >= 8 between any two
+    # of the eight blue tones, also under simulated protanopia and deuteranopia.
+    "hoptimus": ["#70aefe", "#5492f5", "#4979cd", "#285dc2", "#284799"],
     "gigapath": ["#e0a01a"],  # gold / amber
     "midnight": ["#16b6c4"],  # cyan / teal
     "hibou": ["#e07ad0", "#b1318f"],  # magenta
