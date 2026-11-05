@@ -59,21 +59,21 @@ print(f"CRoMa {croma.value:+.3f}  (lower-tail mean {croma.ltm_alpha:+.3f})")
 
 ## Results
 
-Twenty-six encoders — twenty-five pathology foundation models and one natural-image control (†) — scored on three tile cohorts from [PathoROB](https://arxiv.org/abs/2507.17845).
-
 <!-- results:start -->
+The panel holds 28 encoders — 27 pathology foundation models and one natural-image control (†) — scored on 3 tile cohorts from [PathoROB](https://arxiv.org/abs/2507.17845).
+
 | Model | mean rank | CRoMa rank | tail rank | Camelyon<br>CRoMa/LTM₁₀ | TCGA-4×4<br>CRoMa/LTM₁₀ | Tolkach-ESCA<br>CRoMa/LTM₁₀ |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| **Mascaret** | 1.7 | 2.0 | 1.3 | 0.29/-0.02 | 0.27/-0.11 | 0.51/0.01 |
-| RudolfV-2-S | 4.7 | 2.3 | 7.0 | 0.32/-0.02 | 0.19/-0.16 | 0.49/-0.00 |
-| RudolfV-2 | 4.7 | 4.3 | 5.0 | 0.24/-0.04 | 0.17/-0.12 | 0.41/-0.01 |
-| RudolfV-2-B | 6.0 | 4.7 | 7.3 | 0.24/-0.05 | 0.17/-0.14 | 0.41/-0.02 |
-| Mettle-1 (Pre-release) ‡ | 6.3 | 9.0 | 3.7 | 0.20/-0.02 | 0.11/-0.11 | 0.37/-0.02 |
-| CONCHv1.5 | 8.2 | 7.7 | 8.7 | 0.19/-0.14 | 0.15/-0.13 | 0.39/-0.03 |
-| GenBio-PathFM | 9.2 | 7.3 | 11.0 | 0.19/-0.07 | 0.16/-0.19 | 0.39/-0.02 |
-| CONCH | 9.7 | 6.3 | 13.0 | 0.20/-0.20 | 0.15/-0.15 | 0.44/-0.04 |
+| **Mascaret** | 2.0 | 2.0 | 2.0 | 0.29/-0.02 | 0.27/-0.11 | 0.51/0.01 |
+| **Mettle-1.5** | 3.3 | 5.3 | 1.3 | 0.28/0.00 | 0.15/-0.09 | 0.43/0.00 |
+| RudolfV-2-S | 5.2 | 2.3 | 8.0 | 0.32/-0.02 | 0.19/-0.16 | 0.49/-0.00 |
+| RudolfV-2 | 5.5 | 5.0 | 6.0 | 0.24/-0.04 | 0.17/-0.12 | 0.41/-0.01 |
+| RudolfV-2-B | 6.8 | 5.3 | 8.3 | 0.24/-0.05 | 0.17/-0.14 | 0.41/-0.02 |
+| Mettle-1 (Pre-release) ‡ | 7.3 | 10.0 | 4.7 | 0.20/-0.02 | 0.11/-0.11 | 0.37/-0.02 |
+| CONCHv1.5 | 9.0 | 8.3 | 9.7 | 0.19/-0.14 | 0.15/-0.13 | 0.39/-0.03 |
+| GenBio-PathFM | 10.0 | 8.0 | 12.0 | 0.19/-0.07 | 0.16/-0.19 | 0.39/-0.02 |
 
-Top 8 of 26 ranked pathology encoders, over 3 tile cohorts; the DINOv2-B control is shown unranked in the full table. The CRoMa and tail ranks are the means of that encoder's within-cohort ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages those two. It orders the table; it does not replace them, because a strong median can hide a brittle tail and only the two columns show that — which is why each cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the Pareto frontier: the encoders no other pathology encoder beats on both axes at once. ‡ PathoROB RI on these cohorts was used during the encoder's development, e.g. in checkpoint selection, as disclosed by its authors. Ranks are shown unadjusted.
+Top 8 of 27 ranked pathology encoders, over 3 tile cohorts; the DINOv2-B control is shown unranked in the full table. The CRoMa and tail ranks are the means of that encoder's within-cohort ranks — by median CRoMa, and by tail severity LTM₁₀ — and the mean rank averages those two. It orders the table; it does not replace them, because a strong median can hide a brittle tail and only the two columns show that — which is why each cohort shows both, median CRoMa/LTM₁₀. **Bold** marks the Pareto frontier: the encoders no other pathology encoder beats on both axes at once. ‡ PathoROB RI on these cohorts was used during the encoder's development, e.g. in checkpoint selection, as disclosed by its authors. Ranks are shown unadjusted.
 
 📊 **[Full panel, per-cohort detail and the distributions](https://clemsgrs.github.io/croma/results/)**
 <!-- results:end -->

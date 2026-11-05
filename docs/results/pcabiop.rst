@@ -11,9 +11,9 @@ three tile cohorts, the evaluation unit is a whole slide: each of the
 one embedding per slide, and every number below is computed over those slide embeddings.
 
 **This is a different panel.** The slide roster shares no encoder ranking with the
-26-model tile panel, so this cohort takes no part in the :ref:`cross-cohort aggregate
-<aggregate-table>` and its ranks — the table below orders these five encoders against
-each other, nothing more. There is also no natural-image control at slide level, so no
+:results-value:`roster()`-model tile panel, so this cohort takes no part in the
+:ref:`cross-cohort aggregate <aggregate-table>` and its ranks — the table below orders
+these five encoders against each other, nothing more. There is also no natural-image control at slide level, so no
 row carries the † mark.
 
 .. raw:: html

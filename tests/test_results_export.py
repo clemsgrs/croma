@@ -25,8 +25,8 @@ import export_results as er  # noqa: E402
 
 RESULTS = ROOT / "results"
 
-#: The committed payload is fetched by every visitor to the results page. 200 bins x 26
-#: models x 3 cohorts lands near 43 KB; the budget catches a change that quietly makes it
+#: The committed payload is fetched by every visitor to the results page. 200 bins x 28
+#: models x 3 cohorts lands near 48 KB; the budget catches a change that quietly makes it
 #: an order of magnitude bigger (per-sample values, say, or a much finer grid).
 PAYLOAD_BUDGET_BYTES = 100 * 1024
 
@@ -152,7 +152,7 @@ def test_aggregate_ranks_are_the_mean_of_the_per_cohort_ranks():
 
 
 def test_aggregate_excludes_the_natural_image_control_from_pathology_ranks():
-    """The public panel is 25 ranked pathology encoders plus one unranked control.
+    """The public panel is the ranked pathology encoders plus one unranked control.
 
     Put the control between two pathology models on both axes so including it would move
     B from rank 2 to rank 3. Its measurements remain visible, but it receives no rank and
@@ -379,6 +379,31 @@ def _published_aggregate(aggregate, *, selected=()):
     return er.with_selection(out, {model: model in selected for model in models})
 
 
+def test_the_readme_counts_the_panel_from_the_aggregate():
+    """The sentence above the table counts the panel. Hand-typed, it went stale as
+    encoders joined; generated from the aggregate, it moves with the roster."""
+    aggregate = _published_aggregate(
+        er.build_aggregate_table(
+            {
+                "camelyon": _cohort(
+                    ["A", er.CONTROL_MODEL, "B"], [0.9, 0.5, 0.1], [-0.1, -0.5, -0.9]
+                ),
+                "tcga-4x4": _cohort(
+                    ["A", er.CONTROL_MODEL, "B"], [0.8, 0.4, 0.2], [-0.2, -0.4, -0.8]
+                ),
+            }
+        )
+    )
+    meta = {"camelyon": {"label": "Camelyon"}, "tcga-4x4": {"label": "TCGA-4×4"}}
+    block = er.render_readme(aggregate, meta).split(er.README_START)[1].split(er.README_END)[0]
+    lead = block.strip().splitlines()[0]
+    assert lead.startswith(
+        "The panel holds 3 encoders — 2 pathology foundation models and one natural-image "
+        "control (†) — scored on 2 tile cohorts from [PathoROB]("
+    )
+    assert block.index(lead) < block.index("| Model |")
+
+
 def test_the_readme_cohort_cells_carry_the_tail_beside_the_margin():
     """Same pairing as the site: a caption about hidden tails over a margin-only table
     would leave its own point unillustrated."""
@@ -395,7 +420,7 @@ def test_the_readme_table_shows_the_truncation_rule_rather_than_a_selection():
     """Cutting the panel at eight is a judgement call. Stating it mechanically -- with the
     total, and a link to the rest -- is what keeps it a rule rather than a shortlist."""
     block = (ROOT / "README.md").read_text().split(er.README_START)[1]
-    assert f"Top {er.README_TOP} of 26 ranked pathology encoders" in block
+    assert f"Top {er.README_TOP} of 27 ranked pathology encoders" in block
     assert "DINOv2-B control is shown unranked" in block
     assert "/results/" in block
 
@@ -440,7 +465,7 @@ def test_the_payload_names_each_cohort_s_panel():
 
 def test_the_slide_cohort_never_enters_the_aggregate():
     """The aggregate ranks are a tile-panel claim; a five-encoder cohort contributing a
-    rank column would read as comparable with the 26-model panel when it is not."""
+    rank column would read as comparable with the tile panel when it is not."""
     header = (RESULTS / "cross_benchmark.csv").read_text().splitlines()[0].split(",")
     slide_slugs = {c.slug for c in er.SLIDE_COHORTS}
     assert not any(col.removeprefix("croma_").replace("_", "-") in slide_slugs for col in header)

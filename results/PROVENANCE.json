@@ -1,11 +1,11 @@
 {
-  "croma_version": "1.0.0",
-  "exported": "2026-10-05",
+  "croma_version": "1.0.1",
+  "exported": "2026-11-05",
   "protocol": "median-k",
   "croma_m": 5,
   "tail_alpha": 0.1,
   "tau_policy": "auto (per-model median typed-neighbour distance at k)",
-  "roster": 27,
+  "roster": 28,
   "cohorts": {
     "camelyon": {
       "benchmark": "pathorob-camelyon",
@@ -14,7 +14,7 @@
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-camelyon",
       "k": 11,
-      "n_models": 27,
+      "n_models": 28,
       "confounder": "Medical Center",
       "evaluation_design": "all"
     },
@@ -25,7 +25,7 @@
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tcga-4x4",
       "k": 81,
-      "n_models": 27,
+      "n_models": 28,
       "confounder": "Medical Center",
       "evaluation_design": "all"
     },
@@ -36,7 +36,7 @@
       "protocol": "median-k",
       "run": "output/metrics/median-k/pathorob-tolkach-esca",
       "k": 71,
-      "n_models": 27,
+      "n_models": 28,
       "confounder": "Medical Center",
       "evaluation_design": "all"
     },
@@ -59,13 +59,13 @@
     }
   },
   "files": {
-    "results/camelyon.csv": "622ade4febd6c64d7be97660686ec9a5613e470e22e5853bae3b040484a8bd35",
-    "results/cross_benchmark.csv": "4dddcbe1f3d450f603c318c061135ef78aa16ca7a07380d3d122886e228c2caa",
-    "results/distributions.json": "f7611fd1780f5361ea67f74d7a2e6cb1aa9ca15225a9cfaef72a36173dd8e2d3",
+    "results/camelyon.csv": "8b1c7cca7d7541bd3da8297af4aa786905364f016bf28ff0d6014d122c547cb0",
+    "results/cross_benchmark.csv": "2310a0356551f160b93415a80f149ba4fb84db2548e7ee023f90015dbb8ec7a3",
+    "results/distributions.json": "198cb152521d460c6a3381e362e14e00b6f3908e31609ec6e1963c2f50f9a452",
     "results/nipd.csv": "f3227b4b797c7a76c8340855b803aa7d570ef96bfeba16aa13783373d7e7248e",
     "results/nipd.json": "75e8cb06487ef0ba70da6baa79a3dfc303c050a86e643660b9617183ef5e6504",
     "results/pcabiop.csv": "681915b2718a8ff579a29848fdef8691532ee8fca57b5a78d73c1360b31e8d61",
-    "results/tcga-4x4.csv": "b342ed2e22790a30f8ded3cc10050c8ee3714eeb8055fa339be7606240b96d79",
-    "results/tolkach-esca.csv": "7882f4a9cdda426d1a5d956d97779eb196b6e0cf35943c215b8e9e22acc80144"
+    "results/tcga-4x4.csv": "78943418f4e16afb8e9ccfdc20f04deede26b25d725dced4b8e1487c8b8ba1d6",
+    "results/tolkach-esca.csv": "89f3bf2bcb4204ebf1a363b3aab2cfe3cf3d98d05f9df4b648d38b1352edec86"
   }
 }
