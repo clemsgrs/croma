@@ -145,12 +145,12 @@ test("real publication association statistics match the manuscript analysis", ()
   const payload = require(path.join(root, "results/nipd.json"));
   const view = explorer.createView(payload);
   const expected = {
-    "camelyon/id": [26, 0.945982906, 0.3039544444],
-    "camelyon/ood": [26, 0.7442735043, 0.1144040624],
-    "tcga-4x4/id": [26, 0.9042735043, 0.2402571277],
-    "tcga-4x4/ood": [26, 0.8851282051, 0.3945676619],
-    "tolkach-esca/id": [26, 0.9309401709, 0.0957444143],
-    "tolkach-esca/ood": [26, 0.7285470085, 0.0285616383],
+    "camelyon/id": [27, 0.9505494505, 0.3070911931],
+    "camelyon/ood": [27, 0.7515262515, 0.1141749489],
+    "tcga-4x4/id": [27, 0.9041514042, 0.2409950689],
+    "tcga-4x4/ood": [27, 0.8974358974, 0.3974057293],
+    "tolkach-esca/id": [27, 0.9291819292, 0.0959925773],
+    "tolkach-esca/ood": [27, 0.742979243, 0.028614917],
     "pcabiop/id": [5, 0.9, null],
     "pcabiop/ood": [5, 0.6, null],
   };
