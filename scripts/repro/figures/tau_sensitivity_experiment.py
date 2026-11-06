@@ -167,7 +167,7 @@ for model in order:
     ax.plot(
         TAUS, [mari_vals[t][model] for t in TAUS],
         color=color_for_model(model), lw=plotstyle.LW_SERIES, marker="o", ms=2.5,
-        alpha=0.95, label=model,
+        alpha=0.95, label=plotstyle.published_model_name(model, short=True),
     )
 ax.axvspan(TAU_MIN, TAU_MAX, color=plotstyle.MUTED_TEXT_COLOR, alpha=0.08, lw=0)
 ax.axvline(

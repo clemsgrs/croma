@@ -384,12 +384,14 @@ for _, r in scat.iterrows():
     ax2.scatter(
         [float(r["croma"])], [float(r[YK])],
         s=52, color=plotstyle.color_for_model(str(r["model"])),
-        edgecolors="white", linewidths=0.7, alpha=0.9, zorder=3, label=str(r["model"]),
+        edgecolors="white", linewidths=0.7, alpha=0.9, zorder=3,
+        label=plotstyle.published_model_name(str(r["model"]), short=True),
     )
 # annotate the headline: the top-CRoMa model is still majority locally entangled
 lead_ex = scat.loc[scat["croma"].idxmax()]
 ax2.annotate(
-    f"{lead_ex['model']}\n{lead_ex[YK] * 100:.0f}% SS-pocketed",
+    f"{plotstyle.published_model_name(str(lead_ex['model']), short=True)}\n"
+    f"{lead_ex[YK] * 100:.0f}% SS-pocketed",
     xy=(float(lead_ex["croma"]), float(lead_ex[YK])),
     xytext=(-6, -12), textcoords="offset points", ha="right", va="top",
     fontsize=plotstyle.FS_ANNOT, color=plotstyle.TEXT_COLOR,

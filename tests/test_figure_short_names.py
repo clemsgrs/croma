@@ -28,7 +28,11 @@ from plotting import (  # noqa: E402
     plot_bio_vs_confounder_scatter,
     plot_croma_pareto,
     plot_croma_sample_distributions,
+    plot_knn_bio_k_sweep,
+    plot_knn_confounder_k_sweep,
+    plot_mari_k_sweep,
     plot_rank_pareto,
+    plot_ri_k_sweep,
 )
 
 FULL = "Mettle-1 (Pre-release)"
@@ -231,6 +235,35 @@ def test_ridgeline_rows_print_the_short_name(monkeypatch, tmp_path):
         )
     with drawn_text(monkeypatch) as texts:
         plot_croma_sample_distributions(rows=rows, out_path=tmp_path / "ridge.png")
+
+    _assert_short(texts)
+    assert SHORT in texts
+
+
+@pytest.mark.parametrize(
+    "plot",
+    [plot_knn_bio_k_sweep, plot_knn_confounder_k_sweep, plot_ri_k_sweep, plot_mari_k_sweep],
+    ids=["bio", "confounder", "ri", "mari"],
+)
+def test_the_k_sweep_legend_prints_the_short_name(plot, monkeypatch, tmp_path):
+    # A run directory's metrics rows carry the registry identity ("Mettle"), as the
+    # benchmark writes them; the legend publishes it.
+    rows = [
+        {
+            "model": model,
+            "k": k,
+            "selected_k": 11,
+            "knn_bacc": 0.9 - 0.001 * k,
+            "knn_confounder_bacc": 0.6,
+            "ri": 0.5,
+            "mari": 0.5,
+            "confounder_display_name": "Medical Center",
+        }
+        for model in ("Mettle", "UNI")
+        for k in (1, 11, 21)
+    ]
+    with drawn_text(monkeypatch) as texts:
+        plot(rows=rows, out_path=tmp_path / "k_sweep.png")
 
     _assert_short(texts)
     assert SHORT in texts
