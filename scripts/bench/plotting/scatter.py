@@ -16,7 +16,7 @@ import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 
 from . import style as plotstyle
-from .style import COL_ONEHALF
+from .style import COL_ONEHALF, DEFAULT_DPI
 
 #: The Pareto panels enlarge the default scatter marker so each family colour reads clearly, with
 #: the hollow frontier ring scaled to sit outside the bigger fill. Benchmark-exposed encoders are
@@ -79,11 +79,6 @@ def _daggered(name: str, exposed: set[str] | frozenset[str]) -> str:
     exposed. ``exposed`` holds the names as the rows carry them."""
     label = plotstyle.published_model_name(name, short=True)
     return rf"{label} $\dagger$" if name in exposed else label
-
-
-def _display_len(label: str) -> int:
-    """The label's rendered length in characters: the mathtext dagger is one glyph."""
-    return len(label.replace(r" $\dagger$", " x"))
 
 
 def _halo(linewidth: float) -> list:
@@ -301,11 +296,162 @@ def _pareto_boundary(
 def _pareto_pt_scale(xlim: tuple[float, float], ylim: tuple[float, float]) -> tuple[float, float]:
     """Data units per typographic point for the fixed Pareto figure cell (the shared
     ``_PARETO_FIGSIZE``/``_PARETO_MARGINS`` both panels pass to ``_finalize_figure``), so tag
-    room can be reserved before the axes exist. A bold 7 pt glyph is ~0.6 pt wide per
-    character."""
+    room can be reserved and labels laid out before the axes exist."""
     ax_w_pt = (_PARETO_MARGINS["right"] - _PARETO_MARGINS["left"]) * _PARETO_FIGSIZE[0] * 72.0
     ax_h_pt = (_PARETO_MARGINS["top"] - _PARETO_MARGINS["bottom"]) * _PARETO_FIGSIZE[1] * 72.0
     return (xlim[1] - xlim[0]) / ax_w_pt, (ylim[1] - ylim[0]) / ax_h_pt
+
+
+#: Frontier-tag geometry, in typographic points: a tag's preferred spot is this far beside its
+#: ring (on its routed side) and this far above it -- the spot every tag took before the crowded
+#: corner of a 27-encoder roster forced a search.
+_TAG_DX_PT = 9.0
+_TAG_DY_PT = 8.0
+_RING_R_PT = (_PARETO_RING_S / np.pi) ** 0.5
+_MARKER_R_PT = (_PARETO_MARKER_S / np.pi) ** 0.5
+#: Clearance kept between a label and anything it must not touch, in points.
+_LABEL_PAD_PT = 1.0
+
+
+def _text_extent_pt(text: str, fontsize: float, *, bold: bool = False) -> tuple[float, float]:
+    """``text``'s drawn width and height in points, measured in the font it will be drawn in.
+
+    Labels are laid out before the axes exist, so their boxes cannot be read off the figure. A
+    per-character estimate drifts by several points on a long bold name -- exactly the slack a
+    crowded corner does not have -- so the text is measured by the renderers that draw it.
+
+    The width is the wider of the two exports': the PDF sets unhinted glyphs (and a mathtext
+    run, such as a dagger, in a box rounded up to whole points), and the PNG sets glyphs hinted
+    at ``DEFAULT_DPI``. Both run up to a couple of points wider than the 72-dpi hinted measure,
+    which let two labels a pad apart touch in print. The height is the 72-dpi hinted line box
+    (one pixel is one point), at least that of ``"lp"`` as matplotlib sizes a line: a little
+    taller than either export draws it, a margin the crowded corners rely on.
+    """
+    from matplotlib.backends.backend_agg import RendererAgg
+    from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import text_to_path
+
+    prop = FontProperties(size=fontsize, weight="bold" if bold else "normal")
+    ismath = "$" in text
+    # The PDF backend's own measure: mathtext parsed at the drawn size, plain text unhinted.
+    if ismath:
+        pdf = text_to_path.mathtext_parser.parse(text, 72, prop).width
+    else:
+        pdf, _, _ = text_to_path.get_text_width_height_descent(text, prop, ismath=False)
+    png, _, _ = RendererAgg(1, 1, DEFAULT_DPI).get_text_width_height_descent(
+        text, prop, ismath=ismath
+    )
+    renderer = RendererAgg(1, 1, 72)
+    _, height, _ = renderer.get_text_width_height_descent(text, prop, ismath=ismath)
+    _, line, _ = renderer.get_text_width_height_descent("lp", prop, ismath=False)
+    return float(max(pdf, png * 72.0 / DEFAULT_DPI)), float(max(height, line))
+
+
+def _pad(box, by: float = _LABEL_PAD_PT):
+    return (box[0] - by, box[1] + by, box[2] - by, box[3] + by)
+
+
+def _box_overlap(a, b) -> float:
+    """Area shared by two ``(x0, x1, y0, y1)`` boxes."""
+    return max(0.0, min(a[1], b[1]) - max(a[0], b[0])) * max(
+        0.0, min(a[3], b[3]) - max(a[2], b[2])
+    )
+
+
+def _disk_reach(box, disk) -> float:
+    """How far a ``(cx, cy, r)`` disk reaches into ``box``: 0 when clear."""
+    cx, cy, r = disk
+    nx = min(max(cx, box[0]), box[1])
+    ny = min(max(cy, box[2]), box[3])
+    return max(0.0, r - float(np.hypot(nx - cx, ny - cy)))
+
+
+def _segment_reach(p, q, disk) -> float:
+    """How far a ``(cx, cy, r)`` disk reaches across the segment ``p``--``q``: 0 when clear."""
+    cx, cy, r = disk
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    length2 = dx * dx + dy * dy
+    t = 0.0 if length2 == 0 else min(1.0, max(0.0, ((cx - p[0]) * dx + (cy - p[1]) * dy) / length2))
+    return max(0.0, r - float(np.hypot(p[0] + t * dx - cx, p[1] + t * dy - cy)))
+
+
+def _line_inside(box, segments) -> float:
+    """Total length of the axis-aligned ``segments`` that runs through ``box``."""
+    total = 0.0
+    for (x0, y0), (x1, y1) in segments:
+        if y0 == y1 and box[2] < y0 < box[3]:
+            total += max(0.0, min(max(x0, x1), box[1]) - max(min(x0, x1), box[0]))
+        elif x0 == x1 and box[0] < x0 < box[1]:
+            total += max(0.0, min(max(y0, y1), box[3]) - max(min(y0, y1), box[2]))
+    return total
+
+
+def _segment_inside(p, q, box) -> float:
+    """Length of the segment ``p``--``q`` that runs through ``box`` (Liang-Barsky clipping)."""
+    dx, dy = q[0] - p[0], q[1] - p[1]
+    t0, t1 = 0.0, 1.0
+    edges = ((-dx, p[0] - box[0]), (dx, box[1] - p[0]), (-dy, p[1] - box[2]), (dy, box[3] - p[1]))
+    for step, room in edges:
+        if step == 0:
+            if room < 0:
+                return 0.0
+            continue
+        t = room / step
+        if step < 0:
+            t0 = max(t0, t)
+        else:
+            t1 = min(t1, t)
+        if t0 >= t1:
+            return 0.0
+    return (t1 - t0) * float(np.hypot(dx, dy))
+
+
+def _outside(box, width: float, height: float) -> float:
+    """How far ``box`` pokes out of the ``width`` x ``height`` panel, summed over its edges."""
+    return (
+        max(0.0, -box[0]) + max(0.0, box[1] - width) + max(0.0, -box[2]) + max(0.0, box[3] - height)
+    )
+
+
+class _PanelPoints:
+    """Data <-> typographic-point conversion for one Pareto panel's final limits.
+
+    Laying labels out in points keeps the geometry isotropic -- a disk is round, a gap of 2 pt is
+    2 pt both ways -- whatever the aspect of the data ranges.
+    """
+
+    def __init__(self, xlim: tuple[float, float], ylim: tuple[float, float]) -> None:
+        self.xlo, self.ylo = xlim[0], ylim[0]
+        self.x_per_pt, self.y_per_pt = _pareto_pt_scale(xlim, ylim)
+        self.width = (xlim[1] - xlim[0]) / self.x_per_pt
+        self.height = (ylim[1] - ylim[0]) / self.y_per_pt
+
+    def pt(self, x: float, y: float) -> tuple[float, float]:
+        return (x - self.xlo) / self.x_per_pt, (y - self.ylo) / self.y_per_pt
+
+    def data(self, x: float, y: float) -> tuple[float, float]:
+        return self.xlo + x * self.x_per_pt, self.ylo + y * self.y_per_pt
+
+    def box_pt(self, box):
+        x0, y0 = self.pt(box[0], box[2])
+        x1, y1 = self.pt(box[1], box[3])
+        return (x0, x1, y0, y1)
+
+    def box_data(self, box):
+        x0, y0 = self.data(box[0], box[2])
+        x1, y1 = self.data(box[1], box[3])
+        return (x0, x1, y0, y1)
+
+    def disks(self, coords, frontier_xy) -> list[tuple[float, float, float]]:
+        """Every point as a disk in points: a frontier member as its ring, the rest as dots."""
+        ringed = set(frontier_xy)
+        return [
+            (*self.pt(x, y), _RING_R_PT if (x, y) in ringed else _MARKER_R_PT) for x, y in coords
+        ]
+
+    def segments(self, polyline) -> list[tuple[tuple[float, float], tuple[float, float]]]:
+        pts = [self.pt(x, y) for x, y in polyline]
+        return list(zip(pts[:-1], pts[1:]))
 
 
 def _layout_frontier_tags(
@@ -319,92 +465,105 @@ def _layout_frontier_tags(
     """Place the bold frontier tags and expand the limits so each lands inside the panel.
 
     Shared by both Pareto panels, which differ only in how they build the base limits. Each tag
-    goes up-and-right of its ring into the empty non-dominated wedge (the Pareto property
-    guarantees no other model point sits there), joined by a thin leader; a frontier point within
-    8% of the widest ``x`` in the cloud is at the right edge, where the up-right wedge is off-panel,
-    so it routes up-and-LEFT into the open interior instead (extending the axis rightward there
-    would open a wide empty band). Right/top room is reserved per tag so it lands inside the spine.
+    prefers the spot up-and-right of its ring, in the empty non-dominated wedge (the Pareto
+    property guarantees no other model point sits there), joined by a thin leader; a frontier
+    point within 8% of the widest ``x`` in the cloud is at the right edge, where the up-right wedge
+    is off-panel, so it prefers up-and-LEFT into the open interior instead (extending the axis
+    rightward there would open a wide empty band). Right/top room is reserved per tag for that
+    preferred spot.
 
-    Placement is top-down: each tag starts one ``dy`` above its ring, is pushed to at least
-    ``stack_gap`` below the tag above it (so y-clustered tags never overprint), and is then dropped
-    further down off any *non-frontier* marker its label box would cover. That last step matters for
-    an up-left interior tag, whose wedge -- unlike the up-right one -- is not Pareto-empty (on the
-    rank panel GenBio-PathFM's tag would otherwise sit on the Virchow2 dot). The nudge is downward
-    only, so a frontier label never hides a competitor's point. ``all_xy`` is every model point (the
-    frontier included; it is filtered out here). Returns the expanded ``(xlim, ylim)`` and the
-    per-tag draw specs for ``_draw_frontier_tags`` (called after the scatter, so tags sit on top).
+    The preferred spot is only a preference. On a crowded roster the frontier rings themselves
+    cluster -- three within a ring's width of each other in a corner -- and a tag there lands on a
+    neighbour's ring or a dominated point, hiding what it should name. So each tag, highest ring
+    first, scores every spot on a grid around its ring and takes the best: a tag never covers a
+    point or ring (its own included), another tag or the panel edge, unless no spot avoids it;
+    then, less weightily, its leader should not cut through other points and it should not sit
+    on the frontier staircase; and, least, it should stay near its preferred spot. A clear
+    preferred spot therefore always wins. Returns the expanded ``(xlim, ylim)`` and the per-tag
+    draw specs for ``_draw_frontier_tags`` (called after the scatter, so tags sit on top); each
+    spec also carries its ``box``, which the point labels then keep clear of.
     """
     xlo, xhi = xlim
     ylo, yhi = ylim
+    if not frontier:
+        return (xlo, xhi), (ylo, yhi), []
     x_per_pt, y_per_pt = _pareto_pt_scale(xlim, ylim)
-    dx = 9.0 * x_per_pt  # tag anchor sits this far right (or left) of the ring centre
-    dy = 8.0 * y_per_pt  # ...and this far above it
-    char_w = 0.60 * plotstyle.FS_ANNOT * x_per_pt
-    line_h = 1.35 * plotstyle.FS_ANNOT * y_per_pt
-    stack_gap = 1.55 * plotstyle.FS_ANNOT * y_per_pt  # min vertical spacing between two tags
-    marker_r = (float(_PARETO_MARKER_S) / np.pi) ** 0.5  # scatter marker radius, in points
-    clear_x = marker_r * x_per_pt  # half-width of a marker, in data units
-    clear_y = (
-        marker_r + 0.35 * plotstyle.FS_ANNOT
-    ) * y_per_pt  # marker half-height + breathing room
+    extents = [_text_extent_pt(name, plotstyle.FS_ANNOT, bold=True) for name in frontier]
 
     xs = [x for x, _ in all_xy]
     xspan = float(max(xs) - min(xs))
     xmax = float(max(xs))
-    tag_left = {name: (xmax - fx) < 0.08 * xspan for name, (fx, _fy) in zip(frontier, frontier_xy)}
-    for name, (fx, _fy) in zip(frontier, frontier_xy):
-        room = _display_len(name) * char_w + dx + 3.0 * x_per_pt
-        if tag_left[name]:
+    tag_left = [(xmax - fx) < 0.08 * xspan for fx, _fy in frontier_xy]
+    for (width, _h), left, (fx, _fy) in zip(extents, tag_left, frontier_xy):
+        room = (width + _TAG_DX_PT + 3.0) * x_per_pt
+        if left:
             xlo = min(xlo, fx - room)
         else:
             xhi = max(xhi, fx + room)
-    if frontier_xy:
-        yhi = max(yhi, max(y for _, y in frontier_xy) + dy + line_h)
+    top = max(y for _, y in frontier_xy)
+    yhi = max(yhi, top + (_TAG_DY_PT + 1.35 * plotstyle.FS_ANNOT) * y_per_pt)
 
-    others = [p for p in all_xy if p not in set(frontier_xy)]  # markers a tag must not cover
+    xlim, ylim = (xlo, xhi), (ylo, yhi)
+    panel = _PanelPoints(xlim, ylim)
+    disks = panel.disks(all_xy, frontier_xy)
+    staircase = panel.segments(_pareto_boundary(frontier_xy, xlim=xlim, ylim=ylim))
 
-    order = sorted(range(len(frontier)), key=lambda i: frontier_xy[i][1], reverse=True)
-    label_y: dict[int, float] = {}
-    prev = None
-    for i in order:
-        name = frontier[i]
-        fx = frontier_xy[i][0]
-        ly = frontier_xy[i][1] + dy
-        if prev is not None:
-            ly = min(ly, prev - stack_gap)  # stay clear of the tag above
-        # Drop below any non-frontier marker whose centre falls inside this tag's label box. Loop
-        # because dropping past one marker can bring a lower one into range; each pass lowers ly
-        # past at least one point, so it terminates.
-        x0 = (fx - dx) - _display_len(name) * char_w if tag_left[name] else fx + dx
-        x1 = fx - dx if tag_left[name] else (fx + dx) + _display_len(name) * char_w
-        moved = True
-        while moved:
-            moved = False
-            for px, py in others:
-                in_x = x0 - clear_x <= px <= x1 + clear_x
-                # A marker at or above the label whose bottom reaches into the label box: drop the
-                # label so its top clears the marker bottom. ``py >= ly`` keeps this downward-only,
-                # so ly strictly decreases each push and the loop terminates.
-                if in_x and py >= ly and py - clear_y < ly + line_h / 2:
-                    ly = py - clear_y - line_h / 2
-                    moved = True
-        label_y[i] = ly
-        prev = ly
+    placed: list[tuple] = []  # (box, leader start, ring) of every tag laid so far, in points
+    tags: list[dict | None] = [None] * len(frontier)
+    for i in sorted(range(len(frontier)), key=lambda i: frontier_xy[i][1], reverse=True):
+        rx, ry = panel.pt(*frontier_xy[i])
+        width, height = extents[i]
+        own = (rx, ry, _RING_R_PT)
+        others = [d for d in disks if np.hypot(d[0] - rx, d[1] - ry) > 1e-9]
+        beside = _TAG_DX_PT + 2.0  # the text starts 2 pt past the leader's end, as drawn
+        pref_x0 = rx - beside - width if tag_left[i] else rx + beside
+        pref_y = ry + _TAG_DY_PT
+        x0s = np.arange(rx - beside - width - 18.0, rx + beside + 18.0 + 1e-9, 3.0)
+        x0s = np.union1d(x0s, [rx - beside - width, rx + beside])
+        best = None
+        for y in ry + np.arange(-60.0, 60.0 + 1e-9, 2.0):
+            for x0 in x0s:
+                box = (float(x0), float(x0) + width, float(y) - height / 2, float(y) + height / 2)
+                pad = _pad(box)
+                hard = (
+                    sum(_disk_reach(pad, d) * 2.0 * d[2] for d in (own, *others))
+                    + sum(_box_overlap(pad, b) for b, _s, _r in placed)
+                    + 50.0 * _outside(box, panel.width, panel.height) * height
+                )
+                start = (min(max(rx, pad[0]), pad[1]), min(max(ry, pad[2]), pad[3]))
+                soft = (
+                    3.0 * sum(_segment_reach(start, (rx, ry), d) for d in others)
+                    + 3.0 * sum(_disk_reach(pad, (s[0], s[1], 0.5)) for _b, s, _r in placed)
+                    + 0.3 * _line_inside(box, staircase)
+                )
+                for b, _s, _r in placed:  # do not cut through a tag already laid
+                    blocker = (*_box_centre(b), min(_box_half(b)))
+                    soft += 3.0 * _segment_reach(start, (rx, ry), blocker)
+                score = 1000.0 * hard + soft + 0.5 * float(np.hypot(x0 - pref_x0, y - pref_y))
+                if best is None or score < best[0]:
+                    best = (score, box, start)
+        _score, box, start = best
+        placed.append((box, start, (rx, ry)))
+        right_edge = (box[0] + box[1]) / 2 < rx  # anchor the edge that faces the ring
+        anchor = (box[1], (box[2] + box[3]) / 2) if right_edge else (box[0], (box[2] + box[3]) / 2)
+        tags[i] = {
+            "name": frontier[i],
+            "ring": frontier_xy[i],
+            "anchor": panel.data(*anchor),
+            "leader_from": panel.data(*start),
+            "box": panel.box_data(box),
+            "ha": "right" if right_edge else "left",
+            "text_dx": 0,
+        }
+    return xlim, ylim, [t for t in tags if t is not None]
 
-    tags = []
-    for i, (name, (fx, fy)) in enumerate(zip(frontier, frontier_xy)):
-        left = tag_left[name]
-        anchor_x = fx - dx if left else fx + dx
-        tags.append(
-            {
-                "name": name,
-                "ring": (fx, fy),
-                "anchor": (anchor_x, label_y[i]),
-                "ha": "right" if left else "left",
-                "text_dx": -2 if left else 2,
-            }
-        )
-    return (xlo, xhi), (ylo, yhi), tags
+
+def _box_centre(box) -> tuple[float, float]:
+    return (box[0] + box[1]) / 2, (box[2] + box[3]) / 2
+
+
+def _box_half(box) -> tuple[float, float]:
+    return (box[1] - box[0]) / 2, (box[3] - box[2]) / 2
 
 
 def _draw_frontier_tags(ax, tags: list[dict]) -> None:
@@ -416,9 +575,9 @@ def _draw_frontier_tags(ax, tags: list[dict]) -> None:
         ax.annotate(
             "",
             xy=(fx, fy),
-            xytext=t["anchor"],
+            xytext=t.get("leader_from", t["anchor"]),
             arrowprops=dict(
-                arrowstyle="-", color=plotstyle.SPINE_COLOR, linewidth=0.6, shrinkA=1.5, shrinkB=3.0
+                arrowstyle="-", color=plotstyle.SPINE_COLOR, linewidth=0.6, shrinkA=0.0, shrinkB=3.0
             ),
             zorder=4,
         )
@@ -445,52 +604,35 @@ def _layout_point_labels(
     frontier_tags: list[dict],
     xlim: tuple[float, float],
     ylim: tuple[float, float],
+    lines: list[list[tuple[float, float]]] = (),
 ) -> list[dict]:
     """Place a small label beside every non-frontier point, dodging what is already inked.
 
-    Greedy, top-down: each label tries eight compass offsets at two radii and keeps the
-    candidate whose box overlaps least with (in rising cost) the markers, the bold frontier
-    tags, the labels already placed, and the panel edges. Best-effort by design -- on a
-    25-encoder cloud some contact is unavoidable, and a slightly crowded label beats an
-    unnamed point; the greedy order is y-descending so the dodging cascades downward, the
-    direction with room on these bottom-heavy panels.
+    Greedy, top-down: each label tries sixteen bearings at seven radii and keeps the candidate
+    that scores best. Covering a point (a frontier ring at its ring's size), a bold
+    frontier tag, a label already placed or the panel edge is what a placement must avoid, so
+    those dominate the score; a label run through by one of ``lines`` (the frontier staircase,
+    the zero references -- each a polyline in data units) or by a leader, or pushed out to a far
+    ring, where it needs a leader of its own (one that should not cut through other points or
+    labels), is merely discouraged, distance more than a line. Among equally clear spots the
+    eight compass points beside the point come first, in a fixed order. The greedy order is
+    y-descending so the dodging cascades downward, the direction with room on these
+    bottom-heavy panels.
     """
-    x_per_pt, y_per_pt = _pareto_pt_scale(xlim, ylim)
-    char_w_pt = 0.58 * _POINT_LABEL_FS
-    line_h_pt = 1.15 * _POINT_LABEL_FS
-    marker_r_pt = (float(_PARETO_MARKER_S) / np.pi) ** 0.5
-
-    def label_box(text, px, py, dx_pt, dy_pt, ha):
-        width = _display_len(text) * char_w_pt * x_per_pt
-        height = line_h_pt * y_per_pt
-        x = px + dx_pt * x_per_pt
-        y = py + dy_pt * y_per_pt
-        x0 = x if ha == "left" else x - width if ha == "right" else x - width / 2
-        return (x0, x0 + width, y - height / 2, y + height / 2)
-
-    def overlap(a, b):
-        return max(0.0, min(a[1], b[1]) - max(a[0], b[0])) * max(
-            0.0, min(a[3], b[3]) - max(a[2], b[2])
-        )
-
-    markers = [
-        (
-            px - marker_r_pt * x_per_pt,
-            px + marker_r_pt * x_per_pt,
-            py - marker_r_pt * y_per_pt,
-            py + marker_r_pt * y_per_pt,
-        )
-        for px, py in coords.values()
+    panel = _PanelPoints(xlim, ylim)
+    frontier_xy = [coords[name] for name in frontier]
+    disks = panel.disks(list(coords.values()), frontier_xy)
+    tag_boxes = [panel.box_pt(t["box"]) for t in frontier_tags if "box" in t]
+    segments = [s for line in lines for s in panel.segments(line)]
+    # Leaders already drawn -- the frontier tags' and, as they are placed, the far labels' --
+    # which a label should not sit on and a new leader should not cut through text to join.
+    leaders = [
+        (panel.pt(*t["leader_from"]), panel.pt(*t["ring"]))
+        for t in frontier_tags
+        if "leader_from" in t
     ]
-    tag_boxes = []
-    for tag in frontier_tags:
-        tx, ty = tag["anchor"]
-        width = _display_len(tag["name"]) * 0.60 * plotstyle.FS_ANNOT * x_per_pt
-        height = 1.35 * plotstyle.FS_ANNOT * y_per_pt
-        x0 = tx - width if tag["ha"] == "right" else tx
-        tag_boxes.append((x0, x0 + width, ty - height / 2, ty + height / 2))
 
-    near = marker_r_pt + 2.0
+    near = _MARKER_R_PT + 2.0
     compass = [
         (near, 0.0, "left"),
         (-near, 0.0, "right"),
@@ -501,10 +643,17 @@ def _layout_point_labels(
         (near - 1.0, -(near - 1.0), "left"),
         (-(near - 1.0), -(near - 1.0), "right"),
     ]
-    candidates = [(dx, dy, ha, False) for dx, dy, ha in compass] + [
-        (dx * 1.9, dy * 1.9, ha, True) for dx, dy, ha in compass
+    # The eight bearings between the compass points, for a point wedged into a knot of others
+    # where none of the eight main ones is clear.
+    between = [
+        (near * np.cos(a), near * np.sin(a), "left" if np.cos(a) > 0 else "right")
+        for a in np.deg2rad([22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5])
     ]
-
+    candidates = [
+        (dx * scale, dy * scale, ha, scale)
+        for scale in (1.0, 1.45, 1.9, 2.4, 2.8, 3.4, 4.0)
+        for dx, dy, ha in compass + between
+    ]
     specs: list[dict] = []
     placed: list[tuple[float, float, float, float]] = []
     on_frontier = set(frontier)
@@ -513,31 +662,50 @@ def _layout_point_labels(
         key=lambda name: coords[name][1],
         reverse=True,
     )
-    area_unit = (char_w_pt * x_per_pt) * (line_h_pt * y_per_pt)  # one glyph's box, for scaling
     for name in order:
         text = labels[name]
-        px, py = coords[name]
+        width, height = _text_extent_pt(text, _POINT_LABEL_FS)
+        px, py = panel.pt(*coords[name])
         best = None
-        for dx_pt, dy_pt, ha, far in candidates:
-            box = label_box(text, px, py, dx_pt, dy_pt, ha)
-            oob = (
-                max(0.0, xlim[0] - box[0])
-                + max(0.0, box[1] - xlim[1])
-                + max(0.0, ylim[0] - box[2])
-                + max(0.0, box[3] - ylim[1])
+        for dx_pt, dy_pt, ha, scale in candidates:
+            x = px + dx_pt
+            x0 = x if ha == "left" else x - width if ha == "right" else x - width / 2
+            box = (x0, x0 + width, py + dy_pt - height / 2, py + dy_pt + height / 2)
+            pad = _pad(box, 0.75)
+            hard = (
+                sum(_disk_reach(pad, d) * 2.0 * d[2] for d in disks)
+                + 2.0 * sum(_box_overlap(pad, t) for t in tag_boxes)
+                + 3.0 * sum(_box_overlap(pad, p) for p in placed)
+                + 50.0 * _outside(box, panel.width, panel.height) * height
             )
-            cost = (
-                sum(overlap(box, m) for m in markers)
-                + 2.0 * sum(overlap(box, t) for t in tag_boxes)
-                + 3.0 * sum(overlap(box, p) for p in placed)
-                + 40.0 * area_unit * (oob / max(y_per_pt, 1e-12)) / line_h_pt
+            # A far label needs a leader, and a fan of leaders reads worse than a label the halo
+            # lifts off a line, so distance outweighs a line crossing; a leader is a line too.
+            soft = (
+                0.25 * _line_inside(box, segments)
+                + 3.0 * sum(_segment_inside(a, b, pad) for a, b in leaders)
+                + 12.0 * (scale - 1.0)
             )
-            if best is None or cost < best[0]:
-                best = (cost, dx_pt, dy_pt, ha, box, far)
-        _cost, dx_pt, dy_pt, ha, box, far = best
+            leader = ((x, py + dy_pt), (px, py)) if scale > 1.0 else None
+            if leader is not None:
+                soft += 3.0 * sum(
+                    _segment_reach(*leader, d) for d in disks if (d[0], d[1]) != (px, py)
+                ) + 3.0 * sum(_segment_inside(*leader, b) for b in (*placed, *tag_boxes))
+            score = 100.0 * hard + soft
+            if best is None or score < best[0]:
+                best = (score, dx_pt, dy_pt, ha, box, leader)
+        _score, dx_pt, dy_pt, ha, box, leader = best
+        far = leader is not None
         placed.append(box)
+        if far:
+            leaders.append(leader)
         specs.append(
-            {"text": text, "point": (px, py), "offset": (dx_pt, dy_pt), "ha": ha, "leader": far}
+            {
+                "text": text,
+                "point": coords[name],
+                "offset": (dx_pt, dy_pt),
+                "ha": ha,
+                "leader": far,
+            }
         )
     return specs
 
@@ -717,6 +885,9 @@ def plot_croma_pareto(
             frontier_tags=frontier_tags,
             xlim=xlim,
             ylim=ylim,
+            # The staircase and both zero references run through the cloud; a label is
+            # nudged off them where a clear spot exists (the halo covers the rest).
+            lines=[boundary, [(xlim[0], 0.0), (xlim[1], 0.0)], [(0.0, ylim[0]), (0.0, ylim[1])]],
         ),
     )
 
@@ -830,7 +1001,9 @@ def plot_rank_pareto(
         label="Mean rank by biological k-NN accuracy  (1 = best)",
         low_is_best=True,
     )
-    show_rank = FuncFormatter(lambda value, _pos: f"{-value:.0f}")
+    # Ranks start at 1: the 0 tick that the room above the best point can reach is left bare
+    # rather than printed as "-0".
+    show_rank = FuncFormatter(lambda value, _pos: f"{-value:.0f}" if -value >= 0.5 else "")
     for axis in (ax.xaxis, ax.yaxis):
         axis.set_major_locator(MultipleLocator(5))
         axis.set_major_formatter(show_rank)
@@ -879,6 +1052,7 @@ def plot_rank_pareto(
             frontier_tags=frontier_tags,
             xlim=xlim,
             ylim=ylim,
+            lines=[boundary],
         ),
     )
 

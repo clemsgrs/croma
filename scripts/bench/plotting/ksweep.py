@@ -61,7 +61,7 @@ def _draw_k_curve(
             linewidth=plotstyle.LW_SERIES,
             alpha=0.95,
             marker=None,
-            label=model,
+            label=plotstyle.published_model_name(model, short=True),
         )
         for selected_key, marker in highlight_rules:
             selected_k = int(

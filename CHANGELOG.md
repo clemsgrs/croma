@@ -54,6 +54,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The hoptimus family's colour ramp is retuned from four tones to five for Mettle-1.5. It
   still runs light to dark, now in cobalt blue, held apart from the RudolfV-2 blues, so
   H-optimus-1, H-optimus-0, H0-mini and Mettle-1 change shade in every figure.
+- The Pareto panels lay their labels out around what is already drawn. With 27 encoders the
+  robust corner is crowded (three frontier rings within one ring's width on Camelyon), and
+  bold frontier tags and point labels landed on a neighbour's ring or dot. Labels are now
+  measured in the font they are drawn in and placed clear of every point, ring and other
+  label. A label pushed away from its point keeps a leader to it. The rank overview no
+  longer prints "-0" above rank 1.
+- The k-sweep legends print Mettle-1, not the registry name Mettle, as the other figures
+  do. So do the τ-sensitivity and typed-neighbour-rank study figures, from their next run.
 - The documented rationale for MaRI's automatic `tau` is corrected, in the
   `croma.metrics.tau` module docstring and in "Choosing `tau`" on the metrics page. It used
   to read `exp(-d / tau)` as if each anchor's nearest neighbour sat at distance zero, which

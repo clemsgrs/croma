@@ -717,6 +717,34 @@ def test_plot_rank_pareto_colours_by_mean_biological_accuracy_rank(
     assert bar.ax.get_ylabel() == "Mean rank by biological k-NN accuracy  (1 = best)"
 
 
+def test_plot_rank_pareto_ticks_only_ranks_that_exist(monkeypatch, tmp_path: Path) -> None:
+    """Ranks start at 1, so the overview's axes label rank 1 and worse only. The axes run on
+    negated ranks, and the room reserved above the best point reaches the 0 tick, which
+    printed as "-0"."""
+    import matplotlib
+    import matplotlib.pyplot as plt
+
+    figures: list = []
+    close = plt.close
+    monkeypatch.setattr(plt, "close", lambda fig=None: figures.append(fig))
+    rows = [
+        {"model": "CONCH", "median_rank": 1.3, "tail_rank": 1.3, "bio_rank": 1.0},
+        {"model": "H-optimus-1", "median_rank": 8.0, "tail_rank": 3.0, "bio_rank": 3.0},
+        {"model": "Phikon", "median_rank": 12.0, "tail_rank": 12.0, "bio_rank": 5.0},
+    ]
+    plot_rank_pareto(rows=rows, out_path=tmp_path / "rank_pareto.png", n_benchmarks=3)
+
+    (fig,) = [f for f in figures if isinstance(f, matplotlib.figure.Figure)]
+    fig.canvas.draw()
+    ax = fig.axes[0]
+    labels = [
+        t.get_text() for axis in (ax.xaxis, ax.yaxis) for t in axis.get_ticklabels() if t.get_text()
+    ]
+    assert labels
+    close(fig)
+    assert all(int(text) >= 1 for text in labels), labels
+
+
 def test_plot_croma_ltm_bars_sorts_descending_with_threshold_and_local_legend(
     monkeypatch, tmp_path: Path
 ) -> None:
