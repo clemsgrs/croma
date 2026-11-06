@@ -16,7 +16,7 @@ import matplotlib.patheffects as pe
 import matplotlib.pyplot as plt
 
 from . import style as plotstyle
-from .style import COL_ONEHALF
+from .style import COL_ONEHALF, DEFAULT_DPI
 
 #: The Pareto panels enlarge the default scatter marker so each family colour reads clearly, with
 #: the hollow frontier ring scaled to sit outside the bigger fill. Benchmark-exposed encoders are
@@ -309,8 +309,7 @@ _TAG_DX_PT = 9.0
 _TAG_DY_PT = 8.0
 _RING_R_PT = (_PARETO_RING_S / np.pi) ** 0.5
 _MARKER_R_PT = (_PARETO_MARKER_S / np.pi) ** 0.5
-#: Clearance kept between a label and anything it must not touch, in points: absorbs the gap
-#: between the off-screen measurement and the hinted glyphs actually drawn.
+#: Clearance kept between a label and anything it must not touch, in points.
 _LABEL_PAD_PT = 1.0
 
 
@@ -319,17 +318,33 @@ def _text_extent_pt(text: str, fontsize: float, *, bold: bool = False) -> tuple[
 
     Labels are laid out before the axes exist, so their boxes cannot be read off the figure. A
     per-character estimate drifts by several points on a long bold name -- exactly the slack a
-    crowded corner does not have -- so an off-screen 72-dpi renderer measures them instead (one
-    pixel is one point). The height is at least that of ``"lp"``, as matplotlib sizes a line.
+    crowded corner does not have -- so the text is measured by the renderers that draw it.
+
+    The width is the wider of the two exports': the PDF sets unhinted glyphs (and a mathtext
+    run, such as a dagger, in a box rounded up to whole points), and the PNG sets glyphs hinted
+    at ``DEFAULT_DPI``. Both run up to a couple of points wider than the 72-dpi hinted measure,
+    which let two labels a pad apart touch in print. The height is the 72-dpi hinted line box
+    (one pixel is one point), at least that of ``"lp"`` as matplotlib sizes a line: a little
+    taller than either export draws it, a margin the crowded corners rely on.
     """
     from matplotlib.backends.backend_agg import RendererAgg
     from matplotlib.font_manager import FontProperties
+    from matplotlib.textpath import text_to_path
 
-    renderer = RendererAgg(1, 1, 72)
     prop = FontProperties(size=fontsize, weight="bold" if bold else "normal")
-    width, height, _ = renderer.get_text_width_height_descent(text, prop, ismath="$" in text)
+    ismath = "$" in text
+    # The PDF backend's own measure: mathtext parsed at the drawn size, plain text unhinted.
+    if ismath:
+        pdf = text_to_path.mathtext_parser.parse(text, 72, prop).width
+    else:
+        pdf, _, _ = text_to_path.get_text_width_height_descent(text, prop, ismath=False)
+    png, _, _ = RendererAgg(1, 1, DEFAULT_DPI).get_text_width_height_descent(
+        text, prop, ismath=ismath
+    )
+    renderer = RendererAgg(1, 1, 72)
+    _, height, _ = renderer.get_text_width_height_descent(text, prop, ismath=ismath)
     _, line, _ = renderer.get_text_width_height_descent("lp", prop, ismath=False)
-    return float(width), float(max(height, line))
+    return float(max(pdf, png * 72.0 / DEFAULT_DPI)), float(max(height, line))
 
 
 def _pad(box, by: float = _LABEL_PAD_PT):

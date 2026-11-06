@@ -7,8 +7,10 @@ neighbour's ring or dot hides the very point it should help identify.
 
 These tests read the geometry back from the rendered figure, not from the layout's own box
 estimates: each label's drawn extent against each marker and ring disk, and against every other
-label. The fixtures are the published 27-encoder panels (rounded to three decimals), the layouts
-that first put a frontier tag on a ring.
+label. They read it in the renderers that write the exported files -- the 300-dpi PNG and the
+PDF, whose unhinted glyphs run wider than an on-screen draw -- since a box clear at screen
+resolution can still run into its neighbour in print. The fixtures are the published 27-encoder
+panels (rounded to three decimals), the layouts that first put a frontier tag on a ring.
 """
 
 import sys
@@ -28,6 +30,7 @@ if str(ROOT / "scripts" / "bench") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts" / "bench"))
 
 from plotting import plot_croma_pareto, plot_rank_pareto  # noqa: E402
+from plotting import DEFAULT_DPI  # noqa: E402
 from plotting import style as plotstyle  # noqa: E402
 
 #: (model, median CRoMa, LTM_10, biological k-NN balanced accuracy) per tile benchmark.
@@ -170,8 +173,8 @@ RANKS = [
 
 
 @contextmanager
-def rendered_figure(monkeypatch):
-    """The figure a plot function draws, held open past its ``plt.close`` and drawn."""
+def held_figure(monkeypatch):
+    """The figure a plot function draws, held open past its ``plt.close``, in the house style."""
     figures: list = []
     close = plt.close
 
@@ -185,14 +188,11 @@ def rendered_figure(monkeypatch):
     with matplotlib.rc_context():
         plotstyle.apply_style()
         yield figures
-        for fig in figures:
-            fig.canvas.draw()
 
 
-def _labels_and_disks(fig):
-    """Each drawn label's pixel extent, and each marker/ring as a pixel disk."""
+def _labels_and_disks(fig, renderer):
+    """Each drawn label's extent, and each marker/ring as a disk, in ``renderer``'s pixels."""
     ax = fig.axes[0]  # the panel; the colour bar is added after it
-    renderer = fig.canvas.get_renderer()
     labels = [
         (t.get_text(), t.get_window_extent(renderer))
         for t in ax.texts
@@ -210,6 +210,24 @@ def _labels_and_disks(fig):
     return labels, disks
 
 
+def _exported_geometry(fig, tmp_path) -> dict:
+    """``_labels_and_disks`` as each export draws them, keyed by format, with the pixel size in
+    points: the figure is saved exactly as ``_finalize_figure`` saves it, and the geometry is
+    read inside each save's draw, in that save's renderer and at that save's dpi."""
+    geometry = {}
+    for fmt, kwargs in (("png", {"dpi": DEFAULT_DPI}), ("pdf", {})):
+
+        def record(event, fmt=fmt):
+            geometry[fmt] = (*_labels_and_disks(fig, event.renderer), 72.0 / fig.dpi)
+
+        cid = fig.canvas.mpl_connect("draw_event", record)
+        try:
+            fig.savefig(tmp_path / f"panel.{fmt}", **kwargs)
+        finally:
+            fig.canvas.mpl_disconnect(cid)
+    return geometry
+
+
 def _covers(box, disk) -> bool:
     x, y, radius = disk
     nearest_x = min(max(x, box.x0), box.x1)
@@ -217,20 +235,24 @@ def _covers(box, disk) -> bool:
     return (nearest_x - x) ** 2 + (nearest_y - y) ** 2 < radius**2
 
 
-def _collisions(fig) -> list[str]:
-    labels, disks = _labels_and_disks(fig)
-    found = [
-        f"{text!r} covers the point at ({x:.0f}, {y:.0f}) px"
-        for text, box in labels
-        for x, y, radius in disks
-        if _covers(box, (x, y, radius))
-    ]
-    found += [
-        f"{a!r} overlaps {b!r}"
-        for i, (a, box_a) in enumerate(labels)
-        for b, box_b in labels[i + 1 :]
-        if box_a.overlaps(box_b)
-    ]
+def _collisions(fig, tmp_path) -> dict[str, list[str]]:
+    """Every label-on-point and label-on-label collision, per exported format."""
+    found = {}
+    for fmt, (labels, disks, pt) in _exported_geometry(fig, tmp_path).items():
+        found[fmt] = [
+            f"{text!r} covers the point at ({x * pt:.1f}, {y * pt:.1f}) pt"
+            for text, box in labels
+            for x, y, radius in disks
+            if _covers(box, (x, y, radius))
+        ]
+        found[fmt] += [
+            f"{a!r} overlaps {b!r} by "
+            f"{(min(box_a.x1, box_b.x1) - max(box_a.x0, box_b.x0)) * pt:.2f} x "
+            f"{(min(box_a.y1, box_b.y1) - max(box_a.y0, box_b.y0)) * pt:.2f} pt"
+            for i, (a, box_a) in enumerate(labels)
+            for b, box_b in labels[i + 1 :]
+            if box_a.overlaps(box_b)
+        ]
     return found
 
 
@@ -241,11 +263,10 @@ def test_no_label_on_a_median_tail_panel_covers_a_point_or_another_label(
     rows = [
         {"model": m, "croma": x, "croma_ltm_alpha": y, "bio": bio} for m, x, y, bio in PANELS[panel]
     ]
-    with rendered_figure(monkeypatch) as figures:
+    with held_figure(monkeypatch) as figures:
         plot_croma_pareto(rows, tmp_path / "croma_pareto.png", exposed=EXPOSED[panel])
-
-    (fig,) = figures
-    assert _collisions(fig) == []
+        (fig,) = figures
+        assert _collisions(fig, tmp_path) == {"png": [], "pdf": []}
 
 
 def test_no_label_on_the_rank_overview_covers_a_point_or_another_label(monkeypatch, tmp_path):
@@ -253,8 +274,7 @@ def test_no_label_on_the_rank_overview_covers_a_point_or_another_label(monkeypat
         {"model": m, "median_rank": x, "tail_rank": y, "bio_rank": bio, "exposed": exposed}
         for m, x, y, bio, exposed in RANKS
     ]
-    with rendered_figure(monkeypatch) as figures:
+    with held_figure(monkeypatch) as figures:
         plot_rank_pareto(rows, tmp_path / "rank_pareto.png", n_benchmarks=3)
-
-    (fig,) = figures
-    assert _collisions(fig) == []
+        (fig,) = figures
+        assert _collisions(fig, tmp_path) == {"png": [], "pdf": []}
