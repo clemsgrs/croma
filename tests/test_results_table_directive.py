@@ -57,7 +57,10 @@ def test_every_cohort_table_has_an_exposure_legend_and_a_selection_state():
     """Each cohort page shades by its own source; the join with the model-level selection
     flag must be total for every tile cohort, and every cohort needs a legend wording."""
     selected = rt.selection_map()
-    assert {model for model, flag in selected.items() if flag} == {"Mettle-1 (Pre-release)"}
+    assert {model for model, flag in selected.items() if flag} == {
+        "Mettle-1 (Pre-release)",
+        "Mettle-1.5",
+    }
     for slug in ("camelyon", "tcga-4x4", "tolkach-esca", "pcabiop"):
         assert slug in rt.EXPOSURE_LEGENDS
         exposure = rt.cohort_exposure_map(slug)

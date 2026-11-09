@@ -7,8 +7,8 @@ including the nIPD tables. The legend sits beneath each table that shows the tin
 ranks are not adjusted.
 
 The fact lives in `model_metadata.csv` as `benchmark_selection`, naming what was used
-(`pathorob-ri` for Mettle, whose authors used PathoROB RI over these cohorts as one of
-several criteria to choose their released checkpoint). The exporter publishes it as the
+(`pathorob-ri` for Mettle-1 (Pre-release) and Mettle-1.5, whose authors used PathoROB RI
+over these cohorts as one of several criteria to choose each released checkpoint). The exporter publishes it as the
 boolean `benchmark_selected` beside `tcga_exposed` in `cross_benchmark.csv`. The README
 cannot shade a Markdown row, so it marks the encoder ‡ and prints the legend.
 

@@ -36,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Mettle-1.5 is now flagged for benchmark selection (`benchmark_selection = pathorob-ri`):
+  its authors disclosed that PathoROB RI was one of the metrics used for its checkpoint
+  selection. Its rows are shaded yellow on every results page, it carries ‡ in the README
+  and in the paper's fine-tune pairs table, its exposure-matrix row names PathoROB RI, and
+  `cross_benchmark.csv` publishes `benchmark_selected = True` for it. No value or rank
+  changed (ADR-0020).
 - Mettle is now published as Mettle-1 (Pre-release), its authors' new name for the same
   checkpoint (`slideflow-labs/mettle-1`). No value changed.
 - Mettle-1.5 has its tile-panel identity in `model_metadata.csv`: panel order 27, with the
@@ -153,8 +159,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   H-optimus-0 from Mettle-1's authors, joins the tile panel on Camelyon, TCGA-4×4 and
   Tolkach-ESCA, with its nIPD cells. Median CRoMa (m = 5) 0.277 / 0.149 / 0.426; mean rank
   3.3, second of 27 ranked encoders, and it joins Mascaret on the Pareto frontier. Its rows
-  are unshaded: its fine-tuning corpus is undisclosed, so no cohort overlap is declared, and
-  its authors have disclosed no benchmark selection.
+  are shaded yellow, like Mettle-1's: its authors disclosed that PathoROB RI was one of the
+  metrics used for its checkpoint selection (ADR-0020). Its fine-tuning corpus is
+  undisclosed, so no cohort overlap is declared.
 - Yellow row shading for encoders whose authors disclosed using PathoROB RI on these
   cohorts during development, e.g. in checkpoint selection, with its legend beneath every
   table that shows it (‡ in the README, which cannot shade). Mettle's authors used

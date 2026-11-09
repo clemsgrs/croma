@@ -651,13 +651,15 @@ def test_with_selection_inserts_the_column_after_tcga_exposed():
         er.with_selection(er.with_exposure(aggregate, {"A": True, "B": False}), {"A": True})
 
 
-def test_only_mettle_is_published_as_benchmark_selected():
-    """The one disclosure on record (ADR-0020). A second needs its own review. Mettle is
-    published under its authors' new name for the same checkpoint."""
+def test_only_the_mettle_models_are_published_as_benchmark_selected():
+    """The disclosures on record (ADR-0020): Slideflow Labs used PathoROB RI in checkpoint
+    selection for both Mettle releases. Another needs its own review. Mettle is published
+    under its authors' new name for the same checkpoint."""
     aggregate = pd.read_csv(RESULTS / "cross_benchmark.csv")
-    assert aggregate.loc[aggregate["benchmark_selected"], "model"].tolist() == [
-        "Mettle-1 (Pre-release)"
-    ]
+    assert set(aggregate.loc[aggregate["benchmark_selected"], "model"]) == {
+        "Mettle-1 (Pre-release)",
+        "Mettle-1.5",
+    }
 
 
 def test_each_cohort_publishes_exposure_to_its_own_source():
