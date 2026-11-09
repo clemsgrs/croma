@@ -261,31 +261,42 @@ def _pvalue(pvalue: float, floor: float = 0.01) -> str:
     return rf"${{<}}{floor:g}$" if pvalue < floor else f"${pvalue:.2f}$"
 
 
-def _frac_negative(sample_path: str) -> float:
+def _frac_negative(results_dir: Path, model: str) -> float:
     """F(0): the confounder-dominant fraction, read off a model's per-sample CRoMa.
 
-    Closed boundary (an exact zero is confounder-dominant) over the defined occurrences
-    only -- the definition ``CRoMaResult.f0`` computes inside the library.
+    The distribution is found through the run's layout (``results_dir`` plus the registry
+    ``model`` name), not through the row's recorded ``croma_samples_path``, which names the
+    checkout that ran the benchmark. Closed boundary (an exact zero is confounder-dominant)
+    over the defined occurrences only -- the definition ``CRoMaResult.f0`` computes inside
+    the library.
     """
     import numpy as np
 
-    values = pd.Series(np.load(sample_path).astype(float))
+    import layout
+
+    path = layout.sample_distribution_path(results_dir, "croma", model)
+    values = pd.Series(np.load(path).astype(float))
     margin = _to_margin(values, _detect_scale(values))
     defined = margin[np.isfinite(margin)]
     return float((defined <= 0.0).mean())
 
 
-def _probe_macros(prefix: str, df: pd.DataFrame) -> tuple[list[str], list[float]]:
+def _probe_macros(
+    prefix: str, df: pd.DataFrame, results_dir: Path
+) -> tuple[list[str], list[float]]:
     """Rank correlations between confounder decodability and each robustness statistic.
 
-    Returns the macro lines plus the |rho| of the *pooled* targets, so ``build`` can quote a
-    single across-benchmark range for them.
+    ``results_dir`` is the directory of the ``metrics.csv`` that ``df`` was read from; each
+    model's F(0) is read from the distribution stored there. Returns the macro lines plus
+    the |rho| of the *pooled* targets, so ``build`` can quote a single across-benchmark
+    range for them.
     """
-    from plotting.style import CONTROL_MODEL
+    from plotting.style import CONTROL_MODEL, registry_model_name
     from scipy.stats import spearmanr
 
     df = df[df["model"] != CONTROL_MODEL].copy()
-    df["f0"] = df["croma_samples_path"].map(_frac_negative)
+    # ``df`` carries published names; the run stored each distribution under its registry name.
+    df["f0"] = [_frac_negative(results_dir, registry_model_name(m)) for m in df["model"]]
     probe = df["confounder_knn_bacc"].astype(float)
 
     lines, pooled = [], []
@@ -801,7 +812,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
         panel_sizes[prefix] = len(df)
 
         if prefix in PROBE_BENCHMARKS:
-            probe_lines, pooled = _probe_macros(prefix, df)
+            probe_lines, pooled = _probe_macros(prefix, df, path.parent)
             pooled_probe_rhos.extend(pooled)
             out.append(f"% {prefix} confounder-probe collapse (Sec 3.3)")
             out.extend(probe_lines)

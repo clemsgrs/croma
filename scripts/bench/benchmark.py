@@ -46,20 +46,9 @@ from run_config import K_GRIDS, resolve_sweep_k_values, write_run_config
 # scripts/bench/render.py consumes to emit the figure set.
 
 
-def _sample_distribution_dir(results_dir: Path) -> Path:
-    return results_dir / "sample_distributions"
-
-
-def _distribution_path(results_dir: Path, metric_name: str, model: str) -> Path:
-    return (
-        _sample_distribution_dir(results_dir)
-        / f"{metric_name}.{safe_model_name(model)}.npy"
-    )
-
-
 def _distribution_meta_path(results_dir: Path, metric_name: str, model: str) -> Path:
     return (
-        _sample_distribution_dir(results_dir)
+        layout.sample_distribution_dir(results_dir)
         / f"{metric_name}.{safe_model_name(model)}.json"
     )
 
@@ -117,7 +106,7 @@ def _save_mari_sample_distribution(
     q_alpha: float = float("nan"),
     ltm_alpha: float = float("nan"),
 ) -> Path:
-    out_path = _distribution_path(results_dir, "mari", model)
+    out_path = layout.sample_distribution_path(results_dir, "mari", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.asarray(values, dtype=float)
     np.save(out_path, arr)
@@ -135,7 +124,7 @@ def _save_mari_sample_distribution(
         "median_value": float(median_value),
         "q_alpha": float(q_alpha),
         "ltm_alpha": float(ltm_alpha),
-        "distribution_path": str(out_path),
+        "distribution_path": layout.repo_relative(out_path),
     }
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     return out_path
@@ -156,7 +145,7 @@ def _save_ri_sample_distribution(
     q_alpha: float = float("nan"),
     ltm_alpha: float = float("nan"),
 ) -> Path:
-    out_path = _distribution_path(results_dir, "ri", model)
+    out_path = layout.sample_distribution_path(results_dir, "ri", model)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.asarray(values, dtype=float)
     np.save(out_path, arr)
@@ -173,7 +162,7 @@ def _save_ri_sample_distribution(
         "median_value": float(median_value),
         "q_alpha": float(q_alpha),
         "ltm_alpha": float(ltm_alpha),
-        "distribution_path": str(out_path),
+        "distribution_path": layout.repo_relative(out_path),
     }
     meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     return out_path
@@ -1743,7 +1732,7 @@ def main() -> int:
                             "croma_q_alpha": float(payload["croma_q_alpha"]),
                             "croma_ltm_alpha": float(payload["croma_ltm_alpha"]),
                             "croma_f0": float(payload["croma_f0"]),
-                            "embedding_path": str(output_path),
+                            "embedding_path": layout.repo_relative(output_path),
                         }
                     )
 
@@ -1802,7 +1791,7 @@ def main() -> int:
                 )
 
                 croma_result = croma_by_m[croma_headline_m]
-                croma_dist_path = _distribution_path(results_dir, "croma", model)
+                croma_dist_path = layout.sample_distribution_path(results_dir, "croma", model)
                 croma_dist_path.parent.mkdir(parents=True, exist_ok=True)
                 np.save(croma_dist_path, croma_samples)
 
@@ -1834,8 +1823,8 @@ def main() -> int:
                     "mari_q_alpha": float(mari_summary.get("q_alpha", float("nan"))),
                     "mari_ltm_alpha": float(mari_summary.get("ltm_alpha", float("nan"))),
                     **shared_support,
-                    "ri_samples_path": str(saved_ri_dist_path),
-                    "mari_samples_path": str(saved_dist_path),
+                    "ri_samples_path": layout.repo_relative(saved_ri_dist_path),
+                    "mari_samples_path": layout.repo_relative(saved_dist_path),
                     "croma": float(croma_result["croma"]),
                     "croma_std": float(croma_result["croma_std"]),
                     "croma_m": int(croma_result["m"]),
@@ -1849,8 +1838,8 @@ def main() -> int:
                     "croma_auc": croma_auc,
                     "croma_min": croma_min_val,
                     "croma_delta": croma_delta,
-                    "croma_samples_path": str(croma_dist_path),
-                    "embedding_path": str(output_path),
+                    "croma_samples_path": layout.repo_relative(croma_dist_path),
+                    "embedding_path": layout.repo_relative(output_path),
                 }
                 rows.append(row)
                 model_per_sample_rows = _build_per_sample_rows(
@@ -1912,7 +1901,7 @@ def main() -> int:
                             "mari": float(mari_curve[int(k)]),
                             "selected_k": int(selected_k),
                             "selected_k_confounder": int(selected_k_confounder),
-                            "embedding_path": str(output_path),
+                            "embedding_path": layout.repo_relative(output_path),
                         }
                     )
                 croma_m_sweep_rows.extend(croma_m_rows_for_model)

@@ -134,6 +134,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   annotation. Every cohort page now mounts
   the explorer pinned to its cohort (`data-cohort`), alongside the aggregate page's
   cross-cohort mount.
+- A run's per-sample distributions are found through the output layout
+  (`layout.sample_distribution_path`), from the directory of the `metrics.csv` being read,
+  not through the path a result row recorded. The paper's F(0) macros and the CRoMa
+  ridgeline therefore read existing runs from any checkout, without migration. The
+  ridgeline now fails, naming the model and the expected file, when a model with a finite
+  CRoMa has no distribution; it used to leave that model out silently. New runs record
+  `*_samples_path`, `embedding_path`, `distribution_path` and the cache's `payload_path`
+  relative to the repo root (`output/...`) instead of from the checkout that ran them. No
+  value or column changed.
 
 ### Added
 

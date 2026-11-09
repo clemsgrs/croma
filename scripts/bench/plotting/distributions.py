@@ -15,6 +15,8 @@ import matplotlib.pyplot as plt
 
 from scipy.stats import gaussian_kde
 
+import layout
+
 from . import style as plotstyle
 from .style import (
     COL_DOUBLE,
@@ -47,27 +49,39 @@ _SUBTITLE_BASELINE_IN = 0.36  # subtitle baseline, below the figure top
 
 
 def _load_croma_sample_rows(
-    rows: list[dict], models: list[str] | None = None
+    rows: list[dict], results_dir: Path, models: list[str] | None = None
 ) -> list[dict]:
     """Load each model's per-sample CRoMa array, ranked by pooled CRoMa (best first).
+
+    ``results_dir`` is the run's results directory, the one ``rows`` were read from. Each
+    model's array is found there through ``layout.sample_distribution_path``, never through
+    the row's recorded ``croma_samples_path``, which names the checkout that ran the
+    benchmark. A row's ``model`` may be its registry or its published name.
 
     ``models`` optionally restricts the roster to a curated subset, selected by model name
     and order-independent -- the returned rows are always ranked by pooled CRoMa so a subset
     stays a faithful zoom-in of the full ridgeline, best on top. A name in ``models`` with no
     finite CRoMa row is silently skipped, same as any other missing row.
+
+    A model with a finite CRoMa but no distribution on disk raises ``FileNotFoundError``
+    naming the model and the expected path. Skipping it would draw a figure that silently
+    leaves the model out.
     """
     wanted = set(models) if models is not None else None
     model_data: list[dict] = []
     for row in rows:
-        if "croma_samples_path" not in row:
-            continue
         if wanted is not None and str(row["model"]) not in wanted:
             continue
         if not np.isfinite(float(row.get("croma", float("nan")))):
             continue
-        path = Path(str(row["croma_samples_path"]))
+        path = layout.sample_distribution_path(
+            results_dir, "croma", plotstyle.registry_model_name(str(row["model"]))
+        )
         if not path.exists():
-            continue
+            raise FileNotFoundError(
+                f"{row['model']}: has a finite CRoMa but no per-sample distribution "
+                f"at {path}"
+            )
         values = np.load(path)
         values = values[np.isfinite(values)]
         if len(values) < 2:
@@ -208,14 +222,20 @@ def _ridgeline_bands(fig_height: float) -> dict[str, float]:
 
 
 def plot_croma_sample_distributions(
-    rows: list[dict], out_path: Path, models: list[str] | None = None
+    rows: list[dict],
+    out_path: Path,
+    models: list[str] | None = None,
+    *,
+    results_dir: Path,
 ) -> None:
     """Render the per-sample CRoMa ridgeline for ``rows`` (optionally a subset).
 
-    Passing ``models`` restricts the figure to a curated subset; the default draws the full
-    roster. The clean ridgeline style is fixed either way.
+    ``results_dir`` is the run's results directory, where each model's distribution is
+    found (see ``_load_croma_sample_rows``). Passing ``models`` restricts the figure to a
+    curated subset; the default draws the full roster. The clean ridgeline style is fixed
+    either way.
     """
-    model_data = _load_croma_sample_rows(rows, models=models)
+    model_data = _load_croma_sample_rows(rows, results_dir, models=models)
     fig_height = _ridgeline_figure_height(len(model_data))
     bands = _ridgeline_bands(fig_height)
     fig, ax = plt.subplots(figsize=(COL_DOUBLE, fig_height))

@@ -45,7 +45,8 @@ for _lbl in ("A", "B"):
 # Per-model confounder-signal strength: MA is the most confounded (lowest robustness),
 # MC the least, giving three distinct, defined metric profiles.
 _VENDOR_SCALE = {"MA": 0.6, "MB": 0.3, "MC": 0.05}
-# Columns holding per-run absolute tmp paths -- excluded from the golden comparison.
+# Columns naming where the run's artifacts live -- excluded from the golden comparison, which
+# pins values (tests/test_sample_distribution_paths.py pins the paths).
 _PATH_COLUMNS = (
     "embedding_path",
     "ri_samples_path",

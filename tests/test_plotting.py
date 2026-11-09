@@ -9,6 +9,7 @@ SCRIPTS = ROOT / "scripts" / "bench"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
+import layout  # noqa: E402
 from plotting import (
     CROMA_DOMAIN,
     _color_for_model,
@@ -176,7 +177,8 @@ def _sample_croma_ltm_rows() -> list[dict]:
 def _sample_croma_distribution_rows(tmp_path: Path) -> list[dict]:
     # CRoMa is the signed margin in (-1, 1); per-sample arrays straddle 0, and each
     # row's pooled ``croma`` is the median of its own samples so the ranking the plot
-    # sorts on is the one the arrays imply (Virchow2 > CONCH > UNI).
+    # sorts on is the one the arrays imply (Virchow2 > CONCH > UNI). ``tmp_path`` is the
+    # run's results directory: each array sits where the layout puts it.
     by_model = {
         "Virchow2": np.asarray([-0.10, 0.20, 0.42, 0.55], dtype=float),
         "UNI": np.asarray([-0.30, -0.15, -0.05, 0.20], dtype=float),
@@ -184,7 +186,8 @@ def _sample_croma_distribution_rows(tmp_path: Path) -> list[dict]:
     }
     rows: list[dict] = []
     for model, values in by_model.items():
-        path = tmp_path / f"{model}.croma.npy"
+        path = layout.sample_distribution_path(tmp_path, "croma", model)
+        path.parent.mkdir(parents=True, exist_ok=True)
         np.save(path, values)
         rows.append(
             {
@@ -970,7 +973,7 @@ def test_croma_distribution_plot_writes_png_and_pdf(tmp_path: Path) -> None:
     rows = _sample_croma_distribution_rows(tmp_path)
     out_path = tmp_path / "croma_sample_distributions.png"
 
-    plot_croma_sample_distributions(rows=rows, out_path=out_path)
+    plot_croma_sample_distributions(rows=rows, out_path=out_path, results_dir=tmp_path)
 
     assert _png_export_path(out_path).exists()
     pdf_path = _pdf_export_path(out_path)
@@ -1009,6 +1012,7 @@ def test_croma_distribution_plot_uses_no_legend_and_ranks_rows(monkeypatch, tmp_
     plot_croma_sample_distributions(
         rows=_sample_croma_distribution_rows(tmp_path),
         out_path=tmp_path / "croma_sample_distributions.png",
+        results_dir=tmp_path,
     )
 
     assert not figure_legend_calls
@@ -1052,6 +1056,7 @@ def test_croma_distribution_plot_emits_summary_annotations(monkeypatch, tmp_path
     plot_croma_sample_distributions(
         rows=_sample_croma_distribution_rows(tmp_path),
         out_path=tmp_path / "croma_sample_distributions.png",
+        results_dir=tmp_path,
     )
 
     # The pooled CRoMa / Q10 / %<0 side panel was removed: CRoMa and F(0) are table
@@ -1078,7 +1083,9 @@ def test_croma_distribution_plot_frames_the_full_margin_domain(tmp_path: Path) -
     """
     import matplotlib.pyplot as plt
 
-    model_data = _load_croma_sample_rows(_sample_croma_distribution_rows(tmp_path))
+    model_data = _load_croma_sample_rows(
+        _sample_croma_distribution_rows(tmp_path), results_dir=tmp_path
+    )
     fig, ax = plt.subplots()
     try:
         _draw_croma_sample_distributions(ax, model_data)
@@ -1123,7 +1130,7 @@ def test_croma_distribution_plot_renders_without_q_alpha(tmp_path: Path) -> None
         row.pop("croma_alpha")
     out_path = tmp_path / "croma_sample_distributions.png"
 
-    plot_croma_sample_distributions(rows=rows, out_path=out_path)
+    plot_croma_sample_distributions(rows=rows, out_path=out_path, results_dir=tmp_path)
 
     assert _png_export_path(out_path).exists()
     assert _png_export_path(out_path).stat().st_size > 0

@@ -6,6 +6,7 @@ from pathlib import Path
 
 import hashlib
 import numpy as np
+import layout
 from metrics_io import safe_model_name
 
 CACHE_SCHEMA_VERSION = 2
@@ -146,7 +147,8 @@ class MetricsArtifactCache:
             "code_fingerprint": str(key["code_fingerprint"]),
             "key_hash": str(key["key_hash"]),
             "payload_kind": str(payload_kind),
-            "payload_path": str(payload_path),
+            # Informational only: reads recompute the path from the key (_artifact_path).
+            "payload_path": layout.repo_relative(payload_path),
         }
         self._save_index(rows)
 

@@ -25,6 +25,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from metrics_io import safe_model_name
+
 #: Repo root, and the output tree beneath it. There is exactly one of each: scripts are
 #: run from the repo root, so a bare ``data/`` or ``output/`` elsewhere in the tree names
 #: the same place these do. Resist adding an env override -- the rest of the codebase
@@ -41,6 +43,20 @@ TILESET_MANIFEST_NAME = "manifest.csv"
 
 #: The operating points a metrics run may be scoped by.
 PROTOCOLS = ("k-star", "median-k")
+
+
+def repo_relative(path: Path) -> str:
+    """``path`` as a result records it: relative to the repo root, e.g. ``output/...``.
+
+    A recorded path must not name the checkout that wrote it, or it dangles once that
+    checkout is gone. The match is lexical, never resolved, because ``output`` is often a
+    symlink to shared storage. A path outside the repo (a study driving the benchmark into a
+    scratch output tree) has no repo-relative form and is returned unchanged.
+    """
+    try:
+        return Path(path).relative_to(REPO).as_posix()
+    except ValueError:
+        return str(path)
 
 
 def embeddings_root() -> Path:
@@ -84,3 +100,18 @@ def results_dir(protocol: str, benchmark: str) -> Path:
 
 def plots_dir(protocol: str, benchmark: str) -> Path:
     return metrics_dir(protocol, benchmark) / "plots"
+
+
+def sample_distribution_dir(results_dir: Path) -> Path:
+    """Directory of a run's per-model, per-metric sample arrays (and their JSON sidecars)."""
+    return Path(results_dir) / "sample_distributions"
+
+
+def sample_distribution_path(results_dir: Path, metric: str, model: str) -> Path:
+    """``<results_dir>/sample_distributions/<metric>.<model>.npy`` for one model's metric.
+
+    The one rule for where a distribution lives. Readers find a model's distribution here,
+    from the directory of the ``metrics.csv`` they read, rather than by opening the path a
+    result row recorded: that path names whichever checkout ran the benchmark.
+    """
+    return sample_distribution_dir(results_dir) / f"{metric}.{safe_model_name(model)}.npy"

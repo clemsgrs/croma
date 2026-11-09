@@ -24,6 +24,7 @@ for _path in (ROOT / "scripts" / "bench",):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+import layout  # noqa: E402
 from plotting import (  # noqa: E402
     plot_bio_vs_confounder_scatter,
     plot_croma_pareto,
@@ -217,12 +218,14 @@ def test_cross_benchmark_end_labels_print_the_short_name(monkeypatch, tmp_path):
 
 
 def test_ridgeline_rows_print_the_short_name(monkeypatch, tmp_path):
+    # The row carries the published name; the run stored the array under the registry name.
     rows = []
-    for model, values in {
-        FULL: [-0.10, 0.20, 0.42, 0.55],
-        "UNI": [-0.30, -0.15, -0.05, 0.20],
-    }.items():
-        path = tmp_path / f"{len(rows)}.croma.npy"
+    for model, registry, values in [
+        (FULL, "Mettle", [-0.10, 0.20, 0.42, 0.55]),
+        ("UNI", "UNI", [-0.30, -0.15, -0.05, 0.20]),
+    ]:
+        path = layout.sample_distribution_path(tmp_path, "croma", registry)
+        path.parent.mkdir(parents=True, exist_ok=True)
         np.save(path, np.asarray(values))
         rows.append(
             {
@@ -234,7 +237,9 @@ def test_ridgeline_rows_print_the_short_name(monkeypatch, tmp_path):
             }
         )
     with drawn_text(monkeypatch) as texts:
-        plot_croma_sample_distributions(rows=rows, out_path=tmp_path / "ridge.png")
+        plot_croma_sample_distributions(
+            rows=rows, out_path=tmp_path / "ridge.png", results_dir=tmp_path
+        )
 
     _assert_short(texts)
     assert SHORT in texts
