@@ -44,12 +44,14 @@ def render_figure_set(
     k_sweep_rows: list[dict],
     croma_m_sweep_rows: list[dict],
     plots_dir: Path,
+    results_dir: Path,
 ) -> list[Path]:
     """Emit the full benchmark figure set into ``plots_dir``.
 
     This is the single, canonical plot sequence -- byte-for-byte the ordering that
     benchmark.py used to inline. Returns the list of nominal ``.png`` out_paths that were
     requested (each also produces a sibling ``pdf/<name>.pdf`` and ``png/<name>.png``).
+    ``results_dir`` is the run's results directory, where the per-sample distributions live.
     """
     plots_dir.mkdir(parents=True, exist_ok=True)
     rendered: list[Path] = []
@@ -98,6 +100,7 @@ def render_figure_set(
     _render(
         plotting.plot_croma_sample_distributions,
         rows=rows,
+        results_dir=results_dir,
         out_name="croma_sample_distributions.png",
     )
     return rendered
@@ -132,6 +135,7 @@ def render_run(
         k_sweep_rows=k_sweep_rows,
         croma_m_sweep_rows=croma_m_sweep_rows,
         plots_dir=plots_dir,
+        results_dir=results_dir,
     )
 
 

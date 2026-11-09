@@ -40,17 +40,22 @@ from _distributions import CAMELYON, PANDA, SUPP_BENCHMARKS  # noqa: E402
 BENCHMARKS = (CAMELYON, *SUPP_BENCHMARKS, PANDA)
 
 
+def _results_dir(entry) -> Path:
+    """The run's results directory: its ``metrics.json`` and its sample distributions."""
+    return REPO / entry.run_rel / "results"
+
+
 def _rows(entry) -> list[dict]:
-    """The benchmark's per-model metrics rows (each carries a ``croma_samples_path``)."""
-    path = REPO / entry.run_rel / "results" / "metrics.json"
+    """The benchmark's per-model metrics rows."""
+    path = _results_dir(entry) / "metrics.json"
     if not path.exists():
         raise FileNotFoundError(
             f"{path} absent -- run scripts/repro/run_benchmarks.sh first."
         )
     rows = json.loads(path.read_text(encoding="utf-8"))
     # The run stores registry identities; the ridgeline's axis labels are published.
-    # Only the display name is restyled -- ``croma_samples_path`` keeps pointing at the
-    # registry-named artifact on disk.
+    # Only the display name is restyled -- the loader maps it back to the registry name
+    # that names the distribution on disk.
     for row in rows:
         row["model"] = plotstyle.published_model_name(row["model"])
     return rows
@@ -63,7 +68,9 @@ def main() -> None:
         # clobbers these curated figures, and check_paper_figures still sources them from here.
         out_png = REPO / entry.studies_rel / "plots" / "croma_distribution.png"
         # The full roster (models=None): every encoder plus the natural-image control.
-        P.plot_croma_sample_distributions(rows=_rows(entry), out_path=out_png)
+        P.plot_croma_sample_distributions(
+            rows=_rows(entry), out_path=out_png, results_dir=_results_dir(entry)
+        )
         print(f"wrote {P._pdf_export_path(out_png)}")
 
 
