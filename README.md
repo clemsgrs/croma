@@ -65,7 +65,7 @@ The panel holds 28 encoders — 27 pathology foundation models and one natural-i
 | Model | mean rank | CRoMa rank | tail rank | Camelyon<br>CRoMa/LTM₁₀ | TCGA-4×4<br>CRoMa/LTM₁₀ | Tolkach-ESCA<br>CRoMa/LTM₁₀ |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | **Mascaret** | 2.0 | 2.0 | 2.0 | 0.29/-0.02 | 0.27/-0.11 | 0.51/0.01 |
-| **Mettle-1.5** | 3.3 | 5.3 | 1.3 | 0.28/0.00 | 0.15/-0.09 | 0.43/0.00 |
+| **Mettle-1.5** ‡ | 3.3 | 5.3 | 1.3 | 0.28/0.00 | 0.15/-0.09 | 0.43/0.00 |
 | RudolfV-2-S | 5.2 | 2.3 | 8.0 | 0.32/-0.02 | 0.19/-0.16 | 0.49/-0.00 |
 | RudolfV-2 | 5.5 | 5.0 | 6.0 | 0.24/-0.04 | 0.17/-0.12 | 0.41/-0.01 |
 | RudolfV-2-B | 6.8 | 5.3 | 8.3 | 0.24/-0.05 | 0.17/-0.14 | 0.41/-0.02 |

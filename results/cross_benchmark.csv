@@ -1,6 +1,6 @@
 model,is_control,on_frontier,tcga_exposed,benchmark_selected,mean_rank,croma_rank,ltm_rank,croma_camelyon,ltm_camelyon,croma_tcga_4x4,ltm_tcga_4x4,croma_tolkach_esca,ltm_tolkach_esca
 Mascaret,False,True,True,False,2.0,2.0,2.0,0.285297,-0.016354,0.270097,-0.108882,0.507294,0.009418
-Mettle-1.5,False,True,False,False,3.333,5.333,1.333,0.276911,0.003545,0.149404,-0.093493,0.425767,0.000685
+Mettle-1.5,False,True,False,True,3.333,5.333,1.333,0.276911,0.003545,0.149404,-0.093493,0.425767,0.000685
 RudolfV-2-S,False,False,False,False,5.1665,2.333,8.0,0.32404,-0.024488,0.192036,-0.162947,0.485488,-0.002917
 RudolfV-2,False,False,False,False,5.5,5.0,6.0,0.243253,-0.039725,0.168454,-0.124499,0.41209,-0.010655
 RudolfV-2-B,False,False,False,False,6.833,5.333,8.333,0.235303,-0.046907,0.168734,-0.136771,0.407032,-0.02373
