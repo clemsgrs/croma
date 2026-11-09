@@ -179,6 +179,11 @@ exclude = [
   "/tests/test_slide_vs_meanpool_paper.py",
   "/tests/fixtures/slide_vs_meanpool_table.tex",
   "/tests/test_subsampling_stability.py",
+  "/tests/test_check_paper_layout.py",
+  # `/**`, not the bare directory: .gitignore's `!tests/fixtures/paper_layout/*.log`
+  # re-includes the logs over a directory-level exclude.
+  "/tests/fixtures/paper_layout/**",
+  "/tests/test_distribution_floats_layout.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
