@@ -143,3 +143,14 @@ def test_the_switch_renders_the_two_level_interval_for_croma_against_nipd():
 def test_a_csv_without_the_inference_columns_is_stale():
     with pytest.raises(CaptionClaimError, match="apd_croma_correlation.py"):
         gaf.build_table(_Apd(corr=_frame().drop(columns=["q_bh"])), design="encoder")
+
+
+def test_the_table_is_set_on_a_landscape_page_that_reports_its_own_overflow():
+    """Too wide for the portrait text block at ``\\scriptsize``: a sideways float whose content
+    is held to the rotated page's height, read before the float opens."""
+    tex = gaf.build_table(_Apd(corr=_frame()), design="encoder")
+
+    before, inside = tex.split(r"\begin{sidewaystable}")
+    assert r"\begin{table}" not in tex and tex.rstrip().endswith(r"\endgroup")
+    assert r"\edef\landscapeheight{\the\textwidth}" in before
+    assert r"\vbox to\landscapeheight{" in inside

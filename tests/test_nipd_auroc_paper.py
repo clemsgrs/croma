@@ -175,6 +175,13 @@ def _sens_spec(
     return pd.DataFrame(rows)
 
 
+#: The agreement row's label, stacked on two lines within the two label columns. The space
+#: after the line break keeps ``\\AUROC`` from reading as a macro to the paper's macro check.
+AGREEMENT = (
+    r"\multicolumn{2}{l}{\begin{tabular}[c]{@{}l@{}}Agreement:\\ AUROC vs bal.\ acc.\end{tabular}}"
+)
+
+
 class TestTable:
     def _tex(self, study, sens_spec=None) -> str:
         import generate_nipd_auroc_table as table
@@ -203,7 +210,7 @@ class TestTable:
         assert {line.count(" & ") for line in body[:8]} == {9}
         # ...then the agreement row at the bottom, its label spanning both label columns.
         assert len(body) == 9
-        assert body[8].startswith(r"\multicolumn{2}{l}{Agreement")
+        assert body[8].startswith(AGREEMENT)
         assert r"\label{tab:nipd-auroc}" in tex
 
     def test_sensitivity_and_specificity_read_a_dash_on_the_multiclass_cohorts(self, study):
@@ -292,6 +299,13 @@ class TestTable:
             "$0.70$", r"{\scriptsize$p{=}0.233$}"
         )
 
+    def test_the_agreement_label_wraps_so_the_label_columns_stay_narrow(self, study):
+        """On one line, the agreement label spanning both label columns was wider than the two
+        of them and widened the table 23pt past the margin on the 27-encoder panel."""
+        tex = self._tex(study)
+
+        assert sum(line.startswith(AGREEMENT + " & ") for line in tex.splitlines()) == 1
+
     def test_the_agreement_row_has_rho_and_interval_but_is_outside_the_family(self, study):
         planted = _planted(
             study,
@@ -302,7 +316,7 @@ class TestTable:
             },
         )
 
-        cells = _row(self._tex(planted), r"\multicolumn{2}{l}{Agreement")
+        cells = _row(self._tex(planted), AGREEMENT)
 
         assert len(cells) == 9  # the label spans two columns
         assert cells[4] == _stack("$0.95$", r"{\scriptsize$[0.85, 0.99]$}")

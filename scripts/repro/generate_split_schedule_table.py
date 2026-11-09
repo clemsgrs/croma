@@ -44,6 +44,8 @@ REDUCED_TILES = {
     if (reduced := tuple(t for t in levels if t < DATASETS[key]["num_patches_per_slide"]))
 }
 LABEL = "tab:split-schedule"
+#: Panels b and c are floats of their own, labelled after panel a's label.
+SPLITS, SWEEPS = "-splits", "-sweeps"
 
 #: The probe's regularisation grid as ``np.linspace`` arguments over log10 C: 15 values from
 #: 1e-8 to 1e4. Restated from the vendored ``train_logistic_regression``, which builds it
@@ -88,7 +90,7 @@ def _protocol_panel(rows: list[Schedule]) -> list[str]:
     for s in rows:
         lines.append(
             f"{_name(s)} & {s.tiles_per_slide} & {s.n_classes} & "
-            f"{_pool(s.id_pool, '4.3cm')} & {_pool(s.ood_pool, '4.3cm')} & "
+            f"{_pool(s.id_pool, '4.2cm')} & {_pool(s.ood_pool, '4.2cm')} & "
             rf"{s.replicates} ({s.seed}) \\[2pt]"
         )
     return lines + [r"\hline", r"\end{tabular}"]
@@ -218,10 +220,19 @@ def _slide_level_sentence(rows: list[Schedule]) -> str:
     )
 
 
-def _caption(rows: list[Schedule], reduced: list[Schedule]) -> str:
+def _continued(label: str, reduced: list[Schedule]) -> str:
+    """Where the panels in floats of their own are, for the caption that defines them."""
+    sentence = rf" Panel~b, the splits, continues in Table~\ref{{{label}{SPLITS}}}"
+    if reduced:
+        sentence += rf", and panel~c, the reduced-tile sweeps, in Table~\ref{{{label}{SWEEPS}}}"
+    return sentence + "."
+
+
+def _caption(rows: list[Schedule], reduced: list[Schedule], label: str = LABEL) -> str:
     low, high, n = C_GRID
     return (
-        r"\textbf{Confounder-biased probe schedules.} Each schedule walks the in-domain "
+        r"\textbf{Confounder-biased probe schedules.}" + _continued(label, reduced) + " "
+        r"Each schedule walks the in-domain "
         r"training set from a balanced centre$\times$class composition (split~0, Cramér's "
         r"$V{=}0$) to a fully confounded one ($V{=}1$) at a constant training size, while "
         r"the held-out test sets stay fixed. \textbf{a,} Per benchmark: tiles per slide; the "
@@ -279,30 +290,49 @@ def build(
     tiles_per_slide: Mapping[str, int] | None = None,
     label: str = LABEL,
 ) -> str:
+    """The schedule floats: panel a with the caption that defines every panel, then b and c.
+
+    Each panel is a float of its own: on one float, the three panels and their caption were
+    taller than the page. Panel a keeps ``label``, which the text cites; the splits and the
+    reduced-tile sweeps are labelled after it (``<label>-splits``, ``<label>-sweeps``).
+    """
     rows = schedules(root, tiles_per_slide=tiles_per_slide)
     # A reduced variant already is one of panel c's sweeps; only the default table lists them.
     reduced = [] if tiles_per_slide else _reduced(root)
-    lines = [
-        r"\begin{table}[!htbp]",
-        r"\centering",
-        r"\footnotesize",
-        r"\setlength{\tabcolsep}{4pt}",
-        *_protocol_panel(rows),
-        "",
-        r"\vspace{5pt}",
-        *_split_panel(rows),
-    ]
-    if reduced:
-        lines += ["", r"\vspace{5pt}", *_reduced_panel(reduced)]
+    lines = _opening() + _protocol_panel(rows)
     note = _footnote(rows)
     if note:
         lines += ["", r"\vspace{3pt}", rf"\parbox{{\linewidth}}{{\footnotesize {note}}}"]
     lines += [
-        rf"\caption{{{_caption(rows, reduced)}}}",
+        rf"\caption{{{_caption(rows, reduced, label)}}}",
         rf"\label{{{label}}}",
         r"\end{table}",
     ]
+    lines += ["", *_opening(), *_split_panel(rows)]
+    lines += _closing("b", "The splits of each schedule", label, SPLITS)
+    if reduced:
+        lines += ["", *_opening(), *_reduced_panel(reduced)]
+        lines += _closing("c", "The reduced-tile sweeps", label, SWEEPS)
     return "\n".join(lines) + "\n"
+
+
+def _opening() -> list[str]:
+    return [
+        r"\begin{table}[!htbp]",
+        r"\centering",
+        r"\footnotesize",
+        r"\setlength{\tabcolsep}{4pt}",
+    ]
+
+
+def _closing(panel: str, what: str, label: str, suffix: str) -> list[str]:
+    """A continued panel's caption, which points back to the one that defines its columns."""
+    return [
+        rf"\caption{{\textbf{{Confounder-biased probe schedules, continued.}} \textbf{{{panel},}} "
+        rf"{what}, with the columns defined in Table~\ref{{{label}}}.}}",
+        rf"\label{{{label}{suffix}}}",
+        r"\end{table}",
+    ]
 
 
 def _override(text: str) -> tuple[str, int]:

@@ -390,7 +390,8 @@ def build_table(entry: ResultsTable, metrics_csv: Path) -> str:
         r"\begin{table}[!htbp]",
         r"\centering",
         r"\small",
-        r"\setlength{\tabcolsep}{4pt}",
+        # 3pt, not 4pt: the 27-encoder panel's widest tile table ran past the margin.
+        r"\setlength{\tabcolsep}{3pt}",
         r"\begin{tabular}{" + column_spec(table_groups) + "}",
         r"\hline",
         *header_lines(table_groups),

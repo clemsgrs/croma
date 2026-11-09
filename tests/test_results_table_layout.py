@@ -128,3 +128,12 @@ def test_both_slide_panels_render_the_grouped_header(monkeypatch):
     assert len(headers) == 2
     assert all(r"\multicolumn{5}{c}{Fixed-$k$ pooled ($k{=}k^\star$)}" in h for h in headers)
     assert tex.count(r"Model & Biology$\uparrow$ & Centre & & $k^\star$ & \code{RI}$\uparrow$") == 2
+
+
+def test_tile_tables_fit_the_text_block_by_setting_columns_3pt_apart(table):
+    """Twelve columns and sixteen inter-column gaps at ``\\small``: at the default 4pt the
+    widest tile table ran 7.9pt past the margin on the 27-encoder panel; 3pt reclaims 16pt
+    without shrinking the text."""
+    for prefix in ("Camelyon", "TcgaTwoByTwo", "TcgaFourByFour", "Tolkach"):
+        tex = table(prefix)
+        assert r"\setlength{\tabcolsep}{3pt}" in tex and r"\small" in tex

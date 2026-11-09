@@ -30,7 +30,7 @@ for _path in (HERE, REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" /
         sys.path.insert(0, str(_path))
 
 from _model_provenance import exposed_models_for_domain  # noqa: E402
-from _paper_tables import CaptionClaimError, bare_num  # noqa: E402
+from _paper_tables import CaptionClaimError, bare_num, landscape_table  # noqa: E402
 from croma.metrics.bootstrap import (  # noqa: E402
     EXACT_PERMUTATION_MAX_N,
     CorrelationInference,
@@ -363,9 +363,10 @@ def _count_row(panel: str, counts: dict[str, Count]) -> str:
     return " & ".join(cells + ["", ""]) + r" \\"
 
 
-_MATRIX_CAPTION = (
-    r"\caption{\textbf{Pretraining exposure of every encoder to the source datasets the "
-    r"benchmarks score.} Columns: TCGA (scored by TCGA-2x2, TCGA-4x4 and the Tolkach-ESCA TCGA "
+#: The cell definitions, set as notes under the tile part rather than in its caption: the
+#: rows and a caption this long are taller than one rotated page (#247).
+_MATRIX_NOTES = (
+    r"Columns: TCGA (scored by TCGA-2x2, TCGA-4x4 and the Tolkach-ESCA TCGA "
     r"cohort held out of its main score), CAMELYON16/17 (Camelyon), PANDA (PCaBiop in domain), "
     r"PAR (PCaBiop out of domain) and Tolkach-ESCA (its UKK, WNS and CHA cohorts). A cell is "
     r"\textbf{exposed} when the encoder's disclosed pretraining corpus includes the dataset, "
@@ -378,46 +379,76 @@ _MATRIX_CAPTION = (
     r"scored slide was seen. \emph{PathoROB in development} is the benchmark its authors "
     r"disclose using while developing the encoder, a different kind of exposure; -- means none "
     r"disclosed. Counts exclude the natural-image control. Overlap is flagged here, not adjusted "
-    r"for.}"
+    r"for."
+)
+
+_MATRIX_CAPTION = (
+    r"\caption{\textbf{Pretraining exposure of every encoder to the source datasets the "
+    r"benchmarks score.} Tile encoders, with the columns and cells defined below the table; "
+    r"Table~\ref{tab:exposure-matrix-slide} continues with the slide encoders and the "
+    r"natural-image control.}"
+)
+
+_SLIDE_CAPTION = (
+    r"\caption{\textbf{Pretraining exposure of the slide encoders and the natural-image control "
+    r"to the source datasets the benchmarks score} (continued from "
+    r"Table~\ref{tab:exposure-matrix}, which defines the columns and cells).}"
 )
 
 
+def _matrix_float(
+    heads: list[str], body: list[str], caption: str, label: str, notes: str = ""
+) -> list[str]:
+    """One landscape part of the matrix: the shared header, ``body``'s rows, the caption."""
+    lines = [
+        r"\centering",
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{3pt}",
+        rf"\begin{{tabular}}{{@{{}}l{'c' * len(SOURCE_DATASETS)}p{{5.8cm}}p{{2.2cm}}@{{}}}}",
+        r"\hline",
+        " & ".join(heads) + r" \\",
+        r"\hline",
+        *body,
+        r"\hline",
+        r"\end{tabular}",
+    ]
+    if notes:
+        lines += ["", r"\vspace{3pt}", rf"\parbox{{\linewidth}}{{\scriptsize {notes}}}"]
+    lines += [caption, rf"\label{{{label}}}"]
+    return landscape_table(lines)
+
+
 def render_matrix(matrix: ExposureMatrix, fingerprints: list[tuple[str, str]]) -> str:
-    """``tab:exposure-matrix``: tile rows, slide rows, the control, then the counts."""
+    """``tab:exposure-matrix``: tile rows, slide rows, the control, then the counts.
+
+    Landscape, since it is too wide for the portrait text block at ``\\scriptsize``. Every
+    row and the caption that defines the cells are then taller than one rotated page, so the
+    matrix breaks at the panel boundary: the tile encoders, with their counts and the
+    caption, keep ``tab:exposure-matrix``; the slide encoders, the control and the slide
+    counts continue in ``tab:exposure-matrix-slide``.
+    """
     counts = matrix.counts()
     heads = ["Encoder", *(DATASET_HEADS[d.domain] for d in SOURCE_DATASETS)]
     heads += [r"\shortstack{Shared\\institution}", r"\shortstack{PathoROB in\\development}"]
     n_cols = len(heads)
-    lines = [HEADER, *fingerprint_lines(fingerprints)]
-    lines += [
-        r"\begin{table}[!htbp]",
-        r"\centering",
-        r"\scriptsize",
-        r"\setlength{\tabcolsep}{3pt}",
-        rf"\begin{{tabular}}{{@{{}}l{'c' * len(SOURCE_DATASETS)}p{{3.6cm}}p{{1.7cm}}@{{}}}}",
-        r"\hline",
-        " & ".join(heads) + r" \\",
-        r"\hline",
-    ]
-    for panel in ("tile", "slide"):
-        models = [row.model for row in matrix.rows if row.panel == panel]
+
+    def panel(name: str) -> list[str]:
+        models = [row.model for row in matrix.rows if row.panel == name]
         if not models:
-            continue
-        lines.append(rf"\multicolumn{{{n_cols}}}{{@{{}}l}}{{\textit{{{_PANEL_HEADS[panel]}}}}} \\")
-        lines += [_matrix_row(matrix, model) for model in models]
-        lines.append(r"\hline")
+            return []
+        head = rf"\multicolumn{{{n_cols}}}{{@{{}}l}}{{\textit{{{_PANEL_HEADS[name]}}}}} \\"
+        return [head, *(_matrix_row(matrix, model) for model in models), r"\hline"]
+
+    tiles = [*panel("tile"), _count_row("tile", counts["tile"])]
+    slides = panel("slide")
     controls = [row.model for row in matrix.rows if row.panel == "control"]
     if controls:
-        lines += [_matrix_row(matrix, model) for model in controls]
-        lines.append(r"\hline")
-    lines += [_count_row(panel, counts[panel]) for panel in ("tile", "slide")]
-    lines += [
-        r"\hline",
-        r"\end{tabular}",
-        _MATRIX_CAPTION,
-        r"\label{tab:exposure-matrix}",
-        r"\end{table}",
-    ]
+        slides += [*(_matrix_row(matrix, model) for model in controls), r"\hline"]
+    slides.append(_count_row("slide", counts["slide"]))
+
+    lines = [HEADER, *fingerprint_lines(fingerprints)]
+    lines += _matrix_float(heads, tiles, _MATRIX_CAPTION, "tab:exposure-matrix", _MATRIX_NOTES)
+    lines += ["", *_matrix_float(heads, slides, _SLIDE_CAPTION, "tab:exposure-matrix-slide")]
     return "\n".join(lines) + "\n"
 
 
@@ -655,13 +686,11 @@ def render_drop_exposed(
     fingerprints: list[tuple[str, str]],
 ) -> str:
     """``tab:drop-exposed``: three variants per benchmark, then the mean-rank frontier."""
-    lines = [HEADER, *fingerprint_lines(fingerprints)]
-    lines += [
-        r"\begin{table}[!htbp]",
+    lines = [
         r"\centering",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{3pt}",
-        r"\begin{tabular}{@{}llrccp{3.0cm}p{2.6cm}@{}}",
+        r"\begin{tabular}{@{}llrccp{4.6cm}p{4.2cm}@{}}",
         r"\hline",
         r"Benchmark & Encoders & $n$ & $\rho_{\mathrm{ID}}$ [95\% CI], $p$ & "
         r"$\rho_{\mathrm{OOD}}$ [95\% CI], $p$ & Frontier & Top three \\",
@@ -676,8 +705,9 @@ def render_drop_exposed(
         r"\end{tabular}",
         _sensitivity_caption(blocks),
         r"\label{tab:drop-exposed}",
-        r"\end{table}",
     ]
+    # Landscape, like tab:exposure-matrix: too wide for portrait at \scriptsize.
+    lines = [HEADER, *fingerprint_lines(fingerprints), *landscape_table(lines)]
     return "\n".join(lines) + "\n"
 
 

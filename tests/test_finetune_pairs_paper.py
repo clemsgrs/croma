@@ -378,6 +378,17 @@ def _block(tex: str, finetune: str) -> str:
 
 
 class TestTable:
+    def test_the_table_runs_edge_to_edge_with_2pt_columns_to_fit_the_margin(self):
+        """Eight columns of ``a -> b`` pairs at ``\\scriptsize``, the floor for table text:
+        at 3pt between columns it ran 14pt past the margin on the 27-encoder panel. 2pt
+        and no outer padding reclaim 20pt; the pair titles start flush with the cohorts."""
+        tex = _render()
+
+        assert r"\setlength{\tabcolsep}{2pt}" in tex and r"\scriptsize" in tex
+        assert r"\begin{tabular}{@{}lccccccc@{}}" in tex
+        titles = [line for line in tex.splitlines() if r"$\rightarrow$" in line]
+        assert titles and all(line.startswith(r"\multicolumn{8}{@{}l}{") for line in titles)
+
     def test_one_block_per_pair_with_one_row_per_cohort(self):
         tex = _render()
 

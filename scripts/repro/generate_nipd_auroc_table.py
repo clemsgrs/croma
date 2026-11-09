@@ -233,7 +233,12 @@ def build(study: NipdAuroc, sens_spec: pd.DataFrame) -> str:
         if metric == "croma":
             body.extend(_sens_spec_row(study, sens_spec, t, label) for t, label in _SENS_SPEC_ROWS)
         body.append(r"\hline")
-    agreement = r"\multicolumn{2}{l}{Agreement: AUROC vs bal.\ acc.}"
+    # Stacked: on one line the label is wider than the two label columns it spans, and
+    # widened the table past the margin.
+    agreement = (
+        r"\multicolumn{2}{l}{\begin{tabular}[c]{@{}l@{}}Agreement:\\ AUROC vs bal.\ acc."
+        r"\end{tabular}}"
+    )
     return (
         "\n".join(
             [

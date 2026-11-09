@@ -66,8 +66,9 @@ def build(study: GradeMatched) -> str:
     lines = [
         r"\begin{table}[!htbp]",
         r"\centering",
-        r"\footnotesize",
-        r"\setlength{\tabcolsep}{4pt}",
+        # Set like the other wide supplementary tables: one size up, it ran past the margin.
+        r"\scriptsize",
+        r"\setlength{\tabcolsep}{3pt}",
         r"\begin{tabular}{lccccccccc}",
         r"\hline",
         r" & \multicolumn{3}{c}{median \code{CRoMa}} & \multicolumn{3}{c}{$F(0)$} & & & \\",

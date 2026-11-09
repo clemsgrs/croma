@@ -33,7 +33,13 @@ for _path in (REPO / "src", HERE, REPO / "scripts" / "bench"):
         sys.path.insert(0, str(_path))
 
 from _grade_matched import macro_suffix  # noqa: E402
-from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, bare_num, num_math  # noqa: E402
+from _paper_tables import (  # noqa: E402
+    CROMA_HEADLINE_M,
+    CaptionClaimError,
+    bare_num,
+    landscape_table,
+    num_math,
+)
 from paper_manifest import by_prefix  # noqa: E402
 from plotting.style import CONTROL_MODEL, published_models  # noqa: E402
 
@@ -182,25 +188,33 @@ def _rank_cell(row: pd.Series) -> str:
     return rf"${int(row['point_rank'])}$\,{{\scriptsize$[{int(row['rank_lo'])}, {int(row['rank_hi'])}]$}}"
 
 
-def _float(columns: str, header: list[str], body: list[str], caption: str, label: str) -> str:
-    return "\n".join(
-        [
-            r"\begin{table}[!htbp]",
-            r"\centering",
-            r"\footnotesize",
-            r"\setlength{\tabcolsep}{4pt}",
-            rf"\begin{{tabular}}{{{columns}}}",
-            r"\hline",
-            *header,
-            r"\hline",
-            *body,
-            r"\hline",
-            r"\end{tabular}",
-            rf"\caption{{{caption}}}",
-            rf"\label{{{label}}}",
-            r"\end{table}",
-        ]
-    )
+def _float(
+    columns: str,
+    header: list[str],
+    body: list[str],
+    caption: str,
+    label: str,
+    *,
+    landscape: bool = False,
+) -> str:
+    """A ``\\footnotesize`` table float; ``landscape`` sets it on a sideways page."""
+    lines = [
+        r"\centering",
+        r"\footnotesize",
+        r"\setlength{\tabcolsep}{4pt}",
+        rf"\begin{{tabular}}{{{columns}}}",
+        r"\hline",
+        *header,
+        r"\hline",
+        *body,
+        r"\hline",
+        r"\end{tabular}",
+        rf"\caption{{{caption}}}",
+        rf"\label{{{label}}}",
+    ]
+    if landscape:
+        return "\n".join(landscape_table(lines))
+    return "\n".join([r"\begin{table}[!htbp]", *lines, r"\end{table}"])
 
 
 def _design_clause(b: Benchmark, n_boot: int) -> str:
@@ -297,7 +311,10 @@ def render_delta(study: Study) -> str:
         r"typed-neighbour distance over those anchors. Bold marks an interval that excludes "
         r"$0$; the last row counts them."
     )
-    return _float("l" + "c" * len(DELTA_PREFIXES), header, body, caption, DELTA_LABEL)
+    # Landscape: its four benchmark columns are too wide for portrait even at \scriptsize.
+    return _float(
+        "l" + "c" * len(DELTA_PREFIXES), header, body, caption, DELTA_LABEL, landscape=True
+    )
 
 
 def _deltas(study: Study) -> list[tuple[str, Delta]]:

@@ -7,7 +7,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from _apd import SLIDE_DATASET, Apd, FIGURE_DATASETS, load  # noqa: E402
-from _paper_tables import CaptionClaimError  # noqa: E402
+from _paper_tables import CaptionClaimError, landscape_table  # noqa: E402
 
 FIGURE_OUT = Path("paper/sections/results_figure_apd.tex")
 SUPP_FIGURE_OUT = Path("paper/sections/supp/figure_apd.tex")
@@ -138,10 +138,9 @@ def build_table(apd: Apd, design: str = CI_DESIGN) -> str:
         raise ValueError(f"design must be one of {DESIGNS}, not {design!r}")
     apd.assert_control_excluded()
     labels = [*apd.benchmark_labels(), apd.slide_label]
-    return "\n".join(
+    # Landscape: too wide for the portrait text block at \scriptsize on the 27-encoder panel.
+    body = landscape_table(
         [
-            _HEADER,
-            r"\begin{table}[!htbp]",
             r"\centering",
             r"\scriptsize",
             r"\setlength{\tabcolsep}{3pt}",
@@ -159,9 +158,9 @@ def build_table(apd: Apd, design: str = CI_DESIGN) -> str:
             r"\end{tabular}",
             _table_caption(apd, design),
             r"\label{tab:apd-correlation}",
-            r"\end{table}",
         ]
-    ) + "\n"
+    )
+    return "\n".join([_HEADER, *body]) + "\n"
 
 
 def _caption(dataset_label: str, n: int, *, supplementary: bool) -> str:

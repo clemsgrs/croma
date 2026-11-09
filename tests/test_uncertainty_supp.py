@@ -158,6 +158,18 @@ def test_the_delta_table_excludes_the_control_and_counts_intervals_off_zero():
     assert r"\label{tab:mari-ri-delta}" in tex
 
 
+def test_only_the_delta_table_is_set_on_a_landscape_page():
+    """Its four benchmark columns are too wide for portrait even at ``\\scriptsize``; it is a
+    sideways float held to the rotated page's height. The per-benchmark tables fit portrait."""
+    tex = unc.render_delta(_study())
+
+    before, inside = tex.split(r"\begin{sidewaystable}")
+    assert r"\begin{table}" not in tex and tex.rstrip().endswith(r"\endgroup")
+    assert r"\edef\landscapeheight{\the\textwidth}" in before
+    assert r"\vbox to\landscapeheight{" in inside
+    assert unc.render_benchmark(_benchmark("Tolkach"), 1).startswith(r"\begin{table}[!htbp]")
+
+
 def test_the_cross_benchmark_table_marks_the_pairs_in_the_mean():
     tex = unc.render_cross(_study())
     assert r"Camelyon--Tolkach-ESCA$^{*}$ & $3$ & $1.00$\,{\scriptsize$[0.50, 1.00]$} \\" in tex

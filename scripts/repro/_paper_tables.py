@@ -117,3 +117,35 @@ def scriptsize_ci(lo: float, hi: float, decimals: int = 2) -> str:
     estimate (optionally preceded by a thin space ``\,``).
     """
     return rf"{{\scriptsize$[{lo:.{decimals}f}, {hi:.{decimals}f}]$}}"
+
+
+def landscape_table(body: list[str]) -> list[str]:
+    r"""Set a table float's ``body`` (what sits between ``\begin{table}`` and ``\end{table}``)
+    on its own landscape page.
+
+    For a table too wide for the portrait text block even at ``\scriptsize`` (#247), the
+    floor the paper sets for table text. It is ``rotating``'s ``sidewaystable``, which stays a
+    float, so the ``[section]{placeins}`` barriers still hold it inside its section;
+    ``pdflscape``'s ``landscape`` would also rotate the page in a viewer, but forces a page
+    break before and after, flushing every pending float. ``sidewaystable`` takes no
+    placement argument: it always gets a float page of its own.
+
+    Rotated, the page is ``\textheight`` wide and only the portrait ``\textwidth`` high, and
+    ``rotating`` zeroes the box before turning it, so pdflatex never reports a sideways float
+    as too large. The content is therefore held in a ``\vbox`` exactly that high, centred as
+    ``rotating`` would centre it: content that grows past the page overflows the box, which
+    pdflatex does report (``Overfull \vbox``), and ``check_paper_layout.py`` with it. The
+    height is read before the float opens, in a group of its own: inside it, ``\textwidth``
+    is already the rotated width. The macro is lowercase because the paper's macro check
+    reads a capitalised control sequence as a generated value it must find defined.
+    """
+    return [
+        r"\begingroup",
+        r"\edef\landscapeheight{\the\textwidth}% the rotated page's height",
+        r"\begin{sidewaystable}",
+        r"\vbox to\landscapeheight{\vfil",
+        *body,
+        r"\vfil}",
+        r"\end{sidewaystable}",
+        r"\endgroup",
+    ]

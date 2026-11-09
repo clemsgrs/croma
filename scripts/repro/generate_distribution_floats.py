@@ -71,7 +71,10 @@ def _figure_tex(entry, caption: str) -> str:
         r"% \includegraphics below (\graphicspath reaches paper/figures/, not output/).",
         r"\begin{figure}[!htbp]",
         r"\centering",
-        rf"\includegraphics[width=0.78\linewidth]{{{graphic}}}",
+        # A ridgeline gains a row per encoder: cap its height too, so that it and its
+        # caption still fit the text block as the panel grows.
+        rf"\includegraphics[width=0.78\linewidth,height=0.85\textheight,keepaspectratio]"
+        rf"{{{graphic}}}",
         caption,
         rf"\label{{{_fig_label(entry)}}}",
         r"\end{figure}",
