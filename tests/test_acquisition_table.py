@@ -224,6 +224,25 @@ def _body(tex: str) -> list[str]:
 
 
 class TestTable:
+    def test_the_table_is_set_on_a_landscape_page_that_reports_its_own_overflow(self):
+        """Too wide for the portrait text block at ``\\scriptsize``: a sideways float whose
+        content is held to the rotated page's height, read before the float opens."""
+        tex = table.build([_row()], _barcodes())
+
+        before, inside = tex.split(r"\begin{sidewaystable}")
+        assert r"\begin{table}" not in tex and tex.rstrip().endswith(r"\endgroup")
+        assert r"\edef\landscapeheight{\the\textwidth}" in before
+        assert r"\vbox to\landscapeheight{" in inside
+
+    def test_on_the_landscape_page_no_cell_wraps(self):
+        """Scanner and role cells wrapped onto two lines in portrait, doubling most rows: on
+        the rotated page, which is wide but short, they take one line each -- with 2pt between
+        columns and no outer padding, since at 3pt the unwrapped table was 7.6pt too wide."""
+        tex = table.build([_row()], _barcodes())
+
+        assert r"\begin{tabular}{@{}lllrllrrrl@{}}" in tex and "p{" not in tex
+        assert r"\setlength{\tabcolsep}{2pt}" in tex
+
     def test_a_row_states_every_column(self):
         (line,) = _body(table.build([_row()], _barcodes()))[1:]
         assert line == (

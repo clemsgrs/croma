@@ -189,7 +189,57 @@ def test_the_float_states_the_probe_once_and_footnotes_pcabiop(
     # One row per split under each benchmark, and the croma-authored schedule is marked.
     assert tex.count(r"\\") >= 8 + 11
     assert r"PCaBiop$^{a}$" in tex
-    assert "validation fraction" in tex.split(r"\end{tabular}")[-1]
+    # The footnote sits under panel a, the first float, which carries the full caption.
+    first = tex.split(r"\end{table}")[0]
+    assert "validation fraction" in first.split(r"\end{tabular}")[-1]
+
+
+def _floats(tex: str) -> list[str]:
+    return [part for part in tex.split(r"\end{table}") if part.strip()]
+
+
+def test_each_panel_is_a_float_of_its_own_so_none_is_taller_than_the_page(
+    monkeypatch, camelyon_metadata, pcabiop_metadata
+):
+    """One float holding all three panels was 272pt taller than the page. Panel a keeps the
+    label the text cites, the caption that defines every panel and the PCaBiop footnote; the
+    splits and the reduced-tile sweeps continue in floats of their own, labelled after it."""
+    frames = {"camelyon": camelyon_metadata, "pcabiop": pcabiop_metadata}
+    monkeypatch.setattr(
+        table,
+        "schedules",
+        lambda root, tiles_per_slide=None: [
+            schedule.schedule(key, frames[key], tiles_per_slide=(tiles_per_slide or {}).get(key))
+            for key in frames
+        ],
+    )
+
+    a, b, c = _floats(table.build(ROOT))
+
+    assert all(f.lstrip().startswith(r"\begin{table}[!htbp]") for f in (a, b, c))
+    assert r"\emph{(a) Cohorts and replicates}" in a and r"\label{tab:split-schedule}" in a
+    assert "logistic regression" in a and "PathoROB defines no schedule" in a
+    assert r"\ref{tab:split-schedule-splits}" in a and r"\ref{tab:split-schedule-sweeps}" in a
+    assert r"\emph{(b) Splits}" in b and r"\label{tab:split-schedule-splits}" in b
+    assert r"\emph{(c) Reduced-tile sweeps}" in c and r"\label{tab:split-schedule-sweeps}" in c
+    for continued in (b, c):
+        assert r"Table~\ref{tab:split-schedule}" in continued
+        assert "logistic regression" not in continued
+    # Panel a's two pool columns wrap 1.5pt narrower than they used to, to fit the margin.
+    assert r"\parbox[t]{4.2cm}" in a and r"\parbox[t]{4.3cm}" not in a
+
+
+def test_a_reduced_variant_splits_into_its_two_panels_under_its_own_label(
+    monkeypatch, camelyon_metadata
+):
+    _camelyon_only(monkeypatch, camelyon_metadata)
+
+    floats = _floats(table.build(ROOT, tiles_per_slide={"camelyon": 30}, label="tab:ss-30"))
+
+    assert len(floats) == 2
+    assert r"\label{tab:ss-30}" in floats[0] and r"\ref{tab:ss-30-splits}" in floats[0]
+    assert "sweeps" not in floats[0].split(r"\caption")[1]
+    assert r"\label{tab:ss-30-splits}" in floats[1] and r"Table~\ref{tab:ss-30}" in floats[1]
 
 
 def test_the_float_takes_a_tiles_per_slide_override(monkeypatch, camelyon_metadata):

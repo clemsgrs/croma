@@ -1,0 +1,268 @@
+(./sections/abstract.tex) (./sections/introduction.tex) (./sections/results.tex
+Underfull \hbox (badness 10000) in paragraph at lines 3--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 3--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 3--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 3--1
+
+ []
+
+[1
+
+{/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-var/fonts/map/pdftex/updmap/pdftex.map}] [2] (./sections/figure_concept.tex
+<figures/ri_mari.pdf, id=140, 452.56277pt x 149.54068pt>
+File: figures/ri_mari.pdf Graphic file (type pdf)
+<use figures/ri_mari.pdf>
+Package pdftex.def Info: figures/ri_mari.pdf  used on input line 5.
+(pdftex.def)             Requested size: 469.75502pt x 155.23111pt.
+<figures/ri_mari_undefined_k.pdf, id=141, 142.4281pt x 145.27274pt>
+File: figures/ri_mari_undefined_k.pdf Graphic file (type pdf)
+<use figures/ri_mari_undefined_k.pdf>
+Package pdftex.def Info: figures/ri_mari_undefined_k.pdf  used on input line 14.
+(pdftex.def)             Requested size: 156.22151pt x 159.3356pt.
+<figures/croma_geometry.pdf, id=142, 233.47726pt x 153.80963pt>
+File: figures/croma_geometry.pdf Graphic file (type pdf)
+<use figures/croma_geometry.pdf>
+Package pdftex.def Info: figures/croma_geometry.pdf  used on input line 21.
+(pdftex.def)             Requested size: 241.88434pt x 159.3356pt.
+<figures/concept_legend.pdf, id=143, 270.66321pt x 19.85818pt>
+File: figures/concept_legend.pdf Graphic file (type pdf)
+<use figures/concept_legend.pdf>
+Package pdftex.def Info: figures/concept_legend.pdf  used on input line 27.
+(pdftex.def)             Requested size: 375.80544pt x 27.57277pt.
+)
+Underfull \hbox (badness 10000) in paragraph at lines 6--10
+
+ []
+
+[3 <./figures/ri_mari.pdf> <./figures/ri_mari_undefined_k.pdf> <./figures/croma_geometry.pdf> <./figures/concept_legend.pdf>]
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 13.
+
+
+Package hyperref Warning: Token not allowed in a PDF string (Unicode):
+(hyperref)                removing `math shift' on input line 13.
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 16--21
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 16--21
+
+ []
+
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <12> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 22.
+
+Underfull \hbox (badness 10000) in paragraph at lines 25--32
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 25--32
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 25--32
+
+ []
+
+[4] (./sections/results_table.tex
+Overfull \hbox (7.87953pt too wide) in paragraph at lines 5--42
+ [][] 
+ []
+
+)
+Underfull \hbox (badness 10000) in paragraph at lines 39--44
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 39--44
+
+ []
+
+[5] [6] (./sections/results_figure_distribution.tex
+<figures/results/pathorob-camelyon/pdf/croma_distribution.pdf, id=286, 520.34402pt x 972.03152pt>
+File: figures/results/pathorob-camelyon/pdf/croma_distribution.pdf Graphic file (type pdf)
+<use figures/results/pathorob-camelyon/pdf/croma_distribution.pdf>
+Package pdftex.def Info: figures/results/pathorob-camelyon/pdf/croma_distribution.pdf  used on input line 8.
+(pdftex.def)             Requested size: 366.40834pt x 684.49623pt.
+LaTeX Font Info:    Font shape `OT1/cmtt/bx/n' in size <10.95> not available
+(Font)              Font shape `OT1/cmtt/m/n' tried instead on input line 9.
+
+
+LaTeX Warning: Float too large for page by 84.86623pt on input line 11.
+
+) (./sections/results_figure_pareto.tex
+<figures/results/pathorob-camelyon/pdf/croma_pareto.pdf, id=287, 341.1144pt x 375.804pt>
+File: figures/results/pathorob-camelyon/pdf/croma_pareto.pdf Graphic file (type pdf)
+<use figures/results/pathorob-camelyon/pdf/croma_pareto.pdf>
+Package pdftex.def Info: figures/results/pathorob-camelyon/pdf/croma_pareto.pdf  used on input line 8.
+(pdftex.def)             Requested size: 328.82707pt x 362.28734pt.
+)
+Underfull \hbox (badness 10000) in paragraph at lines 52--61
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 52--61
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 52--61
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 52--61
+
+ []
+
+
+Overfull \hbox (9.30809pt too wide) in paragraph at lines 52--61
+\OT1/cmr/m/n/10.95 Because me-dian per-for-mance and tail sever-ity cap-ture dis-tinct ro-bust-ness prop-er-ties, cross-benchmark
+ []
+
+[7] [8 <./figures/results/pathorob-camelyon/pdf/croma_distribution.pdf>] [9 <./figures/results/pathorob-camelyon/pdf/croma_pareto.pdf>] (./sections/supp/figure_rank_pareto.tex
+<figures/rank_pareto.pdf, id=492, 341.1144pt x 375.804pt>
+File: figures/rank_pareto.pdf Graphic file (type pdf)
+<use figures/rank_pareto.pdf>
+Package pdftex.def Info: figures/rank_pareto.pdf  used on input line 8.
+(pdftex.def)             Requested size: 328.82707pt x 362.28734pt.
+)
+Underfull \hbox (badness 10000) in paragraph at lines 67--70
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 75--80
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 75--80
+
+ []
+
+
+Overfull \hbox (37.03242pt too wide) in paragraph at lines 75--80
+\OT1/cmr/m/n/10.95 (Sup-ple-men-tary Fig-ure [][]S14[][]). \OT1/cmtt/m/n/10.95 MOOZY \OT1/cmr/m/n/10.95 and \OT1/cmtt/m/n/10.95 PRISM \OT1/cmr/m/n/10.95 un-der-went less degra-da-tion than \OT1/cmtt/m/n/10.95 TITAN \OT1/cmr/m/n/10.95 and \OT1/cmtt/m/n/10.95 Prov-GigaPath\OT1/cmr/m/n/10.95 ,
+ []
+
+[10] [11 <./figures/rank_pareto.pdf>] (./sections/results_figures.tex (./sections/results_figure_apd.tex
+<figures/croma_nipd_camelyon.pdf, id=588, 520.34402pt x 578.16pt>
+File: figures/croma_nipd_camelyon.pdf Graphic file (type pdf)
+<use figures/croma_nipd_camelyon.pdf>
+Package pdftex.def Info: figures/croma_nipd_camelyon.pdf  used on input line 5.
+(pdftex.def)             Requested size: 432.17375pt x 480.21674pt.
+))) (./sections/discussion.tex [12] [13 <./figures/croma_nipd_camelyon.pdf>]) (./sections/methods.tex
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 4--1
+
+ []
+
+[14]
+Underfull \hbox (badness 10000) in paragraph at lines 7--10
+
+ []
+
+[15] [16]
+Underfull \hbox (badness 10000) in paragraph at lines 53--57
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 68--72
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 79--87
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 79--87
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 79--87
+
+ []
+
+[17]
+Underfull \hbox (badness 10000) in paragraph at lines 92--96
+
+ []
+
+[18]
+Underfull \hbox (badness 10000) in paragraph at lines 114--117
+
+ []
+
+[19] (./sections/dataset_summary.tex
+<figures/dataset_cardinality.pdf, id=959, 520.34402pt x 218.54448pt>
+File: figures/dataset_cardinality.pdf Graphic file (type pdf)
+<use figures/dataset_cardinality.pdf>
+Package pdftex.def Info: figures/dataset_cardinality.pdf  used on input line 21.
+(pdftex.def)             Requested size: 469.75502pt x 197.30846pt.
+) (./sections/model_summary.tex
+Overfull \hbox (124.0352pt too wide) in paragraph at lines 5--49
+ [][] 
+ []
+
+)
+Underfull \hbox (badness 10000) in paragraph at lines 172--177
+
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 172--177
+

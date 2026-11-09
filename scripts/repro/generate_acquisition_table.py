@@ -21,6 +21,7 @@ from pathlib import Path
 
 import _acquisition as acq
 from _acquisition import REPO
+from _paper_tables import landscape_table
 
 OUT = REPO / "paper/sections/supp/acquisition.tex"
 LABEL = "tab:acquisition"
@@ -131,11 +132,12 @@ def _caption(rows: list[acq.Row], barcodes: dict[str, acq.Barcodes]) -> str:
 def build(rows: list[acq.Row], barcodes: dict[str, acq.Barcodes], label: str = LABEL) -> str:
     letters = _letters(rows)
     lines = [
-        r"\begin{table}[!htbp]",
         r"\centering",
         r"\scriptsize",
-        r"\setlength{\tabcolsep}{3pt}",
-        r"\begin{tabular}{llp{2.8cm}rllrrrp{2.2cm}}",
+        # No wrapped columns: the rotated page is too short for two-line rows, and wide
+        # enough for one-line ones at 2pt between columns and no outer padding.
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\begin{tabular}{@{}lllrllrrrl@{}}",
         r"\hline",
         r"Benchmark & Centre & Scanner & Tile (px) & mpp & Mag. & Slides & Patients & Tiles "
         r"& Role \\",
@@ -154,9 +156,9 @@ def build(rows: list[acq.Row], barcodes: dict[str, acq.Barcodes], label: str = L
     lines += [
         rf"\caption{{{_caption(rows, barcodes)}}}",
         rf"\label{{{label}}}",
-        r"\end{table}",
     ]
-    return "\n".join(lines) + "\n"
+    # Landscape: too wide for the portrait text block at \scriptsize.
+    return "\n".join(landscape_table(lines)) + "\n"
 
 
 def main() -> int:

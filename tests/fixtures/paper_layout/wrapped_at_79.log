@@ -1,0 +1,153 @@
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.10.21)  9 NOV 2026 12:29
+entering extended mode
+ restricted \write18 enabled.
+ %&-line parsing enabled.
+**doc.tex
+(./doc.tex
+LaTeX2e <2026-06-01>
+L3 programming layer <2026-09-09>
+(/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/latex/base/article.cls
+Document Class: article 2025/01/22 v1.4n Standard LaTeX document class
+(/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/latex/base/size11.clo
+File: size11.clo 2025/01/22 v1.4n Standard LaTeX file (size option)
+)
+\c@part=\count276
+\c@section=\count277
+\c@subsection=\count278
+\c@subsubsection=\count279
+\c@paragraph=\count280
+\c@subparagraph=\count281
+\c@figure=\count282
+\c@table=\count283
+\abovecaptionskip=\skip49
+\belowcaptionskip=\skip50
+\bibindent=\dimen150
+)
+(/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/latex/geometry/geometry.st
+y
+Package: geometry 2026/03/07 v6.0 Page Geometry
+
+(/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/latex/graphics/keyval.sty
+Package: keyval 2026-05-17 v1.15 key=value parser (DPC)
+\KV@toks@=\toks17
+) (/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/generic/iftex/ifvtex.sty
+Package: ifvtex 2019/10/25 v1.7 ifvtex legacy package. Use iftex instead.
+
+(/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/generic/iftex/iftex.sty
+Package: iftex 2024/12/12 v1.0g TeX engine tests
+))
+\Gm@cnth=\count284
+\Gm@cntv=\count285
+\c@Gm@tempcnt=\count286
+\Gm@bindingoffset=\dimen151
+\Gm@wd@mp=\dimen152
+\Gm@odd@mp=\dimen153
+\Gm@even@mp=\dimen154
+\Gm@layoutwidth=\dimen155
+\Gm@layoutheight=\dimen156
+\Gm@layouthoffset=\dimen157
+\Gm@layoutvoffset=\dimen158
+\Gm@dimlist=\toks18
+)
+(/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/tex/latex/l3kernel/l3backend-p
+dftex.def
+File: l3backend-pdftex.def 2026-09-09 L3 backend support: PDF output (pdfTeX)
+\l__color_backend_stack_int=\count287
+)
+No file doc.aux.
+\openout1 = `doc.aux'.
+
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 3.
+LaTeX Font Info:    ... okay on input line 3.
+*geometry* driver: auto-detecting
+*geometry* detected driver: pdftex
+*geometry* verbose mode - [ preamble ] result:
+* driver: pdftex
+* paper: <default>
+* layout: <same size as paper>
+* layoutoffset:(h,v)=(0.0pt,0.0pt)
+* modes: 
+* h-part:(L,W,R)=(72.26999pt, 469.75502pt, 72.26999pt)
+* v-part:(T,H,B)=(72.26999pt, 650.43001pt, 72.26999pt)
+* \paperwidth=614.295pt
+* \paperheight=794.96999pt
+* \textwidth=469.75502pt
+* \textheight=650.43001pt
+* \oddsidemargin=0.0pt
+* \evensidemargin=0.0pt
+* \topmargin=-37.0pt
+* \headheight=12.0pt
+* \headsep=25.0pt
+* \topskip=11.0pt
+* \footskip=30.0pt
+* \marginparwidth=59.0pt
+* \marginparsep=10.0pt
+* \columnsep=10.0pt
+* \skip\footins=10.0pt plus 4.0pt minus 2.0pt
+* \hoffset=0.0pt
+* \voffset=0.0pt
+* \mag=1000
+* \@twocolumnfalse
+* \@twosidefalse
+* \@mparswitchfalse
+* \@reversemarginfalse
+* (1in=72.27pt=25.4mm, 1cm=28.453pt)
+
+(./sections/narrow.tex
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <10.95> on input line 3.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <8> on input line 3.
+LaTeX Font Info:    External font `cmex10' loaded for size
+(Font)              <6> on input line 3.
+)
+(./sections/supp_very_long_directory_name_to_force_wrapping/wide_table_with_a_l
+ong_file_name.tex
+Overfull \hbox (93.3201pt too wide) in paragraph at lines 3--8
+ [][] 
+ []
+
+)
+(./sections/supp_very_long_directory_name_to_force_wrapping/tall_figure_with_a_
+long_file_name.tex
+
+LaTeX Warning: Float too large for page by 155.81319pt on input line 5.
+
+) [1
+
+{/var/tmp/croma-ship/tinytex/.TinyTeX/texmf-var/fonts/map/pdftex/updmap/pdftex.
+map}] [2] (./doc.aux)
+ ***********
+LaTeX2e <2026-06-01>
+L3 programming layer <2026-09-09>
+ ***********
+ ) 
+Here is how much of TeX's memory you used:
+ 1083 strings out of 468979
+ 19789 string characters out of 5455256
+ 440367 words of memory out of 5000000
+ 30273 multiletter control sequences out of 15000+600000
+ 631228 words of font info for 49 fonts, out of 8000000 for 9000
+ 36 hyphenation exceptions out of 8191
+ 57i,7n,65p,227b,203s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</var/tmp/croma-ship/tinytex/.TinyTeX/texmf-dist/fonts/type1/public/amsfonts/
+cm/cmr10.pfb>
+Output written on doc.pdf (2 pages, 18477 bytes).
+PDF statistics:
+ 16 PDF objects out of 1000 (max. 8388607)
+ 9 compressed objects within 1 object stream
+ 0 named destinations out of 1000 (max. 500000)
+ 1 words of extra memory for PDF output out of 10000 (max. 10000000)
+

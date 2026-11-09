@@ -233,6 +233,14 @@ class TestTable:
         assert positions == sorted(positions)
         assert r"\label{tab:grade-matched}" in tex
 
+    def test_the_table_is_set_like_the_other_wide_supplementary_tables(self, tmp_path):
+        """Ten columns, three of them with a bracketed range: at ``\\footnotesize`` and 4pt it
+        ran 29pt past the margin on the 27-encoder panel. ``\\scriptsize`` at 3pt fits it."""
+        tex = self._tex(tmp_path)
+
+        assert r"\scriptsize" + "\n" + r"\setlength{\tabcolsep}{3pt}" in tex
+        assert r"\footnotesize" not in tex
+
     def test_a_row_carries_full_random_range_and_matched_then_the_grade_effect(self, tmp_path):
         tex = self._tex(tmp_path)
 

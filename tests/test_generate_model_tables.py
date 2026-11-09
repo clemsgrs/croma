@@ -260,3 +260,18 @@ def test_the_summary_prints_mettle_under_its_full_published_name() -> None:
     assert row in body
     assert "Mettle~" not in body
     assert "Mettle-1~" not in body
+
+
+def test_the_overview_stays_portrait_by_wrapping_the_method_column() -> None:
+    r"""The main-text overview is page-tall. On the 27-encoder panel its unwrapped Method cells
+    ("acquisition-robustness fine-tune of ...") ran it 124pt past the margin, and wrapping
+    them at ``\footnotesize`` made it taller than the page. At ``\scriptsize`` -- the floor for
+    table text -- the Method column wraps, ragged right, and the table fits both ways."""
+    metadata = gmt.load_metadata()
+    tex = gmt.build_summary_tex(metadata)
+
+    assert r"\begin{table}[!htbp]" in tex and "sidewaystable" not in tex
+    assert r"\scriptsize" in tex and r"\footnotesize" not in tex
+    assert r"\begin{tabular}{l>{\raggedright\arraybackslash}p{3.4cm}cccl}" in tex
+    # The wording is unchanged: the column wraps it rather than the cell abbreviating it.
+    assert r"& acquisition-robustness fine-tune of \code{H-optimus-0} &" in tex

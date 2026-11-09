@@ -880,3 +880,47 @@ def test_drop_exposed_and_undisclosed_keeps_only_the_disclosed_unexposed_encoder
     assert matrix.disclosed_unexposed("pathorob-camelyon", roster) == (
         DISCLOSED_UNEXPOSED | TCGA_EXPOSED - {"GPFM"}
     )
+
+
+def test_both_exposure_tables_are_set_on_a_landscape_page_that_reports_its_own_overflow():
+    """Too wide for the portrait text block at ``\\scriptsize``, so each is a sideways float;
+    its content is held to the rotated page's height -- the portrait text width, read before
+    the float, inside which ``\\textwidth`` is the page's height -- so an overflow surfaces
+    in the log."""
+    for tex in (_render_worked(), "\n".join(_render_sensitivity())):
+        assert r"\begin{sidewaystable}" in tex and r"\begin{table}" not in tex
+        assert tex.rstrip().endswith(r"\endgroup")
+        for before, inside in _landscape_floats(tex):
+            assert r"\edef\landscapeheight{\the\textwidth}" in before
+            assert r"\vbox to\landscapeheight{" in inside
+        assert r"\scriptsize" in tex and r"\tiny" not in tex
+
+
+def _landscape_floats(tex: str) -> list[tuple[str, str]]:
+    """Each sideways float as (what precedes its ``\\begin``, its body)."""
+    chunks = tex.split(r"\begin{sidewaystable}")
+    return [
+        (
+            chunks[i].rsplit(r"\end{sidewaystable}", 1)[-1],
+            chunks[i + 1].split(r"\end{sidewaystable}")[0],
+        )
+        for i in range(len(chunks) - 1)
+    ]
+
+
+def test_the_matrix_breaks_at_the_panel_boundary_so_each_part_fits_a_landscape_page():
+    """Every encoder row plus the definitions caption is taller than one rotated page, so the
+    tile encoders keep the label and the caption, and the slide encoders and the control
+    continue in a float of their own, each part with its own counts."""
+    (_, tiles), (_, slides) = _landscape_floats(_render_worked())
+
+    assert r"\label{tab:exposure-matrix}" in tiles and "Tcga-only &" in tiles
+    assert r"\textit{Tile: exposed / undisclosed}" in tiles
+    assert "Slide-one &" not in tiles and "DINOv2-B &" not in tiles
+    assert "Counts exclude the natural-image control" in tiles
+
+    assert r"\label{tab:exposure-matrix-slide}" in slides
+    assert "Slide-one &" in slides and "DINOv2-B &" in slides
+    assert r"\textit{Slide: exposed / undisclosed}" in slides
+    assert "Tcga-only &" not in slides
+    assert r"Table~\ref{tab:exposure-matrix}" in slides

@@ -166,8 +166,9 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         r"\begin{table}[!htbp]",
         r"\centering",
         r"\scriptsize",
-        r"\setlength{\tabcolsep}{3pt}",
-        r"\begin{tabular}{l" + "c" * (N_COLUMNS - 1) + "}",
+        # 2pt and no outer padding: at 3pt the 27-encoder panel's table ran past the margin.
+        r"\setlength{\tabcolsep}{2pt}",
+        r"\begin{tabular}{@{}l" + "c" * (N_COLUMNS - 1) + "@{}}",
         r"\hline",
         HEADER,
         r"\hline",
@@ -178,7 +179,7 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
             f"{published_model_name(pair.parent)} $\\rightarrow$ "
             f"{published_model_name(pair.finetune)}{mark}"
         )
-        lines.append(rf"\multicolumn{{{N_COLUMNS}}}{{l}}{{\textbf{{{title}}}}} \\")
+        lines.append(rf"\multicolumn{{{N_COLUMNS}}}{{@{{}}l}}{{\textbf{{{title}}}}} \\")
         for _, row in frame[frame["finetune"] == pair.finetune].iterrows():
             members = exposed.get(row["benchmark"], [])
             daggered = any(m in members for m in (pair.parent, pair.finetune))

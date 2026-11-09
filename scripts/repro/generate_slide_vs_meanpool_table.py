@@ -178,9 +178,11 @@ def build(basis: Basis) -> str:
     lines = [
         r"\begin{table}[!htbp]",
         r"\centering",
-        r"\small",
-        r"\setlength{\tabcolsep}{4pt}",
-        r"\begin{tabular}{llcccccc}",
+        # One size and 1pt per gap below the main tables, and no outer padding: the
+        # paired-CI cells ran it past the margin on the 27-encoder panel.
+        r"\footnotesize",
+        r"\setlength{\tabcolsep}{3pt}",
+        r"\begin{tabular}{@{}llcccccc@{}}",
         r"\hline",
         r"Slide encoder & Arm & bio bacc & \code{CRoMa} & $F(0)$ & $\mcode{LTM}_{10}$ & "
         r"\code{nIPD}$_\mathrm{ID}$ & \code{nIPD}$_\mathrm{OOD}$ \\",
