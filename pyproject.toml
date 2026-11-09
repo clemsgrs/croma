@@ -184,6 +184,7 @@ exclude = [
   # re-includes the logs over a directory-level exclude.
   "/tests/fixtures/paper_layout/**",
   "/tests/test_distribution_floats_layout.py",
+  "/tests/test_sample_distribution_paper.py",
   "/docs/adr/0010-paper-sections-are-build-outputs.md",
 ]
 
