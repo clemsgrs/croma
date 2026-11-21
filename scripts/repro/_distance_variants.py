@@ -55,7 +55,7 @@ BENCHMARK_ORDER = (
     "pathorob-tolkach-esca",
 )
 #: The headline variants compared with cosine, in row order.
-ALTERNATIVES = ("normalised-euclidean", "euclidean", "whitened")
+ALTERNATIVES = ("normalised-euclidean", "euclidean", "whitened", "normalised-manhattan")
 #: Camelyon's whitening-threshold sensitivity, reported in the footer.
 SENSITIVITY = ("whitened-90", "whitened-99")
 

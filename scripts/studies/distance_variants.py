@@ -1,7 +1,7 @@
-"""CRoMa under three alternative distances: does the encoder ranking depend on cosine?
+"""CRoMa under four alternative distances: does the encoder ranking depend on cosine?
 
 Every tile benchmark is re-scored at the headline radius (m = 5), with its own evaluation
-design and its run's CRoMa search, under four geometries:
+design and its run's CRoMa search, under five geometries:
 
 ====================  ===============  =========  =============================================
 variant               features         distance   what it tests
@@ -12,12 +12,23 @@ normalised-euclidean  L2-normalised    Euclidean  the chord identity, at m = 5 w
 euclidean             raw              Euclidean  whether the feature norm matters
 whitened              PCA-whitened     Euclidean  anisotropy: Mahalanobis distance under a
                                                   truncated covariance
+normalised-manhattan  L2-normalised    Manhattan  a distance rule that is not a monotone
+                                                  function of cosine, so it can reorder
+                                                  neighbours
 ====================  ===============  =========  =============================================
 
 Whitening is fit per encoder x benchmark on the benchmark's evaluated rows (each tile once,
 however many TCGA-2x2 subsets it occurs in) and uses no labels and no confounders: the
 fewest leading principal components explaining at least 95% of the variance, each scaled to
 unit variance. Camelyon is also run at 90% and 99% as a sensitivity check.
+
+Manhattan distance, ``d(x, y) = sum_j |x_j - y_j|``, is taken on the same L2-normalised rows
+as normalised Euclidean, and fits nothing: no covariance, no projection, no reduction of
+dimension. On unit vectors Euclidean distance is a monotone function of cosine distance and
+keeps every neighbour in place; Manhattan distance is not, so it can reorder neighbours. It
+depends on the coordinate basis -- rotating an embedding changes its Manhattan distances --
+so it is a sensitivity check on the distance rule, not a proposed default, and not a test of
+invariance to whitening.
 
 **Reproduction.** The cosine variant is the run's own computation, and the study refuses to
 summarise unless every cosine per-sample value matches the run's stored ``croma_m5``:
@@ -129,6 +140,7 @@ VARIANTS = (
     Variant("normalised-euclidean", "unit", "euclidean"),
     Variant("euclidean", "raw", "euclidean"),
     Variant("whitened", "whitened", "euclidean", 0.95),
+    Variant("normalised-manhattan", "unit", "manhattan"),
 )
 #: Whitening-threshold sensitivity, on Camelyon only.
 SENSITIVITY_VARIANTS = {
@@ -816,16 +828,33 @@ def _rel(path: Path) -> str:
 
 
 def write_design(root: Path, record: dict) -> None:
+    """Write ``record`` as the study's design, or check it against the stored one.
+
+    A record that only adds variants to the stored design extends the study and replaces
+    it: the finished cells are kept, and the sweep scores only the added variants'. Any
+    other difference is a different study and raises.
+    """
     path = Path(root) / DESIGN
     if path.exists():
         stored = json.loads(path.read_text(encoding="utf-8"))
-        if stored != record:
+        if stored == record:
+            return
+        if not _adds_variants_only(stored, record):
             raise RuntimeError(
                 f"{path} describes a different study (roster, search or variants changed); "
                 "move the old study aside before starting a new one"
             )
-        return
     _atomic_text(path, _json(record))
+
+
+def _adds_variants_only(stored: dict, record: dict) -> bool:
+    """Whether ``record`` is ``stored`` with variants added, and nothing else changed."""
+    pruned = json.loads(json.dumps(record))
+    for benchmark, spec in pruned.get("benchmarks", {}).items():
+        kept = stored.get("benchmarks", {}).get(benchmark, {}).get("variants", [])
+        names = {v["name"] for v in kept}
+        spec["variants"] = [v for v in spec.get("variants", []) if v["name"] in names]
+    return pruned == stored
 
 
 def units(record: dict) -> list[tuple[str, str]]:

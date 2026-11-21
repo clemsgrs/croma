@@ -1,6 +1,7 @@
-"""CRoMa's typed-neighbour distance: the cosine default and the Euclidean alternative.
+"""CRoMa's typed-neighbour distance: the cosine default and the Euclidean and Manhattan
+alternatives.
 
-Two kinds of reference are used, and neither is the library's own code path:
+Three kinds of reference are used, and none is the library's own code path:
 
 * an **exact** one, on a dyadic embedding whose every cosine distance is a multiple of
   ``1/16`` (see :func:`_dyadic_embedding`). At ``m`` a power of two every per-sample mean is
@@ -9,7 +10,9 @@ Two kinds of reference are used, and neither is the library's own code path:
 * the **chord identity** on unit vectors, ``||a - b||^2 = 2 (1 - cos(a, b))``. At ``m = 1``
   it turns the cosine margin ``c = (r - 1)/(r + 1)``, ``r = d_OS / d_SO``, into the
   Euclidean margin ``e = (sqrt(r) - 1)/(sqrt(r) + 1)``, without touching which neighbour is
-  which.
+  which;
+* margins worked **by hand** on five integer rows, whose Manhattan distances are integers,
+  chosen so that Manhattan and cosine pick different nearest neighbours.
 """
 
 from __future__ import annotations
@@ -263,7 +266,85 @@ def test_euclidean_on_unit_vectors_keeps_the_cosine_neighbours(m):
     np.testing.assert_allclose(result.sample_values_aligned, expected, rtol=0, atol=1e-9)
 
 
-@pytest.mark.parametrize("distance", ["manhattan", "Cosine", "l2"])
+# --------------------------------------------------------------------------------------
+# The Manhattan alternative.
+# --------------------------------------------------------------------------------------
+
+#: Five hand-built rows of norm 15, so they are unit vectors up to one common scale and every
+#: Manhattan distance is an integer. ``a``'s two SO candidates are ``b`` and ``c``: by cosine
+#: ``c`` is nearer (``1/3`` against ``2/5``), by Manhattan ``b`` is (``18`` against ``20``).
+_HAND_ROWS = {
+    "a": ((15, 0, 0), "A", "C0"),
+    "b": ((9, 12, 0), "A", "C1"),
+    "c": ((10, 5, 10), "A", "C1"),
+    "o": ((0, 0, 15), "B", "C0"),
+    "p": ((0, 15, 0), "B", "C1"),
+}
+
+
+def _hand_built() -> tuple[np.ndarray, pd.DataFrame]:
+    rows, labels, centres = zip(*_HAND_ROWS.values())
+    return np.asarray(rows, dtype=np.float64), toy_manifest(list(labels), list(centres))
+
+
+def test_manhattan_distance_sums_absolute_coordinate_differences():
+    features, manifest = _hand_built()
+    # By hand, (d_OS - d_SO) / (d_OS + d_SO) with d = sum_j |x_j - y_j|:
+    #   a: SO {b: 18, c: 20} -> 18, OS {o: 30}         -> 12/48
+    #   b: SO {a: 18},          OS {p: 12}             -> -6/30
+    #   c: SO {a: 20},          OS {p: 30}             -> 10/50
+    #   o: SO {p: 30},          OS {a: 30}             -> 0
+    #   p: SO {o: 30},          OS {b: 12, c: 30} -> 12 -> -18/42
+    expected = [Fraction(12, 48), Fraction(-6, 30), Fraction(10, 50), 0, Fraction(-18, 42)]
+
+    result = _compute(features, manifest, m=1, distance="manhattan")
+
+    assert result.sample_values_aligned.tolist() == [float(v) for v in expected]
+
+
+def test_manhattan_can_choose_a_different_nearest_neighbour_than_cosine():
+    features, manifest = _hand_built()
+    anchor = list(_HAND_ROWS).index("a")
+
+    cosine = _compute(features, manifest, m=1).sample_values_aligned[anchor]
+    manhattan = _compute(features, manifest, m=1, distance="manhattan").sample_values_aligned[
+        anchor
+    ]
+
+    # Cosine reaches SO through c (d_SO = 1/3, d_OS = 1); through b it would be 3/7.
+    assert cosine == pytest.approx(1 / 2, abs=1e-12)
+    # Manhattan reaches SO through b (d_SO = 18, d_OS = 30); through c it would be 1/5.
+    assert manhattan == 1 / 4
+
+
+@pytest.mark.parametrize("m", [1, 5])
+def test_manhattan_distance_scores_the_raw_rows_without_normalising_them(m):
+    features, manifest = _dyadic_embedding()
+    labels = manifest["label"].to_numpy()
+    centres = manifest[CONFOUNDER_COLUMN].to_numpy()
+
+    def margins(rows):
+        dist = np.abs(rows[:, None, :] - rows[None, :, :]).sum(axis=2)
+        out = []
+        for i in range(len(rows)):
+            others = np.arange(len(rows)) != i
+            d_so = np.sort(dist[i, others & (labels == labels[i]) & (centres != centres[i])])
+            d_os = np.sort(dist[i, others & (labels != labels[i]) & (centres == centres[i])])
+            d_so, d_os = d_so[:m].mean(), d_os[:m].mean()
+            out.append((d_os - d_so) / (d_os + d_so))
+        return np.asarray(out)
+
+    expected = margins(features)
+    # The rows carry two different norms, so normalising first would move the margins.
+    unit = features / np.linalg.norm(features, axis=1, keepdims=True)
+    assert np.max(np.abs(margins(unit) - expected)) > 0.05
+
+    result = _compute(features, manifest, m=m, distance="manhattan")
+
+    np.testing.assert_allclose(result.sample_values_aligned, expected, rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize("distance", ["l1", "Cosine", "l2"])
 def test_an_unknown_distance_is_refused_rather_than_silently_read_as_euclidean(distance):
     features, manifest = _gaussian_embedding(7)
 

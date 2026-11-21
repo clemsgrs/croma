@@ -4,8 +4,8 @@ Panel (a) compares each alternative geometry with the cosine reference on every 
 benchmark -- ranking agreement for median CRoMa and LTM10, sign changes of the median, and
 the medians over encoders of |delta F(0)| and per-sample sign agreement. Panel (b) gives
 rho(median CRoMa, nIPD) under every geometry, cosine's first, on the three cohorts with
-downstream cells. The paper reports the normalised and raw Euclidean alternatives; other
-study variants remain available in the stored outputs. The caption states how the cosine
+downstream cells. The paper reports the normalised and raw Euclidean alternatives and the
+normalised Manhattan one; other study variants remain available in the stored outputs. The caption states how the cosine
 reference reproduced each run: exactly, or within the benchmark's tolerance. ``macros``
 emits the numbers the text may quote; they carry numbers, not verdicts.
 
@@ -44,9 +44,10 @@ VARIANT_NAMES = {
     "cosine": ("Cosine (reference)", "Cosine"),
     "normalised-euclidean": ("Normalized Euclidean", "NormalizedEuclidean"),
     "euclidean": ("Raw Euclidean", "RawEuclidean"),
+    "normalised-manhattan": ("Normalized Manhattan", "NormalizedManhattan"),
 }
 #: Publication scope; the study and loader retain all computed variants.
-PUBLISHED_ALTERNATIVES = ("normalised-euclidean", "euclidean")
+PUBLISHED_ALTERNATIVES = ("normalised-euclidean", "euclidean", "normalised-manhattan")
 NIPD_COLUMNS = (("nipd_id", r"\code{nIPD}$_\mathrm{ID}$"), ("nipd_ood", r"\code{nIPD}$_\mathrm{OOD}$"))
 P_FLOOR = 0.001
 
@@ -197,8 +198,11 @@ def build(data: dvs.DistanceVariants | None = None) -> str:
         "\t"
         + r"\caption{\textbf{\code{CRoMa} under alternative typed-neighbour distances.} "
         + r"Every tile benchmark is re-scored at $m=5$, with its own evaluation design and "
-        + r"neighbour search, under two alternatives to the cosine reference: Euclidean "
-        + r"distance on L2-normalised features and Euclidean distance on raw features. "
+        + r"neighbour search, under three alternatives to the cosine reference: Euclidean "
+        + r"distance on L2-normalised features, Euclidean distance on raw features, and "
+        + r"Manhattan distance on L2-normalised features, which, unlike Euclidean distance "
+        + r"on the same features, is not a monotone function of cosine distance and can "
+        + r"reorder neighbours. "
         + _reproduction_sentence(data)
         + r" (a) Agreement with cosine over the "
         + rf"${n}$ ranked encoders of each benchmark: Spearman $\rho$ between the encoder "

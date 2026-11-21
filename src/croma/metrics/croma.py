@@ -38,7 +38,7 @@ from croma.types import CRoMaResult
 CROMA_HEADLINE_M = 5
 
 # Typed-neighbour distances ``CRoMa.compute`` accepts; the first is the default.
-CROMA_DISTANCES = ("cosine", "euclidean")
+CROMA_DISTANCES = ("cosine", "euclidean", "manhattan")
 
 
 @dataclass(frozen=True)
@@ -236,7 +236,7 @@ def _iterative_typed_neighbor_search(
     second) and takes the same keyword arguments; a study that needs another two-way typing
     of the same cross-group neighbours passes its own instead of re-implementing the search.
     ``distance`` is the metric the neighbours are searched under, ``"cosine"`` (the
-    default) or ``"euclidean"``; the rows are searched as given.
+    default), ``"euclidean"`` or ``"manhattan"``; the rows are searched as given.
     """
     if scan is None:
         scan = _scan_typed_neighbors_for_query_rows
@@ -260,7 +260,7 @@ def _iterative_typed_neighbor_search(
     else:
         # Brute force, as the cosine search is: a tree index would answer the same query
         # with differently rounded distances, and low-dimensional inputs would select one.
-        model = NearestNeighbors(metric="euclidean", algorithm="brute")
+        model = NearestNeighbors(metric=distance, algorithm="brute")
     model.fit(features)
 
     k_current = int(max(1, min(int(start_k), n_samples - 1)))
@@ -358,7 +358,7 @@ class CrossConfounderRobustnessMargin:
         alpha: float = 0.10,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
-        distance: Literal["cosine", "euclidean"] = "cosine",
+        distance: Literal["cosine", "euclidean", "manhattan"] = "cosine",
     ) -> CRoMaResult | dict[int, CRoMaResult]:
         """Compute the cross-confounder robustness margin with total support.
 
@@ -376,9 +376,15 @@ class CrossConfounderRobustnessMargin:
                 the typed sets and the margin formula are shared. On unit vectors it keeps
                 every neighbour order, and at ``m=1`` maps a cosine margin ``c`` to
                 ``(sqrt(1 + c) - sqrt(1 - c)) / (sqrt(1 + c) + sqrt(1 - c))``.
+                ``"manhattan"`` compares the rows as given by ``sum_j |x_j - y_j|``, with
+                no normalisation, for the same sensitivity use. It is not a monotone
+                function of cosine distance, even on unit vectors, so it can reorder
+                neighbours; and it depends on the coordinate basis, so rotating the
+                embedding changes it.
 
         Raises:
-            ValueError: If ``distance`` is neither ``"cosine"`` nor ``"euclidean"``.
+            ValueError: If ``distance`` is not ``"cosine"``, ``"euclidean"`` or
+                ``"manhattan"``.
             RuntimeError: If any requested sample or subset occurrence does not have both
                 required typed-neighbour sets after adaptive search, or has a zero margin
                 denominator. No pooled or tail statistics are returned in that case.

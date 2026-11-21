@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -332,10 +333,39 @@ def test_the_cosine_variant_reproduces_the_runs_stored_values_bit_for_bit(bench_
     values = dv.read_cell_values(root, "toy", "M1", "cosine")
     assert values["sample_id"].tolist() == stored["sample_id"].astype(str).tolist()
     assert values["croma"].tolist() == stored["croma_m5"].tolist()
-    for name in ("normalised-euclidean", "euclidean", "whitened"):
+    for name in ("normalised-euclidean", "euclidean", "whitened", "normalised-manhattan"):
         cell = dv.read_cell(root, "toy", "M1", name)
         assert cell["n_units"] == 40 and cell["kernel"] == "test"
     assert 1 <= dv.read_cell(root, "toy", "M1", "whitened")["n_components"] <= 12
+
+
+def test_normalised_manhattan_scores_manhattan_distance_on_the_unit_rows(bench_env, tmp_path):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+
+    assert _run_unit(root, run, view) == 0
+
+    # Brute force on the L2-normalised rows, at the headline m: every tile is its own slide,
+    # so no candidate is excluded, and the toy run's search reaches every typed neighbour.
+    features = np.asarray(view.features("M1"), dtype=np.float64)
+    unit = features / np.linalg.norm(features, axis=1, keepdims=True)
+    manifest = view.eval_manifest
+    labels, centres = manifest["label"].to_numpy(), manifest["confounder"].to_numpy()
+    dist = np.abs(unit[:, None, :] - unit[None, :, :]).sum(axis=2)
+    expected = {}
+    for i, sample_id in enumerate(manifest["sample_id"].astype(str)):
+        others = np.arange(len(unit)) != i
+        d_so = np.sort(dist[i, others & (labels == labels[i]) & (centres != centres[i])])[:5]
+        d_os = np.sort(dist[i, others & (labels != labels[i]) & (centres == centres[i])])[:5]
+        expected[sample_id] = (d_os.mean() - d_so.mean()) / (d_os.mean() + d_so.mean())
+    cell = dv.read_cell(root, "toy", "M1", "normalised-manhattan")
+    values = dv.read_cell_values(root, "toy", "M1", "normalised-manhattan")
+
+    assert (cell["distance"], cell["feature_preparation"], cell["m"]) == ("manhattan", "unit", 5)
+    assert "n_components" not in cell  # nothing is fitted
+    np.testing.assert_allclose(
+        values["croma"], [expected[s] for s in values["sample_id"]], rtol=0, atol=1e-6
+    )
 
 
 def test_a_unit_within_tolkachs_tolerance_is_scored_under_the_kernel_that_deviates_least(
@@ -427,6 +457,79 @@ def test_a_unit_outside_its_tolerance_is_refused(
     (root / dv.DESIGN).write_text("{}")
     with pytest.raises(dv.IncompleteStudyError, match="cells missing"):
         dv.summarise(root, _toy_design(run), apd_correlation_csv=None)
+
+
+# --------------------------------------------------------------------------------------
+# A finished study extended by a new variant.
+# --------------------------------------------------------------------------------------
+
+_NEW = "normalised-manhattan"
+
+
+def _design_record(variants, models=("M1", "M2")) -> dict:
+    """A design as ``dv.design`` writes it, for one benchmark scored under ``variants``."""
+    spec = {"design": "all", "models": list(models), "variants": [asdict(v) for v in variants]}
+    return {"m": 5, "seed": dv.SEED, "benchmarks": {"toy": spec}}
+
+
+#: A study written before the Manhattan variant, with a sensitivity variant after the headline
+#: ones (as Camelyon's whitening thresholds are), and the same study with it added.
+_BEFORE = [v for v in dv.VARIANTS if v.name != _NEW] + [dv.variant("whitened-90")]
+_AFTER = list(dv.VARIANTS) + [dv.variant("whitened-90")]
+
+
+def test_a_design_that_only_adds_a_variant_extends_the_stored_study(tmp_path):
+    dv.write_design(tmp_path, _design_record(_BEFORE))
+
+    dv.write_design(tmp_path, _design_record(_AFTER))
+
+    assert json.loads((tmp_path / dv.DESIGN).read_text()) == _design_record(_AFTER)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        _design_record(_AFTER, models=("M1", "M3")),
+        _design_record([v for v in _AFTER if v.name != "whitened"]),
+        _design_record(
+            [
+                dv.Variant("whitened", "whitened", "euclidean", 0.90) if v.name == "whitened" else v
+                for v in _AFTER
+            ]
+        ),
+    ],
+    ids=["roster-changed", "variant-dropped", "variant-redefined"],
+)
+def test_a_design_that_changes_anything_but_adding_variants_is_refused(tmp_path, record):
+    dv.write_design(tmp_path, _design_record(_BEFORE))
+    stored = (tmp_path / dv.DESIGN).read_bytes()
+
+    with pytest.raises(RuntimeError, match="different study"):
+        dv.write_design(tmp_path, record)
+
+    assert (tmp_path / dv.DESIGN).read_bytes() == stored
+
+
+def test_a_finished_unit_gains_the_new_variant_without_rewriting_its_cells(bench_env, tmp_path):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+    assert _run_unit(root, run, view) == 0
+    # As a unit finished before the variant existed: every cell but the new one.
+    for path in dv.cell_paths(root, "toy", "M1", _NEW):
+        path.unlink()
+    before = {
+        p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in dv.cell_dir(root, "toy", "M1").iterdir()
+    }
+
+    assert _run_unit(root, run, view) == 0
+
+    after = {
+        p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in dv.cell_dir(root, "toy", "M1").iterdir()
+    }
+    assert set(after) - set(before) == {f"{_NEW}.json", f"{_NEW}.csv.gz"}
+    assert {name: after[name] for name in before} == before
 
 
 # --------------------------------------------------------------------------------------
