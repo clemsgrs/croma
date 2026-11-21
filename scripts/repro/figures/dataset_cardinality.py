@@ -2,9 +2,10 @@
 
 Renders ``fig:dataset-cardinality`` (``paper/sections/dataset_summary.tex``): one block per
 evaluation benchmark, a grid of light cells with the biological classes as rows and the
-confounder levels as columns. Each cell states its slides over its tiles -- "17 slides" over
-"5,100 tiles" on Camelyon. Tolkach-ESCA counts cases, because a case there contributes tiles
-to several classes. PCaBiop is evaluated per slide, so its cells state slides only.
+confounder levels as columns. A tile-level cell leads with its tiles and states its slides
+beneath them, smaller, muted and in parentheses -- "5,100 tiles" over "(17 slides)" on
+Camelyon. Tolkach-ESCA counts cases, because a case there contributes tiles to several
+classes. PCaBiop is evaluated per slide, so its cells state slides only.
 
 Two paired-protocol schematics for the supplement are rendered beside it: TCGA-2x2's generic
 two-class x two-centre quartet (x its quartet count), and PCaBiop-ISUP's six-grade x two-centre
@@ -61,6 +62,13 @@ LW_CELL = 0.6
 #: A cell is ``CELL_W`` wide and one unit tall: wide enough for "5,100 tiles".
 CELL_W = 1.5
 FS_CELL = plotstyle.FS_ANNOT - 0.5
+#: The parenthesised slide (or case) count beneath a tile count: smaller and muted.
+FS_CELL_MINOR = FS_CELL - 1.0
+#: A two-line cell's vertical offsets from its centre, in points rather than cell units, so the
+#: lines sit as close in the TCGA-2x2 schematic (whose cells print about twice as large) as in
+#: the main card.
+DY_CELL_MAJOR = 3.4
+DY_CELL_MINOR = -4.6
 
 
 @dataclass(frozen=True)
@@ -69,7 +77,7 @@ class CardSpec:
 
     ``rows`` and ``cols`` pair each manifest value with its display name (top to bottom, left
     to right). ``group`` names the manifest's ``group_id`` unit; ``tile_level`` is False for a
-    slide-level benchmark, whose cells then state slides only.
+    slide-level benchmark, whose cells then state slides only, not tiles then (slides).
     """
 
     name: str
@@ -156,9 +164,15 @@ def _count(n: int, unit: str) -> str:
     return f"{n:,} {unit if n != 1 else unit[:-1]}"
 
 
+def _tile_lines(cell: counts.Cell, group: str = "slides") -> tuple[str, str]:
+    """A tile-level cell's text: its tiles, then its slides (or cases) in parentheses."""
+    return _count(cell.tiles, "tiles"), f"({_count(cell.slides, group)})"
+
+
 def _lines(cell: counts.Cell, spec: CardSpec) -> tuple[str, ...]:
-    slides = _count(cell.slides, spec.group)
-    return (slides, _count(cell.tiles, "tiles")) if spec.tile_level else (slides,)
+    if spec.tile_level:
+        return _tile_lines(cell, spec.group)
+    return (_count(cell.slides, spec.group),)
 
 
 def card(spec: CardSpec, manifest: pd.DataFrame) -> Card:
@@ -176,7 +190,7 @@ def card(spec: CardSpec, manifest: pd.DataFrame) -> Card:
     return Card(
         spec=spec,
         cells={key: _lines(by_cell[key], spec) for key in sorted(want)},
-        total=" · ".join(_lines(cohort, spec)),
+        total=" ".join(_lines(cohort, spec)),
     )
 
 
@@ -194,7 +208,7 @@ def quartet_card(manifest: pd.DataFrame) -> QuartetCard:
     balance = counts.balance(manifest, counts.QUARTET_CELL)
     pooled = [cell.slides for cell in counts.cells(manifest).values()]
     return QuartetCard(
-        cell=(_count(balance.cell.slides, "slides"), _count(balance.cell.tiles, "tiles")),
+        cell=_tile_lines(balance.cell),
         n_quartets=counts.paired_composition(manifest).n_quartets,
         pooled_slides=(min(pooled), max(pooled)),
     )
@@ -229,13 +243,18 @@ def _cell(ax, x: float, y_top: float, lines: tuple[str, ...]) -> None:
             facecolor=CELL_FACE, edgecolor=CELL_EDGE, linewidth=LW_CELL,
         )
     )
-    # The slide (or case) count leads; the tile count sits beneath it, muted.
-    offsets = (0.0,) if len(lines) == 1 else (0.17, -0.17)
-    colours = (plotstyle.TEXT_COLOR, plotstyle.MUTED_TEXT_COLOR)
-    for line, dy, colour in zip(lines, offsets, colours):
-        ax.text(
-            x + CELL_W / 2, y_top - 0.5 + dy, line,
-            ha="center", va="center", fontsize=FS_CELL, color=colour,
+    # A tile-level cell leads with its tiles; its "(slides)" sits beneath, smaller and muted.
+    # A slide-level cell's one line is centred.
+    major = (FS_CELL, plotstyle.TEXT_COLOR)
+    minor = (FS_CELL_MINOR, plotstyle.MUTED_TEXT_COLOR)
+    styles = (
+        ((0.0, *major),) if len(lines) == 1
+        else ((DY_CELL_MAJOR, *major), (DY_CELL_MINOR, *minor))
+    )
+    for line, (dy, size, colour) in zip(lines, styles):
+        ax.annotate(
+            line, xy=(x + CELL_W / 2, y_top - 0.5), xytext=(0, dy), textcoords="offset points",
+            ha="center", va="center", fontsize=size, color=colour,
         )
 
 

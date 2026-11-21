@@ -79,16 +79,16 @@ def _spec(name: str):
     return next(spec for spec in cardinality.SPECS if spec.name == name)
 
 
-def test_a_tile_cell_shows_its_slides_over_its_tiles():
+def test_a_tile_cell_shows_its_tiles_over_its_slides_in_parentheses():
     import dataset_cardinality as cardinality
 
     manifest = _manifest({(b, c): (17, 300) for b in ("normal", "tumor") for c in ("RUMC", "UMCU")})
 
     card = cardinality.card(_spec("Camelyon"), manifest)
 
-    assert card.cells[("normal", "RUMC")] == ("17 slides", "5,100 tiles")
-    assert card.cells[("tumor", "UMCU")] == ("17 slides", "5,100 tiles")
-    assert card.total == "68 slides · 20,400 tiles"
+    assert card.cells[("normal", "RUMC")] == ("5,100 tiles", "(17 slides)")
+    assert card.cells[("tumor", "UMCU")] == ("5,100 tiles", "(17 slides)")
+    assert card.total == "20,400 tiles (68 slides)"
 
 
 def test_tolkach_counts_cases_and_pcabiop_counts_slides_only():
@@ -107,7 +107,7 @@ def test_tolkach_counts_cases_and_pcabiop_counts_slides_only():
         _manifest({(b, c): (250, 1) for b in ("0", "1") for c in ("karolinska", "radboud")}),
     )
 
-    assert case_card.cells[(classes[0], centres[0])] == ("5 cases", "500 tiles")
+    assert case_card.cells[(classes[0], centres[0])] == ("500 tiles", "(5 cases)")
     assert slide_card.cells[("1", "radboud")] == ("250 slides",)
     assert slide_card.total == "1,000 slides"
 
@@ -134,7 +134,7 @@ def test_the_paired_schematic_shows_one_quartet_cell_and_the_pooled_slide_range(
 
     quartet = cardinality.quartet_card(pd.concat([q1, q2, q3], ignore_index=True))
 
-    assert quartet.cell == ("2 slides", "6 tiles")
+    assert quartet.cell == ("6 tiles", "(2 slides)")
     assert quartet.n_quartets == 3
     assert quartet.pooled_slides == (2, 4)
 

@@ -4,9 +4,9 @@ Panel (a) compares each alternative geometry with the cosine reference on every 
 benchmark -- ranking agreement for median CRoMa and LTM10, sign changes of the median, and
 the medians over encoders of |delta F(0)| and per-sample sign agreement. Panel (b) gives
 rho(median CRoMa, nIPD) under every geometry, cosine's first, on the three cohorts with
-downstream cells. A footer reports the retained whitening dimensions and Camelyon's 90% /
-99% whitening sensitivity, and the caption states how the cosine reference reproduced each
-run: exactly, or within the benchmark's tolerance with the largest deviation. ``macros``
+downstream cells. The paper reports the normalised and raw Euclidean alternatives; other
+study variants remain available in the stored outputs. The caption states how the cosine
+reference reproduced each run: exactly, or within the benchmark's tolerance. ``macros``
 emits the numbers the text may quote; they carry numbers, not verdicts.
 
 Every number is read from the study (``_distance_variants.load``), which refuses a missing,
@@ -44,8 +44,9 @@ VARIANT_NAMES = {
     "cosine": ("Cosine (reference)", "Cosine"),
     "normalised-euclidean": ("Normalized Euclidean", "NormalizedEuclidean"),
     "euclidean": ("Raw Euclidean", "RawEuclidean"),
-    "whitened": ("PCA-whitened", "Whitened"),
 }
+#: Publication scope; the study and loader retain all computed variants.
+PUBLISHED_ALTERNATIVES = ("normalised-euclidean", "euclidean")
 NIPD_COLUMNS = (("nipd_id", r"\code{nIPD}$_\mathrm{ID}$"), ("nipd_ood", r"\code{nIPD}$_\mathrm{OOD}$"))
 P_FLOOR = 0.001
 
@@ -69,13 +70,6 @@ def _int(value) -> int:
     return int(as_float)
 
 
-def _dims(row) -> str:
-    """Retained whitening dimensions: median (range) over the ranked encoders."""
-    median = float(row["dims_median"])
-    text = f"{median:.0f}" if median.is_integer() else f"{median:.1f}"
-    return f"${text}$ (${_int(row['dims_min'])}$--${_int(row['dims_max'])}$)"
-
-
 def _thousands(n: int) -> str:
     return f"${int(n):,}$".replace(",", "{,}")
 
@@ -91,9 +85,9 @@ def _agreement_rows(data: dvs.DistanceVariants) -> list[str]:
     lines = []
     for benchmark in dvs.BENCHMARK_ORDER:
         name = by_benchmark(benchmark).short_name
-        for i, variant in enumerate(dvs.ALTERNATIVES):
+        for i, variant in enumerate(PUBLISHED_ALTERNATIVES):
             row = data.row(benchmark, variant)
-            head = rf"\multirow{{{len(dvs.ALTERNATIVES)}}}{{*}}{{{name}}}" if i == 0 else ""
+            head = rf"\multirow{{{len(PUBLISHED_ALTERNATIVES)}}}{{*}}{{{name}}}" if i == 0 else ""
             cells = [
                 head,
                 VARIANT_NAMES[variant][0],
@@ -110,7 +104,7 @@ def _agreement_rows(data: dvs.DistanceVariants) -> list[str]:
 
 def _nipd_rows(data: dvs.DistanceVariants) -> list[str]:
     lines = []
-    variants = ("cosine", *dvs.ALTERNATIVES)
+    variants = ("cosine", *PUBLISHED_ALTERNATIVES)
     for benchmark in data.nipd_benchmarks():
         name = by_benchmark(benchmark).short_name
         for i, variant in enumerate(variants):
@@ -122,26 +116,6 @@ def _nipd_rows(data: dvs.DistanceVariants) -> list[str]:
             lines.append("\t\t" + " & ".join(cells) + r" \\")
         lines.append("\t\t" + r"\hline")
     return lines
-
-
-def _footer(data: dvs.DistanceVariants) -> str:
-    dims = "; ".join(
-        f"{by_benchmark(b).short_name} {_dims(data.row(b, 'whitened'))}"
-        for b in dvs.BENCHMARK_ORDER
-    )
-    sensitivity = []
-    for variant, share in zip(dvs.SENSITIVITY, ("90", "99")):
-        row = data.row("pathorob-camelyon", variant)
-        sensitivity.append(
-            rf"at ${share}\%$, {_dims(row)} dimensions, ranking $\rho$ "
-            rf"{_rho_ci(row, 'rank_rho_median')} for the median and "
-            rf"{_rho_ci(row, 'rank_rho_ltm10')} for $\mcode{{LTM}}_{{10}}$, "
-            rf"${_int(row['sign_changes'])}$ sign changes"
-        )
-    return (
-        r"Retained whitening dimensions at $95\%$ of the variance, median (range) over "
-        rf"encoders: {dims}. Camelyon whitened {sensitivity[0]}; {sensitivity[1]}."
-    )
 
 
 def _join(items: list[str], last: str = " and ") -> str:
@@ -220,18 +194,11 @@ def build(data: dvs.DistanceVariants | None = None) -> str:
         *_nipd_rows(data),
         "\t" + r"\end{tabular}",
         "",
-        "\t" + r"\vspace{0.5em}",
-        "\t" + r"\parbox{\linewidth}{\scriptsize " + _footer(data) + "}",
         "\t"
         + r"\caption{\textbf{\code{CRoMa} under alternative typed-neighbour distances.} "
         + r"Every tile benchmark is re-scored at $m=5$, with its own evaluation design and "
-        + r"neighbour search, under three geometries besides the cosine reference, the run's "
-        + r"own computation: Euclidean distance on L2-normalized features, Euclidean "
-        + r"distance on the raw features, and Euclidean "
-        + r"distance after PCA whitening, which keeps the fewest leading components "
-        + r"explaining $95\%$ of the variance of the evaluated samples and scales each to "
-        + r"unit variance (a Mahalanobis distance under the truncated covariance; no labels "
-        + r"or centres are used). "
+        + r"neighbour search, under two alternatives to the cosine reference: Euclidean "
+        + r"distance on L2-normalised features and Euclidean distance on raw features. "
         + _reproduction_sentence(data)
         + r" (a) Agreement with cosine over the "
         + rf"${n}$ ranked encoders of each benchmark: Spearman $\rho$ between the encoder "
@@ -261,7 +228,7 @@ def macros(root: Path = dvs.REPO) -> list[str]:
 def macro_lines(data: dvs.DistanceVariants) -> list[str]:
     """Numbers the text may quote: they carry numbers, not verdicts."""
     lines = ["% CRoMa under alternative distances (tab:distance-variants)"]
-    for variant in dvs.ALTERNATIVES:
+    for variant in PUBLISHED_ALTERNATIVES:
         suffix = VARIANT_NAMES[variant][1]
         rows = [data.row(b, variant) for b in dvs.BENCHMARK_ORDER]
         median_rho = min(float(r["rank_rho_median"]) for r in rows)
@@ -269,12 +236,12 @@ def macro_lines(data: dvs.DistanceVariants) -> list[str]:
         lines.append(rf"\newcommand{{\DistanceMinRankRho{suffix}}}{{{bare_num(median_rho)}}}")
         lines.append(rf"\newcommand{{\DistanceMinTailRankRho{suffix}}}{{{bare_num(tail_rho)}}}")
     total = sum(
-        _int(data.row(b, v)["sign_changes"]) for b in dvs.BENCHMARK_ORDER for v in dvs.ALTERNATIVES
+        _int(data.row(b, v)["sign_changes"]) for b in dvs.BENCHMARK_ORDER for v in PUBLISHED_ALTERNATIVES
     )
     lines.append(rf"\newcommand{{\DistanceSignChanges}}{{{total}}}")
     for benchmark in data.nipd_benchmarks():
         cohort = by_benchmark(benchmark).prefix
-        for variant in ("cosine", *dvs.ALTERNATIVES):
+        for variant in ("cosine", *PUBLISHED_ALTERNATIVES):
             rho = float(data.row(benchmark, variant)["rho_nipd_id"])
             suffix = VARIANT_NAMES[variant][1]
             lines.append(rf"\newcommand{{\DistanceNipdIdRho{suffix}{cohort}}}{{{bare_num(rho)}}}")
