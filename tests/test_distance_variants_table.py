@@ -164,27 +164,26 @@ def data(tmp_path):
     return dvs.load(tmp_path / "study", repo=tmp_path)
 
 
-def test_the_table_reports_every_benchmark_and_alternative_with_cis(data):
+def test_the_table_reports_only_euclidean_alternatives_with_cis(data):
     tex = table.build(data)
 
     assert r"\label{tab:distance-variants}" in tex
     for name in ("Camelyon", "TCGA-2x2", "TCGA-4x4", "Tolkach-ESCA"):
-        assert rf"\multirow{{3}}{{*}}{{{name}}}" in tex
-    # Tolkach-ESCA, PCA-whitened: rho 0.70 [0.60, 0.71], LTM10 0.50 [0.40, 0.60], 4 changes.
+        assert rf"\multirow{{2}}{{*}}{{{name}}}" in tex
+    # Tolkach-ESCA raw Euclidean: values from the explicit fixture, unchanged.
     assert (
-        r"& PCA-whitened & $0.70$ {\scriptsize$[0.60, 0.71]$} & $0.50$ {\scriptsize$[0.40, 0.60]$}"
-        r" & $4$ & $0.013$ & $97.3\%$ \\"
+        r"& Raw Euclidean & $0.88$ {\scriptsize$[0.78, 0.89]$} & $0.68$ {\scriptsize$[0.58, 0.78]$}"
+        r" & $2$ & $0.013$ & $97.3\%$"
     ) in tex
-    # TCGA-2x2 has no downstream cells, so panel b holds the other three cohorts only.
-    assert r"\multirow{4}{*}{TCGA-2x2}" not in tex
+    assert r"\multirow{3}{*}{TCGA-2x2}" not in tex
     for name in ("Camelyon", "TCGA-4x4", "Tolkach-ESCA"):
-        assert rf"\multirow{{4}}{{*}}{{{name}}}" in tex
+        assert rf"\multirow{{3}}{{*}}{{{name}}}" in tex
     assert (
         r"& Cosine (reference) & $0.95$ {\scriptsize$[0.85, 0.97]$} & ${<}0.001$ "
-        r"& $0.70$ {\scriptsize$[0.45, 0.90]$} & $0.012$ \\"
+        r"& $0.70$ {\scriptsize$[0.45, 0.90]$} & $0.012$"
     ) in tex
-    assert r"Camelyon $40.5$ ($12$--$80$)" in tex
-    assert r"Camelyon whitened at $90\%$" in tex and r"at $99\%$" in tex
+    assert "whiten" not in tex.lower()
+    assert "two alternatives" in tex
     assert "$26$ ranked encoders" in tex
 
 
@@ -193,17 +192,16 @@ def test_the_table_and_macros_rebuild_byte_for_byte(data):
     assert table.macro_lines(data) == table.macro_lines(data)
 
 
-def test_macros_carry_the_minimum_rank_rho_the_sign_changes_and_the_nipd_rho(data):
+def test_macros_report_only_published_euclidean_variants(data):
     lines = table.macro_lines(data)
 
     assert r"\newcommand{\DistanceMinRankRhoNormalizedEuclidean}{0.97}" in lines
     assert r"\newcommand{\DistanceMinRankRhoRawEuclidean}{0.88}" in lines
-    assert r"\newcommand{\DistanceMinRankRhoWhitened}{0.62}" in lines
-    assert r"\newcommand{\DistanceMinTailRankRhoWhitened}{0.42}" in lines
-    # 0+1+3 + 0+0+2 + 0+0+1 + 0+2+4; Camelyon's 90%/99% sensitivity is not counted.
-    assert r"\newcommand{\DistanceSignChanges}{13}" in lines
+    # Sign changes for the two published alternatives: 0+1 + 0+0 + 0+0 + 0+2.
+    assert r"\newcommand{\DistanceSignChanges}{3}" in lines
     assert r"\newcommand{\DistanceNipdIdRhoCosineCamelyon}{0.95}" in lines
-    assert r"\newcommand{\DistanceNipdIdRhoWhitenedTolkach}{0.80}" in lines
+    assert r"\newcommand{\DistanceNipdIdRhoRawEuclideanTolkach}{0.85}" in lines
+    assert not any("Whitened" in line for line in lines)
     assert not any("NipdIdRho" in line and "TcgaTwoByTwo" in line for line in lines)
 
 
