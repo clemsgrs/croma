@@ -34,18 +34,20 @@ invariance to whitening.
 product, which BLAS computes fast; Manhattan distance has no such form, and scikit-learn's
 brute-force loop takes about 5 ns per pair and coordinate -- over a hundred core-hours for
 this study, most of them on Camelyon, whose adaptive search revisits most of its 20,400 rows
-over seven passes. So each subset's Manhattan distances are computed once, by
-``torch.cdist(p=1)`` in float64 on a CUDA device in chunks of query rows
-(:func:`torch_l1_distances`), and handed to CRoMa as a callable ``distance``: the library's
-search then reads every query's neighbours off that matrix, with its own subsets, same-slide
-exclusion, typed pools, adaptive ``k`` and margin. ``CRoMa.compute(distance="manhattan")``
-stays the reference definition; the two differ only in how the distances are rounded: on the
-float32 unit rows scikit-learn returns each distance rounded to float32, the GPU path keeps
-float64, and on the cells scored both ways the per-sample margins agree to within about
-1e-7. Each Manhattan cell records how its distances were computed
-(``distance_computation``), and the study refuses to score one without CUDA rather than fall
-back to the CPU. The unit's OpenBLAS kernel still governs its cosine reproduction; the
-Manhattan distances involve no BLAS.
+over seven passes. So, by a decision of 2026-11-22 that departs from scoring them with
+scikit-learn, each subset's Manhattan distances are computed once, by ``torch.cdist(p=1)``
+in float64 on a CUDA device in chunks of query rows (:func:`torch_l1_distances`), and handed
+to CRoMa as a callable ``distance``: the library's search then reads every query's
+neighbours off that matrix, with its own subsets, same-slide exclusion, typed pools,
+adaptive ``k`` and margin. ``CRoMa.compute(distance="manhattan")`` stays the reference
+definition; the two differ only in how the distances are rounded: on the float32 unit rows
+scikit-learn returns each distance rounded to float32, the GPU path keeps float64. On seven
+cells scored both ways (five TCGA-2x2, two Camelyon) the per-sample margins agreed to within
+5e-8, with no sign changed; on two of them the library's own path, fed the same rows cast to
+float64, matched the GPU path bit for bit. Each Manhattan cell records how its distances
+were computed (``distance_computation``), and the study refuses to score one without CUDA
+rather than fall back to the CPU. The unit's OpenBLAS kernel still governs its cosine
+reproduction; the Manhattan distances involve no BLAS.
 
 **Reproduction.** The cosine variant is the run's own computation, and the study refuses to
 summarise unless every cosine per-sample value matches the run's stored ``croma_m5``:
