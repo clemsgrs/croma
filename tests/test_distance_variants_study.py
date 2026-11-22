@@ -432,16 +432,45 @@ def test_a_sweep_with_manhattan_cells_to_score_stops_before_starting_a_unit_with
     assert started == []
 
 
-def test_torch_manhattan_distances_are_the_exact_sums_in_every_query_chunk(monkeypatch):
+def test_torch_manhattan_distances_are_the_float64_sums_in_every_query_chunk(monkeypatch):
     pytest.importorskip("torch")
     monkeypatch.setattr(dv, "L1_QUERY_CHUNK", 3)
-    rows = np.random.default_rng(11).integers(-50, 50, size=(10, 7)).astype(np.float32)
+    # Unit float32 rows, as the study scores: their L1 sums are not exact in float32, so a
+    # float32 computation would miss the float64 sums by far more than atol.
+    gaussian = np.random.default_rng(11).standard_normal((10, 16))
+    rows = (gaussian / np.linalg.norm(gaussian, axis=1, keepdims=True)).astype(np.float32)
 
     distances = dv.torch_l1_distances(rows, device="cpu")
 
     assert distances.dtype == np.float64
-    assert np.array_equal(distances, _numpy_l1(rows.astype(np.float64)))
+    np.testing.assert_allclose(distances, _numpy_l1(rows.astype(np.float64)), rtol=0, atol=1e-12)
     assert np.all(np.diagonal(distances) == 0.0)
+
+
+def test_the_cuda_manhattan_distance_scores_exactly_as_the_manhattan_distance():
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    from croma import CRoMa
+    from metric_harness import CONFOUNDER_COLUMN, toy_manifest
+
+    # Distinct small-integer rows: every L1 distance is an exact sum on either device, and
+    # many tie, so the two agree only if the search keeps every neighbour and tie the same.
+    rows = np.random.default_rng(5).integers(-2, 3, size=(36, 6)).astype(np.float64)
+    assert len({tuple(row) for row in rows}) == len(rows)
+    manifest = toy_manifest(["A", "B"] * 18, [f"C{i % 3}" for i in range(36)])
+    distance, computation = _GPU_MANHATTAN()
+    assert computation["backend"] == "torch.cdist(p=1)"
+
+    def croma(distance):
+        return CRoMa.compute(
+            rows, manifest, confounder_column=CONFOUNDER_COLUMN, m=5, distance=distance
+        )
+
+    on_cuda, reference = croma(distance), croma("manhattan")
+
+    assert np.array_equal(on_cuda.sample_values_aligned, reference.sample_values_aligned)
+    assert on_cuda.value == reference.value
 
 
 def test_a_unit_within_tolkachs_tolerance_is_scored_under_the_kernel_that_deviates_least(
