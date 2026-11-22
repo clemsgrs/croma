@@ -24,6 +24,22 @@ for _directory in (ROOT / "scripts" / "studies", ROOT / "scripts" / "bench"):
 
 import distance_variants as dv  # noqa: E402
 
+#: The study's own Manhattan distance, which needs CUDA; every other test scores Manhattan
+#: cells through :func:`_manhattan_on_the_cpu` instead.
+_GPU_MANHATTAN = dv.manhattan_distance
+#: What the CPU stand-in records as its computation.
+_CPU_COMPUTATION = {"backend": "numpy (test stand-in)", "dtype": "float64"}
+
+
+def _numpy_l1(rows: np.ndarray) -> np.ndarray:
+    return np.abs(rows[:, None, :] - rows[None, :, :]).sum(axis=2)
+
+
+@pytest.fixture(autouse=True)
+def _manhattan_on_the_cpu(monkeypatch):
+    monkeypatch.setattr(dv, "manhattan_distance", lambda: (_numpy_l1, dict(_CPU_COMPUTATION)))
+
+
 # --------------------------------------------------------------------------------------
 # Whitening.
 # --------------------------------------------------------------------------------------
@@ -363,9 +379,69 @@ def test_normalised_manhattan_scores_manhattan_distance_on_the_unit_rows(bench_e
 
     assert (cell["distance"], cell["feature_preparation"], cell["m"]) == ("manhattan", "unit", 5)
     assert "n_components" not in cell  # nothing is fitted
+    assert cell["distance_computation"] == _CPU_COMPUTATION
     np.testing.assert_allclose(
         values["croma"], [expected[s] for s in values["sample_id"]], rtol=0, atol=1e-6
     )
+
+
+def test_only_the_manhattan_cell_records_a_distance_computed_outside_the_library(
+    bench_env, tmp_path
+):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+
+    assert _run_unit(root, run, view) == 0
+
+    for v in dv.VARIANTS:
+        cell = dv.read_cell(root, "toy", "M1", v.name)
+        assert ("distance_computation" in cell) == (v.distance == "manhattan"), v.name
+
+
+# --------------------------------------------------------------------------------------
+# Manhattan distances on the GPU.
+# --------------------------------------------------------------------------------------
+
+
+def test_manhattan_cells_are_not_scored_without_torch(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", None)
+
+    with pytest.raises(RuntimeError, match="CUDA"):
+        _GPU_MANHATTAN()
+
+
+def test_manhattan_cells_are_not_scored_on_the_cpu_when_cuda_is_unavailable(monkeypatch):
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="CUDA.*CPU"):
+        _GPU_MANHATTAN()
+
+
+def test_a_sweep_with_manhattan_cells_to_score_stops_before_starting_a_unit_without_cuda(
+    bench_env, tmp_path, monkeypatch
+):
+    run, _ = _toy_run(bench_env)
+    monkeypatch.setattr(dv, "manhattan_distance", _GPU_MANHATTAN)
+    monkeypatch.setitem(sys.modules, "torch", None)
+    started = []
+    monkeypatch.setattr(dv.subprocess, "Popen", lambda *a, **k: started.append(a))
+
+    with pytest.raises(RuntimeError, match="CUDA"):
+        dv.sweep(tmp_path / "study", _toy_design(run), workers=1)
+    assert started == []
+
+
+def test_torch_manhattan_distances_are_the_exact_sums_in_every_query_chunk(monkeypatch):
+    pytest.importorskip("torch")
+    monkeypatch.setattr(dv, "L1_QUERY_CHUNK", 3)
+    rows = np.random.default_rng(11).integers(-50, 50, size=(10, 7)).astype(np.float32)
+
+    distances = dv.torch_l1_distances(rows, device="cpu")
+
+    assert distances.dtype == np.float64
+    assert np.array_equal(distances, _numpy_l1(rows.astype(np.float64)))
+    assert np.all(np.diagonal(distances) == 0.0)
 
 
 def test_a_unit_within_tolkachs_tolerance_is_scored_under_the_kernel_that_deviates_least(

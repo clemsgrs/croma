@@ -13,6 +13,10 @@ Three kinds of reference are used, and none is the library's own code path:
   which;
 * margins worked **by hand** on five integer rows, whose Manhattan distances are integers,
   chosen so that Manhattan and cosine pick different nearest neighbours.
+
+A distance computed elsewhere and handed to the search as a matrix is held to the library's
+own ``"manhattan"`` path, itself pinned by the references above, on rows whose Manhattan
+distances every implementation computes exactly.
 """
 
 from __future__ import annotations
@@ -342,6 +346,102 @@ def test_manhattan_distance_scores_the_raw_rows_without_normalising_them(m):
     result = _compute(features, manifest, m=m, distance="manhattan")
 
     np.testing.assert_allclose(result.sample_values_aligned, expected, rtol=0, atol=1e-12)
+
+
+# --------------------------------------------------------------------------------------
+# A distance computed elsewhere, handed to the search as a matrix.
+# --------------------------------------------------------------------------------------
+
+
+def _l1_matrix(rows: np.ndarray) -> np.ndarray:
+    return np.abs(rows[:, None, :] - rows[None, :, :]).sum(axis=2)
+
+
+def _dyadic_on_shared_slides() -> tuple[np.ndarray, pd.DataFrame]:
+    """The dyadic embedding with every two consecutive rows (one cell) on one slide."""
+    features, manifest = _dyadic_embedding()
+    manifest = manifest.assign(group_id=[f"slide-{i // 2}" for i in range(len(manifest))])
+    return features, manifest
+
+
+def _hand_built_in_two_subsets() -> tuple[np.ndarray, pd.DataFrame]:
+    """The hand-built rows as one 2x2 subset, and the same rows doubled as another."""
+    features, manifest = _hand_built()
+    rows, labels, centres = zip(*_HAND_ROWS.values())
+    paired = toy_manifest(list(labels) * 2, list(centres) * 2)
+    paired["subset"] = ["p0"] * len(rows) + ["p1"] * len(rows)
+    return np.vstack([features, 2.0 * features]), paired
+
+
+_EXACT_L1_COHORTS = {
+    "hand-built": _hand_built,
+    "dyadic": _dyadic_embedding,
+    "dyadic-shared-slides": _dyadic_on_shared_slides,
+}
+
+
+@pytest.mark.parametrize(
+    "cohort, m",
+    [
+        ("hand-built", 1),
+        ("dyadic", 1),
+        ("dyadic", 5),
+        ("dyadic-shared-slides", 1),
+        ("dyadic-shared-slides", 5),
+    ],
+)
+def test_a_precomputed_manhattan_matrix_scores_exactly_as_the_manhattan_distance(cohort, m):
+    # Every distance in these cohorts is an exact sum, and many are tied, so the two paths
+    # agree only if the matrix path keeps every neighbour, exclusion and tie the same.
+    features, manifest = _EXACT_L1_COHORTS[cohort]()
+
+    reference = _compute(features, manifest, m=m, distance="manhattan")
+    precomputed = _compute(features, manifest, m=m, distance=_l1_matrix)
+
+    assert np.array_equal(
+        precomputed.sample_values_aligned, reference.sample_values_aligned, equal_nan=True
+    )
+    assert (precomputed.value, precomputed.f0, precomputed.ltm_alpha) == (
+        reference.value,
+        reference.f0,
+        reference.ltm_alpha,
+    )
+
+
+def test_a_distance_callable_is_handed_each_subsets_rows_as_given():
+    features, manifest = _hand_built_in_two_subsets()
+    seen: list[np.ndarray] = []
+
+    def l1(rows: np.ndarray) -> np.ndarray:
+        seen.append(rows.copy())
+        return _l1_matrix(rows)
+
+    result = _compute(features, manifest, m=1, evaluation_design="paired_2x2", distance=l1)
+    reference = _compute(
+        features, manifest, m=1, evaluation_design="paired_2x2", distance="manhattan"
+    )
+
+    assert [s.tolist() for s in seen] == [features[:5].tolist(), features[5:].tolist()]
+    assert np.array_equal(result.sample_values_aligned, reference.sample_values_aligned)
+    # Doubling every row doubles every distance, so the second subset's margins are the first's.
+    assert result.sample_values_aligned[:5].tolist() == result.sample_values_aligned[5:].tolist()
+
+
+@pytest.mark.parametrize(
+    "matrix, match",
+    [
+        (lambda rows: _l1_matrix(rows)[:, :-1], "square"),
+        (lambda rows: _l1_matrix(rows) + 1.0, "diagonal"),
+        (lambda rows: -_l1_matrix(rows), "negative"),
+        (lambda rows: np.where(np.eye(len(rows), dtype=bool), 0.0, np.nan), "finite"),
+    ],
+    ids=["not-square", "nonzero-diagonal", "negative", "not-finite"],
+)
+def test_a_distance_callable_must_return_a_distance_matrix(matrix, match):
+    features, manifest = _hand_built()
+
+    with pytest.raises(ValueError, match=match):
+        _compute(features, manifest, m=1, distance=matrix)
 
 
 @pytest.mark.parametrize("distance", ["l1", "Cosine", "l2"])
