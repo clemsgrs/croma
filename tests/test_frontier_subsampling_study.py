@@ -392,6 +392,11 @@ class TestStudy:
             assert entry["production_frontier"] == ["A"]
             assert entry["fixed_frontier"] == entry["recomputed_frontier"] == ["A"]
             assert entry["fixed_max_abs_deviation"] == {"median": 0.0, "ltm": 0.0}
+            # Each arm records the tolerance it was checked against: the recomputed arm's is
+            # the subsampling study's, not the fixed arm's.
+            assert entry["fixed_tolerance"] == bootstrap.POINT_ATOL
+            assert entry["recomputed_tolerance"] == subsampling.reproduction_tolerance(cohort)
+            assert "tolerance" not in entry
             assert entry["n_anchors"] == len(_read_manifest(tree, cohort))
         points = pd.read_csv(out / "full_cohort_scores.csv", float_precision="round_trip")
         assert len(points) == len(SHAPES) * len(RANKED)
@@ -458,6 +463,23 @@ class TestStudy:
             "fixed_frontier": ["A"],
             "recomputed_frontier": ["A"],
         }
+
+    def test_the_cross_benchmark_frontier_pairs_replicates_by_number_not_row_order(self):
+        # On both cohorts A is highest on both axes in replicate 0 and B in replicate 1. Y
+        # lists replicate 1 first: setting one cohort's replicate 0 against the other's
+        # replicate 1 would tie A and B on both mean ranks, and leave the frontier A twice.
+        winner = {0: "A", 1: "B"}
+        rows = []
+        for cohort, order in (("X", (0, 1)), ("Y", (1, 0))):
+            for replicate in order:
+                for model in ("A", "B"):
+                    value = 1.0 if model == winner[replicate] else 0.0
+                    points = {f"{arm}_{s}": value for arm in study.ARMS for s in ("median", "ltm")}
+                    key = {"cohort": cohort, "fraction": FRACTION, "replicate": replicate}
+                    rows.append({**key, "model": model, **points})
+        _, sets = study.cross_benchmark(pd.DataFrame(rows), ["A", "B"])
+        for arm in study.ARMS:
+            assert sets[(study.CROSS, FRACTION)][arm] == [("A",), ("B",)]
 
     def test_spearman_rho_compares_the_arms_median_rankings_per_replicate(self, tree, tmp_path):
         out = tmp_path / "frontier-subsampling"

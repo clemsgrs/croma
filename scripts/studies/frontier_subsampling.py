@@ -349,7 +349,8 @@ def check_full_cohort(cohort: FullCohort, full_scores: pd.DataFrame) -> tuple[di
         "recomputed_max_abs_deviation": {
             s: float((recomputed[s] - published[s]).abs().max()) for s in ("median", "ltm")
         },
-        "tolerance": bootstrap.POINT_ATOL,
+        "fixed_tolerance": bootstrap.POINT_ATOL,
+        "recomputed_tolerance": subsampling.reproduction_tolerance(cohort.benchmark),
     }
     for arm in ARMS:
         if set(record[f"{arm}_frontier"]) != set(production):
