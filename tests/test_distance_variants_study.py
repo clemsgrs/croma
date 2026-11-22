@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +23,22 @@ for _directory in (ROOT / "scripts" / "studies", ROOT / "scripts" / "bench"):
         sys.path.insert(0, str(_directory))
 
 import distance_variants as dv  # noqa: E402
+
+#: The study's own Manhattan distance, which needs CUDA; every other test scores Manhattan
+#: cells through :func:`_manhattan_on_the_cpu` instead.
+_GPU_MANHATTAN = dv.manhattan_distance
+#: What the CPU stand-in records as its computation.
+_CPU_COMPUTATION = {"backend": "numpy (test stand-in)", "dtype": "float64"}
+
+
+def _numpy_l1(rows: np.ndarray) -> np.ndarray:
+    return np.abs(rows[:, None, :] - rows[None, :, :]).sum(axis=2)
+
+
+@pytest.fixture(autouse=True)
+def _manhattan_on_the_cpu(monkeypatch):
+    monkeypatch.setattr(dv, "manhattan_distance", lambda: (_numpy_l1, dict(_CPU_COMPUTATION)))
+
 
 # --------------------------------------------------------------------------------------
 # Whitening.
@@ -332,10 +349,128 @@ def test_the_cosine_variant_reproduces_the_runs_stored_values_bit_for_bit(bench_
     values = dv.read_cell_values(root, "toy", "M1", "cosine")
     assert values["sample_id"].tolist() == stored["sample_id"].astype(str).tolist()
     assert values["croma"].tolist() == stored["croma_m5"].tolist()
-    for name in ("normalised-euclidean", "euclidean", "whitened"):
+    for name in ("normalised-euclidean", "euclidean", "whitened", "normalised-manhattan"):
         cell = dv.read_cell(root, "toy", "M1", name)
         assert cell["n_units"] == 40 and cell["kernel"] == "test"
     assert 1 <= dv.read_cell(root, "toy", "M1", "whitened")["n_components"] <= 12
+
+
+def test_normalised_manhattan_scores_manhattan_distance_on_the_unit_rows(bench_env, tmp_path):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+
+    assert _run_unit(root, run, view) == 0
+
+    # Brute force on the L2-normalised rows, at the headline m: every tile is its own slide,
+    # so no candidate is excluded, and the toy run's search reaches every typed neighbour.
+    features = np.asarray(view.features("M1"), dtype=np.float64)
+    unit = features / np.linalg.norm(features, axis=1, keepdims=True)
+    manifest = view.eval_manifest
+    labels, centres = manifest["label"].to_numpy(), manifest["confounder"].to_numpy()
+    dist = np.abs(unit[:, None, :] - unit[None, :, :]).sum(axis=2)
+    expected = {}
+    for i, sample_id in enumerate(manifest["sample_id"].astype(str)):
+        others = np.arange(len(unit)) != i
+        d_so = np.sort(dist[i, others & (labels == labels[i]) & (centres != centres[i])])[:5]
+        d_os = np.sort(dist[i, others & (labels != labels[i]) & (centres == centres[i])])[:5]
+        expected[sample_id] = (d_os.mean() - d_so.mean()) / (d_os.mean() + d_so.mean())
+    cell = dv.read_cell(root, "toy", "M1", "normalised-manhattan")
+    values = dv.read_cell_values(root, "toy", "M1", "normalised-manhattan")
+
+    assert (cell["distance"], cell["feature_preparation"], cell["m"]) == ("manhattan", "unit", 5)
+    assert "n_components" not in cell  # nothing is fitted
+    assert cell["distance_computation"] == _CPU_COMPUTATION
+    np.testing.assert_allclose(
+        values["croma"], [expected[s] for s in values["sample_id"]], rtol=0, atol=1e-6
+    )
+
+
+def test_only_the_manhattan_cell_records_a_distance_computed_outside_the_library(
+    bench_env, tmp_path
+):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+
+    assert _run_unit(root, run, view) == 0
+
+    for v in dv.VARIANTS:
+        cell = dv.read_cell(root, "toy", "M1", v.name)
+        assert ("distance_computation" in cell) == (v.distance == "manhattan"), v.name
+
+
+# --------------------------------------------------------------------------------------
+# Manhattan distances on the GPU.
+# --------------------------------------------------------------------------------------
+
+
+def test_manhattan_cells_are_not_scored_without_torch(monkeypatch):
+    monkeypatch.setitem(sys.modules, "torch", None)
+
+    with pytest.raises(RuntimeError, match="CUDA"):
+        _GPU_MANHATTAN()
+
+
+def test_manhattan_cells_are_not_scored_on_the_cpu_when_cuda_is_unavailable(monkeypatch):
+    torch = pytest.importorskip("torch")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    with pytest.raises(RuntimeError, match="CUDA.*CPU"):
+        _GPU_MANHATTAN()
+
+
+def test_a_sweep_with_manhattan_cells_to_score_stops_before_starting_a_unit_without_cuda(
+    bench_env, tmp_path, monkeypatch
+):
+    run, _ = _toy_run(bench_env)
+    monkeypatch.setattr(dv, "manhattan_distance", _GPU_MANHATTAN)
+    monkeypatch.setitem(sys.modules, "torch", None)
+    started = []
+    monkeypatch.setattr(dv.subprocess, "Popen", lambda *a, **k: started.append(a))
+
+    with pytest.raises(RuntimeError, match="CUDA"):
+        dv.sweep(tmp_path / "study", _toy_design(run), workers=1)
+    assert started == []
+
+
+def test_torch_manhattan_distances_are_the_float64_sums_in_every_query_chunk(monkeypatch):
+    pytest.importorskip("torch")
+    monkeypatch.setattr(dv, "L1_QUERY_CHUNK", 3)
+    # Unit float32 rows, as the study scores: their L1 sums are not exact in float32, so a
+    # float32 computation would miss the float64 sums by far more than atol.
+    gaussian = np.random.default_rng(11).standard_normal((10, 16))
+    rows = (gaussian / np.linalg.norm(gaussian, axis=1, keepdims=True)).astype(np.float32)
+
+    distances = dv.torch_l1_distances(rows, device="cpu")
+
+    assert distances.dtype == np.float64
+    np.testing.assert_allclose(distances, _numpy_l1(rows.astype(np.float64)), rtol=0, atol=1e-12)
+    assert np.all(np.diagonal(distances) == 0.0)
+
+
+def test_the_cuda_manhattan_distance_scores_exactly_as_the_manhattan_distance():
+    torch = pytest.importorskip("torch")
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA is unavailable")
+    from croma import CRoMa
+    from metric_harness import CONFOUNDER_COLUMN, toy_manifest
+
+    # Distinct small-integer rows: every L1 distance is an exact sum on either device, and
+    # many tie, so the two agree only if the search keeps every neighbour and tie the same.
+    rows = np.random.default_rng(5).integers(-2, 3, size=(36, 6)).astype(np.float64)
+    assert len({tuple(row) for row in rows}) == len(rows)
+    manifest = toy_manifest(["A", "B"] * 18, [f"C{i % 3}" for i in range(36)])
+    distance, computation = _GPU_MANHATTAN()
+    assert computation["backend"] == "torch.cdist(p=1)"
+
+    def croma(distance):
+        return CRoMa.compute(
+            rows, manifest, confounder_column=CONFOUNDER_COLUMN, m=5, distance=distance
+        )
+
+    on_cuda, reference = croma(distance), croma("manhattan")
+
+    assert np.array_equal(on_cuda.sample_values_aligned, reference.sample_values_aligned)
+    assert on_cuda.value == reference.value
 
 
 def test_a_unit_within_tolkachs_tolerance_is_scored_under_the_kernel_that_deviates_least(
@@ -427,6 +562,79 @@ def test_a_unit_outside_its_tolerance_is_refused(
     (root / dv.DESIGN).write_text("{}")
     with pytest.raises(dv.IncompleteStudyError, match="cells missing"):
         dv.summarise(root, _toy_design(run), apd_correlation_csv=None)
+
+
+# --------------------------------------------------------------------------------------
+# A finished study extended by a new variant.
+# --------------------------------------------------------------------------------------
+
+_NEW = "normalised-manhattan"
+
+
+def _design_record(variants, models=("M1", "M2")) -> dict:
+    """A design as ``dv.design`` writes it, for one benchmark scored under ``variants``."""
+    spec = {"design": "all", "models": list(models), "variants": [asdict(v) for v in variants]}
+    return {"m": 5, "seed": dv.SEED, "benchmarks": {"toy": spec}}
+
+
+#: A study written before the Manhattan variant, with a sensitivity variant after the headline
+#: ones (as Camelyon's whitening thresholds are), and the same study with it added.
+_BEFORE = [v for v in dv.VARIANTS if v.name != _NEW] + [dv.variant("whitened-90")]
+_AFTER = list(dv.VARIANTS) + [dv.variant("whitened-90")]
+
+
+def test_a_design_that_only_adds_a_variant_extends_the_stored_study(tmp_path):
+    dv.write_design(tmp_path, _design_record(_BEFORE))
+
+    dv.write_design(tmp_path, _design_record(_AFTER))
+
+    assert json.loads((tmp_path / dv.DESIGN).read_text()) == _design_record(_AFTER)
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        _design_record(_AFTER, models=("M1", "M3")),
+        _design_record([v for v in _AFTER if v.name != "whitened"]),
+        _design_record(
+            [
+                dv.Variant("whitened", "whitened", "euclidean", 0.90) if v.name == "whitened" else v
+                for v in _AFTER
+            ]
+        ),
+    ],
+    ids=["roster-changed", "variant-dropped", "variant-redefined"],
+)
+def test_a_design_that_changes_anything_but_adding_variants_is_refused(tmp_path, record):
+    dv.write_design(tmp_path, _design_record(_BEFORE))
+    stored = (tmp_path / dv.DESIGN).read_bytes()
+
+    with pytest.raises(RuntimeError, match="different study"):
+        dv.write_design(tmp_path, record)
+
+    assert (tmp_path / dv.DESIGN).read_bytes() == stored
+
+
+def test_a_finished_unit_gains_the_new_variant_without_rewriting_its_cells(bench_env, tmp_path):
+    run, view = _toy_run(bench_env)
+    root = tmp_path / "study"
+    assert _run_unit(root, run, view) == 0
+    # As a unit finished before the variant existed: every cell but the new one.
+    for path in dv.cell_paths(root, "toy", "M1", _NEW):
+        path.unlink()
+    before = {
+        p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in dv.cell_dir(root, "toy", "M1").iterdir()
+    }
+
+    assert _run_unit(root, run, view) == 0
+
+    after = {
+        p.name: (p.read_bytes(), p.stat().st_mtime_ns)
+        for p in dv.cell_dir(root, "toy", "M1").iterdir()
+    }
+    assert set(after) - set(before) == {f"{_NEW}.json", f"{_NEW}.csv.gz"}
+    assert {name: after[name] for name in before} == before
 
 
 # --------------------------------------------------------------------------------------

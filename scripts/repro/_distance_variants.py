@@ -42,7 +42,8 @@ from _paper_tables import CaptionClaimError  # noqa: E402
 STUDY_DIR = study.STUDY_DIR
 REMEDY = (
     "run scripts/studies/distance_variants.py sweep --workers 4 (resumable; it summarises "
-    "when complete), or its summarise command after an input changed"
+    "when complete; scoring its normalised-manhattan cells needs torch with a CUDA device, "
+    "with no CPU fallback), or its summarise command after an input changed"
 )
 #: Recorded inputs too large to re-hash on every build (see the module docstring).
 _NOT_REHASHED = ("embeddings:", "/per_sample_metrics_by_model/")
@@ -55,7 +56,7 @@ BENCHMARK_ORDER = (
     "pathorob-tolkach-esca",
 )
 #: The headline variants compared with cosine, in row order.
-ALTERNATIVES = ("normalised-euclidean", "euclidean", "whitened")
+ALTERNATIVES = ("normalised-euclidean", "euclidean", "whitened", "normalised-manhattan")
 #: Camelyon's whitening-threshold sensitivity, reported in the footer.
 SENSITIVITY = ("whitened-90", "whitened-99")
 

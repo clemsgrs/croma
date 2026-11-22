@@ -25,19 +25,19 @@ import distance_variants as study  # noqa: E402
 import generate_distance_variants_table as table  # noqa: E402
 from _paper_tables import CaptionClaimError  # noqa: E402
 
-_VARIANTS = ("cosine", "normalised-euclidean", "euclidean", "whitened")
-#: Per benchmark, the median-ranking rho of the three alternatives, and their sign changes.
+_VARIANTS = ("cosine", "normalised-euclidean", "euclidean", "whitened", "normalised-manhattan")
+#: Per benchmark, the median-ranking rho of the four alternatives, and their sign changes.
 _RANK_RHO = {
-    "pathorob-camelyon": (0.99, 0.95, 0.81),
-    "pathorob-tcga-2x2": (0.98, 0.97, 0.62),
-    "pathorob-tcga-4x4": (1.00, 0.90, 0.74),
-    "pathorob-tolkach-esca": (0.97, 0.88, 0.70),
+    "pathorob-camelyon": (0.99, 0.95, 0.81, 0.93),
+    "pathorob-tcga-2x2": (0.98, 0.97, 0.62, 0.96),
+    "pathorob-tcga-4x4": (1.00, 0.90, 0.74, 0.85),
+    "pathorob-tolkach-esca": (0.97, 0.88, 0.70, 0.91),
 }
 _SIGN_CHANGES = {
-    "pathorob-camelyon": (0, 1, 3),
-    "pathorob-tcga-2x2": (0, 0, 2),
-    "pathorob-tcga-4x4": (0, 0, 1),
-    "pathorob-tolkach-esca": (0, 2, 4),
+    "pathorob-camelyon": (0, 1, 3, 2),
+    "pathorob-tcga-2x2": (0, 0, 2, 0),
+    "pathorob-tcga-4x4": (0, 0, 1, 1),
+    "pathorob-tolkach-esca": (0, 2, 4, 1),
 }
 
 
@@ -164,26 +164,36 @@ def data(tmp_path):
     return dvs.load(tmp_path / "study", repo=tmp_path)
 
 
-def test_the_table_reports_only_euclidean_alternatives_with_cis(data):
+def test_the_table_reports_the_published_alternatives_with_cis(data):
     tex = table.build(data)
 
     assert r"\label{tab:distance-variants}" in tex
+    # Panel a: three alternatives per benchmark; panel b: cosine and the three.
     for name in ("Camelyon", "TCGA-2x2", "TCGA-4x4", "Tolkach-ESCA"):
-        assert rf"\multirow{{2}}{{*}}{{{name}}}" in tex
+        assert rf"\multirow{{3}}{{*}}{{{name}}}" in tex
+    assert r"\multirow{4}{*}{TCGA-2x2}" not in tex
+    for name in ("Camelyon", "TCGA-4x4", "Tolkach-ESCA"):
+        assert rf"\multirow{{4}}{{*}}{{{name}}}" in tex
     # Tolkach-ESCA raw Euclidean: values from the explicit fixture, unchanged.
     assert (
         r"& Raw Euclidean & $0.88$ {\scriptsize$[0.78, 0.89]$} & $0.68$ {\scriptsize$[0.58, 0.78]$}"
         r" & $2$ & $0.013$ & $97.3\%$"
     ) in tex
-    assert r"\multirow{3}{*}{TCGA-2x2}" not in tex
-    for name in ("Camelyon", "TCGA-4x4", "Tolkach-ESCA"):
-        assert rf"\multirow{{3}}{{*}}{{{name}}}" in tex
+    # TCGA-4x4 normalised Manhattan, after the Euclidean rows.
+    manhattan = (
+        r"& Normalized Manhattan & $0.85$ {\scriptsize$[0.75, 0.86]$} & $0.65$ "
+        r"{\scriptsize$[0.55, 0.75]$} & $1$ & $0.013$ & $97.3\%$"
+    )
+    assert manhattan in tex
+    assert tex.index("{TCGA-4x4} & Normalized Euclidean") < tex.index(manhattan)
     assert (
         r"& Cosine (reference) & $0.95$ {\scriptsize$[0.85, 0.97]$} & ${<}0.001$ "
         r"& $0.70$ {\scriptsize$[0.45, 0.90]$} & $0.012$"
     ) in tex
+    assert r"& Normalized Manhattan & $0.75$ {\scriptsize$[0.65, 0.77]$}" in tex
     assert "whiten" not in tex.lower()
-    assert "two alternatives" in tex
+    assert "three alternatives" in tex
+    assert "Manhattan distance on L2-normalised features" in tex
     assert "$26$ ranked encoders" in tex
 
 
@@ -192,15 +202,19 @@ def test_the_table_and_macros_rebuild_byte_for_byte(data):
     assert table.macro_lines(data) == table.macro_lines(data)
 
 
-def test_macros_report_only_published_euclidean_variants(data):
+def test_macros_report_only_published_variants(data):
     lines = table.macro_lines(data)
 
     assert r"\newcommand{\DistanceMinRankRhoNormalizedEuclidean}{0.97}" in lines
     assert r"\newcommand{\DistanceMinRankRhoRawEuclidean}{0.88}" in lines
-    # Sign changes for the two published alternatives: 0+1 + 0+0 + 0+0 + 0+2.
-    assert r"\newcommand{\DistanceSignChanges}{3}" in lines
+    assert r"\newcommand{\DistanceMinRankRhoNormalizedManhattan}{0.85}" in lines
+    assert r"\newcommand{\DistanceMinTailRankRhoNormalizedManhattan}{0.65}" in lines
+    # Sign changes for the three published alternatives: 0+1+2 + 0+0+0 + 0+0+1 + 0+2+1.
+    assert r"\newcommand{\DistanceSignChanges}{7}" in lines
     assert r"\newcommand{\DistanceNipdIdRhoCosineCamelyon}{0.95}" in lines
     assert r"\newcommand{\DistanceNipdIdRhoRawEuclideanTolkach}{0.85}" in lines
+    for cohort in ("Camelyon", "TcgaFourByFour", "Tolkach"):
+        assert rf"\newcommand{{\DistanceNipdIdRhoNormalizedManhattan{cohort}}}{{0.75}}" in lines
     assert not any("Whitened" in line for line in lines)
     assert not any("NipdIdRho" in line and "TcgaTwoByTwo" in line for line in lines)
 
@@ -297,10 +311,11 @@ def test_an_input_that_changed_after_the_summary_is_refused(tmp_path):
         dvs.load(tmp_path / "study", repo=tmp_path)
 
 
-def test_a_study_missing_a_variant_is_refused(tmp_path):
+@pytest.mark.parametrize("variant", ["whitened", "normalised-manhattan"])
+def test_a_study_missing_a_variant_is_refused(tmp_path, variant):
     measures = _measures()
     measures = measures[
-        ~((measures["benchmark"] == "pathorob-tcga-4x4") & (measures["variant"] == "whitened"))
+        ~((measures["benchmark"] == "pathorob-tcga-4x4") & (measures["variant"] == variant))
     ]
     _write_study(tmp_path / "study", tmp_path, measures)
 

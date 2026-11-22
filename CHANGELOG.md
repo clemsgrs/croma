@@ -9,10 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `CRoMa.compute` takes `distance="cosine" | "euclidean"`. The default is today's path,
-  bit for bit: rows L2-normalised, then compared by cosine distance. `"euclidean"` compares
-  the rows as given, for sensitivity analyses on raw, normalised or whitened features; the
-  search, the support rule and the margin are shared. RI and MaRI are unchanged.
+- `CRoMa.compute` takes `distance="cosine" | "euclidean" | "manhattan"`. The default is
+  today's path, bit for bit: rows L2-normalised, then compared by cosine distance.
+  `"euclidean"` compares the rows as given, for sensitivity analyses on raw, normalised or
+  whitened features; `"manhattan"` compares them as given by `sum_j |x_j - y_j|`, which,
+  unlike Euclidean distance on unit vectors, is not a monotone function of cosine distance
+  and depends on the coordinate basis. The search, the support rule and the margin are
+  shared. RI and MaRI are unchanged. `distance` may also be a callable that returns a
+  subset's pairwise distance matrix, computed elsewhere (on a GPU, say); the search then
+  reads the neighbours off that matrix instead of computing them.
 - Stratified cluster resampling in `croma.metrics.bootstrap`. `bootstrap_pooled_median` and
   `paired_rank_stability` take an optional `strata` (one label per row) and then resample
   clusters within each stratum, so every replicate keeps each stratum's cluster count;

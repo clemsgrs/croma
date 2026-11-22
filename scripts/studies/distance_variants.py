@@ -1,7 +1,7 @@
-"""CRoMa under three alternative distances: does the encoder ranking depend on cosine?
+"""CRoMa under four alternative distances: does the encoder ranking depend on cosine?
 
 Every tile benchmark is re-scored at the headline radius (m = 5), with its own evaluation
-design and its run's CRoMa search, under four geometries:
+design and its run's CRoMa search, under five geometries:
 
 ====================  ===============  =========  =============================================
 variant               features         distance   what it tests
@@ -12,12 +12,42 @@ normalised-euclidean  L2-normalised    Euclidean  the chord identity, at m = 5 w
 euclidean             raw              Euclidean  whether the feature norm matters
 whitened              PCA-whitened     Euclidean  anisotropy: Mahalanobis distance under a
                                                   truncated covariance
+normalised-manhattan  L2-normalised    Manhattan  a distance rule that is not a monotone
+                                                  function of cosine, so it can reorder
+                                                  neighbours
 ====================  ===============  =========  =============================================
 
 Whitening is fit per encoder x benchmark on the benchmark's evaluated rows (each tile once,
 however many TCGA-2x2 subsets it occurs in) and uses no labels and no confounders: the
 fewest leading principal components explaining at least 95% of the variance, each scaled to
 unit variance. Camelyon is also run at 90% and 99% as a sensitivity check.
+
+Manhattan distance, ``d(x, y) = sum_j |x_j - y_j|``, is taken on the same L2-normalised rows
+as normalised Euclidean, and fits nothing: no covariance, no projection, no reduction of
+dimension. On unit vectors Euclidean distance is a monotone function of cosine distance and
+keeps every neighbour in place; Manhattan distance is not, so it can reorder neighbours. It
+depends on the coordinate basis -- rotating an embedding changes its Manhattan distances --
+so it is a sensitivity check on the distance rule, not a proposed default, and not a test of
+invariance to whitening.
+
+**Manhattan distances on the GPU.** Cosine and Euclidean distances reduce to a matrix
+product, which BLAS computes fast; Manhattan distance has no such form, and scikit-learn's
+brute-force loop takes about 5 ns per pair and coordinate -- over a hundred core-hours for
+this study, most of them on Camelyon, whose adaptive search revisits most of its 20,400 rows
+over seven passes. So, by a decision of 2026-11-22 that departs from scoring them with
+scikit-learn, each subset's Manhattan distances are computed once, by ``torch.cdist(p=1)``
+in float64 on a CUDA device in chunks of query rows (:func:`torch_l1_distances`), and handed
+to CRoMa as a callable ``distance``: the library's search then reads every query's
+neighbours off that matrix, with its own subsets, same-slide exclusion, typed pools,
+adaptive ``k`` and margin. ``CRoMa.compute(distance="manhattan")`` stays the reference
+definition; the two differ only in how the distances are rounded: on the float32 unit rows
+scikit-learn returns each distance rounded to float32, the GPU path keeps float64. On seven
+cells scored both ways (five TCGA-2x2, two Camelyon) the per-sample margins agreed to within
+5e-8, with no sign changed; on two of them the library's own path, fed the same rows cast to
+float64, matched the GPU path bit for bit. Each Manhattan cell records how its distances
+were computed (``distance_computation``), and the study refuses to score one without CUDA
+rather than fall back to the CPU. The unit's OpenBLAS kernel still governs its cosine
+reproduction; the Manhattan distances involve no BLAS.
 
 **Reproduction.** The cosine variant is the run's own computation, and the study refuses to
 summarise unless every cosine per-sample value matches the run's stored ``croma_m5``:
@@ -63,6 +93,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict, dataclass
+from functools import partial
 from pathlib import Path
 from typing import Callable, NamedTuple
 
@@ -129,6 +160,7 @@ VARIANTS = (
     Variant("normalised-euclidean", "unit", "euclidean"),
     Variant("euclidean", "raw", "euclidean"),
     Variant("whitened", "whitened", "euclidean", 0.95),
+    Variant("normalised-manhattan", "unit", "manhattan"),
 )
 #: Whitening-threshold sensitivity, on Camelyon only.
 SENSITIVITY_VARIANTS = {
@@ -292,6 +324,71 @@ def prepare(features: np.ndarray, rows: np.ndarray, v: Variant) -> tuple[np.ndar
     return w.features[np.asarray(inverse).reshape(-1)], record
 
 
+# --------------------------------------------------------------------------- Manhattan
+
+#: Query rows per ``torch.cdist`` call, which bounds the GPU memory a distance matrix takes.
+L1_QUERY_CHUNK = 1024
+
+
+def torch_l1_distances(rows: np.ndarray, *, device: str) -> np.ndarray:
+    """The ``(n, n)`` float64 Manhattan distances between ``rows``, by ``torch.cdist(p=1)``.
+
+    The rows are cast to float64 and moved to ``device`` once; each chunk of
+    :data:`L1_QUERY_CHUNK` query rows is compared with all of them there. Each row's distance
+    to itself is ``sum_j |x_j - x_j| = 0`` exactly, as the search requires.
+    """
+    import torch
+
+    x = torch.from_numpy(np.ascontiguousarray(rows, dtype=np.float64)).to(device)
+    n = int(x.shape[0])
+    out = np.empty((n, n), dtype=np.float64)
+    for start in range(0, n, L1_QUERY_CHUNK):
+        stop = min(n, start + L1_QUERY_CHUNK)
+        out[start:stop] = torch.cdist(x[start:stop], x, p=1.0).cpu().numpy()
+    return out
+
+
+def manhattan_distance() -> tuple[Callable[[np.ndarray], np.ndarray], dict]:
+    """The Manhattan distance the study scores with, and the record of how it is computed.
+
+    Raises :class:`RuntimeError` when torch or a CUDA device is missing: the study never
+    falls back to the CPU, where the same cells take over a hundred core-hours.
+    """
+    remedy = (
+        "normalised-manhattan is scored from Manhattan distances computed on a CUDA device "
+        "(torch.cdist, p=1); the study does not fall back to the CPU, where its cells take "
+        "over a hundred core-hours"
+    )
+    try:
+        import torch
+    except ImportError as error:
+        raise RuntimeError(f"torch is not importable: {remedy}") from error
+    if not torch.cuda.is_available():
+        raise RuntimeError(f"CUDA is unavailable: {remedy}")
+    computation = {
+        "backend": "torch.cdist(p=1)",
+        "device": torch.cuda.get_device_name(0),
+        "torch": torch.__version__,
+        "cuda": torch.version.cuda,
+        "dtype": "float64",
+        "query_chunk_rows": L1_QUERY_CHUNK,
+        "search": "scikit-learn NearestNeighbors(metric='precomputed')",
+    }
+    return partial(torch_l1_distances, device="cuda"), computation
+
+
+def search_distance(name: str) -> tuple[str | Callable[[np.ndarray], np.ndarray], dict]:
+    """What :func:`score` hands CRoMa for the distance ``name``, and what a cell records.
+
+    Manhattan is computed outside the library (:func:`manhattan_distance`) and recorded as
+    ``distance_computation``; every other distance is the library's own and records nothing.
+    """
+    if name != "manhattan":
+        return name, {}
+    distance, computation = manhattan_distance()
+    return distance, {"distance_computation": computation}
+
+
 # --------------------------------------------------------------------------- scoring
 
 
@@ -367,7 +464,13 @@ def production_run(benchmark: str) -> Run:
     )
 
 
-def score(features: np.ndarray, manifest: pd.DataFrame, *, run: Run, distance: str):
+def score(
+    features: np.ndarray,
+    manifest: pd.DataFrame,
+    *,
+    run: Run,
+    distance: str | Callable[[np.ndarray], np.ndarray],
+):
     """CRoMa at the headline radius, with the run's design and search."""
     results = CRoMa.compute(
         features,
@@ -625,11 +728,13 @@ def run_unit(
             continue
         started = time.perf_counter()
         prepared, preparation = prepare(features, rows, v)
-        result = score(prepared, manifest, run=run, distance=v.distance)
+        distance, computation = search_distance(v.distance)
+        result = score(prepared, manifest, run=run, distance=distance)
         record = {
             **base,
             **_summary_fields(result),
             **preparation,
+            **computation,
             "variant": v.name,
             "distance": v.distance,
             "feature_preparation": v.features,
@@ -816,16 +921,33 @@ def _rel(path: Path) -> str:
 
 
 def write_design(root: Path, record: dict) -> None:
+    """Write ``record`` as the study's design, or check it against the stored one.
+
+    A record that only adds variants to the stored design extends the study and replaces
+    it: the finished cells are kept, and the sweep scores only the added variants'. Any
+    other difference is a different study and raises.
+    """
     path = Path(root) / DESIGN
     if path.exists():
         stored = json.loads(path.read_text(encoding="utf-8"))
-        if stored != record:
+        if stored == record:
+            return
+        if not _adds_variants_only(stored, record):
             raise RuntimeError(
                 f"{path} describes a different study (roster, search or variants changed); "
                 "move the old study aside before starting a new one"
             )
-        return
     _atomic_text(path, _json(record))
+
+
+def _adds_variants_only(stored: dict, record: dict) -> bool:
+    """Whether ``record`` is ``stored`` with variants added, and nothing else changed."""
+    pruned = json.loads(json.dumps(record))
+    for benchmark, spec in pruned.get("benchmarks", {}).items():
+        kept = stored.get("benchmarks", {}).get(benchmark, {}).get("variants", [])
+        names = {v["name"] for v in kept}
+        spec["variants"] = [v for v in spec.get("variants", []) if v["name"] in names]
+    return pruned == stored
 
 
 def units(record: dict) -> list[tuple[str, str]]:
@@ -877,6 +999,12 @@ def sweep(root: Path, record: dict, *, workers: int) -> int:
         cosine = read_cell(root, benchmark, model, COSINE.name)
         kernels = [cosine["kernel"]] if cosine else []
         queue.append((benchmark, model, kernels, False))
+    if any(
+        v.distance == "manhattan" and read_cell(root, benchmark, model, v.name) is None
+        for benchmark, model, _, _ in queue
+        for v in variants_for(benchmark)
+    ):
+        manhattan_distance()  # raises now, before any unit starts, if there is no GPU
     preferred: dict[str, str] = {}
     running: dict[subprocess.Popen, tuple[str, str, list[str], str, bool]] = {}
     failures: list[str] = []

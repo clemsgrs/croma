@@ -1,5 +1,5 @@
 import math
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -38,7 +38,10 @@ from croma.types import CRoMaResult
 CROMA_HEADLINE_M = 5
 
 # Typed-neighbour distances ``CRoMa.compute`` accepts; the first is the default.
-CROMA_DISTANCES = ("cosine", "euclidean")
+CROMA_DISTANCES = ("cosine", "euclidean", "manhattan")
+
+#: A distance computed outside the library: a subset's rows in, their pairwise distances out.
+PairwiseDistances = Callable[[np.ndarray], np.ndarray]
 
 
 @dataclass(frozen=True)
@@ -203,6 +206,32 @@ def _scan_typed_neighbors_for_query_rows(
     return defined
 
 
+def _precomputed_distances(pairwise: PairwiseDistances, rows: np.ndarray) -> np.ndarray:
+    """``pairwise(rows)``, checked to be a distance matrix the search can read neighbours from.
+
+    Square over the rows, finite, non-negative, and zero on the diagonal: the search fetches
+    each query's own row along with its neighbours and drops it by index, as it does when it
+    computes the distances itself.
+    """
+    matrix = np.asarray(pairwise(rows), dtype=np.float64)
+    n = int(len(rows))
+    if matrix.shape != (n, n):
+        raise ValueError(
+            f"a distance callable must return a square ({n}, {n}) matrix over the rows it is "
+            f"given, got shape {matrix.shape}"
+        )
+    if not np.all(np.isfinite(matrix)):
+        raise ValueError("a distance callable must return finite distances")
+    if np.any(matrix < 0.0):
+        raise ValueError("a distance callable must not return negative distances")
+    if np.any(np.diagonal(matrix) != 0.0):
+        raise ValueError(
+            "a distance callable must return a zero diagonal: every row is at distance 0 "
+            "from itself"
+        )
+    return matrix
+
+
 def _working_memory_query_batches(
     query_indices: np.ndarray,
     *,
@@ -227,7 +256,7 @@ def _iterative_typed_neighbor_search(
     start_k: int,
     k_growth_factor: float,
     scan=None,
-    distance: str = "cosine",
+    distance: str | PairwiseDistances = "cosine",
 ) -> tuple[np.ndarray, np.ndarray, _CRoMaSearchMeta]:
     """Fill ``m`` slots of each of two neighbour types per sample, growing ``k`` until done.
 
@@ -236,7 +265,10 @@ def _iterative_typed_neighbor_search(
     second) and takes the same keyword arguments; a study that needs another two-way typing
     of the same cross-group neighbours passes its own instead of re-implementing the search.
     ``distance`` is the metric the neighbours are searched under, ``"cosine"`` (the
-    default) or ``"euclidean"``; the rows are searched as given.
+    default), ``"euclidean"`` or ``"manhattan"``; the rows are searched as given. It may
+    instead be a callable returning the rows' pairwise distance matrix: the same search then
+    reads each query's neighbours off its row of that matrix (scikit-learn's
+    ``metric="precomputed"``) instead of computing them.
     """
     if scan is None:
         scan = _scan_typed_neighbors_for_query_rows
@@ -255,12 +287,17 @@ def _iterative_typed_neighbor_search(
             ),
         )
 
-    if distance == "cosine":
+    if callable(distance):
+        # From here on the "features" are the rows of the distance matrix: kneighbors takes
+        # a query's row and returns its nearest columns, self included, as below.
+        features = _precomputed_distances(distance, features)
+        model = NearestNeighbors(metric="precomputed")
+    elif distance == "cosine":
         model = NearestNeighbors(metric="cosine")
     else:
         # Brute force, as the cosine search is: a tree index would answer the same query
         # with differently rounded distances, and low-dimensional inputs would select one.
-        model = NearestNeighbors(metric="euclidean", algorithm="brute")
+        model = NearestNeighbors(metric=distance, algorithm="brute")
     model.fit(features)
 
     k_current = int(max(1, min(int(start_k), n_samples - 1)))
@@ -358,7 +395,7 @@ class CrossConfounderRobustnessMargin:
         alpha: float = 0.10,
         start_k: int = 200,
         k_growth_factor: float = 2.0,
-        distance: Literal["cosine", "euclidean"] = "cosine",
+        distance: Literal["cosine", "euclidean", "manhattan"] | PairwiseDistances = "cosine",
     ) -> CRoMaResult | dict[int, CRoMaResult]:
         """Compute the cross-confounder robustness margin with total support.
 
@@ -376,15 +413,28 @@ class CrossConfounderRobustnessMargin:
                 the typed sets and the margin formula are shared. On unit vectors it keeps
                 every neighbour order, and at ``m=1`` maps a cosine margin ``c`` to
                 ``(sqrt(1 + c) - sqrt(1 - c)) / (sqrt(1 + c) + sqrt(1 - c))``.
+                ``"manhattan"`` compares the rows as given by ``sum_j |x_j - y_j|``, with
+                no normalisation, for the same sensitivity use. It is not a monotone
+                function of cosine distance, even on unit vectors, so it can reorder
+                neighbours; and it depends on the coordinate basis, so rotating the
+                embedding changes it.
+                A callable computes a distance elsewhere -- on a GPU, say: it is handed each
+                subset's rows as given and returns their ``(n, n)`` pairwise distance
+                matrix, and the search reads the neighbours off that matrix instead of
+                computing them. The subsets, same-group exclusion, typed sets, adaptive
+                ``k`` and margin are unchanged, so a callable returning the Manhattan
+                distances scores exactly as ``"manhattan"`` does, up to how it rounds them.
 
         Raises:
-            ValueError: If ``distance`` is neither ``"cosine"`` nor ``"euclidean"``.
+            ValueError: If ``distance`` is neither a callable nor ``"cosine"``,
+                ``"euclidean"`` or ``"manhattan"``, or if a callable does not return a
+                finite, non-negative square matrix with a zero diagonal.
             RuntimeError: If any requested sample or subset occurrence does not have both
                 required typed-neighbour sets after adaptive search, or has a zero margin
                 denominator. No pooled or tail statistics are returned in that case.
         """
         evaluation_design = _normalize_evaluation_design(evaluation_design)
-        if distance not in CROMA_DISTANCES:
+        if not callable(distance) and distance not in CROMA_DISTANCES:
             raise ValueError(f"distance must be one of {CROMA_DISTANCES}, got {distance!r}")
 
         if isinstance(m, (list, tuple)):

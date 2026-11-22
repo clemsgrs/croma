@@ -123,6 +123,9 @@ STUDIES: list[tuple[str, str, list[str]]] = [
      ["evaluate", "--recompute", "--pairs", *SLIDE_VS_MEANPOOL_PAIRS]),
     # After the runs (its cosine cells must reproduce them) and the APD study (its nIPD
     # correlations are checked against apd_correlation.csv). Resumable; hours on four workers.
+    # Prerequisite: torch with a CUDA device, on which the normalised-manhattan cells' L1
+    # distances are computed (torch.cdist); there is no CPU fallback. Without one, sweep
+    # stops before starting any unit, naming CUDA, while such a cell is still to be scored.
     ("distance-variants", "scripts/studies/distance_variants.py", ["sweep", "--workers", "4"]),
     # Reads only the benchmark runs above: a 100% reproduction check of each tile cohort's
     # metrics.csv, then 180 subsampled replicates, about 90 CPU-hours (a day on its default
