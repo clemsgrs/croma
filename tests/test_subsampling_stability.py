@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -541,18 +542,18 @@ def _row(frame: pd.DataFrame, **where) -> pd.Series:
 
 
 class TestMeasures:
-    def test_kendall_tau_k_agreement_is_summarised_by_median_and_iqr(self, small_study):
+    def test_spearman_agreement_is_summarised_by_median_and_iqr(self, small_study):
         root, design = small_study
         ranking = measures.ranking_summary(measures.load(root, expected=design))
-        # croma: tau_K = 1, 1, 2/3 (one discordant pair of six).
+        # CRoMa: two identical rankings and one adjacent swap among four encoders.
         row = _row(ranking, cohort="pathorob-camelyon", fraction=25, metric="croma")
-        assert row["tau_k_median"] == pytest.approx(1.0)
-        assert row["tau_k_q25"] == pytest.approx(5 / 6)
-        assert row["tau_k_q75"] == pytest.approx(1.0)
+        assert row["rho_median"] == pytest.approx(1.0)
+        assert row["rho_q25"] == pytest.approx(0.9)
+        assert row["rho_q75"] == pytest.approx(1.0)
         assert row["n_replicates"] == 3 and row["n_encoders"] == 4
-        # ri: tau_K = 2/3, -1, 1.
+        # RI: one adjacent swap (0.8), reversed (-1), identical (1).
         row = _row(ranking, cohort="pathorob-camelyon", fraction=25, metric="ri")
-        assert row["tau_k_median"] == pytest.approx(2 / 3)
+        assert row["rho_median"] == pytest.approx(0.8)
 
     def test_rank_interval_width_is_the_median_over_encoders_of_the_95pct_range(self, small_study):
         root, design = small_study
@@ -572,22 +573,25 @@ class TestMeasures:
         ranking = measures.ranking_summary(measures.load(root, expected=design))
         for metric in measures.METRICS:
             row = _row(ranking, cohort="pathorob-camelyon", fraction=100, metric=metric)
-            assert row["tau_k_median"] == 1.0
+            assert row["rho_median"] == 1.0
             assert row["rank_width_median"] == 0.0
 
-    def test_the_paired_comparison_differences_tau_k_within_each_replicate(self, small_study):
+    def test_draw_correlations_match_encoder_identity_and_average_tied_ranks(self, small_study):
         root, design = small_study
-        paired = measures.paired_summary(measures.load(root, expected=design))
-        # croma - ri per replicate: 1/3, 2, -1/3.
-        row = _row(paired, cohort="pathorob-camelyon", fraction=25, versus="ri")
-        assert row["tau_k_diff_median"] == pytest.approx(1 / 3)
-        assert row["tau_k_diff_lo"] == pytest.approx(-0.3)
-        assert row["tau_k_diff_hi"] == pytest.approx(1 / 3 + 0.95 * 5 / 3)
-        assert row["n_croma_higher"] == 2 and row["n_replicates"] == 3
-        # croma - mari: 0, 0, -1/3 -- a tie is not "higher".
-        row = _row(paired, cohort="pathorob-camelyon", fraction=25, versus="mari")
-        assert row["tau_k_diff_median"] == pytest.approx(0.0)
-        assert row["n_croma_higher"] == 0
+        data = measures.load(root, expected=design)
+        draw = (data.scores["fraction"] == 25) & (data.scores["replicate"] == 0)
+        data.scores.loc[draw & data.scores["model"].isin(["A", "B"]), "ri"] = 4.0
+        # Reverse the rows of this draw relative to full-cohort order.
+        data.scores.loc[draw] = data.scores.loc[draw].iloc[::-1].to_numpy()
+        row = _row(
+            measures.spearman_rho(data),
+            cohort="pathorob-camelyon",
+            fraction=25,
+            replicate=0,
+            metric="ri",
+        )
+        # The two top-ranked encoders share rank 1.5; full-cohort ranks are 1, 2, 3, 4.
+        assert row["rho"] == pytest.approx(0.9486832980505138)
 
     def test_k_and_support_are_summarised_against_the_full_cohort(self, small_study):
         root, design = small_study
@@ -623,11 +627,11 @@ class TestMeasures:
         replicate = data.scores[data.scores["fraction"] == 25].set_index("model")
         for metric in measures.METRICS:
             assert (replicate.loc["B", metric], replicate.loc["C", metric]) == (hi, lo)
-        tau = measures.kendall_tau_k(data)
+        correlations = measures.spearman_rho(data)
         for metric in measures.METRICS:
-            # One discordant pair of six.
-            row = _row(tau, cohort=cohort, fraction=25, metric=metric)
-            assert row["tau_k"] == pytest.approx(2 / 3)
+            # One adjacent rank swap among four encoders.
+            row = _row(correlations, cohort=cohort, fraction=25, metric=metric)
+            assert row["rho"] == pytest.approx(0.8)
 
     def test_a_missing_replicate_fails_the_load(self, small_study):
         root, design = small_study
@@ -752,7 +756,8 @@ class TestRendering:
         tex = floats.build_table(real_design_study)
         assert r"\label{tab:subsampling-stability}" in tex
         assert tex.count(r"\label{") == 1
-        assert tex.startswith("% AUTO-GENERATED")
+        assert r"Spearman's $\rho$" in _caption(tex)
+        assert r"Cohort & Fraction & Shared $k$ & \code{RI} support \\" in tex
         for name in ("Camelyon", "TCGA-4x4", "Tolkach-ESCA"):
             assert name in tex
         # (a) one row per cohort x metric; (b) one row per cohort x fraction.
@@ -775,12 +780,13 @@ class TestRendering:
         assert r"\includegraphics" in tex and "subsampling_stability.pdf" in tex
         assert "[!htbp]" in tex
 
-    def test_the_figure_caption_states_the_nominal_fraction_and_each_cohort_s_units(
+    def test_the_figure_caption_states_the_fractions_and_each_cohort_s_units(
         self, real_design_study
     ):
         """The declared counts only approximate 25/50/75% (Tolkach-ESCA keeps 40/60/80%)."""
         caption = _caption(floats.build_figure(real_design_study))
-        assert "nominal" in caption
+        assert r"Spearman's $\rho$" in caption
+        assert r"At 25\%, 50\% and 75\%" in caption
         for units in (
             "Camelyon $4/8/13$ of $17$ slides",
             "TCGA-4x4 $3/6/9$ of $12$ slides",
@@ -818,30 +824,37 @@ class TestRendering:
         assert (tmp_path / "plots" / "png" / "subsampling_stability.png").stat().st_size
         assert (tmp_path / "plots" / "pdf" / "subsampling_stability.pdf").stat().st_size
 
-    def test_the_macros_cover_every_cohort_metric_and_comparison(self, real_design_study):
-        lines = measures.macros(real_design_study)
-        parsed = [re.fullmatch(r"\\newcommand\{\\([A-Za-z]+)\}\{.+\}", line) for line in lines]
-        assert all(parsed), [line for line, m in zip(lines, parsed) if not m]
-        names = [m.group(1) for m in parsed]
-        assert len(names) == len(set(names))
-        prefixes = ("Camelyon", "TcgaFourByFour", "Tolkach")
-        for prefix in prefixes:
-            for metric in ("Ri", "RiFixedK", "Mari", "MariFixedK", "Croma", "Ltm"):
-                assert f"{prefix}SubsampleHalfKendall{metric}" in names
-            for against in ("Ri", "Mari"):
-                for stat in ("", "Range", "Higher"):
-                    assert f"{prefix}SubsampleHalfCromaMinus{against}{stat}" in names
-            assert f"{prefix}SubsampleQuarterSharedKRange" in names
-            for stat in ("Tolerance", "MaxDeviation"):
-                assert f"{prefix}SubsampleReproduction{stat}" in names
-        assert not any(c.isdigit() for name in names for c in name)
+    def test_paper_macros_report_half_cohort_ranking_stability(self, small_study):
+        root, design = small_study
+        data = measures.load(root, expected=design)
+        # Reuse the same three draws at 50%, with RI draws in a different order.
+        # CRoMa correlations are (1, 1, 0.8) and RI correlations are (-1, 1, 0.8).
+        half = data.scores[data.scores["fraction"] == 25].assign(fraction=50)
+        for replicate, scores in enumerate(((1, 2, 3, 4), (4, 3, 2, 1), (3, 4, 2, 1))):
+            half.loc[half["replicate"] == replicate, "ri"] = scores
+        # These three metrics are excluded from the paper's half-cohort range.
+        for column in ("ri_fixed_k", "mari_fixed_k", "croma_ltm_alpha"):
+            half[column] = -half[column]
+        half_meta = data.meta[data.meta["fraction"] == 25].assign(fraction=50)
+        data = replace(
+            data,
+            scores=pd.concat([data.scores, half], ignore_index=True),
+            meta=pd.concat([data.meta, half_meta], ignore_index=True),
+            design={**design, "fractions": [25, 50]},
+        )
+        assert set(measures.macros(data)) == {
+            r"\newcommand{\SubsampleNReplicates}{3}",
+            r"\newcommand{\SubsampleHalfSpearmanMin}{0.800}",
+            r"\newcommand{\SubsampleHalfSpearmanMax}{1.000}",
+            # Median of paired differences (2, 0, 0) equals 0.
+            r"\newcommand{\CamelyonSubsampleHalfSpearmanCromaMinusRi}{0.000}",
+            r"\newcommand{\CamelyonSubsampleQuarterSharedKRange}{$9$--$21$}",
+            r"\newcommand{\CamelyonSubsampleReproductionTolerance}{$0$}",
+            r"\newcommand{\CamelyonSubsampleReproductionMaxDeviation}{$0$}",
+        }
 
-    def test_a_macro_carries_the_number_it_names(self, real_design_study):
-        ranking = measures.ranking_summary(real_design_study)
-        row = _row(ranking, cohort="pathorob-tolkach-esca", fraction=50, metric="mari")
+    def test_the_full_cohort_reproduction_macros_match_the_record(self, real_design_study):
         lines = measures.macros(real_design_study)
-        (line,) = [l for l in lines if r"{\TolkachSubsampleHalfKendallMari}" in l]
-        assert line.endswith("{" + f"${row['tau_k_median']:.2f}$" + "}")
         assert r"\newcommand{\TolkachSubsampleReproductionTolerance}{$10^{-4}$}" in lines
         assert (
             r"\newcommand{\TolkachSubsampleReproductionMaxDeviation}{$1.1\times10^{-7}$}" in lines
@@ -893,7 +906,7 @@ class TestPaperValues:
         monkeypatch.setattr(generate_low_data_table, "macros", lambda root: [])
         root = tmp_path / "output" / "studies" / "subsampling-stability"
         _write_real_design_study(root, seed=0)
-        cited = r"\newcommand{\TolkachSubsampleHalfKendallMari}"
+        cited = r"\newcommand{\SubsampleHalfSpearmanMin}"
         assert cited not in values.build([], tmp_path, "auto")
         assert study.mark_complete(root, study.design())
         tex = values.build([], tmp_path, "auto")

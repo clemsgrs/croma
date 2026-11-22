@@ -1,9 +1,9 @@
 """Ranking stability under cohort subsampling (fig:subsampling-stability).
 
-One column per tile cohort. The top row draws Kendall's tau_K between each replicate's
+One column per tile cohort. The top row draws Spearman's rho between each replicate's
 ranking of the pathology encoders and the same metric's full-cohort ranking against the
 nominal subsampling fraction (median line, interquartile band; the full cohort sits at
-tau_K = 1). The bottom row draws the median over encoders of each encoder's 2.5-97.5
+rho = 1). The bottom row draws the median over encoders of each encoder's 2.5-97.5
 percentile rank range across replicates. RI and MaRI appear twice: solid at the
 re-selected shared k, dashed at the full-cohort shared k.
 
@@ -75,7 +75,7 @@ def render(data: S.Study, out: Path = OUT) -> Path:
             colour = plotstyle.METRIC_COLOR[colour_key]
             top.plot(
                 x,
-                rows["tau_k_median"],
+                rows["rho_median"],
                 style,
                 color=colour,
                 lw=plotstyle.LW_SERIES,
@@ -84,7 +84,7 @@ def render(data: S.Study, out: Path = OUT) -> Path:
                 ms=2.5,
             )
             top.fill_between(
-                x, rows["tau_k_q25"], rows["tau_k_q75"], color=colour, alpha=0.12, lw=0
+                x, rows["rho_q25"], rows["rho_q75"], color=colour, alpha=0.12, lw=0
             )
             bottom.plot(
                 x,
@@ -105,7 +105,7 @@ def render(data: S.Study, out: Path = OUT) -> Path:
         top.set_ylim(None, 1.03)
         bottom.set_ylim(0, None)
         bottom.set_xlabel("Subsampling fraction (nominal)")
-    axes[0][0].set_ylabel(r"Kendall $\tau_K$ vs full cohort")
+    axes[0][0].set_ylabel(r"Spearman $\rho$ vs full cohort")
     axes[1][0].set_ylabel("Median rank range (2.5-97.5%)")
     P._finalize_figure(
         fig,

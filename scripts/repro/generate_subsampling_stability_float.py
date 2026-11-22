@@ -46,32 +46,38 @@ METRIC_TEX = {
     "croma": r"median \code{CRoMa}",
     "croma_ltm_alpha": r"$\mcode{LTM}_{10}$",
 }
-VERSUS_TEX = {"ri": r"\code{RI}", "mari": r"\code{MaRI}"}
 
 
 def _cohort(cohort: str) -> str:
     return by_benchmark(cohort).short_name
 
 
-def _units(data: S.Study) -> str:
-    """``Camelyon $4/8/13$ of $17$ slides, ...``: the design table, read from the study."""
+def _units(data: S.Study, *, compact: bool) -> str:
+    """Format the retained unit counts for the figure (compact) or the table caption."""
     unit = {
         "pathorob-camelyon": "slides",
         "pathorob-tcga-4x4": "slides",
         "pathorob-tolkach-esca": "case blocks",
     }
     parts = []
-    for cohort in data.design["cohorts"]:
+    for index, cohort in enumerate(data.design["cohorts"]):
         per = data.design["units_per_cell"][cohort]
-        kept = "/".join(str(per[str(f)]) for f in data.design["fractions"])
-        parts.append(f"{_cohort(cohort)} ${kept}$ of ${per['full']}$ {unit[cohort]}")
-    return "; ".join(parts)
+        counts = [str(per[str(f)]) for f in data.design["fractions"]]
+        if compact:
+            kept = "/".join(counts)
+            parts.append(f"{_cohort(cohort)} ${kept}$ of ${per['full']}$ {unit[cohort]}")
+        else:
+            where = " per class and centre" if index == 0 else ""
+            parts.append(
+                f"{_join(counts)} of {per['full']} {unit[cohort]}{where} on {_cohort(cohort)}"
+            )
+    return "; ".join(parts) if compact else _join(parts, ", and ")
 
 
 def _fixed_k(data: S.Study) -> str:
     full = data.meta[data.meta["fraction"] == S.study.FULL]
     by = dict(zip(full["cohort"], full["shared_k"].astype(int)))
-    return ", ".join(f"{_cohort(c)} ${by[c]}$" for c in data.design["cohorts"])
+    return _join([f"{by[c]} on {_cohort(c)}" for c in data.design["cohorts"]])
 
 
 def _n_encoders(data: S.Study) -> int:
@@ -81,7 +87,7 @@ def _n_encoders(data: S.Study) -> int:
 
 def _fractions(data: S.Study) -> str:
     fs = [f"{f}\\%" for f in data.design["fractions"]]
-    return ", ".join(fs[:-1]) + f" and {fs[-1]}"
+    return _join(fs)
 
 
 def _k_grid_clause(data: S.Study) -> str:
@@ -126,7 +132,6 @@ def _reproduction_clause(data: S.Study) -> str:
 
 def build_table(data: S.Study) -> str:
     ranking = S.ranking_summary(data)
-    paired = S.paired_summary(data)
     ks = S.k_support_summary(data)
     fractions = [int(f) for f in data.design["fractions"]]
     n_metrics = len(S.METRICS)
@@ -136,14 +141,14 @@ def build_table(data: S.Study) -> str:
         r"\begin{table}[!htbp]",
         r"\centering",
         r"\footnotesize",
-        r"\setlength{\tabcolsep}{4pt}",
+        r"\setlength{\tabcolsep}{2pt}",
         r"\textbf{a}\par\smallskip",
         r"\begin{tabular}{ll" + "cc" * len(fractions) + "}",
         r"\hline",
         " & & "
         + " & ".join(rf"\multicolumn{{2}}{{c}}{{{f}\%}}" for f in fractions)
         + r" \\",
-        r"Cohort & Metric & " + " & ".join([r"$\tau_K$ & $w$"] * len(fractions)) + r" \\",
+        r"Cohort & Metric & " + " & ".join([r"$\rho$ & $w$"] * len(fractions)) + r" \\",
         r"\hline",
     ]
     for cohort in data.design["cohorts"]:
@@ -157,9 +162,9 @@ def build_table(data: S.Study) -> str:
                     & (ranking["metric"] == metric)
                 ].iloc[0]
                 cells.append(
-                    num_math(row["tau_k_median"])
+                    num_math(row["rho_median"], decimals=3)
                     + r"\,"
-                    + scriptsize_ci(row["tau_k_q25"], row["tau_k_q75"])
+                    + scriptsize_ci(row["rho_q25"], row["rho_q75"], decimals=3)
                 )
                 cells.append(num_math(row["rank_width_median"], decimals=1))
             lines.append(f"{label} & {METRIC_TEX[metric]} & " + " & ".join(cells) + r" \\")
@@ -168,37 +173,19 @@ def build_table(data: S.Study) -> str:
         r"\end{tabular}",
         r"\par\medskip",
         r"\textbf{b}\par\smallskip",
-        r"\begin{tabular}{llcccc}",
+        r"\begin{tabular}{llcc}",
         r"\hline",
-        r"Cohort & Fraction & "
-        + " & ".join(rf"$\Delta\tau_K$ vs {VERSUS_TEX[v]}" for v in S.PAIRED_AGAINST)
-        + r" & Shared $k$ & \code{RI} support \\",
+        r"Cohort & Fraction & Shared $k$ & \code{RI} support \\",
         r"\hline",
     ]
-    n_rep = int(data.design["n_replicates"])
     for cohort in data.design["cohorts"]:
         for i, f in enumerate(fractions):
             label = rf"\multirow{{{len(fractions)}}}{{*}}{{{_cohort(cohort)}}}" if i == 0 else ""
-            cells = []
-            for against in S.PAIRED_AGAINST:
-                row = paired[
-                    (paired["cohort"] == cohort)
-                    & (paired["fraction"] == f)
-                    & (paired["versus"] == against)
-                ].iloc[0]
-                cells.append(
-                    num_math(row["tau_k_diff_median"])
-                    + r"\,"
-                    + scriptsize_ci(row["tau_k_diff_lo"], row["tau_k_diff_hi"])
-                    + rf"\,({int(row['n_croma_higher'])}/{n_rep})"
-                )
             k = ks[(ks["cohort"] == cohort) & (ks["fraction"] == f)].iloc[0]
             lo, hi = int(k["shared_k_min"]), int(k["shared_k_max"])
-            cells.append(f"${lo}$" if lo == hi else f"${lo}$--${hi}$")
-            cells.append(
-                f"{pct_round(k['support_median'])} ({pct_round(k['full_support_median'])})"
-            )
-            lines.append(f"{label} & {f}\\% & " + " & ".join(cells) + r" \\")
+            shared_k = f"${lo}$" if lo == hi else f"${lo}$--${hi}$"
+            support = f"{pct_round(k['support_median'])} ({pct_round(k['full_support_median'])})"
+            lines.append(rf"{label} & {f}\% & {shared_k} & {support} \\")
         lines.append(r"\hline")
     lines += [r"\end{tabular}", "\\caption{" + _table_caption(data) + "}"]
     lines += [r"\label{tab:subsampling-stability}", r"\end{table}"]
@@ -209,24 +196,22 @@ def _table_caption(data: S.Study) -> str:
     n_rep = int(data.design["n_replicates"])
     return (
         r"\textbf{Score and ranking stability under cohort subsampling.} "
-        r"Each tile cohort is subsampled without replacement within every "
-        r"class$\times$centre cell, keeping a fixed number of units per cell at "
-        f"{_fractions(data)} ({_units(data)}). Each fraction has ${n_rep}$ replicates, "
-        r"one draw is shared by every encoder and metric, and every score is recomputed "
-        r"on the subsample. "
-        r"\textbf{a}, Kendall's $\tau_K$ between each replicate's ranking of the "
-        f"${_n_encoders(data)}$ pathology encoders and the same metric's full-cohort "
-        r"ranking: median {\scriptsize[IQR]} over replicates. $w$ is the median over "
-        r"encoders of the 2.5--97.5 percentile range of an encoder's rank across "
-        r"replicates. Re-selected $k$ re-runs the median-$k$ protocol on the subsample; "
-        f"fixed $k$ holds the full-cohort shared $k$ ({_fixed_k(data)}). "
-        r"\textbf{b}, per replicate, $\tau_K$ of median \code{CRoMa} minus that of "
-        r"\code{RI} and of \code{MaRI}, both at re-selected $k$: median "
-        r"{\scriptsize[2.5--97.5 percentile range]} and the number of replicates in which "
-        r"\code{CRoMa}'s is higher. Shared $k$ is the range of the re-selected shared $k$ "
-        r"over replicates. \code{RI} support is the median over encoders and replicates of "
-        r"the share of anchors with a defined \code{RI}, with the full-cohort value in "
-        f"parentheses. {_k_grid_clause(data)} {_reproduction_clause(data)} "
+        f"For each of ${n_rep}$ draws per subsampling fraction, we sampled without "
+        "replacement within each class and centre and recomputed all scores on the same "
+        f"samples for every encoder. At the nominal fractions of {_fractions(data)}, "
+        f"each draw retained {_units(data, compact=False)}. "
+        r"\textbf{a}, Spearman's $\rho$ compares the ranking of the "
+        f"${_n_encoders(data)}$ pathology encoders on each draw with their full-cohort "
+        "ranking for the same metric. Values are medians over draws, with interquartile "
+        "ranges in brackets. To quantify rank variability, we calculated the difference "
+        "between the 97.5th and 2.5th percentiles of each encoder's rank across draws. "
+        "$w$ is the median of these differences across encoders, in rank positions. "
+        "We either re-selected $k$ on each draw or used the full-cohort value "
+        f"({_fixed_k(data)}). "
+        r"\textbf{b}, Range of the re-selected $k$ across draws and median \code{RI} "
+        r"support across encoders and draws. Support is the proportion of anchors with "
+        r"a defined \code{RI}. Parentheses give full-cohort support. "
+        f"{_k_grid_clause(data)} {_reproduction_clause(data)} "
         r"The natural-image control is computed but "
         r"excluded from every ranking and summary."
     )
@@ -235,15 +220,16 @@ def _table_caption(data: S.Study) -> str:
 def build_figure(data: S.Study) -> str:
     n_rep = int(data.design["n_replicates"])
     caption = (
-        r"\textbf{Ranking stability under cohort subsampling.} One column per tile "
-        r"cohort. Top: Kendall's $\tau_K$ between each replicate's ranking of the "
-        f"${_n_encoders(data)}$ pathology encoders and the same metric's full-cohort "
-        r"ranking, against the nominal subsampling fraction "
-        f"(median line and interquartile band over ${n_rep}$ replicates; $100\\%$ is the "
-        r"full cohort, where $\tau_K=1$). Bottom: the median over encoders of the "
-        r"2.5--97.5 percentile range of an encoder's rank across replicates. "
-        f"At {_fractions(data)}, every class$\\times$centre cell keeps a fixed number of "
-        f"units ({_units(data)}). Solid "
+        r"\textbf{Ranking stability under cohort subsampling.} Each column shows one tile "
+        r"cohort. The top row shows Spearman's $\rho$ between the ranking of the "
+        f"${_n_encoders(data)}$ pathology encoders on each subsample and their full-cohort "
+        "ranking under the same metric. Lines show the median and shading the interquartile "
+        f"range across ${n_rep}$ draws per fraction. "
+        r"At $100\%$, the ranking is compared with itself ($\rho=1$). The bottom row "
+        "shows how far individual encoders moved in rank, measured as the difference between "
+        "the 97.5th and 2.5th percentiles of each encoder's rank across draws and summarised "
+        f"by the median across encoders. At {_fractions(data)}, every class$\\times$centre "
+        f"cell keeps a fixed number of units ({_units(data, compact=True)}). Solid "
         r"\code{RI} and \code{MaRI} lines re-select $k$ on each subsample, and dashed lines "
         r"hold the full-cohort shared $k$. The natural-image control is excluded. Values are "
         r"in Table~\ref{tab:subsampling-stability}."

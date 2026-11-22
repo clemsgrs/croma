@@ -12,18 +12,14 @@ A study is read whole or not at all: a missing replicate, or a full-cohort run w
 reproduction check did not pass under its cohort's tolerance, raises
 :class:`IncompleteStudyError`. Nothing warns and skips.
 
-Measures (all on the ranked encoders; "Kendall's tau_K" throughout, so it is never read as
-the MaRI temperature tau):
+Measures on the ranked encoders:
 
-* **ranking agreement** -- Kendall's tau_K (tau-b) between a replicate's scores and the same
+* **ranking agreement** -- Spearman's rho between a replicate's scores and the same
   metric's full-cohort scores; median and IQR over replicates;
 * **rank-interval width** -- per encoder, the 2.5-97.5 percentile range of its rank (1 =
   best) across replicates; median over encoders;
 * **drift** -- per encoder and replicate, subsample score minus full-cohort score; median
   over both, signed, in the metric's own units (a curve per metric, never compared across);
-* **paired comparison** -- per replicate, tau_K(CRoMa) minus tau_K(RI), and minus
-  tau_K(MaRI), both at the re-selected k; median, 2.5-97.5 percentile range, and the number
-  of replicates where CRoMa's is strictly higher;
 * **k and support** -- the range of the re-selected shared k, the share of encoder x
   replicate pairs whose k* differs from the encoder's full-cohort k*, and the median RI
   support beside its full-cohort value.
@@ -38,7 +34,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from scipy.stats import kendalltau
+from scipy.stats import spearmanr
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
@@ -59,11 +55,6 @@ METRICS = {
     "croma_ltm_alpha": "LTM10",
 }
 
-#: The paired comparison: CRoMa's agreement minus each of these, at the re-selected k.
-PAIRED_REFERENCE = "croma"
-PAIRED_AGAINST = ("ri", "mari")
-
-#: Percentiles of the rank interval and of the paired-difference range.
 INTERVAL = (2.5, 97.5)
 
 
@@ -177,8 +168,8 @@ def _full(scores: pd.DataFrame) -> pd.DataFrame:
     return scores[scores["fraction"] == study.FULL]
 
 
-def kendall_tau_k(data: Study) -> pd.DataFrame:
-    """Kendall's tau_K of each replicate against its cohort's full-cohort scores, per metric."""
+def spearman_rho(data: Study) -> pd.DataFrame:
+    """Spearman correlation of each draw with the full cohort, matching encoders by name."""
     rows = []
     for cohort, per_cohort in data.scores.groupby("cohort", sort=False):
         full = _full(per_cohort).set_index("model")
@@ -187,8 +178,8 @@ def kendall_tau_k(data: Study) -> pd.DataFrame:
         ):
             rep = rep.set_index("model").loc[full.index]
             for metric in METRICS:
-                tau = kendalltau(rep[metric], full[metric]).statistic
-                if not np.isfinite(tau):
+                rho = spearmanr(rep[metric], full[metric]).statistic
+                if not np.isfinite(rho):
                     raise ValueError(f"{cohort} f{fraction} r{replicate}: {metric} is constant")
                 rows.append(
                     {
@@ -196,7 +187,7 @@ def kendall_tau_k(data: Study) -> pd.DataFrame:
                         "fraction": int(fraction),
                         "replicate": int(replicate),
                         "metric": metric,
-                        "tau_k": float(tau),
+                        "rho": float(rho),
                     }
                 )
     return pd.DataFrame(rows)
@@ -204,7 +195,7 @@ def kendall_tau_k(data: Study) -> pd.DataFrame:
 
 def ranking_summary(data: Study) -> pd.DataFrame:
     """Ranking agreement, rank-interval width and drift, per cohort x fraction x metric."""
-    tau = kendall_tau_k(data)
+    agreement = spearman_rho(data)
     rows = []
     for (cohort, fraction), group in data.scores.groupby(["cohort", "fraction"], sort=False):
         full = _full(data.scores[data.scores["cohort"] == cohort]).set_index("model")
@@ -218,50 +209,23 @@ def ranking_summary(data: Study) -> pd.DataFrame:
                 lambda r: float(np.percentile(r, hi) - np.percentile(r, lo))
             )
             drift = group[metric].to_numpy() - full.loc[group["model"], metric].to_numpy()
-            t = tau[
-                (tau["cohort"] == cohort)
-                & (tau["fraction"] == fraction)
-                & (tau["metric"] == metric)
-            ]["tau_k"]
+            draws = agreement[
+                (agreement["cohort"] == cohort)
+                & (agreement["fraction"] == fraction)
+                & (agreement["metric"] == metric)
+            ]["rho"]
             rows.append(
                 {
                     "cohort": cohort,
                     "fraction": int(fraction),
                     "metric": metric,
-                    "tau_k_median": float(np.median(t)),
-                    "tau_k_q25": float(np.percentile(t, 25)),
-                    "tau_k_q75": float(np.percentile(t, 75)),
+                    "rho_median": float(np.median(draws)),
+                    "rho_q25": float(np.percentile(draws, 25)),
+                    "rho_q75": float(np.percentile(draws, 75)),
                     "rank_width_median": float(np.median(width)),
                     "drift_median": float(np.median(drift)),
                     "n_replicates": int(group["replicate"].nunique()),
                     "n_encoders": int(group["model"].nunique()),
-                }
-            )
-    return _ordered(pd.DataFrame(rows), data)
-
-
-def paired_summary(data: Study) -> pd.DataFrame:
-    """tau_K(CRoMa) minus tau_K(RI) and tau_K(MaRI), per replicate; per cohort x fraction."""
-    tau = kendall_tau_k(data)
-    tau = tau[tau["fraction"] != study.FULL]
-    wide = tau.pivot_table(
-        index=["cohort", "fraction", "replicate"], columns="metric", values="tau_k"
-    )
-    rows = []
-    for (cohort, fraction), group in wide.groupby(level=["cohort", "fraction"], sort=False):
-        for against in PAIRED_AGAINST:
-            diff = (group[PAIRED_REFERENCE] - group[against]).to_numpy()
-            lo, hi = np.percentile(diff, INTERVAL)
-            rows.append(
-                {
-                    "cohort": cohort,
-                    "fraction": int(fraction),
-                    "versus": against,
-                    "tau_k_diff_median": float(np.median(diff)),
-                    "tau_k_diff_lo": float(lo),
-                    "tau_k_diff_hi": float(hi),
-                    "n_croma_higher": int((diff > 0).sum()),
-                    "n_replicates": int(len(diff)),
                 }
             )
     return _ordered(pd.DataFrame(rows), data)
@@ -298,72 +262,40 @@ def k_support_summary(data: Study) -> pd.DataFrame:
 
 # --------------------------------------------------------------------------- macros
 
-#: Macro spelling of each metric (LaTeX command names take letters only).
-MACRO_METRIC = {
-    "ri": "Ri",
-    "ri_fixed_k": "RiFixedK",
-    "mari": "Mari",
-    "mari_fixed_k": "MariFixedK",
-    "croma": "Croma",
-    "croma_ltm_alpha": "Ltm",
-}
-MACRO_FRACTION = {25: "Quarter", 50: "Half", 75: "ThreeQuarter"}
-
-
 def macros(data: Study) -> list[str]:
-    r"""The study's ``\newcommand`` lines: numbers only, never a verdict.
-
-    Per cohort (macro family = the cohort's ``paper_manifest`` prefix):
-    ``\<P>SubsampleHalfKendall<Metric>`` -- median tau_K at 50%;
-    ``\<P>SubsampleHalfCromaMinus{Ri,Mari}`` -- the paired difference's median at 50%, with
-    ``...Range`` (its 2.5-97.5 percentile range) and ``...Higher`` (replicates where CRoMa's
-    tau_K is higher); ``\<P>SubsampleQuarterSharedKRange`` -- the re-selected shared k's range
-    at 25%; ``\<P>SubsampleReproductionTolerance`` and ``...MaxDeviation`` -- the absolute
-    tolerance the full-cohort run was checked against (0: exactly) and the largest deviation
-    from production it recorded. ``\SubsampleNReplicates`` is the replicate count those
-    counts are out of.
-    """
-    from _paper_tables import bare_num, num_math, sci_math
+    """Half-cohort rank agreement, quarter-cohort shared k, and reproduction checks."""
+    from _paper_tables import bare_num, sci_math
     from paper_manifest import by_benchmark
 
-    ranking = ranking_summary(data)
-    paired = paired_summary(data)
-    ks = k_support_summary(data)
-
-    def pick(frame, **where):
-        mask = np.ones(len(frame), dtype=bool)
-        for key, value in where.items():
-            mask &= frame[key].to_numpy() == value
-        if mask.sum() != 1:
-            raise IncompleteStudyError(f"no single summary row for {where}")
-        return frame[mask].iloc[0]
-
-    half, quarter = 50, 25
-    lines = [rf"\newcommand{{\SubsampleNReplicates}}{{{int(data.design['n_replicates'])}}}"]
+    agreement = spearman_rho(data)
+    half = agreement.loc[agreement["fraction"] == 50].pivot(
+        index=["cohort", "replicate"], columns="metric", values="rho"
+    )
+    medians = half[["croma", "ri", "mari"]].groupby(level="cohort").median()
+    # The rebuttal compares CRoMa and RI on the same draw before taking the median.
+    paired = (half["croma"] - half["ri"]).groupby(level="cohort").median()
+    lines = [
+        rf"\newcommand{{\SubsampleNReplicates}}{{{int(data.design['n_replicates'])}}}",
+        rf"\newcommand{{\SubsampleHalfSpearmanMin}}{{{bare_num(medians.min().min(), 3)}}}",
+        rf"\newcommand{{\SubsampleHalfSpearmanMax}}{{{bare_num(medians.max().max(), 3)}}}",
+    ]
     for cohort in data.design["cohorts"]:
         p = by_benchmark(cohort).prefix
-        h = MACRO_FRACTION[half]
-        for metric, name in MACRO_METRIC.items():
-            row = pick(ranking, cohort=cohort, fraction=half, metric=metric)
-            lines.append(
-                rf"\newcommand{{\{p}Subsample{h}Kendall{name}}}"
-                rf"{{{num_math(row['tau_k_median'])}}}"
-            )
-        for against in PAIRED_AGAINST:
-            row = pick(paired, cohort=cohort, fraction=half, versus=against)
-            stem = rf"\{p}Subsample{h}CromaMinus{MACRO_METRIC[against]}"
-            lo, hi = bare_num(row["tau_k_diff_lo"]), bare_num(row["tau_k_diff_hi"])
-            lines += [
-                rf"\newcommand{{{stem}}}{{{num_math(row['tau_k_diff_median'])}}}",
-                rf"\newcommand{{{stem}Range}}{{$[{lo}, {hi}]$}}",
-                rf"\newcommand{{{stem}Higher}}{{{int(row['n_croma_higher'])}}}",
-            ]
-        row = pick(ks, cohort=cohort, fraction=quarter)
         lines.append(
-            rf"\newcommand{{\{p}Subsample{MACRO_FRACTION[quarter]}SharedKRange}}"
+            rf"\newcommand{{\{p}SubsampleHalfSpearmanCromaMinusRi}}"
+            rf"{{{bare_num(paired.loc[cohort], 3)}}}"
+        )
+
+    ks = k_support_summary(data).set_index(["cohort", "fraction"])
+    reproduction = data.reproduction.set_index("cohort")
+    for cohort in data.design["cohorts"]:
+        p = by_benchmark(cohort).prefix
+        row = ks.loc[(cohort, 25)]
+        lines.append(
+            rf"\newcommand{{\{p}SubsampleQuarterSharedKRange}}"
             rf"{{${int(row['shared_k_min'])}$--${int(row['shared_k_max'])}$}}"
         )
-        row = pick(data.reproduction, cohort=cohort)
+        row = reproduction.loc[cohort]
         lines += [
             rf"\newcommand{{\{p}SubsampleReproductionTolerance}}{{{sci_math(row['tolerance'])}}}",
             rf"\newcommand{{\{p}SubsampleReproductionMaxDeviation}}"
@@ -378,9 +310,7 @@ def _ordered(frame: pd.DataFrame, data: Study) -> pd.DataFrame:
     frame = frame.assign(_cohort=frame["cohort"].map(order))
     if "metric" in frame:
         frame = frame.assign(_metric=frame["metric"].map(list(METRICS).index))
-    if "versus" in frame:
-        frame = frame.assign(_versus=frame["versus"].map(PAIRED_AGAINST.index))
-    by = ["_cohort", "fraction"] + [c for c in ("_metric", "_versus") if c in frame]
+    by = ["_cohort", "fraction"] + (["_metric"] if "_metric" in frame else [])
     return frame.sort_values(by).drop(columns=[c for c in frame if c.startswith("_")]).reset_index(
         drop=True
     )
