@@ -131,6 +131,11 @@ def _caption(basis: Basis) -> str:
             rf"(minimum cosine ${float(r['min_cosine']):.3f}$)"
         )
 
+    def cause(p: str) -> str | None:
+        """The recorded cause of ``p``'s non-reproduction, set as text, or ``None``."""
+        recorded = basis.non_reproduction_cause(p)
+        return None if recorded is None else tex_text(recorded)
+
     criterion = (
         "Re-run slide embeddings reproduced the published ones (per-slide cosine "
         rf"$\geq{threshold:g}$ on every slide) for "
@@ -140,9 +145,10 @@ def _caption(basis: Basis) -> str:
             criterion + f"{_series(kept)}, whose published embeddings form the slide arm. "
         )
         for p in rerun:
+            because = "" if cause(p) is None else f"; {p} did not reproduce because {cause(p)}"
             parts.append(
                 f"They did not for {p}: {reproduced(p)}, so its re-run slide embeddings "
-                "form the slide arm. "
+                f"form the slide arm{because}. "
             )
     else:
         # No sentence about reproduced pairs to refer back to: state the criterion once,
@@ -150,7 +156,10 @@ def _caption(basis: Basis) -> str:
         parts.append(
             criterion
             + "none of the pairs, so each pair's re-run slide embeddings form its slide arm: "
-            + "; ".join(f"{p}, {reproduced(p)}" for p in rerun)
+            + "; ".join(
+                f"{p}, {reproduced(p)}" + ("" if cause(p) is None else f", because {cause(p)}")
+                for p in rerun
+            )
             + ". "
         )
     parts += [

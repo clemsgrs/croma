@@ -544,7 +544,52 @@ def test_evaluate_records_the_declared_pairs_it_did_not_run_and_why(tmp_path, mo
     assert set(provenance["pairs"]["TITAN"]) == set(vars(study.PAIRS_BY_MODEL["TITAN"])) | {
         "reproduction",
         "slide2vec_version",
+        "non_reproduction_cause",
     }
+
+
+def test_evaluate_records_the_known_cause_of_a_pair_that_does_not_reproduce(tmp_path, monkeypatch):
+    # The caption reads the cause from provenance.json, so each evaluated pair's record
+    # carries its declared cause, and null when none is declared.
+    import json
+
+    import slide_vs_meanpool as study
+
+    assert "TITAN" not in study.NON_REPRODUCTION_CAUSE
+    provenance = json.loads(
+        (_evaluate(tmp_path / "none", monkeypatch, extraction=None) / "provenance.json").read_text()
+    )
+    assert provenance["pairs"]["TITAN"]["non_reproduction_cause"] is None
+
+    monkeypatch.setattr(study, "NON_REPRODUCTION_CAUSE", {"TITAN": "its tiles were resized"})
+    provenance = json.loads(
+        (_evaluate(tmp_path / "one", monkeypatch, extraction=None) / "provenance.json").read_text()
+    )
+    assert provenance["pairs"]["TITAN"]["non_reproduction_cause"] == "its tiles were resized"
+
+
+def test_the_moozy_cause_is_the_lunit_transform_change():
+    # MOOZY's published embeddings came from slide2vec releases whose Lunit transform
+    # resized and centre-cropped each tile and used ImageNet statistics; the re-run's
+    # release uses Lunit's own statistics on the whole tile.
+    import slide_vs_meanpool as study
+
+    cause = study.NON_REPRODUCTION_CAUSE["MOOZY"]
+    for fact in ("4.6.2", "5.3.0", "7.1.4", "248", "224", "ImageNet", "Lunit"):
+        assert fact in cause
+    assert set(study.NON_REPRODUCTION_CAUSE) == {"MOOZY"}
+
+
+def test_only_a_declared_pair_that_runs_can_carry_a_non_reproduction_cause():
+    import slide_vs_meanpool as study
+
+    study.check_non_reproduction_cause(study.NON_REPRODUCTION_CAUSE)
+    with pytest.raises(ValueError, match="UNI"):
+        study.check_non_reproduction_cause({"UNI": "not a slide encoder"})
+    with pytest.raises(ValueError, match="Prov-GigaPath.*not run"):
+        study.check_non_reproduction_cause({"Prov-GigaPath": "it was never re-run"})
+    with pytest.raises(ValueError, match="cause"):
+        study.check_non_reproduction_cause({"PRISM": " "})
 
 
 def test_evaluate_writes_no_artifact_when_its_provenance_cannot_be_built(tmp_path, monkeypatch):
@@ -821,7 +866,7 @@ def test_a_finished_required_pair_neither_waits_for_the_gpu_nor_restamps_its_rec
 def test_a_pair_declared_not_run_is_recorded_with_its_reason_and_never_launched(
     tmp_path, monkeypatch
 ):
-    # Prov-GigaPath has no faithful re-run (``study.NOT_RUN`` says why). ``extract`` records
+    # Prov-GigaPath is declared not run (``study.NOT_RUN`` says why). ``extract`` records
     # it as attempted and not run, with that reason, instead of failing on it; it probes no
     # GPU and launches no slide2vec for it, and leaves the other pairs' records alone.
     import json
@@ -864,6 +909,17 @@ def test_only_a_declared_optional_pair_with_a_reason_can_be_not_run():
         study.check_not_run({"UNI": "not a slide encoder"})
     with pytest.raises(ValueError, match="reason"):
         study.check_not_run({"PRISM": "  "})
+
+
+def test_prov_gigapath_is_not_run_for_its_cost_not_because_it_cannot_reproduce():
+    # Its published embeddings are now slide2vec 7.1.4 runs with the slide encoder in eval
+    # mode, so a re-run could reproduce them: the reason is cost, and must not say otherwise.
+    import slide_vs_meanpool as study
+
+    reason = study.NOT_RUN["Prov-GigaPath"]
+    assert "ViT-g" in reason and "costliest" in reason
+    for stale in ("reproduce", "cannot", "training mode", "dropout"):
+        assert stale not in reason
 
 
 def test_reducing_a_pair_that_was_not_run_names_its_reason(tmp_path):
