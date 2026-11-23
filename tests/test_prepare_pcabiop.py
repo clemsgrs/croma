@@ -111,6 +111,38 @@ def test_sidecar_records_the_source_run_of_each_subset(pcabiop_inputs):
     ]
 
 
+def test_id_rows_inherit_only_the_panda_wsi_runs_that_supplied_them(pcabiop_inputs):
+    # panda-wsi row p2 (not an ID slide) and row p0 (an ID slide) came from two one-slide
+    # runs beside the main run; only the run behind p0 is a source of pcabiop's rows.
+    def _side(run_id, sid):
+        return {
+            **PANDA_RUN,
+            "run_id": run_id,
+            "n_samples": 1,
+            "sample_ids": [sid],
+            "config_vs_main_run": {"main_run_id": "titan-panda-s2v714", "differences": {}},
+        }
+
+    layout.embedding_path("panda-wsi", "TITAN").with_suffix(".npy.json").write_text(
+        json.dumps(
+            {
+                "model_id": "TITAN",
+                "source_runs": [
+                    {**PANDA_RUN, "n_samples": 1},
+                    _side("titan-panda-p2", "p2"),
+                    _side("titan-panda-p0", "p0"),
+                ],
+            }
+        )
+    )
+
+    prepare_pcabiop.main()
+
+    kept = _side("titan-panda-p0", "p0")
+    del kept["n_samples"]
+    assert _sidecar("TITAN")["source_runs"]["ID"] == [PANDA_RUN, kept]
+
+
 def test_unrecorded_sources_are_left_out_or_unknown(pcabiop_inputs):
     prepare_pcabiop.main()
 

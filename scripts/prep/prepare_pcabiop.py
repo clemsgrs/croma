@@ -147,19 +147,28 @@ def load_ood_embeddings(model, ood_rows):
     return np.stack(vecs)
 
 
-def source_runs(model, ood_rows):
+def source_runs(model, id_rows, ood_rows):
     """The slide2vec runs behind ``model``'s pcabiop rows, per subset.
 
     ID rows are sliced from the panda-wsi tileset, so they inherit the source runs its
-    sidecar recorded (without that tileset's per-run row counts); OOD rows are read from
-    the PAR run directly. A subset whose source records no run is left out.
+    sidecar recorded (without that tileset's per-run row counts), less any secondary run
+    whose ``sample_ids`` include no ID slide; OOD rows are read from the PAR run directly.
+    A subset whose source records no run is left out.
     """
     runs = {}
     panda_sidecar = layout.embedding_path(PANDA_TILESET, model).with_suffix(".npy.json")
     if panda_sidecar.exists():
-        inherited = json.loads(panda_sidecar.read_text()).get("source_runs")
+        id_samples = set(id_rows["sample_id"])
+        inherited = []
+        for run in json.loads(panda_sidecar.read_text()).get("source_runs") or []:
+            run = {k: v for k, v in run.items() if k != "n_samples"}
+            if "sample_ids" in run:
+                run["sample_ids"] = [s for s in run["sample_ids"] if s in id_samples]
+                if not run["sample_ids"]:
+                    continue
+            inherited.append(run)
         if inherited:
-            runs["ID"] = [{k: v for k, v in run.items() if k != "n_samples"} for run in inherited]
+            runs["ID"] = inherited
     ood = slide2vec_provenance.source_runs(ood_embedding_paths(model, ood_rows))
     if ood:
         runs["OOD"] = ood
@@ -182,7 +191,7 @@ def main():
         np.save(layout.embedding_path(TILESET, model), emb)
         sidecar = {"tileset": TILESET, "model": model, "dim": int(emb.shape[1]),
                    "n_id": int(len(id_rows)), "n_ood": int(len(ood_rows))}
-        runs = source_runs(model, ood_rows)
+        runs = source_runs(model, id_rows, ood_rows)
         if runs:
             sidecar["source_runs"] = runs
         (out_dir / f"{model}.npy.json").write_text(json.dumps(sidecar, indent=2))

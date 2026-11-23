@@ -19,6 +19,7 @@ def _write_run(
     preset: str = "gigapath-slide",
     tile_size_px: int = 224,
     spacing_um: float = 0.5,
+    ref_tile_size: int | None = None,
     aggregation_revisions: dict[str, int | None] | None = None,
 ) -> list[Path]:
     """A slide2vec run directory as 7.1.4 leaves it: config.yaml + per-slide sidecars."""
@@ -26,12 +27,20 @@ def _write_run(
     (run_dir / "config.yaml").write_text(
         yaml.safe_dump(
             {
+                # Every run names its own slide list and location.
+                "csv": str(run_dir / "slides.csv"),
+                "output_dir": str(run_dir),
+                "resume_dirname": run_dir.name,
                 "model": {"name": preset, "allow_non_recommended_settings": False},
                 "tiling": {
                     "params": {
                         "requested_spacing_um": spacing_um,
                         "requested_tile_size_px": tile_size_px,
-                    }
+                    },
+                    "filter_params": {
+                        "ref_tile_size": ref_tile_size if ref_tile_size else tile_size_px,
+                        "a_t": 4,
+                    },
                 },
             }
         )
@@ -92,6 +101,47 @@ def test_slides_of_one_run_must_agree_on_the_aggregation_revision(tmp_path):
 
     with pytest.raises(ValueError, match="aggregation_revision"):
         prov.run_provenance(run_dir, paths)
+
+
+def test_one_run_supplying_a_matrix_is_recorded_without_sample_ids_or_differences(tmp_path):
+    run_dir = tmp_path / "features" / "titan-panda-s2v714"
+    paths = _write_run(run_dir, preset="titan", tile_size_px=448)
+
+    (run,) = prov.source_runs(paths)
+
+    assert run["n_samples"] == 2
+    assert "sample_ids" not in run and "config_vs_main_run" not in run
+
+
+def test_a_secondary_run_names_its_samples_and_how_its_config_differs(tmp_path):
+    # croma#263: one PANDA slide tiles to nothing under TITAN's filter_params.ref_tile_size
+    # of 448, so it is re-tiled alone in a second run that changes only that parameter.
+    main_dir = tmp_path / "features" / "titan-panda-s2v714"
+    side_dir = tmp_path / "features" / "titan-panda-s2v714-s0"
+    main_paths = _write_run(
+        main_dir, preset="titan", tile_size_px=448, aggregation_revisions={"s1": None, "s2": None}
+    )
+    (side_path,) = _write_run(
+        side_dir,
+        preset="titan",
+        tile_size_px=448,
+        ref_tile_size=224,
+        aggregation_revisions={"s0": None},
+    )
+
+    # The matrix's first row comes from the secondary run: "main" is the run that supplied
+    # the most embeddings, not the first one used.
+    side, main = prov.source_runs([side_path, *main_paths])
+
+    assert (side["run_id"], side["n_samples"], main["n_samples"]) == ("titan-panda-s2v714-s0", 1, 2)
+    assert side["tile_size_px"] == main["tile_size_px"] == 448
+    assert side["sample_ids"] == ["s0"]
+    # Only real settings are compared: csv, output_dir and resume_dirname name the run.
+    assert side["config_vs_main_run"] == {
+        "main_run_id": "titan-panda-s2v714",
+        "differences": {"tiling.filter_params.ref_tile_size": {"main": 448, "this": 224}},
+    }
+    assert "sample_ids" not in main and "config_vs_main_run" not in main
 
 
 def test_a_run_cannot_be_resumed_under_another_slide2vec_version(tmp_path):

@@ -80,16 +80,58 @@ def run_provenance(run_dir: Path, embedding_paths: Iterable[Path]) -> dict:
 def source_runs(embedding_paths: Iterable[Path]) -> list[dict]:
     """One provenance record per slide2vec run among ``embedding_paths``, in first-use
     order, each with the number of embeddings it supplied. Paths outside a run are skipped.
+
+    When several runs supply one matrix, the main run is the one that supplied the most
+    (the first used, on a tie). Every other run also records the ``sample_ids`` it supplied
+    and ``config_vs_main_run``: each ``config.yaml`` setting whose value differs from the
+    main run's, so a run that re-did a few slides at a changed setting says which.
     """
     by_run: dict[Path, list[Path]] = {}
     for path in embedding_paths:
         run_dir = run_dir_of(path)
         if run_dir is not None:
             by_run.setdefault(run_dir, []).append(Path(path))
-    return [
-        {**run_provenance(run_dir, paths), "n_samples": len(paths)}
-        for run_dir, paths in by_run.items()
-    ]
+    runs = []
+    main_dir = max(by_run, key=lambda run_dir: len(by_run[run_dir]), default=None)
+    for run_dir, paths in by_run.items():
+        run = {**run_provenance(run_dir, paths), "n_samples": len(paths)}
+        if run_dir != main_dir:
+            run["sample_ids"] = [path.stem for path in paths]
+            run["config_vs_main_run"] = {
+                "main_run_id": main_dir.name,
+                "differences": config_differences(main_dir, run_dir),
+            }
+        runs.append(run)
+    return runs
+
+
+#: config.yaml keys that name a run's own slide list and location, not a setting.
+_RUN_IDENTITY_KEYS = frozenset({"csv", "output_dir", "resume_dirname"})
+
+
+def config_differences(main_dir: Path, run_dir: Path) -> dict[str, dict]:
+    """``{dotted.key: {"main": value, "this": value}}`` for every setting in which
+    ``run_dir``'s ``config.yaml`` differs from ``main_dir``'s."""
+    main, this = _flat_settings(main_dir), _flat_settings(run_dir)
+    return {
+        key: {"main": main.get(key), "this": this.get(key)}
+        for key in sorted(main.keys() | this.keys())
+        if main.get(key) != this.get(key)
+    }
+
+
+def _flat_settings(run_dir: Path) -> dict:
+    flat: dict = {}
+
+    def _walk(node: dict, prefix: str) -> None:
+        for key, value in node.items():
+            if isinstance(value, dict):
+                _walk(value, f"{prefix}{key}.")
+            else:
+                flat[f"{prefix}{key}"] = value
+
+    _walk(yaml.safe_load((Path(run_dir) / "config.yaml").read_text(encoding="utf-8")), "")
+    return {key: value for key, value in flat.items() if key not in _RUN_IDENTITY_KEYS}
 
 
 def run_dir_of(embedding_path: Path) -> Path | None:

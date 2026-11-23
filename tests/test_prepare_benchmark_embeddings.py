@@ -205,9 +205,17 @@ def test_sidecar_records_the_slide2vec_runs_behind_a_model(bench_env, tmp_path: 
         "slide_encoder_eval_mode": True,
         "n_samples": 2,
     }
+    # Two runs supplied equally, so the first used is the main one; the other names the
+    # rows it supplied and how its config.yaml differs (here: not at all).
     assert _sidecar("Prov-GigaPath")["source_runs"] == [
         {"run_id": "gigapath-a", "run_dir": str(tmp_path / "features" / "gigapath-a"), **common},
-        {"run_id": "gigapath-b", "run_dir": str(tmp_path / "features" / "gigapath-b"), **common},
+        {
+            "run_id": "gigapath-b",
+            "run_dir": str(tmp_path / "features" / "gigapath-b"),
+            **common,
+            "sample_ids": ["s2", "s3"],
+            "config_vs_main_run": {"main_run_id": "gigapath-a", "differences": {}},
+        },
     ]
     assert "source_runs" not in _sidecar("UNI")
 
