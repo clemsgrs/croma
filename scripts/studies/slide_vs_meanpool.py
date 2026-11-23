@@ -86,7 +86,10 @@ class Pair:
     tile_encoder: str
     tile_variant: str
     tile_dim: int
-    #: Published slide2vec run ids behind the PANDA (in-domain) and PAR (OOD) rows.
+    #: slide2vec run ids whose config.yaml the PANDA (in-domain) and PAR (OOD) re-runs start
+    #: from: the published runs when the re-runs were made. TITAN's and Prov-GigaPath's
+    #: published rows have since been re-extracted at slide2vec 7.1.4; the PCaBiop tileset
+    #: sidecars name the runs behind them.
     panda_run: str
     par_run: str
     #: Whether the PANDA run's config is in a layout the installed slide2vec can replay.
@@ -132,22 +135,15 @@ PAIRS_BY_MODEL = {pair.slide_model: pair for pair in PAIRS}
 #: it, ``evaluate`` carries the declaration into ``provenance.json``, and the table caption
 #: names the pair and the reason. Only an optional pair can be here (:func:`check_not_run`).
 #:
-#: Prov-GigaPath. The published PAR run (``aetsexkb``, slide2vec 5.3.0 by its log) read
-#: 256 px tiles and encoded their centre 224 px: the 5.3.0 gigapath preset was 256 px and its
-#: transform Resize(256) + CenterCrop(224). Before slide2vec 6.3.0 the LongNet slide encoder
-#: was also left in training mode (dropout 0.25, drop-path 0.1), so each published slide
-#: embedding is one dropout draw. On five PAR slides, two training-mode encodings of the same
-#: tile features agree at cosine 0.93 to 0.95, so no re-run can reach
-#: ``REPRODUCTION_COSINE``. slide2vec 7.1.4 refuses the replayed 256 px request (its preset is
-#: now 224 px). With ``allow_non_recommended_settings`` it encodes the whole 256 px tile
-#: (cosine 0.95 to 0.97 with the published embeddings), and at 224 px it tiles the slides on
-#: another grid (cosine 0.95 to 0.96). Both are a different configuration from the published
-#: one, not a re-run of it.
+#: Prov-GigaPath. Its published slide embeddings were re-extracted at slide2vec 7.1.4 (the
+#: ``gigapath-slide`` preset, 224 px tiles, slide encoder in eval mode) on both cohorts, and
+#: nothing is known to stop a re-run from reproducing them. It is still not run: it is optional,
+#: and its ViT-g tile encoder makes it the most expensive pair to re-extract with tile
+#: embeddings saved. (The embeddings it replaced were not reproducible: the slide encoder
+#: ran in training mode, with different tilings on the two cohorts.)
 NOT_RUN: dict[str, str] = {
     "Prov-GigaPath": (
-        "its published slide embeddings were encoded with the slide encoder in training mode "
-        "(dropout active), so no re-run can reproduce them, and the installed slide2vec "
-        "cannot replay its tile input (the centre 224 px of each 256 px tile)"
+        "its ViT-g tile encoder makes it the costliest re-run of the panel"
     ),
 }
 
@@ -172,6 +168,83 @@ def check_not_run(not_run: dict[str, str]) -> None:
 
 
 check_not_run(NOT_RUN)
+
+#: Declared pairs whose re-run is known not to reproduce the published slide embeddings,
+#: each with that cause, as a clause the caption sets after "because". ``evaluate`` carries
+#: it into each pair's ``provenance.json`` record; the table caption names it, and refuses
+#: one recorded for a pair that did reproduce. Only a pair that runs can be here
+#: (:func:`check_non_reproduction_cause`).
+#:
+#: MOOZY. Its published PANDA and PAR rows were extracted with slide2vec 4.6.2 and 5.3.0,
+#: whose Lunit tile transform was Resize(248) + CenterCrop(224) with ImageNet mean/std. The
+#: re-run's slide2vec 7.1.4 normalises the whole 224 px tile with Lunit's own statistics,
+#: with no resize or crop. The tile embeddings differ, and so do the slide embeddings built
+#: on them, so its re-run slide embeddings are its slide arm.
+NON_REPRODUCTION_CAUSE: dict[str, str] = {
+    "MOOZY": (
+        "its published embeddings were extracted with slide2vec 4.6.2 and 5.3.0, whose Lunit "
+        "tile transform resized each tile to 248 px, cropped its centre 224 px and normalised "
+        "it with ImageNet mean and standard deviation, whereas the re-run's slide2vec 7.1.4 "
+        "normalises the whole 224 px tile with Lunit's own statistics"
+    ),
+}
+
+#: The slide2vec release of the re-run each cause in :data:`NON_REPRODUCTION_CAUSE` was
+#: diagnosed on. The cause describes that run only (:func:`check_non_reproduction_applies`).
+NON_REPRODUCTION_SLIDE2VEC: dict[str, str] = {"MOOZY": "7.1.4"}
+
+#: The ``started`` time of the diagnosed run, for a pair whose ``extraction.json`` record
+#: predates the version field (#228) and so is identified by that time alone.
+NON_REPRODUCTION_LEGACY_STARTED: dict[str, str] = {"MOOZY": "2026-10-30 23:43:04"}
+
+
+def check_non_reproduction_applies(
+    pair: str, *, reproduced: bool | None, entry: dict | None
+) -> None:
+    """Refuse ``pair``'s declared non-reproduction cause for a run it does not describe.
+
+    ``entry`` is the pair's ``extraction.json`` record, ``None`` if there is none. The cause
+    is refused for a run that reproduced, one with no record, one recorded under a
+    slide2vec release other than the diagnosed one, and a version-less one whose start
+    time is not the diagnosed legacy run's. A pair with no declared cause passes.
+    """
+    if pair not in NON_REPRODUCTION_CAUSE:
+        return
+    if reproduced:
+        raise ValueError(f"{pair} reproduced, so its declared non-reproduction cause is stale")
+    if entry is None:
+        raise ValueError(
+            f"{pair} has no extraction record, so nothing ties its re-run to the run its "
+            "declared non-reproduction cause was diagnosed on"
+        )
+    version = entry.get("slide2vec_version")
+    diagnosed = NON_REPRODUCTION_SLIDE2VEC.get(pair)
+    if version is not None and version != diagnosed:
+        raise ValueError(
+            f"{pair} was extracted with slide2vec {version}, but its declared "
+            f"non-reproduction cause was diagnosed on slide2vec {diagnosed}"
+        )
+    legacy = NON_REPRODUCTION_LEGACY_STARTED.get(pair)
+    if version is None and (legacy is None or entry.get("started") != legacy):
+        raise ValueError(
+            f"{pair}'s extraction record names no slide2vec release and started at "
+            f"{entry.get('started')}, not at {legacy}, when the run its declared "
+            "non-reproduction cause was diagnosed on started"
+        )
+
+
+def check_non_reproduction_cause(causes: dict[str, str]) -> None:
+    """Refuse a cause for an undeclared pair, a pair declared not run, or an empty cause."""
+    for model, cause in causes.items():
+        if model not in PAIRS_BY_MODEL:
+            raise ValueError(f"{model} is not a declared pair, so it has no re-run to explain")
+        if model in NOT_RUN:
+            raise ValueError(f"{model} is declared not run, so it has no re-run to explain")
+        if not str(cause).strip():
+            raise ValueError(f"{model}: a non-reproduction cause cannot be empty")
+
+
+check_non_reproduction_cause(NON_REPRODUCTION_CAUSE)
 
 
 def _migrate_retired_tiling_keys(tiling: dict) -> None:
@@ -952,6 +1025,13 @@ def evaluate(
     missing = [p for p in pairs if p not in records]
     if missing:
         raise ValueError(f"no reduction for {missing}; run `reduce --pairs {' '.join(missing)}`")
+    extraction_path = study_dir / "extraction.json"
+    extraction = json.loads(extraction_path.read_text()) if extraction_path.exists() else None
+    entries = {p: (extraction or {}).get(p) for p in pairs}
+    # Recorded by ``extract``; records written before the field have none.
+    versions = {p: (entries[p] or {}).get("slide2vec_version") for p in pairs}
+    for p in pairs:
+        check_non_reproduction_applies(p, reproduced=records[p].get("reproduced"), entry=entries[p])
     arms = [(p, records[p]["slide_arm"], records[p]["meanpool_arm"]) for p in pairs]
     models = [m for _, slide, meanpool in arms for m in (slide, meanpool)]
     rows = _pcabiop_rows()
@@ -981,16 +1061,14 @@ def evaluate(
     )
     summary = arm_summary(arms, metrics, apd)
 
-    extraction_path = study_dir / "extraction.json"
-    extraction = json.loads(extraction_path.read_text()) if extraction_path.exists() else None
     provenance = {
         "study": STUDY_NAME,
         "pairs": {
             p: {
                 **{k: v for k, v in vars(PAIRS_BY_MODEL[p]).items()},
                 "reproduction": records[p],
-                # Recorded by ``extract``; records written before the field have none.
-                "slide2vec_version": ((extraction or {}).get(p) or {}).get("slide2vec_version"),
+                "slide2vec_version": versions[p],
+                "non_reproduction_cause": NON_REPRODUCTION_CAUSE.get(p),
             }
             for p in pairs
         },

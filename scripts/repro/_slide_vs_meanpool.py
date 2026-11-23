@@ -82,6 +82,11 @@ class Basis:
         """Declared pairs the study recorded as not run, with the reason it recorded."""
         return dict(self.provenance.get("not_run") or {})
 
+    def non_reproduction_cause(self, pair: str) -> str | None:
+        """The cause the study recorded for ``pair``'s re-run not reproducing, if any."""
+        cause = str(self.provenance["pairs"][pair].get("non_reproduction_cause") or "").strip()
+        return cause or None
+
 
 def tile_display(pair: str) -> str:
     return TILE_DISPLAY[PAIRS_BY_MODEL[pair].tile_encoder]
@@ -129,8 +134,14 @@ def load(study_dir: Path | None = None, rendered: tuple[str, ...] = RENDERED_PAI
         stats = set(differences.loc[differences["pair"] == pair, "statistic"])
         if stats != set(CROMA_STATISTICS + NIPD_STATISTICS):
             problems.append(f"{pair}: differences.csv has {sorted(stats)}")
-        if pair not in provenance.get("pairs", {}):
+        record = provenance.get("pairs", {}).get(pair)
+        if record is None:
             problems.append(f"{pair}: provenance.json has no record")
+        elif record.get("non_reproduction_cause") and record["reproduction"]["reproduced"]:
+            problems.append(
+                f"{pair} reproduced, yet provenance.json records a cause of its "
+                f"non-reproduction ({record['non_reproduction_cause']})"
+            )
     not_run = provenance.get("not_run") or {}
     for declared in PAIRS:
         pair = declared.slide_model

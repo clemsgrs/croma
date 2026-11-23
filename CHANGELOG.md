@@ -41,6 +41,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- TITAN and Prov-GigaPath have new slide embeddings on PCaBiop and PCaBiop-ISUP, and every
+  slide-level result that reads them is regenerated. Their published embeddings had
+  extraction faults:
+  - TITAN's PANDA slides, which make up PCaBiop's in-domain cohort and all of PCaBiop-ISUP,
+    were encoded from 224 px tiles at the PRISM run's coordinates, while its PAR slides
+    used 448 px tiles.
+  - Prov-GigaPath's slide encoder ran in training mode, with dropout active. Its tiling also
+    differed between the cohorts: the same 224 px grid on PANDA, and 256 px tiles
+    centre-cropped to 224 px on PAR.
+
+  Both encoders are now extracted with slide2vec 7.1.4's presets on both cohorts:
+  - TITAN: 448 px tiles at 0.5 mpp. One PCaBiop-ISUP slide, `07a14fa5…` (not in
+    PCaBiop), got no tiles under the preset's tissue-area filter, so it alone was tiled
+    with the filter's reference tile size at 224 px; its tiles are still 448 px at 0.5 mpp.
+  - Prov-GigaPath: 224 px tiles at 0.5 mpp, read directly, with grid-index positions
+    (`aggregation_revision = 1`) and the slide encoder in eval mode.
+
+  The superseded embeddings are archived under `output/embeddings/_superseded/2026-11-262/`.
+  PCaBiop, old → new:
+
+  | Encoder | `k*` | bio / conf kNN | RI | MaRI | Support | Median CRoMa | F(0) | LTM₁₀ |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | TITAN | 9 → 13 | 0.915 / 1.000 → 0.947 / 0.995 | 0.015 → 0.165 | 0.001 → 0.082 | 49.1% → 46.9% | −0.295 → −0.022 | 0.895 → 0.538 | −0.602 → −0.366 |
+  | Prov-GigaPath | 13 → 7 | 0.720 / 0.995 → 0.730 / 0.994 | 0.020 → 0.020 | 0.006 → 0.006 | 97.7% → 88.6% | −0.413 → −0.419 | 0.990 → 0.988 | −0.592 → −0.593 |
+
+  RI and MaRI are read at each encoder's own `k*`, so both moves of `k*` shift those two
+  columns. CRoMa, F(0) and LTM₁₀ do not depend on `k`. PCaBiop's order by median CRoMa is
+  unchanged.
+
+  nIPD on PCaBiop, ID / OOD:
+  - TITAN: −0.189 / −0.126 → −0.067 / −0.113.
+  - Prov-GigaPath: −0.245 / −0.107 → −0.272 / −0.159.
+  - At maximum confounding, TITAN's OOD curve (−0.931 → −0.163) and Prov-GigaPath's
+    (−1.161 → −0.859) no longer end at chance.
+  - The PCaBiop CRoMa–nIPD association moves from ρ = 0.9 / 0.6 to 0.7 / 0.7. It is still
+    descriptive at n = 5.
+
+  On PCaBiop-ISUP, reported in the paper only, both `k*` stay at 1:
+  - TITAN: median CRoMa −0.390 → −0.184, F(0) 0.960 → 0.802, LTM₁₀ −0.612 → −0.432.
+  - Prov-GigaPath: −0.466 → −0.473, 0.993 → 0.992 and −0.621 → −0.645.
+
+  No MOOZY, PRISM or PRISM2 value changed. `results/nipd.json` is republished, with
+  publication date 2026-11-23.
+- Slide-vs-meanpool study (`scripts/studies/slide_vs_meanpool.py`):
+  - TITAN's re-run now reproduces its published slide embeddings on all 1,324 slides
+    (cosine ≥ 0.999 on both cohorts), so the published embedding is now TITAN's slide arm.
+    No value in the study changed, because the re-run already tiled at 448 px.
+  - MOOZY still does not reproduce, and keeps its re-run arms. The caption and
+    `provenance.json` (`non_reproduction_cause`) now name the cause:
+    - The published embeddings came from slide2vec 4.6.2 and 5.3.0, whose Lunit tile
+      transform resized each tile to 248 px, cropped its centre 224 px and used ImageNet
+      statistics.
+    - The re-run uses slide2vec 7.1.4, which normalises the whole tile with Lunit's own
+      statistics.
+  - Prov-GigaPath is still not run, but no longer on the grounds that it cannot be
+    reproduced. It is now skipped as the costliest re-run of the panel, because of its
+    ViT-g tile encoder.
 - Mettle-1.5 is now flagged for benchmark selection (`benchmark_selection = pathorob-ri`):
   its authors disclosed that PathoROB RI was one of the metrics used for its checkpoint
   selection. Its rows are shaded yellow on every results page, it carries ‡ in the README

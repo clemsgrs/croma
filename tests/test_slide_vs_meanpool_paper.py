@@ -249,10 +249,66 @@ def test_a_not_run_reason_is_set_as_text_in_the_caption(tmp_path):
     assert study.NOT_RUN["Prov-GigaPath"] == basis.tex_text(study.NOT_RUN["Prov-GigaPath"])
 
 
+def _record_cause(study_dir: Path, pair: str, cause: str) -> None:
+    """Record ``cause`` in provenance.json as the known cause of ``pair``'s non-reproduction."""
+    import json
+
+    path = study_dir / "provenance.json"
+    provenance = json.loads(path.read_text())
+    provenance["pairs"][pair]["non_reproduction_cause"] = cause
+    path.write_text(json.dumps(provenance))
+
+
+def test_the_caption_names_the_recorded_cause_of_a_pair_that_did_not_reproduce(tmp_path):
+    basis, table = _repro()
+    study_dir = _write_study(tmp_path / "study")
+    # In ``_write_study`` TITAN is the pair that did not reproduce.
+    _record_cause(study_dir, "TITAN", "its tiles were read at 224_px & not 448")
+
+    caption = _caption(table.build(basis.load(study_dir)))
+
+    assert (
+        r"They did not for TITAN: $17$ of $1{,}324$ slides reproduced (minimum cosine "
+        r"$0.412$), so its re-run slide embeddings form the slide arm; TITAN did not "
+        r"reproduce because its tiles were read at 224\_px \& not 448. "
+    ) in caption
+
+
+def test_with_no_pair_reproduced_the_caption_still_names_a_recorded_cause(tmp_path):
+    import json
+
+    basis, table = _repro()
+    study_dir = _write_study(tmp_path / "study")
+    path = study_dir / "provenance.json"
+    provenance = json.loads(path.read_text())
+    for record in provenance["pairs"].values():
+        record["reproduction"].update(reproduced=False, n_reproduced=0, min_cosine=0.5)
+    provenance["pairs"]["MOOZY"]["non_reproduction_cause"] = "its tile transform changed"
+    path.write_text(json.dumps(provenance))
+
+    caption = _caption(table.build(basis.load(study_dir)))
+
+    assert (
+        r"MOOZY, $0$ of $1{,}324$ slides reproduced (minimum cosine $0.500$), because its "
+        r"tile transform changed; PRISM2, "
+    ) in caption
+
+
+def test_a_cause_recorded_for_a_pair_that_reproduced_fails_the_build(tmp_path):
+    # A cause of non-reproduction on a reproduced pair is a contradiction, never captioned.
+    basis, _ = _repro()
+    study_dir = _write_study(tmp_path / "study")
+    _record_cause(study_dir, "MOOZY", "its tile transform changed")
+
+    with pytest.raises(basis.CaptionClaimError, match="MOOZY.*reproduced"):
+        basis.load(study_dir)
+
+
 #: The table ``_write_study`` renders, as it rendered before the caption counted the
 #: replicates each nIPD spread is over. With every replicate defined it must not move. (It
-#: last changed when PRISM, which ran, joined the rendered pairs and the caption began to
-#: name the pair not run, with its reason; the three required pairs' rows did not change.)
+#: last changed when Prov-GigaPath's not-run reason became the cost of its re-run; before
+#: that, when PRISM, which ran, joined the rendered pairs and the caption began to name the
+#: pair not run, with its reason. The rows did not change either time.)
 GOLDEN_TABLE = ROOT / "tests" / "fixtures" / "slide_vs_meanpool_table.tex"
 
 
