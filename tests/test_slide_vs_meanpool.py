@@ -562,9 +562,10 @@ def test_evaluate_records_the_known_cause_of_a_pair_that_does_not_reproduce(tmp_
     assert provenance["pairs"]["TITAN"]["non_reproduction_cause"] is None
 
     monkeypatch.setattr(study, "NON_REPRODUCTION_CAUSE", {"TITAN": "its tiles were resized"})
-    provenance = json.loads(
-        (_evaluate(tmp_path / "one", monkeypatch, extraction=None) / "provenance.json").read_text()
-    )
+    monkeypatch.setattr(study, "NON_REPRODUCTION_SLIDE2VEC", {"TITAN": "7.1.4"})
+    record = json.dumps({"TITAN": {"status": "done", "slide2vec_version": "7.1.4"}})
+    study_dir = _evaluate(tmp_path / "one", monkeypatch, extraction=record)
+    provenance = json.loads((study_dir / "provenance.json").read_text())
     assert provenance["pairs"]["TITAN"]["non_reproduction_cause"] == "its tiles were resized"
 
 
@@ -579,22 +580,35 @@ def test_the_moozy_cause_is_the_lunit_transform_change():
         assert fact in cause
     assert set(study.NON_REPRODUCTION_CAUSE) == {"MOOZY"}
     assert study.NON_REPRODUCTION_SLIDE2VEC == {"MOOZY": "7.1.4"}
+    assert study.NON_REPRODUCTION_LEGACY_STARTED == {"MOOZY": "2026-10-30 23:43:04"}
 
 
 def test_a_non_reproduction_cause_applies_only_to_the_run_it_was_diagnosed_on():
     # MOOZY's cause explains a slide2vec 7.1.4 re-run that did not reproduce. It must not
-    # be carried onto a run that reproduced, or one another release extracted. A record
-    # that predates the version field (None) passes. A pair with no cause always passes.
+    # be carried onto a run that reproduced, one another release extracted, or one nothing
+    # identifies: no record, or a version-less record from another run. The diagnosed run's
+    # record predates the version field, so it is known by its start time. A pair with no
+    # cause always passes.
     import slide_vs_meanpool as study
 
-    study.check_non_reproduction_applies("MOOZY", reproduced=False, slide2vec_version="7.1.4")
-    study.check_non_reproduction_applies("MOOZY", reproduced=False, slide2vec_version=None)
-    study.check_non_reproduction_applies("MOOZY", reproduced=None, slide2vec_version=None)
-    study.check_non_reproduction_applies("TITAN", reproduced=True, slide2vec_version="8.0.0")
+    legacy = {"status": "done", "started": "2026-10-30 23:43:04", "finished": "2026-10-31 01:52:23"}
+    current = {"status": "done", "started": "2026-11-23 10:00:00", "slide2vec_version": "7.1.4"}
+    study.check_non_reproduction_applies("MOOZY", reproduced=False, entry=legacy)
+    study.check_non_reproduction_applies("MOOZY", reproduced=None, entry=legacy)
+    study.check_non_reproduction_applies("MOOZY", reproduced=False, entry=current)
+    study.check_non_reproduction_applies("TITAN", reproduced=True, entry=None)
     with pytest.raises(ValueError, match="MOOZY.*reproduced"):
-        study.check_non_reproduction_applies("MOOZY", reproduced=True, slide2vec_version="7.1.4")
+        study.check_non_reproduction_applies("MOOZY", reproduced=True, entry=current)
     with pytest.raises(ValueError, match="MOOZY.*8.0.0.*7.1.4"):
-        study.check_non_reproduction_applies("MOOZY", reproduced=False, slide2vec_version="8.0.0")
+        study.check_non_reproduction_applies(
+            "MOOZY", reproduced=False, entry={**current, "slide2vec_version": "8.0.0"}
+        )
+    with pytest.raises(ValueError, match="MOOZY.*no extraction record"):
+        study.check_non_reproduction_applies("MOOZY", reproduced=False, entry=None)
+    with pytest.raises(ValueError, match="MOOZY.*2026-11-01 00:00:00.*2026-10-30 23:43:04"):
+        study.check_non_reproduction_applies(
+            "MOOZY", reproduced=False, entry={**legacy, "started": "2026-11-01 00:00:00"}
+        )
 
 
 def test_evaluate_refuses_a_cause_that_does_not_apply_before_scoring(tmp_path, monkeypatch):
@@ -610,6 +624,21 @@ def test_evaluate_refuses_a_cause_that_does_not_apply_before_scoring(tmp_path, m
     record = {"TITAN": {"status": "done", "slide2vec_version": "8.0.0"}}
     with pytest.raises(ValueError, match="TITAN.*8.0.0"):
         _evaluate(tmp_path, monkeypatch, extraction=json.dumps(record), on_score=no_scoring)
+    for name in ("summary.csv", "differences.csv", "provenance.json"):
+        assert not (tmp_path / "study" / name).exists()
+
+
+def test_evaluate_refuses_a_cause_with_no_extraction_record_before_scoring(tmp_path, monkeypatch):
+    # With no ``extraction.json``, nothing ties the pair's re-run to the diagnosed one.
+    import slide_vs_meanpool as study
+
+    def no_scoring(step):
+        raise AssertionError(f"{step} scoring ran")
+
+    monkeypatch.setattr(study, "NON_REPRODUCTION_CAUSE", {"TITAN": "its tiles were resized"})
+    monkeypatch.setattr(study, "NON_REPRODUCTION_SLIDE2VEC", {"TITAN": "7.1.4"})
+    with pytest.raises(ValueError, match="TITAN.*no extraction record"):
+        _evaluate(tmp_path, monkeypatch, extraction=None, on_score=no_scoring)
     for name in ("summary.csv", "differences.csv", "provenance.json"):
         assert not (tmp_path / "study" / name).exists()
 

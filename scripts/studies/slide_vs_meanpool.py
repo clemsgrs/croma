@@ -193,25 +193,43 @@ NON_REPRODUCTION_CAUSE: dict[str, str] = {
 #: diagnosed on. The cause describes that run only (:func:`check_non_reproduction_applies`).
 NON_REPRODUCTION_SLIDE2VEC: dict[str, str] = {"MOOZY": "7.1.4"}
 
+#: The ``started`` time of the diagnosed run, for a pair whose ``extraction.json`` record
+#: predates the version field (#228) and so is identified by that time alone.
+NON_REPRODUCTION_LEGACY_STARTED: dict[str, str] = {"MOOZY": "2026-10-30 23:43:04"}
+
 
 def check_non_reproduction_applies(
-    pair: str, *, reproduced: bool | None, slide2vec_version: str | None
+    pair: str, *, reproduced: bool | None, entry: dict | None
 ) -> None:
     """Refuse ``pair``'s declared non-reproduction cause for a run it does not describe.
 
-    That is a run that reproduced, or one ``extraction.json`` records under a slide2vec
-    release other than the diagnosed one. A record that predates the version field
-    (``None``) passes, as does a pair with no declared cause.
+    ``entry`` is the pair's ``extraction.json`` record, ``None`` if there is none. The cause
+    is refused for a run that reproduced, one with no record, one recorded under a
+    slide2vec release other than the diagnosed one, and a version-less one whose start
+    time is not the diagnosed legacy run's. A pair with no declared cause passes.
     """
     if pair not in NON_REPRODUCTION_CAUSE:
         return
     if reproduced:
         raise ValueError(f"{pair} reproduced, so its declared non-reproduction cause is stale")
-    diagnosed = NON_REPRODUCTION_SLIDE2VEC.get(pair)
-    if slide2vec_version is not None and slide2vec_version != diagnosed:
+    if entry is None:
         raise ValueError(
-            f"{pair} was extracted with slide2vec {slide2vec_version}, but its declared "
+            f"{pair} has no extraction record, so nothing ties its re-run to the run its "
+            "declared non-reproduction cause was diagnosed on"
+        )
+    version = entry.get("slide2vec_version")
+    diagnosed = NON_REPRODUCTION_SLIDE2VEC.get(pair)
+    if version is not None and version != diagnosed:
+        raise ValueError(
+            f"{pair} was extracted with slide2vec {version}, but its declared "
             f"non-reproduction cause was diagnosed on slide2vec {diagnosed}"
+        )
+    legacy = NON_REPRODUCTION_LEGACY_STARTED.get(pair)
+    if version is None and (legacy is None or entry.get("started") != legacy):
+        raise ValueError(
+            f"{pair}'s extraction record names no slide2vec release and started at "
+            f"{entry.get('started')}, not at {legacy}, when the run its declared "
+            "non-reproduction cause was diagnosed on started"
         )
 
 
@@ -1009,12 +1027,11 @@ def evaluate(
         raise ValueError(f"no reduction for {missing}; run `reduce --pairs {' '.join(missing)}`")
     extraction_path = study_dir / "extraction.json"
     extraction = json.loads(extraction_path.read_text()) if extraction_path.exists() else None
+    entries = {p: (extraction or {}).get(p) for p in pairs}
     # Recorded by ``extract``; records written before the field have none.
-    versions = {p: ((extraction or {}).get(p) or {}).get("slide2vec_version") for p in pairs}
+    versions = {p: (entries[p] or {}).get("slide2vec_version") for p in pairs}
     for p in pairs:
-        check_non_reproduction_applies(
-            p, reproduced=records[p].get("reproduced"), slide2vec_version=versions[p]
-        )
+        check_non_reproduction_applies(p, reproduced=records[p].get("reproduced"), entry=entries[p])
     arms = [(p, records[p]["slide_arm"], records[p]["meanpool_arm"]) for p in pairs]
     models = [m for _, slide, meanpool in arms for m in (slide, meanpool)]
     rows = _pcabiop_rows()
