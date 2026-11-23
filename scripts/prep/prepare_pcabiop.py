@@ -38,7 +38,9 @@ import torch
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "scripts" / "bench"))
+sys.path.insert(0, str(REPO / "scripts" / "prep"))
 import layout  # noqa: E402
+import slide2vec_provenance  # noqa: E402
 
 # --- inputs ----------------------------------------------------------------
 WSI = Path("/data/pathology/projects/clement/croma/wsi")
@@ -47,12 +49,14 @@ PANDA_TILESET = "panda-wsi"                                      # holds the ID 
 PAR_LABELS = WSI / "par-labels.csv"
 
 MODELS = ["PRISM", "PRISM2", "TITAN", "Prov-GigaPath", "MOOZY"]
-# Each slide FM's PAR slide_embeddings live under a hash-named slide2vec run dir.
+# Each slide FM's PAR slide_embeddings live under a slide2vec run dir in WSI/features.
+# TITAN and Prov-GigaPath were re-extracted at slide2vec 7.1.4 (croma#263); their
+# superseded runs were n02n1k2t (TITAN) and aetsexkb (Prov-GigaPath).
 PAR_FEATURE_DIR = {
     "PRISM": "552fd85i",
     "PRISM2": "1evxzd6h",
-    "TITAN": "n02n1k2t",
-    "Prov-GigaPath": "aetsexkb",
+    "TITAN": "titan-par-s2v714",
+    "Prov-GigaPath": "gigapath-par-s2v714",
     "MOOZY": "nchyscec",
 }
 SEED = 1000            # PathoROB's own APD seed; used here only for the OOD drop
@@ -128,14 +132,47 @@ def build_ood_rows():
     return rows.sort_values(["biological_class", "sample_id"], kind="stable").reset_index(drop=True)
 
 
+def ood_embedding_paths(model, ood_rows):
+    """PAR slide-embedding files for ``model``, in ``ood_rows`` order."""
+    sd = WSI / "features" / PAR_FEATURE_DIR[model] / "slide_embeddings"
+    return [sd / f"{sid}.pt" for sid in ood_rows["sample_id"]]
+
+
 def load_ood_embeddings(model, ood_rows):
     """Stack PAR slide embeddings for ``model`` in ``ood_rows`` order."""
-    sd = WSI / "features" / PAR_FEATURE_DIR[model] / "slide_embeddings"
     vecs = []
-    for sid in ood_rows["sample_id"]:
-        t = torch.load(sd / f"{sid}.pt", map_location="cpu")
+    for path in ood_embedding_paths(model, ood_rows):
+        t = torch.load(path, map_location="cpu")
         vecs.append(np.asarray(t, dtype=np.float32).reshape(-1))
     return np.stack(vecs)
+
+
+def source_runs(model, id_rows, ood_rows):
+    """The slide2vec runs behind ``model``'s pcabiop rows, per subset.
+
+    ID rows are sliced from the panda-wsi tileset, so they inherit the source runs its
+    sidecar recorded (without that tileset's per-run row counts), less any secondary run
+    whose ``sample_ids`` include no ID slide; OOD rows are read from the PAR run directly.
+    A subset whose source records no run is left out.
+    """
+    runs = {}
+    panda_sidecar = layout.embedding_path(PANDA_TILESET, model).with_suffix(".npy.json")
+    if panda_sidecar.exists():
+        id_samples = set(id_rows["sample_id"])
+        inherited = []
+        for run in json.loads(panda_sidecar.read_text()).get("source_runs") or []:
+            run = {k: v for k, v in run.items() if k != "n_samples"}
+            if "sample_ids" in run:
+                run["sample_ids"] = [s for s in run["sample_ids"] if s in id_samples]
+                if not run["sample_ids"]:
+                    continue
+            inherited.append(run)
+        if inherited:
+            runs["ID"] = inherited
+    ood = slide2vec_provenance.source_runs(ood_embedding_paths(model, ood_rows))
+    if ood:
+        runs["OOD"] = ood
+    return runs
 
 
 def main():
@@ -151,10 +188,13 @@ def main():
         assert id_emb.shape[1] == ood_emb.shape[1], f"{model}: ID dim {id_emb.shape} vs OOD {ood_emb.shape}"
         emb = np.vstack([id_emb.astype(np.float32), ood_emb]).astype(np.float32)
         assert len(emb) == len(meta)
+        runs = source_runs(model, id_rows, ood_rows)  # may raise: check before saving
         np.save(layout.embedding_path(TILESET, model), emb)
-        (out_dir / f"{model}.npy.json").write_text(json.dumps(
-            {"tileset": TILESET, "model": model, "dim": int(emb.shape[1]),
-             "n_id": int(len(id_rows)), "n_ood": int(len(ood_rows))}, indent=2))
+        sidecar = {"tileset": TILESET, "model": model, "dim": int(emb.shape[1]),
+                   "n_id": int(len(id_rows)), "n_ood": int(len(ood_rows))}
+        if runs:
+            sidecar["source_runs"] = runs
+        (out_dir / f"{model}.npy.json").write_text(json.dumps(sidecar, indent=2))
         print(f"  {model:16s} -> {emb.shape} (ID {len(id_rows)} + OOD {len(ood_rows)})")
 
     # tileset row-order contract (provenance; APD reads META_PATH, not this)
