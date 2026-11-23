@@ -66,6 +66,11 @@ PANDA = by_prefix("Panda")
 EMBEDDINGS_REL = "output/embeddings/panda-wsi"
 BENCHMARK_REL = "data/benchmarks/panda.csv"
 
+#: What the caption quotes about the plane, one row per encoder: its median typed-distance
+#: radius, and the median margin of the slides it was taken over. ``generate_paper_values.py``
+#: turns the radii into macros and refuses a file whose margins are not the run's.
+RADII_NAME = "croma_planview_radii.csv"
+
 #: Neighbourhood radius and search schedule -- the headline operating point, matching
 #: the params recorded in the run's cache index.
 M = 5
@@ -160,6 +165,17 @@ def typed_distance_frame(
 
 #: Density-outline level: the contour enclosing this share of a model's slides.
 CONTOUR_MASS = 0.75
+
+
+def median_radii(frame: pd.DataFrame) -> pd.DataFrame:
+    """Per encoder: the median radius ``hypot(d_SO, d_OS)`` and the median margin, over its slides."""
+    table = (
+        frame.assign(radius=np.hypot(frame.d_so, frame.d_os))
+        .groupby("model", sort=True)
+        .agg(n_slides=("radius", "size"), median_radius=("radius", "median"), median_croma=("croma", "median"))
+        .reset_index()
+    )
+    return table
 
 
 def _density_outline(ax, x: np.ndarray, y: np.ndarray, *, color: str) -> None:
@@ -291,8 +307,11 @@ def main() -> None:
         benchmark_csv=REPO / BENCHMARK_REL,
         per_sample_dir=per_sample_dir,
     )
-    radii = frame.assign(r=np.hypot(frame.d_so, frame.d_os)).groupby("model")["r"].median()
-    print(f"median radius spread: {radii.max() / radii.min():.0f}x")
+    radii = median_radii(frame)
+    print(f"median radius spread: {radii['median_radius'].max() / radii['median_radius'].min():.0f}x")
+    radii_csv = REPO / PANDA.studies_rel / RADII_NAME
+    radii.to_csv(radii_csv, index=False)
+    print(f"wrote {radii_csv}")
 
     out_png = REPO / PANDA.studies_rel / "plots" / "croma_planview.png"
     print(f"wrote {render(frame, out_png)}")

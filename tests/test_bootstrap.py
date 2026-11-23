@@ -664,6 +664,7 @@ def test_every_helper_is_exported_beside_the_existing_ones_and_documented() -> N
         "TailBootstrap",
         "shared_draw_tail_statistics",
         "EXACT_PERMUTATION_MAX_N",
+        "PANEL_SEED",
         "CorrelationInference",
         "encoder_bootstrap_draws",
         "spearman_inference",

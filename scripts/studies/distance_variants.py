@@ -106,7 +106,11 @@ for _path in (REPO / "src", REPO / "scripts" / "bench"):
         sys.path.insert(0, str(_path))
 
 from croma import CRoMa  # noqa: E402
-from croma.metrics.bootstrap import encoder_bootstrap_draws, spearman_inference  # noqa: E402
+from croma.metrics.bootstrap import (  # noqa: E402
+    PANEL_SEED,
+    encoder_bootstrap_draws,
+    spearman_inference,
+)
 from croma.metrics.croma import CROMA_HEADLINE_M  # noqa: E402
 from metrics_io import safe_model_name  # noqa: E402
 from plotting.style import CONTROL_MODEL  # noqa: E402
@@ -135,8 +139,10 @@ APD_CSV = REPO / "output" / "studies" / "apd" / "apd.csv"
 APD_CORRELATION_CSV = REPO / "output" / "studies" / "apd" / "apd_correlation.csv"
 
 #: Encoder bootstrap and permutation settings; every correlation of a benchmark shares one
-#: draw, so differences between its variants are paired.
-SEED = 20261031
+#: draw, so differences between its variants are paired. The seed is the paper's shared
+#: one and the encoders are in name order, so the cosine row reproduces
+#: ``tab:apd-correlation``'s interval.
+SEED = PANEL_SEED
 N_BOOT = 2000
 N_PERMUTATIONS = 10_000
 CI_LEVEL = 0.95

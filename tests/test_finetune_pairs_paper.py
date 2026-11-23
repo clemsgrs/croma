@@ -306,7 +306,8 @@ class TestMacros:
         assert macros["FineTuneRobustBTcgaFourByFourFZeroDelta"] == "$-0.312$"
         assert macros["FineTuneRobustATolkachLtmDelta"] == "$+0.33$"
         assert macros["FineTuneRobustACamelyonBioBaccDelta"] == "$+0.005$"
-        assert macros["FineTuneRobustACamelyonNipdIdDelta"] == "$+0.068$"
+        # nIPD differences are in percentage points, as the table prints them.
+        assert macros["FineTuneRobustACamelyonNipdIdDelta"] == "$+6.8$"
         assert macros["FineTuneRobustACamelyonCromaDeltaCi"] == "$[0.15, 0.20]$"
 
     def test_counts_over_every_pair_and_cohort(self):
@@ -407,10 +408,19 @@ class TestTable:
 
         assert values[1:3] == [r"$0.10 \to 0.28$", r"$0.400 \to 0.088$"]
         assert values[-1] == r"$13 \to 2$ \\"
-        assert delta[1:6] == ["$+0.18$", "$-0.312$", "$+0.33$", "$+0.005$", "$+0.068$"]
+        assert delta[1:6] == ["$+0.18$", "$-0.312$", "$+0.33$", "$+0.005$", "$+6.8$"]
         assert delta[-1] == r"$+11$ \\"
         assert ci[1:3] == ["$[0.15, 0.20]$", "$[-0.355, -0.272]$"]
-        assert ci[4:7] == ["", "$[0.039, 0.106]$", "$[-0.011, 0.001]$"]
+        assert ci[4:7] == ["", "$[3.9, 10.6]$", "$[-1.1, 0.1]$"]
+
+    def test_nipd_is_printed_in_percent_and_says_so(self):
+        tex = _render()
+        rows = _block(tex, "Robust-A").splitlines()
+        values = next(line for line in rows if line.startswith("Camelyon")).split(" & ")
+
+        assert values[5:7] == [r"$-7.5 \to -0.7$", r"$0.2 \to -0.3$"]
+        assert r"\code{nIPD}$_\mathrm{ID}$ (\%)" in tex
+        assert "in percent" in _caption(tex)
 
     def test_the_ci_rows_are_labelled_with_the_studys_confidence_level(self):
         tex = _render()
@@ -441,6 +451,29 @@ class TestDisclosureCaption:
         caption = _caption(_render())
 
         assert "undisclosed for Robust-B and Robust-A" in caption
+
+    def test_an_exclusion_the_authors_state_is_cited_beside_the_undisclosed_rest(self):
+        metadata = _metadata()
+        metadata["cite"] = "smith2026robust"
+        metadata["finetune_excluded_domains"] = ""
+        metadata.loc[metadata["model"] == "Robust-A", "finetune_excluded_domains"] = "camelyon"
+
+        caption = _caption(_render(metadata=metadata))
+
+        assert "undisclosed for Robust-B and Robust-A" in caption
+        assert (
+            "The report introducing Robust-A states only that the Camelyon centres scored "
+            r"here were not seen during fine-tuning~\cite{smith2026robust}."
+        ) in caption
+
+    def test_an_excluded_domain_without_caption_wording_fails(self):
+        metadata = _metadata()
+        metadata["cite"] = "smith2026robust"
+        metadata["finetune_excluded_domains"] = ""
+        metadata.loc[metadata["model"] == "Robust-A", "finetune_excluded_domains"] = "elsewhere"
+
+        with pytest.raises(CaptionClaimError, match="elsewhere"):
+            _render(metadata=metadata)
 
     def test_a_disclosed_source_is_cited_and_a_url_is_linked(self):
         metadata = _metadata()

@@ -55,6 +55,30 @@ def test_a_cell_is_exposed_not_exposed_or_undisclosed_and_never_inferred():
     assert matrix.status("Proprietary", "tolkach-esca") == "undisclosed"
 
 
+def test_finetune_with_partial_disclosure_combines_evidence_from_both_stages():
+    md = _metadata(
+        {
+            "model": "Fine-tune",
+            "variant_role": "robustness-finetune",
+            "corpus_domains": "tcga",
+            "finetune_excluded_domains": "tcga;camelyon",
+        },
+        {
+            "model": "Undisclosed parent",
+            "variant_role": "robustness-finetune",
+            "disclosed": "no",
+            "finetune_excluded_domains": "camelyon",
+        },
+    )
+
+    matrix = ex.exposure_matrix(md)
+
+    assert matrix.status("Fine-tune", "tcga") == "exposed"
+    assert matrix.status("Fine-tune", "camelyon") == "not exposed"
+    assert matrix.status("Fine-tune", "panda") == "undisclosed"
+    assert matrix.status("Undisclosed parent", "camelyon") == "undisclosed"
+
+
 def test_a_shared_institution_is_marked_with_its_centres_and_source_not_as_dataset_exposure():
     md = _metadata(
         {
@@ -516,7 +540,7 @@ def test_a_benchmark_with_nothing_exposed_states_it_rather_than_omitting_the_row
 
     drop = _row(lines, "Unchanged", 1)
     assert drop[1:3] == ["Drop exposed", "5"]
-    assert "none exposed" in drop[3] and "identical to all ranked" in drop[3]
+    assert "no documented exposure" in drop[3] and "all ranked encoders retained" in drop[3]
 
 
 def test_the_cross_benchmark_rank_frontier_is_reported_per_variant():
@@ -791,6 +815,18 @@ def test_committed_exposure_outside_tcga_is_gpfm_on_camelyon_and_nobody_on_tolka
     assert exposed("panda") == {"GPFM"}
     assert exposed("tolkach-esca") == set()
     assert exposed("par") == set()
+
+
+@pytest.mark.parametrize("model", ["Mascaret", "Phaet"])
+def test_waiv_finetunes_documented_training_exposure(model):
+    matrix = _committed()
+    assert [matrix.status(model, d.domain) for d in ex.SOURCE_DATASETS] == [
+        "exposed",
+        "not exposed",
+        "undisclosed",
+        "undisclosed",
+        "undisclosed",
+    ]
 
 
 def test_committed_institution_markers_name_the_shared_institution_and_carry_a_source():

@@ -33,19 +33,20 @@ import finetune_pairs as study  # noqa: E402  (on sys.path via _finetune_pairs)
 OUT = Path("paper/sections/supp/finetune_pairs.tex")
 BIBLIOGRAPHY = Path("paper/references.bib")
 
-#: Table columns: (study column stem, decimals, has an interval). Decimals follow the
-#: results tables; biological accuracy and rank are point values.
+#: Table columns: (study column stem, decimals, has an interval, scale). Decimals follow the
+#: results tables; biological accuracy and rank are point values. nIPD is printed in percent
+#: to one decimal, as the text, the nIPD figures and ``tab:slide-vs-meanpool`` print it.
 COLUMNS = (
-    ("croma", 2, True),
-    ("f0", 3, True),
-    ("ltm", 2, True),
-    ("bio_bacc", 3, False),
-    ("nipd_id", 3, True),
-    ("nipd_ood", 3, True),
+    ("croma", 2, True, 1.0),
+    ("f0", 3, True, 1.0),
+    ("ltm", 2, True, 1.0),
+    ("bio_bacc", 3, False, 1.0),
+    ("nipd_id", 1, True, 100.0),
+    ("nipd_ood", 1, True, 100.0),
 )
 HEADER = (
     r"Cohort & \code{CRoMa} & $F(0)$ & $\mcode{LTM}_{10}$ & bio bacc & "
-    r"\code{nIPD}$_\mathrm{ID}$ & \code{nIPD}$_\mathrm{OOD}$ & Rank \\"
+    r"\code{nIPD}$_\mathrm{ID}$ (\%) & \code{nIPD}$_\mathrm{OOD}$ (\%) & Rank \\"
 )
 N_COLUMNS = 2 + len(COLUMNS)
 
@@ -104,6 +105,40 @@ def _disclosure(pairs: list[study.FinetunePair], bib_keys: set[str]) -> str:
     )
 
 
+#: How a benchmark domain the authors kept out of fine-tuning is named in the caption.
+EXCLUDED_DOMAIN_NAMES = {"camelyon": "the Camelyon centres scored here"}
+
+
+def _exclusions(pairs: list[study.FinetunePair], metadata: pd.DataFrame) -> list[str]:
+    """One sentence per report that says which scored data its fine-tunes never saw.
+
+    Read from ``finetune_excluded_domains``, the cells ``tab:exposure-matrix`` reads, and
+    cited to the fine-tune's own reference. "Only" is said where neither the method nor the
+    data is otherwise disclosed.
+    """
+    rows = metadata.set_index("model")
+    groups: dict[tuple[str, str, bool], list[str]] = {}
+    for pair in pairs:
+        excluded = str(rows.loc[pair.finetune].get("finetune_excluded_domains", "") or "").strip()
+        if not excluded:
+            continue
+        cite = str(rows.loc[pair.finetune]["cite"]).strip()
+        silent = pair.method_source is None and pair.data_source is None
+        groups.setdefault((excluded, cite, silent), []).append(published_model_name(pair.finetune))
+    sentences = []
+    for (excluded, cite, silent), names in groups.items():
+        domains = [d for d in excluded.split(";") if d]
+        unworded = [d for d in domains if d not in EXCLUDED_DOMAIN_NAMES]
+        if unworded:
+            raise CaptionClaimError(f"no caption wording for excluded domains {unworded}")
+        sentences.append(
+            f"The report introducing {_and(names)} states {'only ' if silent else ''}that "
+            f"{_and([EXCLUDED_DOMAIN_NAMES[d] for d in domains])} were not seen during "
+            rf"fine-tuning~\cite{{{cite}}}."
+        )
+    return sentences
+
+
 def _strata(frame: pd.DataFrame) -> str:
     groups: dict[str, list[str]] = {}
     for benchmark, strata in zip(frame["benchmark"], frame["strata"]):
@@ -137,13 +172,13 @@ def _rows(row: pd.Series, daggered: bool, percent: str) -> list[str]:
     """A cohort's three rows; ``percent`` is the caption's level, so the CI label shares it."""
     cohort = by_benchmark(row["benchmark"]).short_name + (r"$^{\dagger}$" if daggered else "")
     values, deltas, intervals = [cohort], [r"\quad $\Delta$"], [rf"\quad {percent} CI"]
-    for stem, decimals, has_interval in COLUMNS:
-        parent = bare_num(row[f"parent_{stem}"], decimals)
-        finetune = bare_num(row[f"finetune_{stem}"], decimals)
+    for stem, decimals, has_interval, scale in COLUMNS:
+        parent = bare_num(scale * row[f"parent_{stem}"], decimals)
+        finetune = bare_num(scale * row[f"finetune_{stem}"], decimals)
         values.append(rf"${parent} \to {finetune}$")
-        deltas.append(signed(row[f"delta_{stem}"], decimals))
+        deltas.append(signed(scale * row[f"delta_{stem}"], decimals))
         intervals.append(
-            interval(row[f"delta_{stem}_lo"], row[f"delta_{stem}_hi"], decimals)
+            interval(scale * row[f"delta_{stem}_lo"], scale * row[f"delta_{stem}_hi"], decimals)
             if has_interval
             else ""
         )
@@ -202,7 +237,7 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         r"$\mcode{CRoMa}\le0$ and $\mcode{LTM}_{10}$ the mean of the lowest decile; bio bacc "
         r"is biological $k$-NN balanced accuracy, whose difference carries no interval; "
         r"\code{nIPD} is the normalised integrated performance degradation of a linear probe "
-        "in and out of domain.",
+        "in and out of domain, in percent, and its differences are in percentage points.",
         r"The three \code{CRoMa} intervals are percentile intervals over "
         rf"$B{{=}}{int(_single(frame, 'n_boot'))}$ replicates of one stratified cluster "
         "bootstrap applied to both encoders of a pair, resampling independence groups "
@@ -213,6 +248,7 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         rf"${int(_single(frame, 'n_ranked'))}$ ranked pathology encoders, $1$ the highest, and "
         r"its $\Delta$ counts places gained.",
         _disclosure(pairs, bib_keys),
+        *_exclusions(pairs, metadata),
     ]
     caption += [SELECTION_LEGENDS[s] for s in selections]
     if exposed:

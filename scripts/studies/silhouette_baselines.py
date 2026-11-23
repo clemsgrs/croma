@@ -66,6 +66,7 @@ for _p in (REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" / "studies
         sys.path.insert(0, str(_p))
 
 from croma.metrics.bootstrap import (  # noqa: E402
+    PANEL_SEED,
     benjamini_hochberg,
     encoder_bootstrap_draws,
     spearman_inference,
@@ -182,7 +183,9 @@ TARGET = "nipd_id"
 N_BOOT = 2000
 N_PERMUTATIONS = 10_000
 LEVEL = 0.95
-SEED = 0
+#: The paper's shared panel seed: with the encoders in name order, CRoMa's downstream row
+#: reproduces ``tab:apd-correlation``'s interval.
+SEED = PANEL_SEED
 
 #: Score columns of the per-encoder frame: every index on every feature variant.
 SCORE_COLUMNS = [f"{name}{suffix}" for suffix in FEATURE_VARIANTS for name in INDICES]
@@ -242,6 +245,7 @@ def _infer_cohort(
     the :data:`AS_RETURNED` rows repeat iLISI's downstream and head-to-head rows without
     that tie.
     """
+    ranked = ranked.sort_values("model", kind="stable").reset_index(drop=True)
     returned = ranked
     ranked = ranked.assign(ilisi=ranked["ilisi"].mask(at_ilisi_floor(ranked["ilisi"]), 0.0))
     n = len(ranked)

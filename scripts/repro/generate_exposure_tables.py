@@ -1,4 +1,4 @@
-"""Build the pretraining-exposure tables.
+"""Build the training-data exposure tables.
 
   paper/sections/supp/exposure_matrix.tex   tab:exposure-matrix   (\\input by supp.tex)
   paper/sections/supp/drop_exposed.tex      tab:drop-exposed      (\\input by supp.tex)

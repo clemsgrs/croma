@@ -60,6 +60,7 @@ from croma.metrics.bootstrap import (  # noqa: E402
     _row_pearson,
     _row_ranks,
     benjamini_hochberg,
+    PANEL_SEED,
     encoder_bootstrap_draws,
     partial_spearman_inference,
     spearman_inference,
@@ -68,8 +69,8 @@ from croma.metrics.bootstrap import (  # noqa: E402
 N_BOOT = 2000
 N_PERMUTATIONS = 10_000
 LEVEL = 0.95
-#: The uncertainty study's seed; the two-level design's probe-run stream is seeded apart.
-SEED = 12345
+#: The paper's shared panel seed; the two-level design's probe-run stream is seeded apart.
+SEED = PANEL_SEED
 _PROBE_RUN_STREAM = 2
 
 TARGETS = ["nipd_id", "nipd_ood", "apd_id", "apd_ood"]

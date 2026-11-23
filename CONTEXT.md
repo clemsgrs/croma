@@ -351,7 +351,11 @@ Machine-readable model provenance carried as `family`, `parent_model` and
 `variant_role`. A robustness fine-tune remains linked to the parent whose pretraining facts it
 inherits; its `adaptation_method_source` and `adaptation_data_source` hold the citation key or
 URL where its authors disclose the fine-tuning objective and data, and an empty cell means
-undisclosed, never inferred. A distilled student names its teacher. `training_run` and
+undisclosed, never inferred. For a robustness fine-tune, `corpus_domains` records documented
+dataset use at either training stage, including the parent. `finetune_excluded_domains` lists
+source datasets explicitly ruled out during fine-tuning, using semicolon-separated tokens.
+An unlisted dataset remains unresolved unless documented use at either stage establishes
+exposure. A distilled student names its teacher. `training_run` and
 `shared_corpus` identify family members produced together from one disclosed corpus. Plot hue,
 within-family tone and canonical order are read from this metadata rather than a second model
 list in plotting code.

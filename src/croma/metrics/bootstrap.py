@@ -53,6 +53,7 @@ __all__ = [
     "CorrelationInference",
     "TAIL_STATISTICS",
     "EXACT_PERMUTATION_MAX_N",
+    "PANEL_SEED",
     "cluster_bootstrap_draws",
     "bootstrap_pooled_median",
     "paired_cluster_bootstrap_delta",
@@ -669,6 +670,14 @@ def _two_sided_p(
     return (hits + 1) / (defined.size + 1), int(defined.size)
 
 
+#: The seed every study of the paper draws its encoder bootstrap and its permutations from.
+#: The same correlation is printed in several tables (rho of median CRoMa with nIPD sits in
+#: the downstream, distance, exposure, batch-mixing, AUROC and low-data tables). One seed,
+#: with the encoders in name order, gives it the same interval and p value in each. The
+#: library's own default seed stays 0; a study opts in by passing this.
+PANEL_SEED = 12345
+
+
 def encoder_bootstrap_draws(n: int, *, n_boot: int = 2000, seed: int = 0) -> np.ndarray:
     """Encoder indices for an encoder bootstrap, shape ``(n_boot, n)``.
 
@@ -676,6 +685,9 @@ def encoder_bootstrap_draws(n: int, *, n_boot: int = 2000, seed: int = 0) -> np.
     ``draws`` to several correlation helpers to share one encoder draw between them (e.g.
     for the CI of a difference between two correlations on the same panel); without
     ``draws`` each helper makes exactly this draw from its own ``seed``.
+
+    The draw indexes positions, not names: two callers share replicates only if they also
+    list the same encoders in the same order (the studies sort by encoder name).
     """
     if int(n) < 1:
         raise ValueError("an encoder bootstrap needs at least one encoder")

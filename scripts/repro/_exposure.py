@@ -1,18 +1,8 @@
-"""Pretraining exposure: the exposure matrix and the drop-exposed sensitivity.
+"""Training-data exposure matrix and sensitivity to excluding exposed encoders.
 
-Several encoders were pretrained on data a benchmark scores. The paper flags this with a
-dagger per exposed encoder (the Pareto figures and the results tables); this module lays the
-extent out in one place (``tab:exposure-matrix``) and recomputes the headline associations and
-frontiers with the exposed encoders removed (``tab:drop-exposed``). Overlap stays flagged, not
-adjusted.
-
-Every exposure fact is read through ``_model_provenance.exposed_models_for_domain``, the
-resolver the daggers use (ADR-0005), so the matrix, the daggers and the drop sets cannot
-disagree. A matrix cell is one of three values, and none is inferred:
-
-* ``exposed`` -- the encoder's disclosed corpus includes the dataset (the resolver says so);
-* ``not exposed`` -- its disclosed corpus excludes the dataset;
-* ``undisclosed`` -- its authors have not disclosed the corpus (``disclosed`` is ``no``).
+Positive exposure uses the shared dagger resolver (ADR-0005). For robustness fine-tunes
+a dataset can be ruled out only if disclosures exclude it from both parent pretraining
+and fine-tuning. Missing information at either stage leaves exposure unresolved.
 """
 
 from __future__ import annotations
@@ -29,10 +19,11 @@ for _path in (HERE, REPO / "src", REPO / "scripts" / "bench", REPO / "scripts" /
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from _model_provenance import exposed_models_for_domain  # noqa: E402
+from _model_provenance import _domains, exposed_models_for_domain  # noqa: E402
 from _paper_tables import CaptionClaimError, bare_num, landscape_table  # noqa: E402
 from croma.metrics.bootstrap import (  # noqa: E402
     EXACT_PERMUTATION_MAX_N,
+    PANEL_SEED,
     CorrelationInference,
     spearman_inference,
 )
@@ -215,8 +206,6 @@ def _selections(metadata: pd.DataFrame) -> dict[str, Selection]:
 
 def _institution_marks(metadata: pd.DataFrame) -> dict[str, tuple[InstitutionMark, ...]]:
     """Resolve each mapped institution through the dagger resolver, with its source."""
-    from _model_provenance import _domains
-
     models = set(metadata["model"].astype(str))
     tokens = set().union(*(_domains(c) for c in metadata["institutional_domains"]))
     unmapped = sorted(tokens - INSTITUTIONS.keys())
@@ -246,8 +235,6 @@ def _check_namespaces(metadata: pd.DataFrame) -> None:
     The resolver unions the two columns, so a token in the wrong one would resolve silently as
     the other kind of exposure.
     """
-    from _model_provenance import _domains
-
     datasets = {d.domain for d in SOURCE_DATASETS}
     for _, row in metadata.iterrows():
         wrong = (_domains(row["institutional_domains"]) & datasets) | (
@@ -271,13 +258,20 @@ def exposure_matrix(metadata: pd.DataFrame) -> ExposureMatrix:
             f"`disclosed` must be yes or no; {unknown} carry neither, and a cell is never "
             "inferred. Record the disclosure in model_metadata.csv."
         )
+    finetune_exclusions = {
+        str(row["model"]): _domains(row.get("finetune_excluded_domains"))
+        for _, row in metadata.iterrows()
+        if row.get("variant_role") == "robustness-finetune"
+    }
     cells: dict[tuple[str, str], str] = {}
     for dataset in SOURCE_DATASETS:
         exposed = exposed_models_for_domain(metadata, dataset.domain, models)
         for model in models:
             if model in exposed:
                 cells[(model, dataset.domain)] = EXPOSED
-            elif disclosed[model] == "no":
+            elif disclosed[model] == "no" or (
+                model in finetune_exclusions and dataset.domain not in finetune_exclusions[model]
+            ):
                 cells[(model, dataset.domain)] = UNDISCLOSED
             else:
                 cells[(model, dataset.domain)] = NOT_EXPOSED
@@ -366,31 +360,29 @@ def _count_row(panel: str, counts: dict[str, Count]) -> str:
 #: The cell definitions, set as notes under the tile part rather than in its caption: the
 #: rows and a caption this long are taller than one rotated page (#247).
 _MATRIX_NOTES = (
-    r"Columns: TCGA (scored by TCGA-2x2, TCGA-4x4 and the Tolkach-ESCA TCGA "
-    r"cohort held out of its main score), CAMELYON16/17 (Camelyon), PANDA (PCaBiop in domain), "
-    r"PAR (PCaBiop out of domain) and Tolkach-ESCA (its UKK, WNS and CHA cohorts). A cell is "
-    r"\textbf{exposed} when the encoder's disclosed pretraining corpus includes the dataset, "
-    r"\emph{not exposed} when the disclosed corpus excludes it, and \emph{undisclosed} when its "
-    r"authors have not disclosed the corpus; no cell is inferred. Every cell is resolved from "
-    r"\code{model\_metadata.csv} by the resolver that places the exposure daggers of the Pareto "
-    r"figures and results tables. \emph{Shared institution} marks a disclosed corpus drawn from "
-    r"the institution behind a scored centre (benchmark and centre in parentheses): possible "
-    r"source-domain overlap only, kept apart from dataset exposure; it does not establish that any "
-    r"scored slide was seen. \emph{PathoROB in development} is the benchmark its authors "
-    r"disclose using while developing the encoder, a different kind of exposure; -- means none "
-    r"disclosed. Counts exclude the natural-image control. Overlap is flagged here, not adjusted "
-    r"for."
+    r"TCGA contributes to TCGA-2x2, TCGA-4x4 and the held-out TCGA extension of Tolkach-ESCA. "
+    r"The Tolkach-ESCA column covers the three scored cohorts (UKK, WNS and CHA). CAMELYON16/17 "
+    r"supplies Camelyon, and PANDA and PAR supply the in-domain and out-of-domain PCaBiop cohorts. "
+    r"A dataset used during pretraining or fine-tuning is \textbf{exposed}. We record "
+    r"\emph{not exposed} when disclosures rule out its use at every applicable stage and "
+    r"\emph{undisclosed} when exposure remains unresolved. Mascaret and Phaet inherited TCGA "
+    r"exposure from their parents. Their parent corpora excluded Camelyon, and the fine-tuning "
+    r"authors excluded all five Camelyon centres~\cite{filiot2026robustifying}. Fine-tuning "
+    r"exposure to PANDA, PAR and the scored Tolkach-ESCA cohorts is undisclosed for both. "
+    r"\emph{Shared institution} identifies training data from an institution contributing to the "
+    r"benchmark. \emph{PathoROB in development} records disclosed benchmark use during model "
+    r"development. Counts exclude the natural-image control."
 )
 
 _MATRIX_CAPTION = (
-    r"\caption{\textbf{Pretraining exposure of every encoder to the source datasets the "
+    r"\caption{\textbf{Training-data exposure of the tile encoders to the source datasets the "
     r"benchmarks score.} Tile encoders, with the columns and cells defined below the table; "
     r"Table~\ref{tab:exposure-matrix-slide} continues with the slide encoders and the "
     r"natural-image control.}"
 )
 
 _SLIDE_CAPTION = (
-    r"\caption{\textbf{Pretraining exposure of the slide encoders and the natural-image control "
+    r"\caption{\textbf{Training-data exposure of the slide encoders and the natural-image control "
     r"to the source datasets the benchmarks score} (continued from "
     r"Table~\ref{tab:exposure-matrix}, which defines the columns and cells).}"
 )
@@ -455,7 +447,9 @@ def render_matrix(matrix: ExposureMatrix, fingerprints: list[tuple[str, str]]) -
 #: Columns a sensitivity frame carries: one row per encoder, CRoMa already a margin.
 SCORE_COLUMNS = ("croma", "croma_ltm_alpha", "nipd_id", "nipd_ood")
 #: The correlation settings the caption states; passed explicitly so the two cannot drift.
-_INFERENCE = {"n_boot": 2000, "level": 0.95, "seed": 0, "n_permutations": 10_000}
+#: The seed is the paper's shared one and the kept encoders are in name order, so the full
+#: panel's rows reproduce ``tab:apd-correlation``'s intervals.
+_INFERENCE = {"n_boot": 2000, "level": 0.95, "seed": PANEL_SEED, "n_permutations": 10_000}
 
 
 @dataclass(frozen=True)
@@ -594,7 +588,7 @@ _VARIANT_LABELS = {
     "drop-exposed": "Drop exposed",
     "disclosed-unexposed": "Disclosed, not exposed",
 }
-_UNCHANGED = "none exposed to the scored dataset; identical to all ranked"
+_UNCHANGED = "no documented exposure (all ranked encoders retained)"
 _SENSITIVITY_COLUMNS = 7
 
 
@@ -651,10 +645,10 @@ def _sensitivity_caption(blocks: list[BenchmarkSensitivity]) -> str:
     unchanged = [b.name for b in blocks if b.variants[1].unchanged]
     parts = [
         r"\caption{\textbf{Headline associations and frontiers without the exposed encoders.}",
-        r"Per benchmark, over the ranked pathology encoders (control excluded): \emph{All ranked}",
-        r"is the full panel; \emph{Drop exposed} removes the encoders whose disclosed corpus",
-        r"includes the benchmark's scored dataset (Table~\ref{tab:exposure-matrix});",
-        r"\emph{Disclosed, not exposed} also removes the encoders whose corpus is undisclosed.",
+        r"\emph{All ranked} includes all ranked pathology encoders. \emph{Drop exposed} excludes",
+        r"encoders with documented use of the scored dataset during pretraining or fine-tuning.",
+        r"\emph{Disclosed, not exposed} retains only encoders for which disclosures rule out use",
+        r"at every applicable stage (Table~\ref{tab:exposure-matrix}).",
         r"$\rho_{\mathrm{ID}}$ and $\rho_{\mathrm{OOD}}$ are Spearman correlations of",
         rf"median $\mcode{{CRoMa}}(m{{=}}{CROMA_HEADLINE_M})$ with nIPD$_{{\mathrm{{ID}}}}$ and",
         rf"nIPD$_{{\mathrm{{OOD}}}}$, with a {round(_INFERENCE['level'] * 100)}\% encoder-bootstrap",
@@ -672,11 +666,9 @@ def _sensitivity_caption(blocks: list[BenchmarkSensitivity]) -> str:
     if unchanged:
         names = " and ".join(unchanged)
         parts.append(
-            rf"No encoder's disclosed corpus includes the dataset {names} scores, so its"
-            r" \emph{Drop exposed} row is the full panel; shared-institution markers"
-            r" (Table~\ref{tab:exposure-matrix}) are flagged, never dropped."
+            rf"For {names}, no encoder has documented training exposure to the scored cohorts.",
         )
-    parts.append(r"Exposure is flagged, not adjusted for.}")
+    parts.append(r"Shared institutions are reported separately (Table~\ref{tab:exposure-matrix}).}")
     return " ".join(parts)
 
 
@@ -735,7 +727,7 @@ def exposure_macros(
     variant the panel size, both correlations and the frontier; then the mean-rank frontier."""
     from _paper_tables import num_math
 
-    lines = ["% Pretraining exposure counts (tab:exposure-matrix)"]
+    lines = ["% Training-data exposure counts (tab:exposure-matrix)"]
     for panel, counts in matrix.counts().items():
         for domain, count in counts.items():
             stem = f"Exposure{panel.capitalize()}{_DATASET_STEMS[domain]}"
