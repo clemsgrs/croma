@@ -52,7 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     centre-cropped to 224 px on PAR.
 
   Both encoders are now extracted with slide2vec 7.1.4's presets on both cohorts:
-  - TITAN: 448 px tiles at 0.5 mpp.
+  - TITAN: 448 px tiles at 0.5 mpp. One PCaBiop-ISUP slide, `07a14fa5…` (not in
+    PCaBiop), got no tiles under the preset's tissue-area filter, so it alone was tiled
+    with the filter's reference tile size at 224 px; its tiles are still 448 px at 0.5 mpp.
   - Prov-GigaPath: 224 px tiles at 0.5 mpp, read directly, with grid-index positions
     (`aggregation_revision = 1`) and the slide encoder in eval mode.
 

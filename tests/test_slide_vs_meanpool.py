@@ -578,6 +578,40 @@ def test_the_moozy_cause_is_the_lunit_transform_change():
     for fact in ("4.6.2", "5.3.0", "7.1.4", "248", "224", "ImageNet", "Lunit"):
         assert fact in cause
     assert set(study.NON_REPRODUCTION_CAUSE) == {"MOOZY"}
+    assert study.NON_REPRODUCTION_SLIDE2VEC == {"MOOZY": "7.1.4"}
+
+
+def test_a_non_reproduction_cause_applies_only_to_the_run_it_was_diagnosed_on():
+    # MOOZY's cause explains a slide2vec 7.1.4 re-run that did not reproduce. It must not
+    # be carried onto a run that reproduced, or one another release extracted. A record
+    # that predates the version field (None) passes. A pair with no cause always passes.
+    import slide_vs_meanpool as study
+
+    study.check_non_reproduction_applies("MOOZY", reproduced=False, slide2vec_version="7.1.4")
+    study.check_non_reproduction_applies("MOOZY", reproduced=False, slide2vec_version=None)
+    study.check_non_reproduction_applies("MOOZY", reproduced=None, slide2vec_version=None)
+    study.check_non_reproduction_applies("TITAN", reproduced=True, slide2vec_version="8.0.0")
+    with pytest.raises(ValueError, match="MOOZY.*reproduced"):
+        study.check_non_reproduction_applies("MOOZY", reproduced=True, slide2vec_version="7.1.4")
+    with pytest.raises(ValueError, match="MOOZY.*8.0.0.*7.1.4"):
+        study.check_non_reproduction_applies("MOOZY", reproduced=False, slide2vec_version="8.0.0")
+
+
+def test_evaluate_refuses_a_cause_that_does_not_apply_before_scoring(tmp_path, monkeypatch):
+    import json
+
+    import slide_vs_meanpool as study
+
+    def no_scoring(step):
+        raise AssertionError(f"{step} scoring ran")
+
+    monkeypatch.setattr(study, "NON_REPRODUCTION_CAUSE", {"TITAN": "its tiles were resized"})
+    monkeypatch.setattr(study, "NON_REPRODUCTION_SLIDE2VEC", {"TITAN": "7.1.4"})
+    record = {"TITAN": {"status": "done", "slide2vec_version": "8.0.0"}}
+    with pytest.raises(ValueError, match="TITAN.*8.0.0"):
+        _evaluate(tmp_path, monkeypatch, extraction=json.dumps(record), on_score=no_scoring)
+    for name in ("summary.csv", "differences.csv", "provenance.json"):
+        assert not (tmp_path / "study" / name).exists()
 
 
 def test_only_a_declared_pair_that_runs_can_carry_a_non_reproduction_cause():

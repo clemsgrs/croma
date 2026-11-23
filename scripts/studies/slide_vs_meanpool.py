@@ -189,6 +189,31 @@ NON_REPRODUCTION_CAUSE: dict[str, str] = {
     ),
 }
 
+#: The slide2vec release of the re-run each cause in :data:`NON_REPRODUCTION_CAUSE` was
+#: diagnosed on. The cause describes that run only (:func:`check_non_reproduction_applies`).
+NON_REPRODUCTION_SLIDE2VEC: dict[str, str] = {"MOOZY": "7.1.4"}
+
+
+def check_non_reproduction_applies(
+    pair: str, *, reproduced: bool | None, slide2vec_version: str | None
+) -> None:
+    """Refuse ``pair``'s declared non-reproduction cause for a run it does not describe.
+
+    That is a run that reproduced, or one ``extraction.json`` records under a slide2vec
+    release other than the diagnosed one. A record that predates the version field
+    (``None``) passes, as does a pair with no declared cause.
+    """
+    if pair not in NON_REPRODUCTION_CAUSE:
+        return
+    if reproduced:
+        raise ValueError(f"{pair} reproduced, so its declared non-reproduction cause is stale")
+    diagnosed = NON_REPRODUCTION_SLIDE2VEC.get(pair)
+    if slide2vec_version is not None and slide2vec_version != diagnosed:
+        raise ValueError(
+            f"{pair} was extracted with slide2vec {slide2vec_version}, but its declared "
+            f"non-reproduction cause was diagnosed on slide2vec {diagnosed}"
+        )
+
 
 def check_non_reproduction_cause(causes: dict[str, str]) -> None:
     """Refuse a cause for an undeclared pair, a pair declared not run, or an empty cause."""
@@ -982,6 +1007,14 @@ def evaluate(
     missing = [p for p in pairs if p not in records]
     if missing:
         raise ValueError(f"no reduction for {missing}; run `reduce --pairs {' '.join(missing)}`")
+    extraction_path = study_dir / "extraction.json"
+    extraction = json.loads(extraction_path.read_text()) if extraction_path.exists() else None
+    # Recorded by ``extract``; records written before the field have none.
+    versions = {p: ((extraction or {}).get(p) or {}).get("slide2vec_version") for p in pairs}
+    for p in pairs:
+        check_non_reproduction_applies(
+            p, reproduced=records[p].get("reproduced"), slide2vec_version=versions[p]
+        )
     arms = [(p, records[p]["slide_arm"], records[p]["meanpool_arm"]) for p in pairs]
     models = [m for _, slide, meanpool in arms for m in (slide, meanpool)]
     rows = _pcabiop_rows()
@@ -1011,16 +1044,13 @@ def evaluate(
     )
     summary = arm_summary(arms, metrics, apd)
 
-    extraction_path = study_dir / "extraction.json"
-    extraction = json.loads(extraction_path.read_text()) if extraction_path.exists() else None
     provenance = {
         "study": STUDY_NAME,
         "pairs": {
             p: {
                 **{k: v for k, v in vars(PAIRS_BY_MODEL[p]).items()},
                 "reproduction": records[p],
-                # Recorded by ``extract``; records written before the field have none.
-                "slide2vec_version": ((extraction or {}).get(p) or {}).get("slide2vec_version"),
+                "slide2vec_version": versions[p],
                 "non_reproduction_cause": NON_REPRODUCTION_CAUSE.get(p),
             }
             for p in pairs
