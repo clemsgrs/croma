@@ -151,8 +151,8 @@ test("real publication association statistics match the manuscript analysis", ()
     "tcga-4x4/ood": [27, 0.8974358974, 0.3974057293],
     "tolkach-esca/id": [27, 0.9291819292, 0.0959925773],
     "tolkach-esca/ood": [27, 0.742979243, 0.028614917],
-    "pcabiop/id": [5, 0.9, null],
-    "pcabiop/ood": [5, 0.6, null],
+    "pcabiop/id": [5, 0.7, null],
+    "pcabiop/ood": [5, 0.7, null],
   };
   for (const [scope, [n, rho, slope]] of Object.entries(expected)) {
     const [cohort, regime] = scope.split("/");

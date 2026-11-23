@@ -1,6 +1,6 @@
 {
   "croma_version": "1.0.1",
-  "exported": "2026-11-09",
+  "exported": "2026-11-23",
   "protocol": "median-k",
   "croma_m": 5,
   "tail_alpha": 0.1,
@@ -50,8 +50,8 @@
         "MOOZY": 9,
         "PRISM": 3,
         "PRISM2": 7,
-        "Prov-GigaPath": 13,
-        "TITAN": 9
+        "Prov-GigaPath": 7,
+        "TITAN": 13
       },
       "n_models": 5,
       "confounder": "Data Provider",
@@ -61,10 +61,10 @@
   "files": {
     "results/camelyon.csv": "8b1c7cca7d7541bd3da8297af4aa786905364f016bf28ff0d6014d122c547cb0",
     "results/cross_benchmark.csv": "c693b106eb5d0b0b2c138aedcd9f0025c51a75bf4db6b78a6fc3bcfb17e7d0e1",
-    "results/distributions.json": "198cb152521d460c6a3381e362e14e00b6f3908e31609ec6e1963c2f50f9a452",
-    "results/nipd.csv": "148db1e6378e5b99ad17f8ee74dd0b7b601c03ddd1fde9898815b2762720d410",
-    "results/nipd.json": "fa985342d715be093d599c431e528927f1ba9811d094eb8a65d81b259e20959f",
-    "results/pcabiop.csv": "681915b2718a8ff579a29848fdef8691532ee8fca57b5a78d73c1360b31e8d61",
+    "results/distributions.json": "d1c05a3352e38cf17f61962d03a8839adc50d14318c4c04871e298784517969c",
+    "results/nipd.csv": "cd9874f0e762313940166506586fbc63872699eecd7d16c049dd4bf72aca85af",
+    "results/nipd.json": "6fb0e9c14a8ef170f4081171f634bf5e8b97aa02412231ae23999d95502ae6eb",
+    "results/pcabiop.csv": "6edd28f7ae366f9efbb9feed9345921bf5b29db3d81f5194aabf85498310e0f3",
     "results/tcga-4x4.csv": "78943418f4e16afb8e9ccfdc20f04deede26b25d725dced4b8e1487c8b8ba1d6",
     "results/tolkach-esca.csv": "89f3bf2bcb4204ebf1a363b3aab2cfe3cf3d98d05f9df4b648d38b1352edec86"
   }

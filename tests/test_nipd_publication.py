@@ -109,8 +109,8 @@ def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
     assert pcabiop == {
         "descriptive": True,
         "regimes": {
-            "id": {"n": 5, "spearman_rho": 0.9, "trend": None},
-            "ood": {"n": 5, "spearman_rho": 0.6, "trend": None},
+            "id": {"n": 5, "spearman_rho": 0.7, "trend": None},
+            "ood": {"n": 5, "spearman_rho": 0.7, "trend": None},
         },
     }
 

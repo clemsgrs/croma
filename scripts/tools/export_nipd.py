@@ -35,16 +35,16 @@ from croma import nipd  # noqa: E402
 
 SCHEMA_VERSION = 2
 STUDY_REVISION = "expanded-panel-paired-repeat-v1"
-PUBLICATION_DATE = "2026-11-05"
+PUBLICATION_DATE = "2026-11-23"
 # Historical producer identity, updated only when deliberately republishing the study
 # alongside its date/revision/source hashes. A package release does not republish it.
 PUBLICATION_CROMA_VERSION = "1.0.1"
 MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
-    "apd_summary_sha256": "5ebd0498ec81756e6e6c0a7f386b0e980d75bb50b64779f9ac515aa8a71478c9",
-    "joined_summary_sha256": "e8a79a1ab52b40e98f95495580789b91d1c0bb229e82da9ad49fb63f7196e5af",
-    "raw_cells_sha256": "83bb67866b1a79265e5575e7e403d82aa0be4bf7704ea5780909cda110e97d96",
+    "apd_summary_sha256": "794cb343ac4fb2558419caeaa2a4906f79e070a997ffe715641beb63ad039848",
+    "joined_summary_sha256": "827268abc4725766cb97aabbf287f8b1eefca1b19c4b075427558c695440dfe8",
+    "raw_cells_sha256": "12c055f69e7345c2117a9afdbf285b1acaf36dda0502b2163a2565d8257ad937",
 }
 FLOAT_DIGITS = 10
 
