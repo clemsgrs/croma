@@ -270,6 +270,12 @@ def prepare_benchmark_embeddings(
 
         stacked = np.stack(stacked_rows, axis=0)
         output_path = layout.embedding_path(str(tileset), str(model))
+        # Slide embeddings read from slide2vec runs carry each run's own record
+        # (version, preset, tiling, aggregation, encoder mode); other sources carry none.
+        # Read it before saving, so a rejected record leaves the previous matrix in place.
+        runs = slide2vec_provenance.source_runs(
+            path_by_image[str(image_path)] for image_path in source_image_paths
+        )
         np.save(output_path, stacked)
         sidecar = {
             "manifest": str(tileset_manifest_path),
@@ -283,11 +289,6 @@ def prepare_benchmark_embeddings(
             "mapping_csv": str(mapping_csv),
             "evaluation_design": str(evaluation_design),
         }
-        # Slide embeddings read from slide2vec runs carry each run's own record
-        # (version, preset, tiling, aggregation, encoder mode); other sources carry none.
-        runs = slide2vec_provenance.source_runs(
-            path_by_image[str(image_path)] for image_path in source_image_paths
-        )
         if runs:
             sidecar["source_runs"] = runs
         output_path.with_suffix(output_path.suffix + ".json").write_text(

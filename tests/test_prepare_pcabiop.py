@@ -13,9 +13,11 @@ for _p in (ROOT / "scripts" / "bench", ROOT / "scripts" / "prep"):
         sys.path.insert(0, str(_p))
 
 import layout
-import prepare_pcabiop
 
+# prepare_pcabiop imports torch at module level, and CI installs no torch.
 torch = pytest.importorskip("torch")
+
+import prepare_pcabiop
 
 
 def _write_run(run_dir: Path, vectors: dict[str, np.ndarray], *, preset: str, record: bool) -> None:

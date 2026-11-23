@@ -188,10 +188,10 @@ def main():
         assert id_emb.shape[1] == ood_emb.shape[1], f"{model}: ID dim {id_emb.shape} vs OOD {ood_emb.shape}"
         emb = np.vstack([id_emb.astype(np.float32), ood_emb]).astype(np.float32)
         assert len(emb) == len(meta)
+        runs = source_runs(model, id_rows, ood_rows)  # may raise: check before saving
         np.save(layout.embedding_path(TILESET, model), emb)
         sidecar = {"tileset": TILESET, "model": model, "dim": int(emb.shape[1]),
                    "n_id": int(len(id_rows)), "n_ood": int(len(ood_rows))}
-        runs = source_runs(model, id_rows, ood_rows)
         if runs:
             sidecar["source_runs"] = runs
         (out_dir / f"{model}.npy.json").write_text(json.dumps(sidecar, indent=2))

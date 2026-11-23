@@ -220,6 +220,47 @@ def test_sidecar_records_the_slide2vec_runs_behind_a_model(bench_env, tmp_path: 
     assert "source_runs" not in _sidecar("UNI")
 
 
+def test_rejected_provenance_leaves_the_previous_matrix_in_place(bench_env, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "toy.csv"
+    mapping_path = tmp_path / "mapping.csv"
+    _repeated_subset_manifest().to_csv(manifest_path, index=False)
+    paths = _write_slide2vec_run(
+        tmp_path / "features" / "gigapath",
+        {f"s{i}": np.full(3, float(i), np.float32) for i in range(4)},
+        version="7.1.4",
+    )
+    pd.DataFrame(
+        {
+            "image_path": [f"/tmp/{sid}.png" for sid in paths],
+            "model": "Prov-GigaPath",
+            "embedding_path": [str(path) for path in paths.values()],
+        }
+    ).to_csv(mapping_path, index=False)
+    kwargs = dict(
+        manifest_path=manifest_path,
+        confounder_column="scanner_vendor",
+        mapping_csv=mapping_path,
+        tileset="toy-slides",
+        models=["Prov-GigaPath"],
+        evaluation_design="paired_2x2",
+    )
+    pbe.prepare_benchmark_embeddings(**kwargs)
+    matrix_path = layout.embedding_path("toy-slides", "Prov-GigaPath")
+    before = matrix_path.read_bytes()
+
+    # One slide is re-embedded under another aggregation revision: the run's
+    # provenance is now contradictory, so the rebuild must refuse before writing.
+    import torch
+
+    torch.save(torch.full((3,), 9.0), paths["s3"])
+    paths["s3"].with_suffix(".meta.json").write_text(
+        json.dumps({"sample_id": "s3", "compatibility": {"aggregation_revision": 2}})
+    )
+    with pytest.raises(ValueError, match="disagree on aggregation_revision"):
+        pbe.prepare_benchmark_embeddings(**kwargs)
+    assert matrix_path.read_bytes() == before
+
+
 def test_prepare_benchmark_embeddings_rejects_missing_rows(bench_env, tmp_path: Path) -> None:
     manifest_path = tmp_path / "toy.csv"
     mapping_path = tmp_path / "mapping.csv"
