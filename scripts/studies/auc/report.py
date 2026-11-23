@@ -46,6 +46,7 @@ from plotting.style import CONTROL_MODEL  # noqa: E402  (loaders put scripts/ben
 
 from croma import nipd  # noqa: E402
 from croma.metrics.bootstrap import (  # noqa: E402
+    PANEL_SEED,
     benjamini_hochberg,
     encoder_bootstrap_draws,
     spearman_inference,
@@ -64,10 +65,11 @@ SCORES = ("auroc", "balacc")
 #: 26 ranked encoders each. PCaBiop's five slide encoders are reported descriptively.
 FAMILY_DATASETS = PATHOROB_DOWNSTREAM_DATASETS
 #: Encoder-bootstrap replicates and Monte-Carlo permutations per correlation, and the seed
-#: both are drawn from. Fixed, so the table rebuilds byte for byte.
+#: both are drawn from: the paper's shared panel seed, so with the encoders in name order
+#: the balanced-accuracy row reproduces ``tab:apd-correlation``'s interval.
 N_BOOT = 2000
 N_PERMUTATIONS = 10_000
-SEED = 0
+SEED = PANEL_SEED
 
 REDUCTION_CSV = AUC_REL / "nipd_auroc.csv"
 CORRELATION_CSV = AUC_REL / "nipd_auroc_correlation.csv"

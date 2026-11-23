@@ -340,7 +340,16 @@ class TestMacros:
                     assert macros[f"BaselinesDelta{name}{scope}{suffix}"] == value(
                         dataset, "head_to_head", metric, column
                     )
-        assert len(macros) == len(lines) == 3 * (3 + 2) * 3
+            # iLISI again, ranked as returned, without the tie at the floor.
+            for family, kind in (
+                ("BaselinesNipdId", "downstream_as_returned"),
+                ("BaselinesDelta", "head_to_head_as_returned"),
+            ):
+                for column, suffix in (("estimate", ""), ("ci_lo", "Lo"), ("ci_hi", "Hi")):
+                    assert macros[f"{family}IlisiAsReturned{scope}{suffix}"] == value(
+                        dataset, kind, "ilisi", column
+                    )
+        assert len(macros) == len(lines) == 3 * (3 + 2 + 2) * 3
 
     def test_an_empty_root_fails_rather_than_reading_this_checkout(self, tmp_path: Path) -> None:
         with pytest.raises(FileNotFoundError, match=re.escape(str(tmp_path))):

@@ -35,8 +35,10 @@ MACRO_STATS = (
     ("FZero", "f0", 3, True),
     ("Ltm", "ltm", 2, True),
     ("BioBacc", "bio_bacc", 3, False),
-    ("NipdId", "nipd_id", 3, True),
+    ("NipdId", "nipd_id", 1, True),
 )
+#: nIPD is printed in percent (its differences in percentage points), as the table prints it.
+MACRO_SCALE = {"nipd_id": 100.0}
 _DIGITS = ("Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine")
 
 
@@ -124,19 +126,27 @@ def token(name: str) -> str:
 
 
 def macro_lines(frame: pd.DataFrame) -> list[str]:
-    """``\\newcommand`` lines: each pair x cohort difference, and two counts over all cells."""
+    """``\\newcommand`` lines: each pair x cohort difference, and counts over all cells."""
     lines = []
     for _, row in frame.iterrows():
         stem = f"FineTune{token(row['finetune'])}{by_benchmark(row['benchmark']).prefix}"
         for macro, column, decimals, has_interval in MACRO_STATS:
-            delta = float(row[f"delta_{column}"])
+            scale = MACRO_SCALE.get(column, 1.0)
+            delta = scale * float(row[f"delta_{column}"])
             lines.append(rf"\newcommand{{\{stem}{macro}Delta}}{{{signed(delta, decimals)}}}")
             if has_interval:
-                ci = interval(row[f"delta_{column}_lo"], row[f"delta_{column}_hi"], decimals)
+                ci = interval(
+                    scale * row[f"delta_{column}_lo"], scale * row[f"delta_{column}_hi"], decimals
+                )
                 lines.append(rf"\newcommand{{\{stem}{macro}DeltaCi}}{{{ci}}}")
     lines += [
         rf"\newcommand{{\FineTuneNCells}}{{{len(frame)}}}",
         rf"\newcommand{{\FineTuneFZeroFallsCount}}{{{int((frame['delta_f0'] < 0).sum())}}}",
         rf"\newcommand{{\FineTuneLtmRisesCount}}{{{int((frame['delta_ltm'] > 0).sum())}}}",
+        # In-domain degradation falls when nIPD_ID rises towards zero; the second count is
+        # the cells whose interval for that rise lies above zero.
+        rf"\newcommand{{\FineTuneNipdIdRisesCount}}{{{int((frame['delta_nipd_id'] > 0).sum())}}}",
+        rf"\newcommand{{\FineTuneNipdIdCiAboveZeroCount}}"
+        rf"{{{int((frame['delta_nipd_id_lo'] > 0).sum())}}}",
     ]
     return lines

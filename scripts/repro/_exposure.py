@@ -23,6 +23,7 @@ from _model_provenance import _domains, exposed_models_for_domain  # noqa: E402
 from _paper_tables import CaptionClaimError, bare_num, landscape_table  # noqa: E402
 from croma.metrics.bootstrap import (  # noqa: E402
     EXACT_PERMUTATION_MAX_N,
+    PANEL_SEED,
     CorrelationInference,
     spearman_inference,
 )
@@ -446,7 +447,9 @@ def render_matrix(matrix: ExposureMatrix, fingerprints: list[tuple[str, str]]) -
 #: Columns a sensitivity frame carries: one row per encoder, CRoMa already a margin.
 SCORE_COLUMNS = ("croma", "croma_ltm_alpha", "nipd_id", "nipd_ood")
 #: The correlation settings the caption states; passed explicitly so the two cannot drift.
-_INFERENCE = {"n_boot": 2000, "level": 0.95, "seed": 0, "n_permutations": 10_000}
+#: The seed is the paper's shared one and the kept encoders are in name order, so the full
+#: panel's rows reproduce ``tab:apd-correlation``'s intervals.
+_INFERENCE = {"n_boot": 2000, "level": 0.95, "seed": PANEL_SEED, "n_permutations": 10_000}
 
 
 @dataclass(frozen=True)

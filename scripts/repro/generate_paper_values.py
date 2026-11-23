@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import math
 import re
 import sys
 from pathlib import Path
@@ -128,7 +129,13 @@ def _span(lo: float, hi: float, decimals: int = 2) -> str:
     intervals share one look, but routes each endpoint through ``bare_num`` so a ``-0.00``
     boundary (e.g. Prostate's CRoMa max) prints as ``0.00`` rather than a spurious minus.
     Correlation ranges read as ``$\rho\in$[lo, hi]`` / ``$|\rho|$ in [lo, hi]`` in prose.
+
+    Two distinct endpoints that round to the same number gain a decimal, so a narrow range
+    (the slide panel's centre accuracy, 0.987 to 0.995) does not print as ``[0.99, 0.99]``.
     """
+    if lo != hi:
+        while decimals < 4 and _apd_bare(lo, decimals) == _apd_bare(hi, decimals):
+            decimals += 1
     return rf"$[{_apd_bare(lo, decimals)}, {_apd_bare(hi, decimals)}]$"
 
 
@@ -177,9 +184,14 @@ def benchmark_macros(
     if "confounder_knn_bacc" in ranked_df:
         cb = ranked_df["confounder_knn_bacc"].astype(float)
         specs.append(("ConfBaccRange", _span(float(cb.min()), float(cb.max()))))
+        # The endpoints at the tables' three decimals, for prose that sits beside a table.
+        specs.append(("ConfBaccMin", _num(float(cb.min()), decimals=3)))
+        specs.append(("ConfBaccMax", _num(float(cb.max()), decimals=3)))
     if "bio_knn_bacc" in ranked_df:
         bb = ranked_df["bio_knn_bacc"].astype(float)
         specs.append(("BioBaccRange", _span(float(bb.min()), float(bb.max()))))
+        specs.append(("BioBaccMin", _num(float(bb.min()), decimals=3)))
+        specs.append(("BioBaccMax", _num(float(bb.max()), decimals=3)))
 
     # Cross-metric rank agreement. These were once emitted by the bootstrap block, which made
     # three macros the live results section cites hostage to an optional experiment artifact:
@@ -609,15 +621,21 @@ SILHOUETTE_METRIC_MACRO = {"croma": "Croma", "batch_asw": "BatchAsw", "ilisi": "
 
 def _silhouette_baseline_macros(baselines) -> list[str]:
     """``\\BaselinesNipdId<Metric><Scope>`` and ``\\BaselinesDelta<Baseline><Scope>``, each
-    with ``Lo``/``Hi`` bounds, from the study table the float is rendered from."""
-    specs = [("downstream", "BaselinesNipdId", m) for m in SILHOUETTE_METRIC_MACRO]
-    specs += [("head_to_head", "BaselinesDelta", m) for m in ("batch_asw", "ilisi")]
+    with ``Lo``/``Hi`` bounds, from the study table the float is rendered from. iLISI also
+    has ``...IlisiAsReturned<Scope>`` for its rows ranked without the tie at the floor."""
+    specs = [("downstream", "BaselinesNipdId", m, "") for m in SILHOUETTE_METRIC_MACRO]
+    specs += [("head_to_head", "BaselinesDelta", m, "") for m in ("batch_asw", "ilisi")]
+    # iLISI again with its values ranked as returned, without the tie at the floor.
+    specs += [
+        ("downstream_as_returned", "BaselinesNipdId", "ilisi", "AsReturned"),
+        ("head_to_head_as_returned", "BaselinesDelta", "ilisi", "AsReturned"),
+    ]
     lines = []
     for dataset in baselines.cohorts:
         scope = APD_SCOPE_MACRO[dataset]
-        for kind, family, metric in specs:
+        for kind, family, metric, variant in specs:
             row = baselines.row(dataset, kind, metric)
-            name = f"{family}{SILHOUETTE_METRIC_MACRO[metric]}{scope}"
+            name = f"{family}{SILHOUETTE_METRIC_MACRO[metric]}{variant}{scope}"
             for column, suffix in (("estimate", ""), ("ci_lo", "Lo"), ("ci_hi", "Hi")):
                 lines.append(rf"\newcommand{{\{name}{suffix}}}{{{_apd_bare(float(row[column]))}}}")
     return lines
@@ -638,24 +656,92 @@ def _silhouette_block(root: Path, apd_path: Path) -> list[str]:
     return _silhouette_baseline_macros(silhouette)
 
 
+#: The benchmark the slide encoders are scored on.
+SLIDE_PANEL_BENCHMARK = "Panda"
+#: Macro suffix of each slide encoder, for the PCaBiop values prose quotes by encoder.
+SLIDE_MODEL_SUFFIX = {
+    "MOOZY": "Moozy",
+    "PRISM": "Prism",
+    "PRISM2": "PrismTwo",
+    "Prov-GigaPath": "ProvGigaPath",
+    "TITAN": "Titan",
+}
+#: Written by ``figures/croma_planview_figure.py`` beside the plane it draws.
+PLANVIEW_RADII_REL = f"{by_prefix(SLIDE_PANEL_BENCHMARK).studies_rel}/croma_planview_radii.csv"
+PLANVIEW_REMEDY = "run scripts/repro/figures/croma_planview_figure.py"
+
+
+def _two_significant(value: float) -> str:
+    """``value`` (positive) to two significant figures, trailing zero kept: ``0.010``, ``0.80``."""
+    rounded = float(f"{value:.2g}")  # round first: 0.00999 is 0.010, not 0.0100
+    return f"{rounded:.{max(0, 1 - math.floor(math.log10(rounded)))}f}"
+
+
+def _slide_croma_macros(croma: pd.Series) -> list[str]:
+    """Each slide encoder's median CRoMa on PCaBiop, for prose that names an encoder."""
+    if set(croma.index) != set(SLIDE_MODEL_SUFFIX):
+        raise CaptionClaimError(
+            f"the per-encoder PCaBiop macros expect {sorted(SLIDE_MODEL_SUFFIX)}, "
+            f"got {sorted(croma.index)}"
+        )
+    return [
+        rf"\newcommand{{\Pcabiop{suffix}Croma}}{{{_num(float(croma[model]))}}}"
+        for model, suffix in SLIDE_MODEL_SUFFIX.items()
+    ]
+
+
+def _planview_macros(radii: pd.DataFrame, croma: pd.Series) -> list[str]:
+    """Median typed-distance radii of the PCaBiop plan view (``fig:croma-geometry-planview``).
+
+    ``radii`` is the figure script's table and ``croma`` the run's median margins. A table
+    whose margins are not the run's was drawn from other embeddings and raises.
+    """
+    table = radii.set_index("model")
+    if set(table.index) != set(SLIDE_MODEL_SUFFIX):
+        raise CaptionClaimError(
+            f"{PLANVIEW_RADII_REL} holds {sorted(table.index)}, the slide panel is "
+            f"{sorted(SLIDE_MODEL_SUFFIX)}: {PLANVIEW_REMEDY}."
+        )
+    # The figure recomputes the margins in float64; they match the run's to about 1e-5.
+    stale = [m for m in table.index if abs(table.loc[m, "median_croma"] - croma[m]) > 1e-4]
+    if stale:
+        raise CaptionClaimError(
+            f"{PLANVIEW_RADII_REL} was drawn from other embeddings than the run for "
+            f"{sorted(stale)}: {PLANVIEW_REMEDY}."
+        )
+    radius = table["median_radius"].astype(float)
+    lines = [
+        rf"\newcommand{{\PcabiopPlanviewRadius{suffix}}}{{${_two_significant(radius[model])}$}}"
+        for model, suffix in SLIDE_MODEL_SUFFIX.items()
+    ]
+    lines += [
+        rf"\newcommand{{\PcabiopPlanviewRadiusMin}}{{${_two_significant(radius.min())}$}}",
+        rf"\newcommand{{\PcabiopPlanviewRadiusMinModel}}{{{radius.idxmin()}}}",
+        rf"\newcommand{{\PcabiopPlanviewRadiusMax}}{{${_two_significant(radius.max())}$}}",
+        rf"\newcommand{{\PcabiopPlanviewRadiusMaxModel}}{{{radius.idxmax()}}}",
+        rf"\newcommand{{\PcabiopPlanviewRadiusSpread}}{{${radius.max() / radius.min():.0f}$}}",
+    ]
+    return lines
+
+
+def _load_planview_macros(root: Path, croma: pd.Series) -> list[str]:
+    path = root / PLANVIEW_RADII_REL
+    if not path.exists():
+        raise CaptionClaimError(f"missing {path}: {PLANVIEW_REMEDY}.")
+    return _planview_macros(pd.read_csv(path), croma)
+
+
 def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
     """Model-level PCaBiop/PAR values cited in the external-validation paragraph."""
     rows = df[df["dataset"] == "pcabiop"].set_index("model")
-    required = {"MOOZY", "PRISM", "PRISM2", "Prov-GigaPath", "TITAN"}
+    required = set(SLIDE_MODEL_SUFFIX)
     if set(rows.index) != required:
         raise CaptionClaimError(
             f"PCaBiop nIPD paragraph expects {sorted(required)}, got {sorted(rows.index)}"
         )
 
-    model_suffix = {
-        "MOOZY": "Moozy",
-        "PRISM": "Prism",
-        "PRISM2": "PrismTwo",
-        "Prov-GigaPath": "ProvGigaPath",
-        "TITAN": "Titan",
-    }
     lines = []
-    for model, suffix in model_suffix.items():
+    for model, suffix in SLIDE_MODEL_SUFFIX.items():
         for column, metric in (("nipd_id", "NipdId"), ("nipd_ood", "NipdOod")):
             lines.append(
                 rf"\newcommand{{\Pcabiop{suffix}{metric}}}"
@@ -682,7 +768,6 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
 # from 0.90 to 0.92. The claim is about transfer between cohorts, so only cross-cohort pairs
 # may enter it.
 CROSS_COHORT_BENCHMARKS = ["Camelyon", "Tolkach", "TcgaFourByFour"]
-SLIDE_PANEL_BENCHMARK = "Panda"
 
 
 def _rank_frontier_macros(current: "RankPareto") -> list[str]:
@@ -839,6 +924,15 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
             out.append(f"% {prefix} pretraining-provenance exception (Sec 3.4)")
             out.extend(prov_lines)
             print(f"{'provenance':16s}        -> {len(prov_lines)} macros", file=sys.stderr)
+
+    # Per-encoder slide values the supplement quotes by name. They follow the slide run: a
+    # missing run was warned about and skipped above, but with the run present a missing or
+    # stale radii table fails the build, since the plan-view caption cites it.
+    if SLIDE_PANEL_BENCHMARK in croma_by_prefix:
+        slide_croma = croma_by_prefix[SLIDE_PANEL_BENCHMARK]
+        out.append("% PCaBiop per-encoder medians and plan-view radii (fig:croma-geometry-planview)")
+        out.extend(_slide_croma_macros(slide_croma))
+        out.extend(_load_planview_macros(root, slide_croma))
 
     if pooled_probe_rhos:
         lo, hi = min(pooled_probe_rhos), max(pooled_probe_rhos)
