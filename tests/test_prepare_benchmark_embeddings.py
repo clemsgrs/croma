@@ -117,6 +117,101 @@ def test_prepare_benchmark_embeddings_writes_tileset(bench_env, tmp_path: Path) 
         assert sidecar["manifest"] == str(layout.tileset_manifest("toy-tiles"))
 
 
+def _write_slide2vec_run(
+    run_dir: Path, vectors: dict[str, np.ndarray], *, version: str
+) -> dict[str, Path]:
+    """A slide2vec run as the launcher and slide2vec 7.1.4 leave it."""
+    torch = pytest.importorskip("torch")
+    import yaml
+
+    (run_dir / "slide_embeddings").mkdir(parents=True)
+    (run_dir / "config.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "model": {"name": "gigapath-slide"},
+                "tiling": {"params": {"requested_spacing_um": 0.5, "requested_tile_size_px": 224}},
+            }
+        )
+    )
+    (run_dir / "run_record.json").write_text(
+        json.dumps({"slide2vec_version": version, "slide_encoder_eval_mode": True})
+    )
+    paths = {}
+    for sid, vector in vectors.items():
+        path = run_dir / "slide_embeddings" / f"{sid}.pt"
+        torch.save(torch.as_tensor(vector), path)
+        path.with_suffix(".meta.json").write_text(
+            json.dumps({"sample_id": sid, "compatibility": {"aggregation_revision": 1}})
+        )
+        paths[sid] = path
+    return paths
+
+
+def test_sidecar_records_the_slide2vec_runs_behind_a_model(bench_env, tmp_path: Path) -> None:
+    manifest_path = tmp_path / "toy.csv"
+    mapping_path = tmp_path / "mapping.csv"
+    _repeated_subset_manifest().to_csv(manifest_path, index=False)
+    image_order = ["/tmp/s0.png", "/tmp/s1.png", "/tmp/s2.png", "/tmp/s3.png"]
+
+    # Prov-GigaPath's rows come from two runs (as a tileset spanning two cohorts would);
+    # UNI's rows are plain per-image arrays, not a slide2vec run.
+    run_a = _write_slide2vec_run(
+        tmp_path / "features" / "gigapath-a",
+        {"s0": np.ones(3, np.float32), "s1": np.ones(3, np.float32)},
+        version="7.1.4",
+    )
+    run_b = _write_slide2vec_run(
+        tmp_path / "features" / "gigapath-b",
+        {"s2": np.ones(3, np.float32), "s3": np.ones(3, np.float32)},
+        version="7.1.4",
+    )
+    gigapath_paths = {**run_a, **run_b}
+    mapping_rows = []
+    for image_path in image_order:
+        sid = Path(image_path).stem
+        mapping_rows.append(
+            {
+                "image_path": image_path,
+                "model": "Prov-GigaPath",
+                "embedding_path": str(gigapath_paths[sid]),
+            }
+        )
+        uni_path = tmp_path / "uni" / f"{sid}.npz"
+        _write_npz(uni_path, np.zeros((1, 2), np.float32))
+        mapping_rows.append(
+            {"image_path": image_path, "model": "UNI", "embedding_path": str(uni_path)}
+        )
+    pd.DataFrame(mapping_rows).to_csv(mapping_path, index=False)
+
+    pbe.prepare_benchmark_embeddings(
+        manifest_path=manifest_path,
+        confounder_column="scanner_vendor",
+        mapping_csv=mapping_path,
+        tileset="toy-slides",
+        models=["Prov-GigaPath", "UNI"],
+        evaluation_design="paired_2x2",
+    )
+
+    def _sidecar(model):
+        path = layout.embedding_path("toy-slides", model)
+        return json.loads(path.with_suffix(".npy.json").read_text(encoding="utf-8"))
+
+    common = {
+        "slide2vec_version": "7.1.4",
+        "encoder_preset": "gigapath-slide",
+        "tile_size_px": 224,
+        "spacing_um": 0.5,
+        "aggregation_revision": 1,
+        "slide_encoder_eval_mode": True,
+        "n_samples": 2,
+    }
+    assert _sidecar("Prov-GigaPath")["source_runs"] == [
+        {"run_id": "gigapath-a", "run_dir": str(tmp_path / "features" / "gigapath-a"), **common},
+        {"run_id": "gigapath-b", "run_dir": str(tmp_path / "features" / "gigapath-b"), **common},
+    ]
+    assert "source_runs" not in _sidecar("UNI")
+
+
 def test_prepare_benchmark_embeddings_rejects_missing_rows(bench_env, tmp_path: Path) -> None:
     manifest_path = tmp_path / "toy.csv"
     mapping_path = tmp_path / "mapping.csv"

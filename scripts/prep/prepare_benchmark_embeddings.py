@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
-for _p in (ROOT, ROOT / "scripts" / "bench"):
+for _p in (ROOT, ROOT / "scripts" / "bench", ROOT / "scripts" / "prep"):
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
 
@@ -17,6 +17,7 @@ except ModuleNotFoundError:
     torch = None
 
 import layout
+import slide2vec_provenance
 from croma.alignment import build_embedding_source_manifest
 from croma.metrics.pairs import load_manifest, retain_complete_subset_memberships
 from input_fingerprint import manifest_fingerprint
@@ -270,23 +271,27 @@ def prepare_benchmark_embeddings(
         stacked = np.stack(stacked_rows, axis=0)
         output_path = layout.embedding_path(str(tileset), str(model))
         np.save(output_path, stacked)
+        sidecar = {
+            "manifest": str(tileset_manifest_path),
+            "manifest_fingerprint": embedding_manifest_fp,
+            "n_samples": int(stacked.shape[0]),
+            "embedding_dim": int(stacked.shape[1]),
+            "model_id": str(model),
+            "extract": "precomputed",
+            "mixed_precision": False,
+            "source": "prepare_benchmark_embeddings",
+            "mapping_csv": str(mapping_csv),
+            "evaluation_design": str(evaluation_design),
+        }
+        # Slide embeddings read from slide2vec runs carry each run's own record
+        # (version, preset, tiling, aggregation, encoder mode); other sources carry none.
+        runs = slide2vec_provenance.source_runs(
+            path_by_image[str(image_path)] for image_path in source_image_paths
+        )
+        if runs:
+            sidecar["source_runs"] = runs
         output_path.with_suffix(output_path.suffix + ".json").write_text(
-            json.dumps(
-                {
-                    "manifest": str(tileset_manifest_path),
-                    "manifest_fingerprint": embedding_manifest_fp,
-                    "n_samples": int(stacked.shape[0]),
-                    "embedding_dim": int(stacked.shape[1]),
-                    "model_id": str(model),
-                    "extract": "precomputed",
-                    "mixed_precision": False,
-                    "source": "prepare_benchmark_embeddings",
-                    "mapping_csv": str(mapping_csv),
-                    "evaluation_design": str(evaluation_design),
-                },
-                indent=2,
-            )
-            + "\n",
+            json.dumps(sidecar, indent=2) + "\n",
             encoding="utf-8",
         )
         outputs[str(model)] = str(output_path)
