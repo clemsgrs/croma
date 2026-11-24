@@ -157,7 +157,7 @@ def _caption(basis: Basis) -> str:
         "out of domain (PAR). ",
         r"$\Delta$ is slide minus mean-pool: \code{CRoMa} summaries with "
         rf"{level}\% confidence intervals from a stratified slide bootstrap (class $\times$ "
-        f"provider strata, {_count(boot['n_boot'])} replicates, one draw shared by every arm), "
+        f"centre strata, {_count(boot['n_boot'])} replicates, one draw shared by every arm), "
         r"and \code{nIPD} differences (" + _spread_clause(basis, probe["iterations"]) + "). ",
     ]
     # ``load`` has checked that every declared pair left out is optional and recorded as

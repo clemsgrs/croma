@@ -86,9 +86,10 @@ def test_rows_follow_the_grouped_order_and_keep_the_bold_best_rule(table):
     good = next(line for line in tex.splitlines() if line.startswith("Good &"))
     assert good == (
         r"Good & \textbf{0.980} & 0.950 & & \textbf{0.800} & \textbf{0.820} & $+0.020$ & "
-        r"\textbf{40.0\%} & & \textbf{0.20} & \textbf{0.100} & \textbf{-0.10} \\"
+        r"\textbf{40.0\%} & & \textbf{0.20} & \textbf{0.100} & {\boldmath$-0.10$} \\"
     )
     bad = next(line for line in tex.splitlines() if line.startswith("Bad &"))
+    assert r"& $-0.30$ & 0.800 & $-0.60$" in bad
     assert r"& 1.000 &" in bad  # the largest Centre accuracy is not a "best"
 
 
@@ -141,6 +142,7 @@ def test_slide_caption_specifies_which_accuracy_the_panels_report(monkeypatch):
         r"we selected $k^\star$ by biological balanced accuracy and used it to report both Biology and Centre accuracy"
         in tex
     )
+    assert "the contributing centre, which PANDA calls the data provider" in tex
     assert "(b) Pairwise ISUP grade comparisons" in tex
     assert r"Biology and Centre report mean balanced accuracy across the $15$ class pairs" in tex
 

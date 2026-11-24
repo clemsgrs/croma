@@ -5,7 +5,7 @@ PCaBiop (slide-level)
 
 1,000 prostate biopsy slides sourced from `PANDA
 <https://www.kaggle.com/c/prostate-cancer-grade-assessment>`_, labelled benign or cancer,
-contributed by two data providers (Karolinska Institutet and Radboud UMC). Unlike the
+contributed by two medical centres (Karolinska Institutet and Radboud UMC). Unlike the
 three tile cohorts, the evaluation unit is a whole slide: each of the
 :results-value:`models(pcabiop)` encoders is a *whole-slide* foundation model producing
 one embedding per slide, and every number below is computed over those slide embeddings.
@@ -25,7 +25,7 @@ row carries the † mark.
              :ref:`result-columns`.
 
 The confounder is unusually dominant here: every encoder's confounder *k*-NN accuracy is
-at or near 1.0 — the data provider is essentially perfectly decodable from every slide
+at or near 1.0 — the contributing centre is essentially perfectly decodable from every slide
 embedding — and :results-value:`below_zero(pcabiop)` of the five encoders hold a negative
 median margin. Support spans :results-value:`support_min(pcabiop)` to
 :results-value:`support_max(pcabiop)`, the widest spread of any published cohort, so the
@@ -71,7 +71,7 @@ The operating point
 
 For binary cancer detection, we tested every integer ``k`` from 1 to 100. For each
 encoder we selected the value that maximised biological k-NN balanced accuracy and used
-it for both the biological and center accuracies, RI, MaRI and support. The selected
+it for both the biological and centre accuracies, RI, MaRI and support. The selected
 values span :results-value:`k_range(pcabiop)` (see ``results/PROVENANCE.json``).
 With five slide encoders, the shared median can depend on one or two models, so we
 report each encoder at its own operating point. CRoMa, *F*\ (0) and LTM₁₀ are

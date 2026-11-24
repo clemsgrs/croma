@@ -24,12 +24,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from _paper_tables import CROMA_HEADLINE_M
+from _paper_tables import CROMA_HEADLINE_M, table_number
 from _uncertainty import table_label
 from generate_results_table import (
     SIGNED,
     Column,
-    _fmt,
     _join,
     column_spec,
     groups,
@@ -68,7 +67,7 @@ def _panel(df: pd.DataFrame) -> list[str]:
         def cell(column: Column) -> str:
             col = column.key
             is_best = col not in NO_BOLD and abs(r[col] - best[col]) < 1e-9
-            return _fmt(r[col], column.decimals, column.percent, is_best, col in SIGNED)
+            return table_number(r[col], column.decimals, column.percent, is_best, col in SIGNED)
 
         lines.append(_join([r["model"], *row_cells(GROUPS, cell)]) + r" \\")
     return lines
@@ -90,7 +89,8 @@ def _caption(a: pd.DataFrame, b: pd.DataFrame) -> str:
         rf"\textbf{{Robustness of slide-level representations on PCaBiop and PCaBiop-ISUP.}} "
         rf"The {_spell(n)} slide-level encoders are ordered within each panel by median "
         rf"\code{{CRoMa}} ($m{{=}}{m}$). Column groups, arrows and bold follow "
-        rf"Table~\ref{{{primary().label}}}; the confounder is the data provider. For each "
+        rf"Table~\ref{{{primary().label}}}; the confounder is the contributing centre, which PANDA calls "
+        r"the data provider. For each "
         r"encoder, we selected $k^\star$ by biological balanced accuracy and used it to report "
         r"both Biology and Centre accuracy, \code{RI}, \code{MaRI} and support. "
         r"\textbf{a,} Binary "

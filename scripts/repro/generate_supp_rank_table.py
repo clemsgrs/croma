@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from _paper_tables import CROMA_HEADLINE_M, croma_as_margin
+from _paper_tables import CROMA_HEADLINE_M, croma_as_margin, table_number
 from paper_manifest import by_benchmark
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -137,7 +137,7 @@ def _pct(fraction: float) -> str:
 def _row(record: pd.Series) -> str:
     cells = [
         str(record["model"]),
-        f"{float(record['croma']):.2f}",
+        table_number(record["croma"], 2),
         f"{float(record['so_med']):g}",
         f"{float(record['os_med']):g}",
         _pct(record["support"]),

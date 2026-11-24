@@ -336,6 +336,8 @@ class TestTables:
 
         table = _float(_generator().build(tmp_path), "tab:sample-shortcut-pcabiop")
 
+        assert r"class $\times$ centre cells" in table
+        assert "neighbours drawn from any centre" in table
         assert "colour" not in table.lower()
         assert "Alpha &" in table
 

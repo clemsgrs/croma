@@ -63,7 +63,6 @@ _TABLE_SUFFIX = {
 }
 #: What a resampled cluster is: a slide, except Tolkach-ESCA's cases (one case, many classes).
 _CLUSTER_NOUN = {"Tolkach": "cases"}
-_CONFOUNDER = {"Panda": "data provider"}
 #: The benchmarks the main text's cross-cohort agreement is over (TCGA-2x2 shares TCGA-4x4's
 #: cohort, so a pair of the two is not cross-cohort).
 CROSS_COHORT = ("Camelyon", "TcgaFourByFour", "Tolkach")
@@ -218,8 +217,7 @@ def _float(
 
 
 def _design_clause(b: Benchmark, n_boot: int) -> str:
-    strata = r"class $\times$ " if b.meta["strata"] == "class x centre" else ""
-    strata += _CONFOUNDER.get(b.prefix, "centre")
+    strata = r"class $\times$ centre" if b.meta["strata"] == "class x centre" else "centre"
     noun = _CLUSTER_NOUN.get(b.prefix, "slides")
     return (
         rf"${n_boot}$ stratified cluster-bootstrap replicates, each redrawing the "

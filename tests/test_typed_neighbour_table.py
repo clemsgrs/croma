@@ -91,6 +91,7 @@ def test_coverage_table_lists_the_live_roster_by_croma_with_the_control_last(tmp
     tex = typed_table.build(tmp_path)
 
     assert _model_rows(tex) == ["RudolfV-2-S", "Alpha", "Gamma", "DINOv2-B"]
+    assert "Gamma & $-0.05$ &" in tex
     assert r"\label{tab:typed-neighbour-coverage}" in tex
     # SO/OS median ranks, support, then the pure-SO / pure-OS / contested partition (%).
     assert "RudolfV-2-S & 0.30 & 50.5 & 300 & 20.0 & 70.0 & 20.0 & 10.0 \\\\" in tex

@@ -96,6 +96,7 @@ def test_a_shared_institution_is_marked_with_its_centres_and_source_not_as_datas
     assert mark.institution == "rumc"
     assert ("pathorob-camelyon", "RUMC") in mark.centres
     assert ("panda", "radboud") in mark.centres
+    assert ("panda-isup", "radboud") in mark.centres
     assert mark.source == "prostkey"
     # Sharing Camelyon's RUMC centre is not exposure to the CAMELYON16/17 dataset.
     assert matrix.status("Prostate", "camelyon") == "not exposed"
@@ -242,8 +243,9 @@ def test_matrix_institution_cells_carry_their_source_without_publishing_selectio
     tex = _render_worked()
 
     institution = _cells(tex, "Prostate")[6]
-    assert institution.startswith("Radboudumc (") and institution.endswith(r"~\cite{prostkey}")
-    assert "Camelyon RUMC" in institution and "PANDA radboud" in institution
+    assert (
+        institution == r"Radboudumc (Camelyon RUMC, PCaBiop and PCaBiop-ISUP RUMC)~\cite{prostkey}"
+    )
     assert len(_cells(tex, "Proprietary")) == 7
     assert r"\cite{selkey}" not in tex and "PathoROB" not in tex
 

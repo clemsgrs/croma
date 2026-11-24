@@ -24,7 +24,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, croma_as_margin, scriptsize_ci
+from _paper_tables import (
+    CROMA_HEADLINE_M,
+    CaptionClaimError,
+    croma_as_margin,
+    scriptsize_ci,
+    table_number,
+)
 from paper_manifest import ResultsTable, primary, rendered
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -139,6 +145,7 @@ def row_cells(table_groups: tuple[Group, ...], cell) -> list[str]:
         cells.extend(cell(c) for c in group.columns)
     return cells
 
+
 # Diagnostics, not scores: never bolded, and excluded from the per-column "best". conf bacc's
 # max marks the *least* robust models, and delta is sign-informative but not a quality ordering.
 NO_BOLD = ("confounder_knn_bacc", "delta")
@@ -149,16 +156,6 @@ MINIMIZE = ("croma_frac_neg",)
 
 # delta carries an explicit sign: its sign is the point, its magnitude is secondary.
 SIGNED = ("delta",)
-
-
-def _fmt(value: float, decimals: int, percent: bool, bold: bool, signed: bool = False) -> str:
-    if percent:
-        body = f"{value:.{decimals}f}\\%"
-    elif signed:
-        body = f"${value:+.{decimals}f}$"
-    else:
-        body = f"{value:.{decimals}f}"
-    return f"\\textbf{{{body}}}" if bold else body
 
 
 def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
@@ -369,7 +366,9 @@ def build_table(entry: ResultsTable, metrics_csv: Path) -> str:
         def cell(column: Column) -> str:
             col = column.key
             is_best = bold and col not in NO_BOLD and abs(record[col] - best[col]) < 1e-9
-            text = _fmt(record[col], column.decimals, column.percent, is_best, col in SIGNED)
+            text = table_number(
+                record[col], column.decimals, column.percent, is_best, col in SIGNED
+            )
             if col == "croma" and croma_ci and record["model"] in croma_ci:
                 text += r"\," + scriptsize_ci(*croma_ci[record["model"]])
             return text

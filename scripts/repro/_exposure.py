@@ -80,7 +80,7 @@ class Institution:
 INSTITUTIONS: dict[str, Institution] = {
     "rumc": Institution(
         "Radboudumc",
-        (("pathorob-camelyon", "RUMC"), ("prostate", "RUMC"), ("panda", "radboud")),
+        (("pathorob-camelyon", "RUMC"), ("panda", "radboud"), ("panda-isup", "radboud")),
     ),
     "charite": Institution(r"Charit\'e", (("pathorob-tolkach-esca", "VALSET4_CHA_FULL"),)),
     "mskcc": Institution(
@@ -309,9 +309,9 @@ DATASET_HEADS = {
     "tolkach-esca": r"\shortstack{Tolkach-ESCA\\(UKK, WNS, CHA)}",
 }
 #: Printed benchmark names where the manifest has no short name.
-_BENCHMARK_FALLBACK = {"panda": "PANDA"}
+_BENCHMARK_FALLBACK = {"panda": "PCaBiop", "panda-isup": "PCaBiop-ISUP"}
 #: Printed centre names where the view's label is not a printable name.
-_CENTRE_NAMES = {"VALSET4_CHA_FULL": "CHA"}
+_CENTRE_NAMES = {"VALSET4_CHA_FULL": "CHA", "radboud": "RUMC"}
 _CELL = {EXPOSED: r"\textbf{exposed}", NOT_EXPOSED: "not exposed", UNDISCLOSED: "undisclosed"}
 _PANEL_HEADS = {"tile": "Tile encoders", "slide": "Slide encoders"}
 
@@ -334,8 +334,16 @@ def _institution_cell(marks: tuple[InstitutionMark, ...]) -> str:
     for mark in marks:
         by_benchmark: dict[str, list[str]] = {}
         for benchmark, label in mark.centres:
-            by_benchmark.setdefault(benchmark, []).append(_CENTRE_NAMES.get(label, label))
-        where = ", ".join(f"{_benchmark_name(b)} {'/'.join(ls)}" for b, ls in by_benchmark.items())
+            by_benchmark.setdefault(benchmark, []).append(label)
+        # Both PCaBiop views share the same PANDA centre label.
+        benchmarks_by_centres: dict[tuple[str, ...], list[str]] = {}
+        for benchmark, labels in by_benchmark.items():
+            benchmarks_by_centres.setdefault(tuple(labels), []).append(_benchmark_name(benchmark))
+        locations = []
+        for labels, benchmarks in benchmarks_by_centres.items():
+            centres = "/".join(_CENTRE_NAMES.get(label, label) for label in labels)
+            locations.append(f"{' and '.join(benchmarks)} {centres}")
+        where = ", ".join(locations)
         parts.append(rf"{INSTITUTIONS[mark.institution].name} ({where})~\cite{{{mark.source}}}")
     return "; ".join(parts)
 

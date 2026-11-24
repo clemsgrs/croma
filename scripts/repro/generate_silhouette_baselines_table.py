@@ -3,10 +3,10 @@
 Reads the study ``scripts/studies/silhouette_baselines.py`` writes under
 ``output/studies/silhouette-baselines/`` and renders, per cohort, the two agreement
 correlations with median CRoMa, the three correlations with in-domain nIPD, and the two
-head-to-head differences. The caption adds iLISI's rho and delta ranked as returned,
-without the floor tie, on each cohort where that tie moves a rank. Nothing is computed
-here: the estimates, intervals, p and q values are the study's, and so are the caption's
-settings (implementation version, kNN, perplexity, resample and permutation counts).
+head-to-head differences. The caption gives the number of encoders at the iLISI floor on each
+cohort and explains how they are ranked. The estimates, intervals, p and q values come
+from the study, along with the implementation version, kNN, perplexity, resample and
+permutation counts.
 
 A missing study artifact fails the build; there is no skip. The caption's claims are
 checked before it is printed: the natural-image control is in the study's join and out of
