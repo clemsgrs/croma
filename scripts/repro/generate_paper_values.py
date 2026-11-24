@@ -58,7 +58,7 @@ SS_SHELL_SUMMARY = (
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
 # Downstream-validation scalars. Correlations are reported per benchmark only; PCaBiop
-# is descriptive because it contains four slide encoders.
+# is descriptive because its slide-encoder panel is small.
 APD_CORRELATION_CSV = "output/studies/apd/apd_correlation.csv"
 APD_STUDY_CSV = "output/studies/apd/apd.csv"
 APD_TARGET_MACRO = {
@@ -677,17 +677,26 @@ def _two_significant(value: float) -> str:
     return f"{rounded:.{max(0, 1 - math.floor(math.log10(rounded)))}f}"
 
 
-def _slide_croma_macros(croma: pd.Series) -> list[str]:
-    """Each slide encoder's median CRoMa on PCaBiop, for prose that names an encoder."""
+def _slide_encoder_macros(metrics: pd.DataFrame, croma: pd.Series) -> list[str]:
+    """PCaBiop median, biological balanced accuracy and lower-tail mean by encoder."""
     if set(croma.index) != set(SLIDE_MODEL_SUFFIX):
         raise CaptionClaimError(
             f"the per-encoder PCaBiop macros expect {sorted(SLIDE_MODEL_SUFFIX)}, "
             f"got {sorted(croma.index)}"
         )
-    return [
+    lines = [
         rf"\newcommand{{\Pcabiop{suffix}Croma}}{{{_num(float(croma[model]))}}}"
         for model, suffix in SLIDE_MODEL_SUFFIX.items()
     ]
+    rows = metrics.set_index("model")
+    for model, suffix in SLIDE_MODEL_SUFFIX.items():
+        for column, metric, decimals in (
+            ("bio_knn_bacc", "BioBacc", 3),
+            ("croma_ltm_alpha", "Ltm", 2),
+        ):
+            value = _num(float(rows.loc[model, column]), decimals)
+            lines.append(rf"\newcommand{{\Pcabiop{suffix}{metric}}}{{{value}}}")
+    return lines
 
 
 def _planview_macros(radii: pd.DataFrame, croma: pd.Series) -> list[str]:
@@ -745,7 +754,7 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
         for column, metric in (("nipd_id", "NipdId"), ("nipd_ood", "NipdOod")):
             lines.append(
                 rf"\newcommand{{\Pcabiop{suffix}{metric}}}"
-                rf"{{{float(rows.loc[model, column]) * 100:.1f}\%}}"
+                rf"{{${_apd_bare(float(rows.loc[model, column]) * 100, 1)}\%$}}"
             )
 
     prov = rows.loc["Prov-GigaPath"]
@@ -754,7 +763,7 @@ def _pcabiop_nipd_macros(df: pd.DataFrame) -> list[str]:
             rf"\newcommand{{\PcabiopProvGigaPathOodBaseline}}"
             rf"{{{float(prov['ood_baseline']):.3f}}}",
             rf"\newcommand{{\PcabiopProvGigaPathApdOod}}"
-            rf"{{{float(prov['apd_ood']) * 100:.1f}\%}}",
+            rf"{{${_apd_bare(float(prov['apd_ood']) * 100, 1)}\%$}}",
         ]
     )
     return lines
@@ -891,6 +900,7 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
     pooled_probe_rhos: list[float] = []
     croma_by_prefix: dict[str, pd.Series] = {}
     panel_sizes: dict[str, int] = {}
+    slide_metrics = None
     for prefix, rel in benchmarks:
         path = root / rel
         if not path.exists():
@@ -908,6 +918,8 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
             _to_margin(df["croma"].astype(float), scale).to_numpy(), index=df["model"]
         )
         panel_sizes[prefix] = len(df)
+        if prefix == SLIDE_PANEL_BENCHMARK:
+            slide_metrics = df
 
         if prefix in PROBE_BENCHMARKS:
             probe_lines, pooled = _probe_macros(prefix, df, path.parent)
@@ -925,13 +937,13 @@ def build(benchmarks: list[tuple[str, str]], root: Path, scale_override: str) ->
             out.extend(prov_lines)
             print(f"{'provenance':16s}        -> {len(prov_lines)} macros", file=sys.stderr)
 
-    # Per-encoder slide values the supplement quotes by name. They follow the slide run: a
+    # Per-encoder slide values cited by name in the manuscript and supplement. A
     # missing run was warned about and skipped above, but with the run present a missing or
     # stale radii table fails the build, since the plan-view caption cites it.
-    if SLIDE_PANEL_BENCHMARK in croma_by_prefix:
+    if slide_metrics is not None:
         slide_croma = croma_by_prefix[SLIDE_PANEL_BENCHMARK]
-        out.append("% PCaBiop per-encoder medians and plan-view radii (fig:croma-geometry-planview)")
-        out.extend(_slide_croma_macros(slide_croma))
+        out.append("% PCaBiop per-encoder results and plan-view radii (fig:croma-geometry-planview)")
+        out.extend(_slide_encoder_macros(slide_metrics, slide_croma))
         out.extend(_load_planview_macros(root, slide_croma))
 
     if pooled_probe_rhos:

@@ -3,13 +3,16 @@
 Camelyon
 ========
 
-20,400 breast lymph-node tiles, labelled tumour or normal, contributed by two medical
-centers (RUMC and UMCU) and scored at ``k`` = :results-value:`k(camelyon)`. Scored entirely
-outside TCGA, so no encoder holds an in-distribution advantage from its pretraining corpus
-— the cleanest of the three cohorts to read, and the most discriminating:
-:results-value:`below_zero(camelyon)` pathology encoders score below zero, meaning their
-typical neighbourhood is closer to a different-biology tile from the *same* center than to
-a same-biology tile from another.
+Camelyon contains 20,400 breast lymph-node tiles labelled tumour or normal from two
+medical centers (RUMC and UMCU). We evaluated the encoders at
+``k`` = :results-value:`k(camelyon)`. Of the 27 pathology encoders, GPFM had documented
+training exposure to Camelyon. Available disclosures ruled out exposure for 15 encoders
+and left it unresolved for 11.
+
+Camelyon spans the widest range of median CRoMa values among the three primary tile
+cohorts. For :results-value:`below_zero(camelyon)` pathology encoders, the median was
+negative: a typical tile was closer to tiles of the other class from its own center than
+to tiles of the same class from the other center.
 
 .. results-table:: camelyon
    :caption: Camelyon, sorted by median ``CRoMa``. Columns are explained under
@@ -61,11 +64,10 @@ Shortcut susceptibility
 -----------------------
 
 Shortcut susceptibility for every encoder on this cohort, in domain (ID) and out of
-domain (OOD); the natural-image control sits last. Rows are ranked by ``Change at V = 1``,
-the normalized change at maximum confounding, because ``nIPD`` averages over the whole
-range: an early gain there can pay for a late collapse, so a curve ending at chance can
-outrank one that never moved. Rows ending at or below -0.900 are marked ``≈ chance``,
-where none of the above-chance margin survives.
+domain (OOD); the natural-image control sits last. Rows are ranked by ``Change at V = 1``, the normalized change at maximum confounding.
+nIPD integrates losses across the full confounding range, so the endpoint can reveal
+a severe loss confined to the final level. Rows ending at or below −0.900 are marked
+``≈ chance``.
 
 Bold marks the leading ranked encoder in each column where higher is better, so a
 column that disagrees with the ranking shows it at a glance. Each caption reports

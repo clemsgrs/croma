@@ -24,7 +24,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, croma_as_margin, scriptsize_ci
+from _paper_tables import (
+    CROMA_HEADLINE_M,
+    CaptionClaimError,
+    croma_as_margin,
+    scriptsize_ci,
+    table_number,
+)
 from paper_manifest import ResultsTable, primary, rendered
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -139,6 +145,7 @@ def row_cells(table_groups: tuple[Group, ...], cell) -> list[str]:
         cells.extend(cell(c) for c in group.columns)
     return cells
 
+
 # Diagnostics, not scores: never bolded, and excluded from the per-column "best". conf bacc's
 # max marks the *least* robust models, and delta is sign-informative but not a quality ordering.
 NO_BOLD = ("confounder_knn_bacc", "delta")
@@ -149,16 +156,6 @@ MINIMIZE = ("croma_frac_neg",)
 
 # delta carries an explicit sign: its sign is the point, its magnitude is secondary.
 SIGNED = ("delta",)
-
-
-def _fmt(value: float, decimals: int, percent: bool, bold: bool, signed: bool = False) -> str:
-    if percent:
-        body = f"{value:.{decimals}f}\\%"
-    elif signed:
-        body = f"${value:+.{decimals}f}$"
-    else:
-        body = f"{value:.{decimals}f}"
-    return f"\\textbf{{{body}}}" if bold else body
 
 
 def _load_croma_ci(metrics_csv: Path) -> dict[str, tuple[float, float]] | None:
@@ -302,17 +299,9 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
     ranked, control = split_panel(df)
     m = int(CROMA_HEADLINE_M)
     confounder = str(df["confounder_display_name"].iloc[0]).lower().replace("center", "centre")
-    # The four manuscript captions drifted apart under hand editing and disagree on three
-    # independent wordings: the article before the model count ("for 20" vs "for the 20",
-    # split 2-2), "ordered by median CRoMa" vs "ordered by CRoMa" (3-1), and whether the
-    # control clause ends "separately" or "separately beneath" (3-1). No single rule emits
-    # all four, so this one takes the majority on each axis. That is deliberately not the
-    # most precise wording -- "beneath" says something true that "separately" leaves out --
-    # but it is the wording that reproduces the most of the paper unchanged: TCGA-4x4 and
-    # Tolkach come out byte-identical, Camelyon differs by one article, TCGA-2x2 by three
-    # words. Prefer a variant? Change it here and all four tables follow.
+    result_label = "Results" if entry.primary else "Pooled results"
     head = (
-        rf"\textbf{{Representation robustness on {entry.short_name}.}} Pooled results for "
+        rf"\textbf{{Representation robustness on {entry.short_name}.}} {result_label} for "
         rf"the {len(ranked)} {entry.model_type} pathology foundation models, ordered by "
         rf"median \code{{CRoMa}} ($m{{=}}{m}$){_control_clause(control)}. "
         rf"{_operating_point(df, entry.protocol)}"
@@ -321,16 +310,15 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
     # every other results table refers back to it rather than restating them.
     if entry.primary:
         cols = (
-            r" Columns fall into three groups. \emph{$k$-NN decodability}: biological (Biology) "
-            rf"and confounder (Centre; confounder: {confounder}) $k$-NN balanced accuracy. "
+            r" Columns fall into three groups. \emph{$k$-NN decodability}: biological (tumor vs. benign) "
+            rf"and confounder ({confounder}) $k$-NN balanced accuracy. "
             r"\emph{Fixed-$k$ pooled} scores at the operating point: \code{RI} and \code{MaRI}; "
             r"$\Delta{=}\code{MaRI}-\code{RI}$; and support, the fraction of samples effectively "
             r"contributing to \code{RI}/\code{MaRI}. "
             rf"\emph{{Per-sample \code{{CRoMa}}}} ($m{{=}}{m}$): the median; $F(0)$, the fraction "
             r"with $\mcode{CRoMa}\le0$; and $\mcode{LTM}_{10}$, the mean of the lowest decile. "
             r"Arrows give the favourable direction of each score ($\uparrow$ higher is better, "
-            r"$\downarrow$ lower is better); bold denotes the best value in each score column "
-            r"(Centre and $\Delta$ are diagnostics)."
+            r"$\downarrow$ lower is better); bold denotes the best value in each score column."
         )
     else:
         cols = (
@@ -378,7 +366,9 @@ def build_table(entry: ResultsTable, metrics_csv: Path) -> str:
         def cell(column: Column) -> str:
             col = column.key
             is_best = bold and col not in NO_BOLD and abs(record[col] - best[col]) < 1e-9
-            text = _fmt(record[col], column.decimals, column.percent, is_best, col in SIGNED)
+            text = table_number(
+                record[col], column.decimals, column.percent, is_best, col in SIGNED
+            )
             if col == "croma" and croma_ci and record["model"] in croma_ci:
                 text += r"\," + scriptsize_ci(*croma_ci[record["model"]])
             return text

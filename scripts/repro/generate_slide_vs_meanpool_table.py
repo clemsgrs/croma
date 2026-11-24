@@ -124,44 +124,31 @@ def _caption(basis: Basis) -> str:
         "the slide arm is the slide encoder's embedding and the mean-pool arm is the "
         "unweighted mean of the same tile embeddings. ",
     ]
-    def reproduced(p: str) -> str:
-        r = records[p]
-        return (
-            f"{_count(r['n_reproduced'])} of {_count(r['n_slides'])} slides reproduced "
-            rf"(minimum cosine ${float(r['min_cosine']):.3f}$)"
-        )
-
-    def cause(p: str) -> str | None:
-        """The recorded cause of ``p``'s non-reproduction, set as text, or ``None``."""
-        recorded = basis.non_reproduction_cause(p)
-        return None if recorded is None else tex_text(recorded)
-
-    criterion = (
-        "Re-run slide embeddings reproduced the published ones (per-slide cosine "
-        rf"$\geq{threshold:g}$ on every slide) for "
+    parts.append(
+        "A re-run reproduced the slide embeddings of the main analysis when the per-slide "
+        f"cosine was at least ${threshold:g}$ on every slide. "
     )
     if kept:
-        parts.append(
-            criterion + f"{_series(kept)}, whose published embeddings form the slide arm. "
-        )
-        for p in rerun:
-            because = "" if cause(p) is None else f"; {p} did not reproduce because {cause(p)}"
-            parts.append(
-                f"They did not for {p}: {reproduced(p)}, so its re-run slide embeddings "
-                f"form the slide arm{because}. "
-            )
-    else:
-        # No sentence about reproduced pairs to refer back to: state the criterion once,
-        # then give every pair's count.
-        parts.append(
-            criterion
-            + "none of the pairs, so each pair's re-run slide embeddings form its slide arm: "
-            + "; ".join(
-                f"{p}, {reproduced(p)}" + ("" if cause(p) is None else f", because {cause(p)}")
-                for p in rerun
-            )
-            + ". "
-        )
+        arm = "arm" if len(kept) == 1 else "arms"
+        parts.append(f"This held for {_series(kept)}, whose main-analysis embeddings form the slide {arm}. ")
+    if rerun:
+        if not kept:
+            lead = "None of the encoders met this criterion. Their re-run embeddings form the slide arms"
+        elif len(rerun) == 1:
+            lead = "It did not hold for the other encoder, whose re-run embeddings form the slide arm"
+        else:
+            count_word = {2: "two", 3: "three"}.get(len(rerun), str(len(rerun)))
+            lead = f"It did not hold for the other {count_word} encoders, whose re-run embeddings form the slide arm"
+        details = []
+        for i, pair in enumerate(rerun):
+            record = records[pair]
+            count = _count(record["n_reproduced"])
+            cosine = f"${float(record['min_cosine']):.3f}$"
+            if i == 0:
+                details.append(f"{count} of {_count(n_slides)} slides reproduced for {pair} (minimum cosine {cosine})")
+            else:
+                details.append(f"{count} for {pair} ({cosine})")
+        parts.append(f"{lead}: {_series(details)}. ")
     parts += [
         rf"bio bacc, median \code{{CRoMa}}$(m{{=}}{m})$, $F(0)$ and $\mcode{{LTM}}_{{10}}$ are "
         "from the benchmark runner on the in-domain PANDA cohort at "
@@ -170,14 +157,14 @@ def _caption(basis: Basis) -> str:
         "out of domain (PAR). ",
         r"$\Delta$ is slide minus mean-pool: \code{CRoMa} summaries with "
         rf"{level}\% confidence intervals from a stratified slide bootstrap (class $\times$ "
-        f"provider strata, {_count(boot['n_boot'])} replicates, one draw shared by every arm), "
+        f"centre strata, {_count(boot['n_boot'])} replicates, one draw shared by every arm), "
         r"and \code{nIPD} differences (" + _spread_clause(basis, probe["iterations"]) + "). ",
     ]
     # ``load`` has checked that every declared pair left out is optional and recorded as
     # not run, with a reason.
     for p in basis.missing:
         parts.append(
-            f"{p} ({tile_display(p)}), an optional pair, was not run: "
+            f"The {p} pair was not run, because "
             f"{tex_text(basis.not_run[p].strip())}. "
         )
     return "".join(parts).rstrip() + "}"

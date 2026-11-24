@@ -35,7 +35,7 @@ def test_committed_payload_is_complete_and_valid() -> None:
     published = _payload()
     _exporter().validate_payload(published)
 
-    assert published["schema_version"] == 2
+    assert published["schema_version"] == 3
     assert [cohort["slug"] for cohort in published["cohorts"]] == [
         "camelyon",
         "tcga-4x4",
@@ -84,16 +84,16 @@ def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
     published = _payload()
     expected = {
         "camelyon": {
-            "id": (27, 0.9505494505, 0.3070911931),
-            "ood": (27, 0.7515262515, 0.1141749489),
+            "id": (27, 0.952991453, 0.3121285591),
+            "ood": (27, 0.884004884, 0.1349109647),
         },
         "tcga-4x4": {
-            "id": (27, 0.9041514042, 0.2409950689),
-            "ood": (27, 0.8974358974, 0.3974057293),
+            "id": (27, 0.9072039072, 0.2430957781),
+            "ood": (27, 0.9128717482, 0.3215156244),
         },
         "tolkach-esca": {
-            "id": (27, 0.9291819292, 0.0959925773),
-            "ood": (27, 0.742979243, 0.028614917),
+            "id": (27, 0.9210086038, 0.0880441344),
+            "ood": (27, 0.8573218386, 0.0266404197),
         },
     }
     for cohort in published["cohorts"][:3]:
@@ -110,7 +110,7 @@ def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
         "descriptive": True,
         "regimes": {
             "id": {"n": 5, "spearman_rho": 0.7, "trend": None},
-            "ood": {"n": 5, "spearman_rho": 0.7, "trend": None},
+            "ood": {"n": 5, "spearman_rho": 0.9, "trend": None},
         },
     }
 
@@ -118,8 +118,8 @@ def test_association_metadata_is_the_single_manuscript_float_basis() -> None:
 @pytest.mark.parametrize(
     ("cohort_slug", "model_name", "regime", "expected_baseline", "expected_nipd"),
     [
-        ("camelyon", "CONCH", "id", 0.9714166667, -0.0427315084),
-        ("pcabiop", "PRISM2", "ood", 0.9449074074, -0.0111342352),
+        ("camelyon", "CONCH", "id", 0.9714166667, -0.0430913660),
+        ("pcabiop", "PRISM2", "ood", 0.9449074074, -0.0111689212),
     ],
 )
 def test_representative_values_have_an_independent_float_basis(
@@ -140,7 +140,7 @@ def test_representative_values_have_an_independent_float_basis(
 
     # Independently apply the trapezoidal definition to the exported float basis.
     area = sum(
-        (right_v - left_v) * (left_y + right_y) / 2
+        (right_v - left_v) * (min(left_y, 0.0) + min(right_y, 0.0)) / 2
         for left_v, right_v, left_y, right_y in zip(
             cohort["cramers_v"][:-1],
             cohort["cramers_v"][1:],
@@ -210,6 +210,16 @@ def test_validation_fails_closed(corrupt, message: str) -> None:
     payload = _payload()
     corrupt(payload)
     with pytest.raises(ValueError, match=message):
+        _exporter().validate_payload(payload)
+
+
+def test_validation_rejects_a_positive_loss_even_within_rounding_tolerance() -> None:
+    payload = _payload()
+    cohort = next(c for c in payload["cohorts"] if c["slug"] == "tcga-4x4")
+    model = next(m for m in cohort["models"] if m["model"] == "CONCHv1.5")
+    assert model["regimes"]["ood"]["nipd"] == 0
+    model["regimes"]["ood"]["nipd"] = 1e-10
+    with pytest.raises(ValueError, match="nIPD exceeds zero"):
         _exporter().validate_payload(payload)
 
 

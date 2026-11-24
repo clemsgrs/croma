@@ -7,7 +7,7 @@ held fixed, isolating shortcut reliance) and out-of-domain (right, unseen centre
     top row     normalized performance change as the training set's centre<->biology
                 correlation (Cramer's V) is walked from balanced (V=0) to fully confounded
                 (V=1); one errorbar curve per encoder, 95% t-interval over the seeds. This
-                is the curve the nIPD scalar integrates.
+                shows observed changes; nIPD clips gains at each sampled level before integration.
     bottom row  pooled CRoMa(m=5) against nIPD for that regime; one point per
                 encoder, with the project scatter identity (family palette, square panels,
                 per-panel Spearman rho, faint least-squares guide line, CRoMa=0 / nIPD=0
@@ -16,9 +16,8 @@ held fixed, isolating shortcut reliance) and out-of-domain (right, unseen centre
 The two rows share their columns, so within a regime the reader sees both what nIPD
 measures (top) and how CRoMa predicts the number it collapses to (bottom). Both rows share
 a y-axis across the two regimes of a benchmark, so ID and OOD are directly comparable;
-scales differ between benchmarks, which span different accuracy and drop ranges. PANDA is
-excluded (slide-level, only 4 points); prostate is a caveated second-organ extension
-reported separately. The natural-image control holds no rank and is dropped throughout.
+scales differ between benchmarks, which span different accuracy and drop ranges. PCaBiop
+has a separate slide-level figure. The natural-image control holds no rank and is dropped throughout.
 
 This replaces the single tall 3x2 ``croma_vs_apd_scatter`` grid: three self-contained
 per-dataset floats read better on the page than one near-full-page figure, and they fold
@@ -88,7 +87,7 @@ def _out_stem(dataset: str, *, normalized: bool = True,
               focused: bool = False) -> Path:
     if focused:
         return STUDY_DIR / "plots" / f"croma_nipd_focused_{dataset}.png"
-    # Normalized trajectories are what nIPD integrates and therefore own the canonical
+    # The normalized trajectories used to compute nIPD own the canonical
     # manuscript filename. Absolute probe accuracy remains available only as an explicitly
     # named exploratory output.
     infix = "" if normalized else "_raw_accuracy"
@@ -271,7 +270,7 @@ if __name__ == "__main__":
     mode.add_argument(
         "--normalized",
         action="store_true",
-        help="plot the canonical normalized nIPD integrand (the default)",
+        help="plot observed normalized accuracy changes (the default)",
     )
     mode.add_argument(
         "--raw-accuracy",
@@ -286,7 +285,7 @@ if __name__ == "__main__":
     mode.add_argument(
         "--pcabiop",
         action="store_true",
-        help="render the normalized four-encoder PCaBiop composite",
+        help="render the normalized PCaBiop slide-encoder composite",
     )
     args = parser.parse_args()
     main(

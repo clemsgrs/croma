@@ -36,7 +36,7 @@ _REPO = Path(__file__).resolve().parents[3]
 for _p in [_REPO / "src"] + [_REPO / "scripts" / d for d in ("studies", "bench", "repro")]:
     if str(_p) not in sys.path:
         sys.path.insert(0, str(_p))
-from _neighbor_analysis import load_meta, prepare_embedding  # noqa: E402
+from _neighbor_analysis import first_typed_neighbours, load_meta, prepare_embedding  # noqa: E402
 from paper_manifest import by_benchmark  # noqa: E402
 import views  # noqa: E402
 
@@ -80,7 +80,7 @@ if METRICS.exists():
 models = view.models
 print(f"{n} samples, {len(models)} models\n")
 
-self_idx = np.arange(n)
+BLOCK_SIZE = 512
 rows = []
 pooled_so, pooled_os = [], []
 pooled_tail_so, pooled_tail_os = [], []
@@ -90,49 +90,19 @@ pooled_pre_total = 0  # all (SS or OO) neighbours strictly closer than the first
 
 for model in models:
     X = prepare_embedding(view.features(model), np.float32)
-    D = 1.0 - X @ X.T  # cosine distance, (n, n)
-
-    order = np.argsort(D, axis=1, kind="stable")  # ascending; col 0 is self
-    L = labels[order]
-    C = conf[order]
-    S = slide[order]
-    di = labels[:, None]
-    ci = conf[:, None]
-    si = slide[:, None]
-
-    is_self = order == self_idx[:, None]
-    same_slide = S == si
-    valid = ~is_self & ~same_slide
-
-    so = valid & (L == di) & (C != ci)
-    os = valid & (L != di) & (C == ci)
-
-    # --- SS-shell depth: rank (among valid neighbours) of the FIRST typed neighbour ---
-    # Everything strictly closer is SS or OO; this is where RI/MaRI become defined and
-    # the sample exits its same-biology/same-confounder pocket.
-    ss = valid & (L == di) & (C == ci)
-    typed = so | os
-    vrank = np.cumsum(valid, axis=1, dtype=np.int32)  # 1-indexed rank among valid nbrs
-    BIG = np.int32(n + 1)
-    ftvr = np.where(typed, vrank, BIG).min(1)  # SS-shell exit depth (per sample)
-    has_typed = typed.any(1)
-    # pre-typed neighbours (closer than the first typed one) are SS or OO by construction
-    pre_ss = (ss & (vrank < ftvr[:, None])).sum(1).astype(np.int64)
-    pre_total = ftvr.astype(np.int64) - 1
+    chunks = []
+    for start in range(0, n, BLOCK_SIZE):
+        distances = 1.0 - X[start : start + BLOCK_SIZE] @ X.T
+        chunks.append(first_typed_neighbours(distances, start, labels, conf, slide))
+    so_rank, os_rank, so_d, os_d, pre_ss = map(np.concatenate, zip(*chunks))
+    has_typed = (so_rank > 0) | (os_rank > 0)
+    ftvr = np.minimum(
+        np.where(so_rank > 0, so_rank, n + 1),
+        np.where(os_rank > 0, os_rank, n + 1),
+    )
     pooled_pre_ss += int(pre_ss[has_typed].sum())
-    pooled_pre_total += int(pre_total[has_typed].sum())
+    pooled_pre_total += int((ftvr[has_typed] - 1).sum())
     depth = ftvr[has_typed].astype(float)
-
-    # 1-indexed rank among non-self neighbours = column index in `order`
-    # (col 0 is self, so col j -> rank j among non-self points).
-    col = np.arange(n)[None, :]
-    big = n + 1
-    so_rank = np.where(so.any(1), np.where(so, col, big).min(1), -1)
-    os_rank = np.where(os.any(1), np.where(os, col, big).min(1), -1)
-
-    # nearest typed distances -> CRoMa_i at m=1
-    so_d = np.where(so.any(1), np.where(so, D[self_idx[:, None], order], np.inf).min(1), np.nan)
-    os_d = np.where(os.any(1), np.where(os, D[self_idx[:, None], order], np.inf).min(1), np.nan)
     with np.errstate(divide="ignore", invalid="ignore"):
         croma = os_d / so_d
     defined = np.isfinite(croma) & (so_d > 0)

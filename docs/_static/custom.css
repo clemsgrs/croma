@@ -479,7 +479,7 @@ ul.croma-legend {
 
 .croma-nipd-context,
 .croma-nipd-direction,
-.croma-nipd-cancellation,
+.croma-nipd-interpretation,
 .croma-nipd-inspection {
   color: var(--color-foreground-secondary);
   font-size: 0.84rem;
@@ -719,11 +719,6 @@ ul.croma-legend {
   stroke-dasharray: 4 3;
 }
 
-.croma-nipd-lobe.is-positive {
-  stroke: var(--croma-nipd-positive);
-  stroke-width: 0.6;
-}
-
 .croma-nipd-lobe.is-negative {
   stroke: var(--croma-nipd-negative);
   stroke-width: 0.6;
@@ -773,7 +768,7 @@ ul.croma-legend {
   font-variant-numeric: tabular-nums;
 }
 
-.croma-nipd-cancellation {
+.croma-nipd-interpretation {
   margin-bottom: 0;
 }
 

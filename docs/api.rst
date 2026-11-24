@@ -150,30 +150,34 @@ nIPD
 
 .. _nipd-api:
 
-``nipd`` is the normalized integrated performance degradation: the signed area under
-the chance-normalized degradation curve over Cramér's ``V``. It divides performance
-changes by baseline *skill* -- balanced accuracy above chance -- rather than by raw
-baseline accuracy. This corrects unequal baseline headroom across models and tasks.
-
-For mean balanced accuracy across repeated training runs, :math:`\bar a(V)`, baseline
-:math:`a_0 = \bar a(0)` and chance :math:`\pi`,
+``nipd`` measures integrated performance loss under increasing training confounding.
+Let :math:`a^{d}(V_s)` be balanced accuracy averaged over repeated runs in
+evaluation setting :math:`d` (in domain or out of domain), and let :math:`\pi`
+denote chance. If :math:`a^{d}(0)>\pi`, the normalized change at each sampled
+confounding level is
 
 .. math::
 
-   g(V) = \frac{\bar a(V) - a_0}{a_0 - \pi},
-   \qquad
-   \operatorname{nIPD} = \int_0^1 g(V)\,dV.
+   g^d(V_s) = \frac{a^d(V_s)-a^d(0)}{a^d(0)-\pi}.
 
-The integral is estimated by the trapezoidal rule at the supplied Cramér's-``V``
-coordinates. Consequently, interval widths -- not the number of sampled conditions --
-weight the curve. The coordinates must be finite, strictly increasing, aligned with the
-accuracy rows and span ``0`` to ``1``. The mean baseline must exceed chance; there is no
-additional weak-skill threshold.
+Gains contribute zero at each sampled level. The definition is
 
-Negative values mean net degradation, positive values mean net improvement, and values
-near zero mean **little or no net change over the confounding range**. Because positive
-and negative portions can cancel in a signed area, near-zero nIPD does not prove stable
-performance at every sampled point.
+.. math::
+
+   h^d(V_s)=\min\{g^d(V_s),0\},\qquad
+   \operatorname{nIPD}^d=\int_0^1 h^d(V)\,\mathrm{d}V.
+
+Linear interpolation of :math:`h^d` between sampled levels gives the trapezoidal sum
+
+.. math::
+
+   \operatorname{nIPD}^d =
+   \sum_{s=1}^S (V_s-V_{s-1})\frac{h^d(V_{s-1})+h^d(V_s)}{2}.
+
+The finite, strictly increasing coordinates must match the accuracy rows and span 0 to 1.
+Zero nIPD means mean accuracy stayed at or above
+baseline at every sampled level. A more negative value indicates a larger integrated loss.
+Accuracy may fall below chance, giving a normalized change below −1.
 
 .. code-block:: python
 
@@ -181,13 +185,13 @@ performance at every sampled point.
 
    nipd(
        accuracies=[
-           [0.90, 0.90],
-           [0.70, 0.70],
-           [0.50, 0.50],
+           [0.75, 0.75],  # baseline
+           [0.60, 0.65],  # mean accuracy 0.625, half the baseline gap lost
+           [0.80, 0.85],  # mean accuracy exceeds baseline, so h(1) = 0
        ],
        cramers_v=[0.0, 0.5, 1.0],
        chance=0.5,
-   )  # -> -0.5
+   )  # -> -0.25
 
 .. autofunction:: croma.nipd
 

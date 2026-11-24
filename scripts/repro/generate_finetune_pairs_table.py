@@ -4,8 +4,8 @@ One block per pair, one row group per tile cohort: parent -> fine-tune, the diff
 (fine-tune minus parent) and its interval. Every number comes from the study CSV
 (``scripts/studies/finetune_pairs.py``) through ``_finetune_pairs.load``, which fails when the
 study is missing, no longer matches the pairs ``model_metadata.csv`` declares, or predates a
-re-run of the benchmark runs, APD table or APD cells it read. The caption's disclosure,
-development-selection and exposure statements are generated from the metadata, so none of
+re-run of the benchmark runs, APD table or APD cells it read. The caption's adaptation disclosure
+and exposure statements are generated from the metadata, so none of
 them can outlive the fact behind it.
 
 Run: python scripts/repro/generate_finetune_pairs_table.py
@@ -19,9 +19,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from _finetune_pairs import interval, load, signed
+from _finetune_pairs import interval, load, number, signed
 from _model_provenance import exposed_models_for_domain
-from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError, bare_num
+from _paper_tables import CROMA_HEADLINE_M, CaptionClaimError
 from paper_manifest import by_benchmark
 
 REPO = Path(__file__).resolve().parents[2]
@@ -35,14 +35,14 @@ BIBLIOGRAPHY = Path("paper/references.bib")
 
 #: Table columns: (study column stem, decimals, has an interval, scale). Decimals follow the
 #: results tables; biological accuracy and rank are point values. nIPD is printed in percent
-#: to one decimal, as the text, the nIPD figures and ``tab:slide-vs-meanpool`` print it.
+#: with adaptive decimals so that small nonzero values are distinct from zero.
 COLUMNS = (
     ("croma", 2, True, 1.0),
     ("f0", 3, True, 1.0),
     ("ltm", 2, True, 1.0),
     ("bio_bacc", 3, False, 1.0),
-    ("nipd_id", 1, True, 100.0),
-    ("nipd_ood", 1, True, 100.0),
+    ("nipd_id", None, True, 100.0),
+    ("nipd_ood", None, True, 100.0),
 )
 HEADER = (
     r"Cohort & \code{CRoMa} & $F(0)$ & $\mcode{LTM}_{10}$ & bio bacc & "
@@ -50,15 +50,6 @@ HEADER = (
 )
 N_COLUMNS = 2 + len(COLUMNS)
 
-#: How each disclosed kind of benchmark use during development is worded (ADR-0020). A kind
-#: with no wording here fails the build instead of being published under the wrong legend.
-SELECTION_LEGENDS = {
-    "pathorob-ri": (
-        r"$\ddagger$ PathoROB \code{RI} on these cohorts was used during the fine-tune's "
-        r"development, e.g.\ in checkpoint selection, as disclosed by its authors; its "
-        r"differences are shown unadjusted."
-    ),
-}
 #: Reader-facing names of the bootstrap strata columns on the PathoROB tile cohorts.
 STRATUM_NAMES = {"label": "class", "confounder": "centre"}
 
@@ -173,8 +164,8 @@ def _rows(row: pd.Series, daggered: bool, percent: str) -> list[str]:
     cohort = by_benchmark(row["benchmark"]).short_name + (r"$^{\dagger}$" if daggered else "")
     values, deltas, intervals = [cohort], [r"\quad $\Delta$"], [rf"\quad {percent} CI"]
     for stem, decimals, has_interval, scale in COLUMNS:
-        parent = bare_num(scale * row[f"parent_{stem}"], decimals)
-        finetune = bare_num(scale * row[f"finetune_{stem}"], decimals)
+        parent = number(scale * row[f"parent_{stem}"], decimals)
+        finetune = number(scale * row[f"finetune_{stem}"], decimals)
         values.append(rf"${parent} \to {finetune}$")
         deltas.append(signed(scale * row[f"delta_{stem}"], decimals))
         intervals.append(
@@ -209,21 +200,15 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         r"\hline",
     ]
     for pair in pairs:
-        mark = r"$^{\ddagger}$" if pair.benchmark_selection else ""
         title = (
             f"{published_model_name(pair.parent)} $\\rightarrow$ "
-            f"{published_model_name(pair.finetune)}{mark}"
+            f"{published_model_name(pair.finetune)}"
         )
         lines.append(rf"\multicolumn{{{N_COLUMNS}}}{{@{{}}l}}{{\textbf{{{title}}}}} \\")
         for _, row in frame[frame["finetune"] == pair.finetune].iterrows():
             members = exposed.get(row["benchmark"], [])
             daggered = any(m in members for m in (pair.parent, pair.finetune))
             lines += _rows(row, daggered, percent)
-
-    selections = list(dict.fromkeys(p.benchmark_selection for p in pairs if p.benchmark_selection))
-    unworded = [s for s in selections if s not in SELECTION_LEGENDS]
-    if unworded:
-        raise CaptionClaimError(f"no legend wording for benchmark_selection {unworded}")
 
     caption = [
         r"\textbf{Each robustness-targeted fine-tune against its parent encoder.}",
@@ -250,7 +235,6 @@ def build(frame: pd.DataFrame, metadata: pd.DataFrame, *, bib_keys: set[str]) ->
         _disclosure(pairs, bib_keys),
         *_exclusions(pairs, metadata),
     ]
-    caption += [SELECTION_LEGENDS[s] for s in selections]
     if exposed:
         named = "; ".join(
             f"{by_benchmark(b).short_name} for "

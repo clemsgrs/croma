@@ -135,11 +135,11 @@ def test_tolkach_resamples_cases_within_centres_and_tcga_2x2_balances_its_subset
     assert "paired subsets" not in unc.render_benchmark(_benchmark("Camelyon"), 2000)
 
 
-def test_the_slide_table_is_named_pcabiop_and_stratifies_by_provider():
+def test_the_slide_table_is_named_pcabiop_and_stratifies_by_centre():
     b = _benchmark("Panda")
     tex = unc.render_benchmark(unc.Benchmark(b.prefix, b.table, b.meta, has_control=False), 2000)
     assert "on PCaBiop.}" in tex
-    assert r"class $\times$ data provider strata" in tex
+    assert r"class $\times$ centre strata" in tex
     assert "ranked slide-level encoders, the median" in tex
     assert "control" not in tex
     assert r"\label{tab:bootstrap-uncertainty-pcabiop}" in tex

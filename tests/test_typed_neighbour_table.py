@@ -55,8 +55,8 @@ def _write_run(
     ranks = pd.DataFrame(
         {
             "model": rank_models or MODELS,
-            "so_med": [100.4, 50.6, 900.0, 30.0],
-            "os_med": [400.0, 300.2, 120.0, 40.0],
+            "so_med": [100.0, 50.5, 900.0, 30.0],
+            "os_med": [400.0, 300.0, 120.0, 40.0],
         }
     )
     ranks.to_csv(studies / "typed_neighbor_rank_summary.csv", index=False)
@@ -65,7 +65,7 @@ def _write_run(
             {
                 "ranked_n_models": 3,
                 "n_samples": 20400,
-                "pooled_first_percentiles_ranked": {"50": 148.6},
+                "pooled_first_percentiles_ranked": {"50": 148.5},
             }
         )
     )
@@ -91,9 +91,10 @@ def test_coverage_table_lists_the_live_roster_by_croma_with_the_control_last(tmp
     tex = typed_table.build(tmp_path)
 
     assert _model_rows(tex) == ["RudolfV-2-S", "Alpha", "Gamma", "DINOv2-B"]
+    assert "Gamma & $-0.05$ &" in tex
     assert r"\label{tab:typed-neighbour-coverage}" in tex
     # SO/OS median ranks, support, then the pure-SO / pure-OS / contested partition (%).
-    assert "RudolfV-2-S & 0.30 & 51 & 300 & 20.0 & 70.0 & 20.0 & 10.0 \\\\" in tex
+    assert "RudolfV-2-S & 0.30 & 50.5 & 300 & 20.0 & 70.0 & 20.0 & 10.0 \\\\" in tex
 
 
 def test_coverage_caption_states_the_runs_operating_k_and_pooled_first_typed_rank(tmp_path):
@@ -103,7 +104,8 @@ def test_coverage_caption_states_the_runs_operating_k_and_pooled_first_typed_ran
 
     assert "$k{=}13$" in tex
     assert "$k{=}11$" not in tex
-    assert r"approximately $149$" in tex
+    assert "For each tile, we ranked neighbours from other slides by cosine distance." in tex
+    assert r"neighbour was $148.5$" in tex
     assert "$20{,}400$ tiles" in tex
     assert "three pathology encoders" in tex
 
@@ -113,7 +115,7 @@ def test_typed_neighbour_macros_quote_the_first_typed_rank_and_mixed_share(tmp_p
 
     macros = typed_table.macros(tmp_path)
 
-    assert r"\newcommand{\CamelyonFirstTypedRankMedian}{149}" in macros
+    assert r"\newcommand{\CamelyonFirstTypedRankMedian}{148.5}" in macros
     # Median and maximum over the three ranked encoders; the control's 30% is excluded.
     assert r"\newcommand{\CamelyonContestedPctMedian}{5.0\%}" in macros
     assert r"\newcommand{\CamelyonContestedPctMax}{10.0\%}" in macros

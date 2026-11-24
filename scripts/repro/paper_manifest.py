@@ -16,7 +16,7 @@ Two invariants this module exists to enforce:
   A roster constant is a second source of truth for the contents of a run, and the last one
   silently pinned the paper to 16 models for three months after the panel grew to 21.
 * **The protocol is a property of the benchmark, not of the invocation.** The slide panel
-  stays at ``k-star`` because with four models the dataset median-k is degenerate; the tile
+  stays at ``k-star`` because its median-k is sensitive to panel composition; the tile
   panel uses ``median-k``. That reasoning belongs next to the row it governs.
 """
 
@@ -139,9 +139,8 @@ TABLES: list[ResultsTable] = [
         short_name="prostate-shift-binary",
         label="tab:main-results-prostate",
     ),
-    # The slide panel stays at k-star in every mode, matching what supp_panda.tex reports and
-    # argues for: with four models the dataset median-k collapses to a tiny k (3 on the sparse
-    # grid), starving RI/MaRI of support. Both panels are assembled into one two-panel float
+    # The binary and ISUP slide panels use each encoder's biologically selected k-star.
+    # Both panels are assembled into one two-panel float
     # (supp/table_panda_isup.tex), so neither is a whole-file render; their numbers reach the paper
     # as macros. Generating that float is the remaining hand-authored results body.
     ResultsTable(

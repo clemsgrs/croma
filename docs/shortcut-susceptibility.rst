@@ -1,11 +1,9 @@
 Shortcut susceptibility
 =======================
 
-``nIPD`` measures how a supervised probe changes when its training data becomes
-confounder-biased. **Negative nIPD means net degradation** as training-set confounding
-increases, near zero means little or no net change, and **positive nIPD means net
-improvement**. A near-zero value can hide offsetting changes, so it is not proof of
-stable performance at every point.
+``nIPD`` measures the loss in supervised probe performance as training confounding
+increases. A more negative value means greater integrated loss. **Zero nIPD** means
+mean accuracy stayed at or above baseline at every sampled confounding level.
 
 Interactive evidence browser
 ----------------------------
@@ -16,10 +14,10 @@ Pick a second encoder under *Compare with* to overlay its trajectory on the same
 ranked with the pathology encoders.
 
 Rows are ranked by the normalized change at ``V = 1``, the endpoint of the trajectory,
-not by nIPD. nIPD averages over the whole confounding range, so an early gain can pay for
-a late collapse and a curve ending at chance can outrank one that never moved; an
-endpoint cannot cancel with itself. Rows ending at or below -90% are marked ``≈ chance``,
-and panels whose scale reaches the -100% floor draw it as the chance level.
+while nIPD summarizes losses across the whole confounding range. A short drop at the
+final level can contribute less to the area than a sustained smaller decline.
+Rows ending at or below -90% are marked ``≈ chance``. The chance reference line
+appears when the vertical axis reaches -100%.
 
 .. raw:: html
 
@@ -47,8 +45,10 @@ How nIPD is computed
 A logistic probe predicts the biological class from frozen embeddings. Its training
 composition moves from balanced to fully confounded while the test rows stay fixed, and
 at each Cramér's-``V`` value nIPD compares mean balanced accuracy with the balanced
-baseline. The change is divided by the baseline's margin over chance, so **nIPD measures
-the share of above-chance performance that is lost**. **ID is the primary mechanistic
+baseline. At each sampled level, gains are set to zero and losses are divided by the
+baseline's margin over chance. We integrate the resulting values by linear interpolation
+between sampled levels. **nIPD measures the share of above-chance performance that is lost**.
+**ID is the primary mechanistic
 endpoint**: its acquisition groups remain represented in training, isolating
 susceptibility to the shortcut. **OOD also includes transfer effects** because its
 acquisition groups were unseen during training. See the :ref:`API definition <nipd-api>`

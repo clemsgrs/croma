@@ -34,10 +34,14 @@ Three commands, split along the seams of what is expensive:
 
    # 2. Compute metrics for one benchmark at one protocol. Reads embeddings,
    #    never writes any. Results land in output/metrics/<protocol>/<benchmark>/.
-   python scripts/bench/benchmark.py --benchmark camelyon --protocol median-k
+   python scripts/bench/benchmark.py --benchmark pathorob-camelyon --protocol median-k --k-grid sparse
 
    # 3. Render that run's figure set from the written artifacts.
-   python scripts/bench/render.py output/metrics/median-k/camelyon
+   python scripts/bench/render.py output/metrics/median-k/pathorob-camelyon
+
+The published tile benchmarks and PCaBiop-ISUP use the sparse PathoROB grid.
+Binary PCaBiop uses the dense grid (every integer from 1 to 100). The example embeds two
+encoders; reproducing the published shared operating point requires the full tile panel.
 
 Each ``<Model>.npy`` and ``<Model>.npy.json`` sidecar is one artifact. The sidecar is
 published last as the completion marker and records the checkpoint revision (an immutable

@@ -2,7 +2,7 @@
 
 Companion panel to the analytic schematic in the supplement's geometry section.
 The schematic states that ``CRoMa`` reads only the *direction* of the typed-distance
-pair; this panel shows what that plane actually looks like for the four slide-level
+pair; this panel shows what that plane actually looks like for the slide-level
 encoders, and why the scale-free construction is not a cosmetic choice: their median
 typed-distance magnitudes span roughly two orders of magnitude, so the radial
 coordinate is pure encoder nuisance.

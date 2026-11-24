@@ -7,9 +7,7 @@ radius constant from the installed package, and a handful of LaTeX number/CI
 formatting idioms. Both used to be re-implemented (or the package re-imported via a
 ``sys.path`` shim) in each generator. This module centralises them.
 
-Every formatter is a pure function whose output is byte-for-byte identical to the
-inline expression it replaces, so importing it here does not change any emitted
-``.tex``.
+The formatters return LaTeX fragments without modifying the underlying estimates.
 """
 
 import sys
@@ -68,6 +66,18 @@ def croma_as_margin(croma: pd.Series) -> pd.Series:
     """
     croma = croma.astype(float)
     return to_margin(croma, detect_croma_scale(croma))
+
+
+def table_number(
+    value: float, decimals: int, percent: bool = False, bold: bool = False, signed: bool = False
+) -> str:
+    """Give signed cells a mathematical sign and preserve the column's bold best mark."""
+    body = f"{value:{'+' if signed else ''}.{decimals}f}"
+    if percent:
+        body += r"\%"
+    if body.startswith(("+", "-")):
+        return rf"{{\boldmath${body}$}}" if bold else f"${body}$"
+    return rf"\textbf{{{body}}}" if bold else body
 
 
 def num_math(value: float, decimals: int = 2) -> str:

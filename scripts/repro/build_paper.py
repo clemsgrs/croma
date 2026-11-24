@@ -30,6 +30,7 @@ _CAMELYON = by_prefix("Camelyon")
 CORE = [
     ("generate_results_table.py", None, ""),
     ("generate_panda_table.py", None, ""),
+    ("generate_tail_fraction_table.py", None, ""),
     ("generate_model_tables.py", None, ""),
     ("generate_paper_values.py", None, ""),
     # Reads the three tile runs' metrics.csv + per_sample_metrics.csv (Camelyon for the main
@@ -177,9 +178,10 @@ def main() -> int:
     args = p.parse_args()
 
     if args.check:
-        # Only the results tables render deterministically from a pure function today, so
-        # they are what --check compares. The remaining generators are checked by rebuilding.
-        return _run("generate_results_table.py", ["--check"])
+        # The other generators are checked by rebuilding.
+        results_status = _run("generate_results_table.py", ["--check"])
+        tail_status = _run("generate_tail_fraction_table.py", ["--check"])
+        return results_status or tail_status
 
     failed: list[str] = []
     for script, _, _ in CORE:

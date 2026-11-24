@@ -549,8 +549,7 @@ def test_evaluate_records_the_declared_pairs_it_did_not_run_and_why(tmp_path, mo
 
 
 def test_evaluate_records_the_known_cause_of_a_pair_that_does_not_reproduce(tmp_path, monkeypatch):
-    # The caption reads the cause from provenance.json, so each evaluated pair's record
-    # carries its declared cause, and null when none is declared.
+    # Preserve the diagnosed cause in provenance.json, with null for undiagnosed pairs.
     import json
 
     import slide_vs_meanpool as study

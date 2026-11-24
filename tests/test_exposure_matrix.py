@@ -96,6 +96,7 @@ def test_a_shared_institution_is_marked_with_its_centres_and_source_not_as_datas
     assert mark.institution == "rumc"
     assert ("pathorob-camelyon", "RUMC") in mark.centres
     assert ("panda", "radboud") in mark.centres
+    assert ("panda-isup", "radboud") in mark.centres
     assert mark.source == "prostkey"
     # Sharing Camelyon's RUMC centre is not exposure to the CAMELYON16/17 dataset.
     assert matrix.status("Prostate", "camelyon") == "not exposed"
@@ -131,7 +132,7 @@ def test_dataset_and_institution_tokens_never_share_a_namespace(row):
         ex.exposure_matrix(_metadata(row))
 
 
-def test_pathorob_use_during_development_is_its_own_column_with_its_source():
+def test_pathorob_use_during_development_is_retained_in_metadata_with_its_source():
     md = _metadata(
         {
             "model": "Selected",
@@ -223,7 +224,7 @@ def _render_worked() -> str:
 def test_matrix_rows_read_the_cell_values_in_dataset_column_order():
     tex = _render_worked()
 
-    # TCGA, CAMELYON16/17, PANDA, PAR, Tolkach-ESCA, institution, PathoROB in development
+    # TCGA, CAMELYON16/17, PANDA, PAR, Tolkach-ESCA, institution
     assert _cells(tex, "Tcga-only") == [
         "Tcga-only",
         r"\textbf{exposed}",
@@ -232,20 +233,21 @@ def test_matrix_rows_read_the_cell_values_in_dataset_column_order():
         "not exposed",
         "not exposed",
         "--",
-        "--",
     ]
     assert _cells(tex, "Proprietary")[1:6] == ["undisclosed"] * 5
     assert _cells(tex, "Slide-one")[3] == r"\textbf{exposed}"
     assert r"\label{tab:exposure-matrix}" in tex
 
 
-def test_matrix_institution_and_development_cells_carry_their_source():
+def test_matrix_institution_cells_carry_their_source_without_publishing_selection_labels():
     tex = _render_worked()
 
     institution = _cells(tex, "Prostate")[6]
-    assert institution.startswith("Radboudumc (") and institution.endswith(r"~\cite{prostkey}")
-    assert "Camelyon RUMC" in institution and "PANDA radboud" in institution
-    assert _cells(tex, "Proprietary")[7] == r"PathoROB RI~\cite{selkey}"
+    assert (
+        institution == r"Radboudumc (Camelyon RUMC, PCaBiop and PCaBiop-ISUP RUMC)~\cite{prostkey}"
+    )
+    assert len(_cells(tex, "Proprietary")) == 7
+    assert r"\cite{selkey}" not in tex and "PathoROB" not in tex
 
 
 def test_matrix_counts_rows_give_exposed_and_undisclosed_per_panel():

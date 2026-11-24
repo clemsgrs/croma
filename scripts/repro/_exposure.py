@@ -80,7 +80,7 @@ class Institution:
 INSTITUTIONS: dict[str, Institution] = {
     "rumc": Institution(
         "Radboudumc",
-        (("pathorob-camelyon", "RUMC"), ("prostate", "RUMC"), ("panda", "radboud")),
+        (("pathorob-camelyon", "RUMC"), ("panda", "radboud"), ("panda-isup", "radboud")),
     ),
     "charite": Institution(r"Charit\'e", (("pathorob-tolkach-esca", "VALSET4_CHA_FULL"),)),
     "mskcc": Institution(
@@ -309,9 +309,9 @@ DATASET_HEADS = {
     "tolkach-esca": r"\shortstack{Tolkach-ESCA\\(UKK, WNS, CHA)}",
 }
 #: Printed benchmark names where the manifest has no short name.
-_BENCHMARK_FALLBACK = {"panda": "PANDA"}
+_BENCHMARK_FALLBACK = {"panda": "PCaBiop", "panda-isup": "PCaBiop-ISUP"}
 #: Printed centre names where the view's label is not a printable name.
-_CENTRE_NAMES = {"VALSET4_CHA_FULL": "CHA"}
+_CENTRE_NAMES = {"VALSET4_CHA_FULL": "CHA", "radboud": "RUMC"}
 _CELL = {EXPOSED: r"\textbf{exposed}", NOT_EXPOSED: "not exposed", UNDISCLOSED: "undisclosed"}
 _PANEL_HEADS = {"tile": "Tile encoders", "slide": "Slide encoders"}
 
@@ -334,27 +334,31 @@ def _institution_cell(marks: tuple[InstitutionMark, ...]) -> str:
     for mark in marks:
         by_benchmark: dict[str, list[str]] = {}
         for benchmark, label in mark.centres:
-            by_benchmark.setdefault(benchmark, []).append(_CENTRE_NAMES.get(label, label))
-        where = ", ".join(f"{_benchmark_name(b)} {'/'.join(ls)}" for b, ls in by_benchmark.items())
+            by_benchmark.setdefault(benchmark, []).append(label)
+        # Both PCaBiop views share the same PANDA centre label.
+        benchmarks_by_centres: dict[tuple[str, ...], list[str]] = {}
+        for benchmark, labels in by_benchmark.items():
+            benchmarks_by_centres.setdefault(tuple(labels), []).append(_benchmark_name(benchmark))
+        locations = []
+        for labels, benchmarks in benchmarks_by_centres.items():
+            centres = "/".join(_CENTRE_NAMES.get(label, label) for label in labels)
+            locations.append(f"{' and '.join(benchmarks)} {centres}")
+        where = ", ".join(locations)
         parts.append(rf"{INSTITUTIONS[mark.institution].name} ({where})~\cite{{{mark.source}}}")
     return "; ".join(parts)
-
-
-def _selection_cell(selection: Selection | None) -> str:
-    return "--" if selection is None else rf"{selection.label}~\cite{{{selection.source}}}"
 
 
 def _matrix_row(matrix: ExposureMatrix, model: str) -> str:
     cells = [model]
     cells += [_CELL[matrix.status(model, d.domain)] for d in SOURCE_DATASETS]
-    cells += [_institution_cell(matrix.institutions(model)), _selection_cell(matrix.selection(model))]
+    cells.append(_institution_cell(matrix.institutions(model)))
     return " & ".join(cells) + r" \\"
 
 
 def _count_row(panel: str, counts: dict[str, Count]) -> str:
     cells = [rf"\textit{{{panel.capitalize()}: exposed / undisclosed}}"]
     cells += [f"{counts[d.domain].exposed} / {counts[d.domain].undisclosed}" for d in SOURCE_DATASETS]
-    return " & ".join(cells + ["", ""]) + r" \\"
+    return " & ".join(cells + [""]) + r" \\"
 
 
 #: The cell definitions, set as notes under the tile part rather than in its caption: the
@@ -370,8 +374,7 @@ _MATRIX_NOTES = (
     r"authors excluded all five Camelyon centres~\cite{filiot2026robustifying}. Fine-tuning "
     r"exposure to PANDA, PAR and the scored Tolkach-ESCA cohorts is undisclosed for both. "
     r"\emph{Shared institution} identifies training data from an institution contributing to the "
-    r"benchmark. \emph{PathoROB in development} records disclosed benchmark use during model "
-    r"development. Counts exclude the natural-image control."
+    r"benchmark. Counts exclude the natural-image control."
 )
 
 _MATRIX_CAPTION = (
@@ -396,7 +399,7 @@ def _matrix_float(
         r"\centering",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{3pt}",
-        rf"\begin{{tabular}}{{@{{}}l{'c' * len(SOURCE_DATASETS)}p{{5.8cm}}p{{2.2cm}}@{{}}}}",
+        rf"\begin{{tabular}}{{@{{}}l{'c' * len(SOURCE_DATASETS)}p{{5.8cm}}@{{}}}}",
         r"\hline",
         " & ".join(heads) + r" \\",
         r"\hline",
@@ -421,7 +424,7 @@ def render_matrix(matrix: ExposureMatrix, fingerprints: list[tuple[str, str]]) -
     """
     counts = matrix.counts()
     heads = ["Encoder", *(DATASET_HEADS[d.domain] for d in SOURCE_DATASETS)]
-    heads += [r"\shortstack{Shared\\institution}", r"\shortstack{PathoROB in\\development}"]
+    heads.append(r"\shortstack{Shared\\institution}")
     n_cols = len(heads)
 
     def panel(name: str) -> list[str]:

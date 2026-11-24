@@ -4,13 +4,13 @@ Join the representation metrics with downstream performance degradation and repo
 rank correlation across models within each benchmark.
 
 The primary target is nIPD (normalized Integrated Performance Degradation), which
-normalizes by above-chance baseline skill and integrates over Cramér's V. PathoROB's
+sets gains to zero and integrates losses relative to above-chance baseline skill over Cramér's V. PathoROB's
 APD is retained as a continuity analysis.
 
 Hypothesis (pre-registered): a more confounder-robust representation (higher
 CRoMa) gives a downstream probe fewer exploitable shortcuts, so it suffers a
-smaller drop -> nIPD closer to 0. Because nIPD is signed, we expect a positive
-Spearman(CRoMa, nIPD), with ID as the cleaner shortcut-susceptibility endpoint.
+smaller loss (nIPD closer to zero). We therefore expect a positive Spearman(CRoMa, nIPD),
+with ID as the cleaner shortcut-susceptibility endpoint.
 OOD additionally contains transfer to an unseen acquisition distribution.
 
 RI/MaRI are reported alongside purely as a sanity check that the drop is a sensible

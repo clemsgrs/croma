@@ -506,21 +506,9 @@ def case_arrangement(centers, feasible_splits, group_ids):
 # APD <-> metric correlation config + loaders (used by apd_croma_correlation.py
 # and apd_figure.py)
 # ---------------------------------------------------------------------------
-# The three tile-level benchmarks reported in the downstream-correlation *table*. PCaBiop is
-# kept out of that table because four encoders is too few for a rank correlation to carry a
-# conclusion -- but "not tabulated" is not "not computed": supp/panda.tex quotes its two
-# Spearman values in prose, under an explicit "these associations are descriptive" caveat.
-# So the exclusion lives in the table generator (_apd.FIGURE_DATASETS), not here.
-# Prostate-shift remains available to the experiment driver but is not part of the
-# manuscript's active benchmark panel.
+# The three tile benchmarks share the downstream-correlation testing family.
 DATASET_KEYS = ["camelyon", "tcga_4x4", "tolkach"]
-#: Datasets the *join* covers, which is deliberately wider than the ones the correlation
-#: table reports. PCaBiop is excluded from the table (four encoders is too few for a rank
-#: correlation) but its figure is still rendered and cited, and that figure's scatter needs
-#: CRoMa joined onto its APD rows. Driving the join off ``DATASET_KEYS`` silently dropped
-#: those four rows, leaving ``apd_figure.py --pcabiop`` to fail with an empty scatter roster
-#: -- excluded from a *conclusion* is not the same as excluded from the *data*.
-#: Prostate-shift stays out: the experiment driver computes it, but nothing joins or plots it.
+#: Include PCaBiop for its figure and descriptive correlations in the supplementary table.
 JOIN_KEYS = [*DATASET_KEYS, "pcabiop"]
 #: Everything this study reads and writes: the APD CSVs, the join, and the plots drawn from
 #: them. Figures land here beside their data rather than under ``paper/`` -- see the note on

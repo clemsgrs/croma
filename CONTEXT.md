@@ -68,12 +68,11 @@ CRoMa has total support by contract and carries none of these fields.
 
 **Confounder probe**:
 The balanced accuracy with which a $k$-NN probe recovers the confounder from the frozen
-representation (`confounder_knn_bacc`). Not a robustness metric, but the null model every
-robustness metric must beat: across the 25 pathology encoders it rank-predicts every
-_pooled_ score — RI, MaRI, the CRoMa median, $F(0)$ — at $|\rho|$ of 0.82–0.97. It cannot
-replace them, because it saturates (Hibou-B and Hibou-L differ by 0.0003 in probe accuracy
-and by 0.35 in CRoMa), has no zero to be signed about, has a chance level that moves with
-the number of confounder classes, and — being a scalar — admits no tail.
+representation (`confounder_knn_bacc`). It is a model-level diagnostic. On Camelyon,
+higher centre-classification accuracy across the 27 pathology encoders was associated
+with lower median CRoMa (Spearman $ρ=-0.95$), RI ($ρ=-0.97$) and MaRI ($ρ=-0.96$).
+The probe can saturate when the centre is easy to identify. Its chance level depends
+on the number of centre classes, and its accuracy gives no per-sample robustness margin.
 _Avoid_: "linear probe" (it is $k$-NN), "shortcut score".
 
 **Confounder-biased probe sweep**:
@@ -94,21 +93,17 @@ tail statistics are read. The probe result is a claim about pooled scores as a c
 **Natural-image control**:
 `DINOv2-B` (`plotstyle.CONTROL_MODEL`) — pretrained on LVD-142M, never on a whole-slide
 image. A _floor_, not a competitor: it is excluded from rankings, from per-column bolding,
-and from every cross-model correlation. Its positive CRoMa (+0.077 mean) is an artifact of
-weak structure of either kind — it has the lowest biological $k$-NN accuracy of the panel —
-which is exactly what makes it useful: it calibrates what a positive margin is worth on a
-representation that encodes little. Never read it as "beats 8 pathology FMs".
+and from every cross-model correlation. On Camelyon it has a positive median CRoMa (+0.03) and the lowest biological
+$k$-NN balanced accuracy in the panel (0.913). This illustrates how a positive margin can
+coexist with weak biological discrimination.
 _Avoid_: baseline (it is not a competitor), ImageNet control (the corpus is LVD-142M).
 
 **Ranked panel**:
-The 25 pathology encoders — the full tile panel minus the natural-image control. Every
-statistic that *compares* models is computed over the ranked panel: the cross-model
-correlations, the support range, and the rank-agreement $\rho$ (`\<Bench>RankedNModels`,
-`SupportRange`, `CromaVsRiRho`, …). Whole-panel *descriptive* statistics keep the control,
-because they describe the spread rather than rank within it (`NModels` = 26, `CromaSpan`,
-`BioBaccRange`, `ConfBaccRange`). The split is not cosmetic: the control's weak biological
-structure can flatter its robustness scores and distort cross-model associations, so it
-cannot supply evidence about relative pathology-encoder performance.
+The 27 pathology encoders in the tile panel, excluding the natural-image control. Rank
+correlations, the support range and the biological and confounder accuracy ranges use
+these 27 encoders (`RankedNModels`, `CromaVsRiRho`, `SupportRange`, `BioBaccRange`,
+`ConfBaccRange`). The full roster of 28, including the control, determines `NModels`
+and `CromaSpan`.
 _Avoid_: "all models", "the panel" (say which one).
 
 ### Tail vocabulary
@@ -135,8 +130,8 @@ produces), $\hat{F}(0)$ (the manuscript does not hat it).
 **Lower-tail mean** — LTM$_{10}$:
 The mean of the worst $\alpha$ fraction of anchors, $\mathbb{E}[X \mid X \le Q_\alpha]$.
 A _severity_ — how bad the margin gets when it does go wrong. Reported at
-$\alpha = 10\%$; its insensitivity to that choice is what the alpha-stability
-table establishes. Subscript is the percent as a bare integer, `LTM_{10}`.
+$\alpha = 10\%$. The manuscript's sensitivity table compares tail fractions on four tile
+configurations (Camelyon, TCGA-2x2, TCGA-4x4 and Tolkach-ESCA). Subscript is the percent as a bare integer, `LTM_{10}`.
 _Avoid_: `LTM_{10\%}` (the table's stale form), CVaR, expected shortfall.
 
 **$Q_\alpha$** (the $\alpha$-quantile) is _not_ reported. Its sign carries no
@@ -197,15 +192,13 @@ headroom attained, `(acc − chance)/(1 − chance)`, which is class-count invar
 _Avoid_: "accuracy" for this — the distinction is the whole point of nIPD.
 
 **nIPD** (normalized integrated performance degradation):
-The signed area under the chance-normalized downstream degradation curve. If
-`\bar a(V)` is mean balanced accuracy across repeated training runs at Cramér's `V`,
-`a_0 = \bar a(0)`, and `π` is chance, the curve is
-`g(V) = [\bar a(V) − a_0] / (a_0 − π)` and
-`nIPD = ∫_0^1 g(V) dV`. The implementation estimates the integral by the trapezoidal
-rule at the observed `V` coordinates, so interval width rather than the number of sampled
-conditions weights the curve. Negative values denote degradation, zero denotes no net
-change and positive values denote improvement. The mean baseline must exceed chance; there
-is no additional weak-skill gate. `APD` is retained as the PathoROB-faithful reference.
+The integrated loss relative to a probe's above-chance baseline. At each sampled
+Cramér's `V`, average accuracy across repeats and compute its change from baseline,
+divided by the gap between mean baseline accuracy and chance. Set positive changes
+to zero, then integrate the resulting points by the trapezoidal rule. Zero means the
+mean accuracy stayed at or above baseline at every sampled level. More negative values
+indicate greater integrated loss. The mean baseline must exceed chance. `APD` retains
+the PathoROB calculation.
 _Avoid_: calling nIPD an arithmetic average over splits — that makes the result depend on
 how densely a benchmark samples particular parts of the `V` axis. Also avoid calling it
 "margin-aware" or an analogue of the RI→MaRI step: the denominator corrects unequal
@@ -222,11 +215,10 @@ _Avoid_: run (a run is a benchmark evaluated at one protocol).
 **Protocol**:
 The k operating point a metrics run was computed at — `k-star` (each model at its own
 kNN-optimal k) or `median-k` (the shared median of per-model k*). It scopes the
-metrics tree: `output/metrics/<protocol>/<benchmark>/`. The tile panel (26 models) reports
-`median-k`; the **slide panel reports `k-star`**, because with only five models the shared
-median is dominated by panel composition (adding PRISM2 moved the would-be shared median
-from k=3 to k=9 on PCaBiop). The median is the *lower* median — an order statistic, so the
-shared k is always some model's own k* and therefore on the swept grid.
+metrics tree: `output/metrics/<protocol>/<benchmark>/`. The tile panel reports `median-k`, the lower median of the optima over all 28 encoders
+including the control. It is always an observed optimum on the swept grid. The five slide
+encoders are evaluated at their own biologically selected `k-star`. In the PCaBiop-ISUP
+analysis, removing one encoder can change the shared median.
 _Avoid_: mode, setting.
 
 **Run**:
