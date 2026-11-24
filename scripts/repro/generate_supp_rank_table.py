@@ -58,7 +58,7 @@ class Coverage:
     control: pd.DataFrame
     k: int
     n_samples: int
-    first_typed_rank: int
+    first_typed_rank: float
 
 
 def _read_csv(path: Path) -> pd.DataFrame:
@@ -126,7 +126,7 @@ def load(root: Path = REPO) -> Coverage:
         control=frame[is_control].reset_index(drop=True),
         k=k,
         n_samples=int(summary["n_samples"]),
-        first_typed_rank=int(round(float(summary["pooled_first_percentiles_ranked"]["50"]))),
+        first_typed_rank=float(summary["pooled_first_percentiles_ranked"]["50"]),
     )
 
 
@@ -138,8 +138,8 @@ def _row(record: pd.Series) -> str:
     cells = [
         str(record["model"]),
         f"{float(record['croma']):.2f}",
-        f"{float(record['so_med']):.0f}",
-        f"{float(record['os_med']):.0f}",
+        f"{float(record['so_med']):g}",
+        f"{float(record['os_med']):g}",
         _pct(record["support"]),
         _pct(record["pure_so_frac_of_defined"]),
         _pct(record["pure_os_frac_of_defined"]),
@@ -166,18 +166,18 @@ def _caption(cov: Coverage) -> str:
     return (
         rf"\textbf{{Typed-neighbour ranks and fixed-$k$ neighbourhood composition on "
         rf"{ENTRY.short_name}.}} Pathology encoders are ordered by median \code{{CRoMa}} "
-        rf"($m{{=}}{m}$). Positive values indicate biology-dominant geometry. For each encoder, "
-        r"the \textbf{SO} and \textbf{OS} columns report the median rank across samples of the "
-        r"nearest cross-confounder biological match and same-confounder biological distractor, "
-        rf"respectively. At the shared operating point $k{{=}}{cov.k}$, support is the "
+        rf"($m{{=}}{m}$). Positive values indicate biology-dominant geometry. For each tile, "
+        r"we ranked neighbours from other slides by cosine distance. The \textbf{SO} and "
+        r"\textbf{OS} columns give the median rank, across tiles, of the first \textbf{SO} "
+        r"and first \textbf{OS} neighbour, respectively. "
+        rf"At the shared operating point $k{{=}}{cov.k}$, support is the "
         r"percentage of all samples whose neighbourhood contains at least one \textbf{SO} or "
         r"\textbf{OS} neighbour. Pure-\textbf{SO}, pure-\textbf{OS} and contested neighbourhoods "
         r"partition these supported samples and are reported as percentages of support. Only "
         r"contested neighbourhoods contain both evidence types and can yield different \code{RI} "
-        rf"and \code{{MaRI}} values. Across the {_count(len(cov.ranked))} pathology encoders, "
-        rf"the nearest typed neighbour occurs at a median rank of approximately "
-        rf"${cov.first_typed_rank}$ in a cohort of ${_thousands(cov.n_samples)}$ tiles, well "
-        rf"beyond the fixed $k{{=}}{cov.k}$ window.{control}"
+        rf"and \code{{MaRI}} values. Across ${_thousands(cov.n_samples)}$ tiles and "
+        rf"{_count(len(cov.ranked))} pathology encoders, the median rank of the first "
+        rf"\textbf{{SO}} or \textbf{{OS}} neighbour was ${cov.first_typed_rank:g}$.{control}"
     )
 
 
@@ -215,7 +215,7 @@ def macros(root: Path = REPO) -> list[str]:
     cov = load(root)
     contested = cov.ranked["contested_frac_of_defined"].astype(float)
     return [
-        rf"\newcommand{{\{PREFIX}FirstTypedRankMedian}}{{{cov.first_typed_rank}}}",
+        rf"\newcommand{{\{PREFIX}FirstTypedRankMedian}}{{{cov.first_typed_rank:g}}}",
         rf"\newcommand{{\{PREFIX}ContestedPctMedian}}{{{_pct(contested.median())}\%}}",
         rf"\newcommand{{\{PREFIX}ContestedPctMax}}{{{_pct(contested.max())}\%}}",
     ]

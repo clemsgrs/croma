@@ -9,7 +9,7 @@ from croma.downstream._accuracies import as_accuracy_matrix
 
 
 def nipd(accuracies: ArrayLike, cramers_v: ArrayLike, chance: float) -> float:
-    """Normalized Integrated Performance Degradation over Cramér's V.
+    """Normalized integrated performance degradation over Cramér's V.
 
     ``accuracies`` holds one row per sampled Cramér's-V value and one column per
     repeated training run. Row ``0`` is the balanced baseline at ``V=0``. We first
@@ -18,14 +18,13 @@ def nipd(accuracies: ArrayLike, cramers_v: ArrayLike, chance: float) -> float:
 
     .. code-block:: text
 
-        g(V) = (mean_accuracy(V) - mean_accuracy(0)) / (mean_accuracy(0) - chance)
+        g(V_s) = (mean_accuracy(V_s) - mean_accuracy(0)) / (mean_accuracy(0) - chance)
+        h(V_s) = min(g(V_s), 0)
 
-    nIPD is the signed area under ``g`` on ``[0, 1]``, estimated by trapezoidal
-    integration over the supplied Cramér's-V coordinates. Thus increasingly negative
-    values mean greater shortcut susceptibility, values near ``0`` mean little or no net
-    change over the confounding range (not proven stability at every point), and positive
-    values mean net improvement. ``-0.5`` is the area of a linear fall from baseline
-    performance at ``V=0`` to chance performance at ``V=1``.
+    nIPD is the integral of h from V=0 to V=1. Linear interpolation of h between
+    sampled coordinates gives the trapezoidal sum. Zero means mean accuracy stayed at or above baseline
+    at every sampled level. Increasingly negative values indicate larger losses.
+    A linear decline from baseline at V=0 to chance at V=1 gives -0.5.
 
     Args:
         accuracies: ``(n_splits, n_iterations)`` balanced accuracies, row ``0`` the
@@ -35,7 +34,7 @@ def nipd(accuracies: ArrayLike, cramers_v: ArrayLike, chance: float) -> float:
         chance: Balanced-accuracy chance level, ``1 / n_biological_classes``.
 
     Returns:
-        The signed trapezoidal area under the normalized degradation curve.
+        The integral of the non-positive changes across the confounding range.
 
     Raises:
         ValueError: If the accuracy matrix is malformed, the Cramér's-V coordinates
@@ -65,5 +64,5 @@ def nipd(accuracies: ArrayLike, cramers_v: ArrayLike, chance: float) -> float:
             "the balanced baseline must score above chance for normalized degradation "
             f"to exist, got a mean baseline of {mean_accuracy[0]} against chance {chance}"
         )
-    degradation = (mean_accuracy - mean_accuracy[0]) / baseline_skill
+    degradation = np.minimum(mean_accuracy - mean_accuracy[0], 0.0) / baseline_skill
     return float(np.sum(np.diff(v) * (degradation[:-1] + degradation[1:]) / 2.0))

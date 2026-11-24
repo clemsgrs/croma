@@ -41,6 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `croma.nipd` now sets gains from baseline to zero at each sampled confounding level
+  after averaging performance over repeats. It linearly interpolates the remaining
+  changes and integrates them over Cramér’s V. Its maximum is zero.
+  The updated Spearman correlations between median CRoMa and nIPD (ID / OOD) are
+  0.95 / 0.88 on Camelyon, 0.91 / 0.91 on TCGA-4×4, 0.92 / 0.86 on Tolkach-ESCA and
+  0.70 / 0.90 on PCaBiop. On PCaBiop, TITAN’s nIPD is −0.068 / −0.113 and
+  Prov-GigaPath’s is −0.272 / −0.174.
+
 - TITAN and Prov-GigaPath have new slide embeddings on PCaBiop and PCaBiop-ISUP, and every
   slide-level result that reads them is regenerated. Their published embeddings had
   extraction faults:
@@ -70,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   columns. CRoMa, F(0) and LTM₁₀ do not depend on `k`. PCaBiop's order by median CRoMa is
   unchanged.
 
-  nIPD on PCaBiop, ID / OOD:
+  The embedding correction alone gave the following results on PCaBiop under the
+  earlier signed nIPD definition (ID / OOD).
   - TITAN: −0.189 / −0.126 → −0.067 / −0.113.
   - Prov-GigaPath: −0.245 / −0.107 → −0.272 / −0.159.
   - At maximum confounding, TITAN's OOD curve (−0.931 → −0.163) and Prov-GigaPath's
@@ -82,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - TITAN: median CRoMa −0.390 → −0.184, F(0) 0.960 → 0.802, LTM₁₀ −0.612 → −0.432.
   - Prov-GigaPath: −0.466 → −0.473, 0.993 → 0.992 and −0.621 → −0.645.
 
-  No MOOZY, PRISM or PRISM2 value changed. `results/nipd.json` is republished, with
+  The embedding correction did not affect MOOZY, PRISM or PRISM2. `results/nipd.json` is republished, with
   publication date 2026-11-23.
 - Slide-vs-meanpool study (`scripts/studies/slide_vs_meanpool.py`):
   - TITAN's re-run now reproduces its published slide embeddings on all 1,324 slides
@@ -113,8 +122,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   was: Camelyon `k = 11`, TCGA-4×4 `k = 81`, Tolkach-ESCA `k = 71`, now the lower median
   over 28 encoders. No other encoder's published value changed, nIPD included; their
   aggregate ranks move by at most one place.
-- Each tile cohort's CRoMa–nIPD association (Spearman's ρ and the trend line) is now
-  computed over 27 ranked encoders, Mettle-1.5 included, so it moves. ρ for ID / OOD:
+- Adding Mettle-1.5 brought each tile cohort’s CRoMa–nIPD association to 27 ranked
+  encoders. Under the signed nIPD definition then in use, the ID / OOD correlations were
   Camelyon 0.946 / 0.744 → 0.951 / 0.752, TCGA-4×4 0.904 / 0.885 → 0.904 / 0.897,
   Tolkach-ESCA 0.931 / 0.729 → 0.929 / 0.743. PCaBiop's is unchanged.
 - The README's count of the panel, above its results table, is now generated with the

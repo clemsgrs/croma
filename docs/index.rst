@@ -21,8 +21,8 @@ introduces CRoMa, which overcomes limitations of both. MaRI and CRoMa are descri
 
 **Shortcut susceptibility** asks how a supervised biological-class probe changes when
 its training composition becomes confounder-biased. The primary reduction is
-:doc:`nIPD <shortcut-susceptibility>`, a signed area normalized by the baseline's margin
-over chance.
+:doc:`nIPD <shortcut-susceptibility>`, the area of losses relative to baseline, normalized by the
+baseline margin over chance.
 
 .. code-block:: bash
 

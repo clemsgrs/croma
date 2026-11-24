@@ -90,13 +90,13 @@ def _caption(a: pd.DataFrame, b: pd.DataFrame) -> str:
         rf"\textbf{{Robustness of slide-level representations on PCaBiop and PCaBiop-ISUP.}} "
         rf"The {_spell(n)} slide-level encoders are ordered within each panel by median "
         rf"\code{{CRoMa}} ($m{{=}}{m}$). Column groups, arrows and bold follow "
-        rf"Table~\ref{{{primary().label}}}; the confounder is the data provider. Unlike the "
-        r"tile tables, each encoder is evaluated at a model-specific, biologically selected "
-        r"$k^\star$, listed in the pooled group: Biology and the fixed-$k$ pooled scores are "
-        r"reported at $k^\star$, and Centre is the maximum over the evaluated $k$ grid. "
+        rf"Table~\ref{{{primary().label}}}; the confounder is the data provider. For each "
+        r"encoder, we selected $k^\star$ by biological balanced accuracy and used it to report "
+        r"both Biology and Centre accuracy, \code{RI}, \code{MaRI} and support. "
         r"\textbf{a,} Binary "
-        r"cancer detection on $1{,}000$ slides. \textbf{b,} Six-class ISUP grading over "
-        r"$3{,}000$ slides. Bootstrap intervals for each encoder's median, $F(0)$, "
+        r"cancer detection on $1{,}000$ slides. \textbf{b,} Pairwise comparisons on "
+        r"$3{,}000$ biopsies spanning benign tissue and ISUP grade groups $1$--$5$. Biology "
+        r"and Centre report mean balanced accuracy across the $15$ class pairs. Bootstrap intervals for each encoder's median, $F(0)$, "
         r"$\mcode{LTM}_{10}$ and rank in panel \textbf{a} are given in Supplementary "
         rf"Table~\ref{{{table_label('Panda')}}}."
     )
@@ -127,7 +127,7 @@ def build_float(root: Path = REPO) -> str:
         *_tabular("(a) Cancer detection", a),
         "",
         r"\vspace{5pt}",
-        *_tabular("(b) ISUP grading", b),
+        *_tabular("(b) Pairwise ISUP grade comparisons", b),
         rf"\caption{{{_caption(a, b)}}}",
         # Both labels attach to this one float on purpose: the results section cites the
         # detection panel and the supplement cites the grading panel.

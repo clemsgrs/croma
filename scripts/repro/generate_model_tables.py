@@ -10,12 +10,13 @@ function of a metadata ``DataFrame`` and is callable/testable without the
 ``paper/`` tree.
 
 Metadata columns read here (single source of truth):
-  model, panel, panel_order, method, params, n_wsis, n_tiles, wsis_source, dim,
+  model, panel, panel_order, method, params, n_wsis, n_tiles, dim,
   corpus, cite, parent_model, variant_role, adaptation, shared_corpus
 
 Run: python scripts/repro/generate_model_tables.py
 """
 
+import re
 import sys
 from pathlib import Path
 
@@ -33,11 +34,6 @@ TEMPLATE_DIR = HERE / "templates"
 SUMMARY_TMPL = TEMPLATE_DIR / "model_summary.tex.tmpl"
 PAPER_SECTIONS = HERE.parents[1] / "paper" / "sections"
 BODY_PLACEHOLDER = "%%BODY%%"
-
-# Superscript that flags a #WSIs count taken from PathoROB rather than the model
-# card. Its footnote prose lives in the summary template; the symbol must agree.
-PATHOROB_WSIS_MARKER = r"$^{\dagger}$"
-
 
 def _s(value: object) -> str:
     """CSV cell as a stripped string; NaN/empty -> ``""``."""
@@ -66,19 +62,16 @@ def _panel_separator(panel: str) -> str:
     return r"\multicolumn{6}{l}{\emph{Slide-level encoders}} \\"
 
 
-def _wsis_tiles_cell(n_wsis: str, n_tiles: str, wsis_source: str) -> str:
-    """Render the ``WSIs / tiles`` cell.
+def _count(value: object) -> str:
+    """Render a count without the metadata's legacy source footnote."""
+    return re.sub(r"\$\^\{\\(?:ast|S|ddagger)\}\$$", "", _s(value))
 
-    When both counts are undisclosed the original tables collapse the cell to a
-    single ``n/d``. A ``#WSIs`` value sourced from PathoROB carries a superscript
-    marker whose footnote (in the template) cites PathoROB.
-    """
-    n_wsis, n_tiles = _s(n_wsis), _s(n_tiles)
-    for token in ("n/d", "n/a"):
-        if n_wsis == token and n_tiles == token:
-            return token
-    if wsis_source == "pathorob":
-        n_wsis = n_wsis + PATHOROB_WSIS_MARKER
+
+def _wsis_tiles_cell(n_wsis: str, n_tiles: str) -> str:
+    """Collapse a uniform missing-value token, otherwise display both counts."""
+    n_wsis, n_tiles = _count(n_wsis), _count(n_tiles)
+    if n_wsis == n_tiles and n_wsis in ("n/d", "n/a"):
+        return n_wsis
     return f"{n_wsis} / {n_tiles}"
 
 
@@ -108,6 +101,14 @@ def _method_cell(row: pd.Series) -> str:
 def _corpus_cell(row: pd.Series) -> str:
     """Make a machine-readable shared-corpus relationship visible in the table."""
     corpus = _s(row["corpus"])
+    counts_and_sources = re.fullmatch(r"\\textbf\{(\d+ public) (\([^{}]+\))\}", corpus)
+    if counts_and_sources:
+        count, sources = counts_and_sources.groups()
+        corpus = (
+            r"\begin{tabular}[t]{@{}l@{}}"
+            rf"\textbf{{{count}}}\\\textbf{{{sources}}}"
+            r"\end{tabular}"
+        )
     if _s(row.get("shared_corpus", "")):
         return f"{corpus} (shared family corpus)"
     return corpus
@@ -117,8 +118,8 @@ def _summary_row(row: pd.Series) -> str:
     cells = [
         _s(row["model"]) + _cite(row),
         _method_cell(row),
-        _s(row["params"]),
-        _wsis_tiles_cell(row["n_wsis"], row["n_tiles"], _s(row["wsis_source"])),
+        _count(row["params"]),
+        _wsis_tiles_cell(row["n_wsis"], row["n_tiles"]),
         _s(row["dim"]),
         _corpus_cell(row),
     ]

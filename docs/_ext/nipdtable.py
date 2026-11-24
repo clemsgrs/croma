@@ -71,10 +71,7 @@ class NipdTable(Directive):
             "     - ``nIPD``",
             "     - Baseline balanced accuracy",
         ]
-        # Ranked on the endpoint, not the pooled area, and matching the explorer's
-        # ordering. The signed area lets an early gain pay for a late collapse, so a curve
-        # ending at chance can outrank one that never moved; the endpoint cannot cancel
-        # with itself. The unranked natural-image control sits last whatever its value.
+        # Match the explorer's endpoint ranking and show the natural-image control last.
         models = sorted(
             cohort["models"],
             key=lambda model: (

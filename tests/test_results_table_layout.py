@@ -107,6 +107,8 @@ def test_the_primary_caption_walks_the_three_groups_in_order(table):
     ]
     assert positions == sorted(positions)
     assert r"$\uparrow$" in caption and r"$\downarrow$" in caption
+    assert "Results for the 2 tile-level pathology foundation models" in caption
+    assert "biological (tumor vs. benign) and confounder (medical centre)" in caption
 
 
 def test_secondary_captions_still_refer_back_to_the_primary(table):
@@ -128,6 +130,19 @@ def test_both_slide_panels_render_the_grouped_header(monkeypatch):
     assert len(headers) == 2
     assert all(r"\multicolumn{5}{c}{Fixed-$k$ pooled ($k{=}k^\star$)}" in h for h in headers)
     assert tex.count(r"Model & Biology$\uparrow$ & Centre & & $k^\star$ & \code{RI}$\uparrow$") == 2
+
+
+def test_slide_caption_specifies_which_accuracy_the_panels_report(monkeypatch):
+    frame = _frame().iloc[:2].assign(k=[3, 9])
+    monkeypatch.setattr(panda_table, "load_frame", lambda _: frame.copy())
+    tex = panda_table.build_float(ROOT)
+
+    assert (
+        r"we selected $k^\star$ by biological balanced accuracy and used it to report both Biology and Centre accuracy"
+        in tex
+    )
+    assert "(b) Pairwise ISUP grade comparisons" in tex
+    assert r"Biology and Centre report mean balanced accuracy across the $15$ class pairs" in tex
 
 
 def test_tile_tables_fit_the_text_block_by_setting_columns_3pt_apart(table):

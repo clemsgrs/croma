@@ -69,25 +69,22 @@ the two above to see it.
 The operating point
 -------------------
 
-This cohort is reported at **k\***, not the tile panel's shared ``median-k``: each encoder
-is evaluated at its own kNN-optimal ``k`` (here spanning ``k`` =
-:results-value:`k_range(pcabiop)`; the per-encoder values are recorded in
-``results/PROVENANCE.json``). With only five encoders, a shared median is dominated by
-panel composition — adding a single encoder to the panel moved the would-be shared ``k``
-from 3 to 9 — so pinning one ``k`` would make every number hostage to who else happens to
-be on the roster. The trade is stated rather than hidden: ``RI`` and ``MaRI`` are
-protocol-dependent, so those two columns are not measured at one shared operating point
-here, while ``CRoMa``, *F*\ (0) and LTM₁₀ are ``k``-free and unaffected.
+For binary cancer detection, we tested every integer ``k`` from 1 to 100. For each
+encoder we selected the value that maximised biological k-NN balanced accuracy and used
+it for both the biological and center accuracies, RI, MaRI and support. The selected
+values span :results-value:`k_range(pcabiop)` (see ``results/PROVENANCE.json``).
+With five slide encoders, the shared median can depend on one or two models, so we
+report each encoder at its own operating point. CRoMa, *F*\ (0) and LTM₁₀ are
+independent of ``k``.
 
 Shortcut susceptibility
 -----------------------
 
 Shortcut susceptibility for the five whole-slide encoders, in domain (ID) and out of
-domain (OOD). Rows are ranked by ``Change at V = 1``, the normalized change at maximum
-confounding, because ``nIPD`` averages over the whole range: an early gain there can pay
-for a late collapse, so a curve ending at chance can outrank one that never moved. Rows
-ending at or below -0.900 are marked ``≈ chance``, where none of the above-chance margin
-survives.
+domain (OOD). Rows are ranked by ``Change at V = 1``, the normalized change at maximum confounding.
+nIPD integrates losses across the full confounding range, so the endpoint can reveal
+a severe loss confined to the final level. Rows ending at or below −0.900 are marked
+``≈ chance``.
 
 Bold marks the leading ranked encoder in each column where higher is better, so a
 column that disagrees with the ranking shows it at a glance. Each caption reports
@@ -99,7 +96,5 @@ the two order the encoders the same way.
 
 .. nipd-table:: pcabiop ood
 
-Read ``MOOZY``'s positive OOD value with care. Its pretraining corpus includes the PANDA
-slides every probe trains on, so the apparent improvement under confounding plausibly
-reflects familiarity with the training data rather than robustness on the held-out PAR
-cohort, which no encoder has seen.
+Interpret MOOZY’s probe results in light of its pretraining on PANDA slides. The
+out-of-domain PAR evaluation uses a separate cohort.

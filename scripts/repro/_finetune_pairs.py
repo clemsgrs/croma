@@ -9,6 +9,7 @@ dropping the macros a sentence cites or rendering numbers from superseded runs.
 
 from __future__ import annotations
 
+import math
 import re
 import sys
 from pathlib import Path
@@ -35,7 +36,7 @@ MACRO_STATS = (
     ("FZero", "f0", 3, True),
     ("Ltm", "ltm", 2, True),
     ("BioBacc", "bio_bacc", 3, False),
-    ("NipdId", "nipd_id", 1, True),
+    ("NipdId", "nipd_id", None, True),
 )
 #: nIPD is printed in percent (its differences in percentage points), as the table prints it.
 MACRO_SCALE = {"nipd_id": 100.0}
@@ -106,17 +107,25 @@ def _require_current_inputs(frame: pd.DataFrame, path: Path, root: Path) -> None
                 )
 
 
-def signed(value: float, decimals: int) -> str:
-    """Signed math literal, ``$+0.18$`` / ``$-0.31$``; a value that rounds to zero is ``$0.00$``."""
-    body = f"{value:+.{decimals}f}"
-    if float(body) == 0.0:
-        body = f"{0.0:.{decimals}f}"
-    return f"${body}$"
+def number(value: float, decimals: int | None) -> str:
+    """Format a table value. For nIPD percentages, keep small nonzero losses visible."""
+    if decimals is None:
+        if value == 0:
+            return "0"
+        decimals = 1 if abs(value) >= 0.05 else max(3, -math.floor(math.log10(abs(value))))
+    return bare_num(value, decimals)
 
 
-def interval(lo: float, hi: float, decimals: int) -> str:
+def signed(value: float, decimals: int | None) -> str:
+    """A signed math literal, with no sign on a value displayed as zero."""
+    body = number(value, decimals)
+    sign = "+" if float(body) > 0 else ""
+    return f"${sign}{body}$"
+
+
+def interval(lo: float, hi: float, decimals: int | None) -> str:
     """Bracketed interval in math mode, ``$[0.15, 0.20]$``."""
-    return f"$[{bare_num(lo, decimals)}, {bare_num(hi, decimals)}]$"
+    return f"$[{number(lo, decimals)}, {number(hi, decimals)}]$"
 
 
 def token(name: str) -> str:

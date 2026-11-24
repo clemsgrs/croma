@@ -1,7 +1,7 @@
 """Per-sample CRoMa ridgelines for the tail analysis.
 
 One figure per benchmark. Each tile figure draws the full encoder roster plus the natural-image
-control; the slide-level PANDA figure draws its four whole-slide encoders and no control:
+control; the slide-level PANDA figure draws its whole-slide encoders and no control:
 
   <camelyon>/studies/plots/pdf/croma_distribution.pdf   fig:croma-distribution        (main text)
   <tcga-4x4>/studies/plots/pdf/croma_distribution.pdf   fig:croma-distribution-tcga4x4 (supp)
@@ -36,7 +36,7 @@ from _distributions import CAMELYON, PANDA, SUPP_BENCHMARKS  # noqa: E402
 
 #: Every benchmark the tail analysis draws: Camelyon in the main text, the two other tile
 #: benchmarks and the slide-level PANDA panel in the supplement. Each tile figure draws the
-#: full roster plus the natural-image control; PANDA has no control, only its four encoders.
+#: full roster plus the natural-image control; PANDA draws only slide encoders.
 BENCHMARKS = (CAMELYON, *SUPP_BENCHMARKS, PANDA)
 
 

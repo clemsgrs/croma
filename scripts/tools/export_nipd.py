@@ -33,17 +33,17 @@ sys.path.insert(0, str(LOCAL_SRC))
 from croma import nipd  # noqa: E402
 
 
-SCHEMA_VERSION = 2
-STUDY_REVISION = "expanded-panel-paired-repeat-v1"
-PUBLICATION_DATE = "2026-11-23"
+SCHEMA_VERSION = 3
+STUDY_REVISION = "loss-only-paired-repeat-v1"
+PUBLICATION_DATE = "2026-11-24"
 # Historical producer identity, updated only when deliberately republishing the study
 # alongside its date/revision/source hashes. A package release does not republish it.
 PUBLICATION_CROMA_VERSION = "1.0.1"
 MAX_PAYLOAD_BYTES = 300_000
 CONTROL = "DINOv2-B"
 EXPECTED_SOURCE_PROVENANCE = {
-    "apd_summary_sha256": "794cb343ac4fb2558419caeaa2a4906f79e070a997ffe715641beb63ad039848",
-    "joined_summary_sha256": "827268abc4725766cb97aabbf287f8b1eefca1b19c4b075427558c695440dfe8",
+    "apd_summary_sha256": "ab5363269e13d0b97603e87c16846e0e831bfd69d529583bc3a20b4e37497ad8",
+    "joined_summary_sha256": "a71a3a589636b6dc4edd96c4a8bd282d6a153ae770e77fe56086d4a58b966c84",
     "raw_cells_sha256": "12c055f69e7345c2117a9afdbf285b1acaf36dda0502b2163a2565d8257ad937",
 }
 FLOAT_DIGITS = 10
@@ -298,6 +298,8 @@ def validate_payload(payload: dict) -> None:
                     raise ValueError(
                         f"{config.slug}/{model['model']}/{regime} values must be finite"
                     )
+                if float(result["nipd"]) > 0.0:
+                    raise ValueError(f"{config.slug}/{model['model']}/{regime} nIPD exceeds zero")
                 if float(result["baseline_balanced_accuracy"]) <= chance:
                     raise ValueError(
                         f"{config.slug}/{model['model']}/{regime} baseline/domain drift"
@@ -322,10 +324,10 @@ def validate_payload(payload: dict) -> None:
                 # removed ``np.trapz``, while ``np.trapezoid`` is absent from the
                 # oldest supported NumPy; this expression works across both and keeps
                 # validation independent of the reduction call that produced nIPD.
-                trajectory = np.asarray(arrays[0], dtype=float)
+                loss_curve = np.minimum(np.asarray(arrays[0], dtype=float), 0.0)
                 coordinates = np.asarray(v, dtype=float)
                 area = float(
-                    np.sum(np.diff(coordinates) * (trajectory[:-1] + trajectory[1:]) / 2.0)
+                    np.sum(np.diff(coordinates) * (loss_curve[:-1] + loss_curve[1:]) / 2.0)
                 )
                 if not math.isclose(area, float(result["nipd"]), abs_tol=2e-9):
                     raise ValueError(

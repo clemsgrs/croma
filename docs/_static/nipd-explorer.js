@@ -40,7 +40,7 @@
   }
 
   function createView(payload) {
-    if (!payload || payload.schema_version !== 2 || !Array.isArray(payload.cohorts)) {
+    if (!payload || payload.schema_version !== 3 || !Array.isArray(payload.cohorts)) {
       throw new Error("Unsupported nIPD publication payload");
     }
     var cohorts = payload.cohorts;
@@ -191,9 +191,7 @@
     };
   }
 
-  /* Ranked on the endpoint rather than the pooled area. The signed area lets an early
-     gain pay for a late collapse, so a curve that ends at chance can outrank one that
-     never moved; the endpoint cannot cancel with itself. */
+  // Order rows by the final sampled change; nIPD summarizes losses over the whole sweep.
   function pathologyModels(cohort, regime) {
     return cohort.models
       .filter(function (model) { return model.ranked && !model.is_control; })
@@ -220,42 +218,9 @@
     return [low - padding, high + padding];
   }
 
-  function splitSignSegments(xs, ys) {
+  function lossCurvePoints(xs, ys) {
     if (xs.length !== ys.length || xs.length < 2) throw new Error("Trajectory shape mismatch");
-    var segments = [];
-    var current = null;
-
-    function append(sign, point) {
-      if (!current || current.sign !== sign) {
-        current = { sign: sign, points: [] };
-        segments.push(current);
-      }
-      var previous = current.points[current.points.length - 1];
-      if (!previous || previous[0] !== point[0] || previous[1] !== point[1]) {
-        current.points.push(point);
-      }
-    }
-
-    for (var index = 0; index < xs.length - 1; index += 1) {
-      var left = [xs[index], ys[index]];
-      var right = [xs[index + 1], ys[index + 1]];
-      var leftSign = left[1] < 0 ? "negative" : "positive";
-      var rightSign = right[1] < 0 ? "negative" : "positive";
-      if (left[1] !== 0 && right[1] !== 0 && leftSign !== rightSign) {
-        var fraction = -left[1] / (right[1] - left[1]);
-        var crossing = [left[0] + fraction * (right[0] - left[0]), 0];
-        append(leftSign, left);
-        append(leftSign, crossing);
-        current = null;
-        append(rightSign, crossing);
-        append(rightSign, right);
-      } else {
-        var sign = left[1] === 0 ? rightSign : leftSign;
-        append(sign, left);
-        append(sign, right);
-      }
-    }
-    return segments.filter(function (segment) { return segment.points.length > 1; });
+    return xs.map(function (v, index) { return [v, Math.min(ys[index], 0)]; });
   }
 
   function boot(document) {
@@ -330,7 +295,7 @@
     mount.appendChild(overviewHeading);
     var direction = htmlEl("p", "croma-nipd-direction");
     direction.innerHTML = "<span aria-hidden=\"true\">←</span> more degradation · " +
-      "zero net change · <strong>less degradation</strong> <span aria-hidden=\"true\">→</span>";
+      "<strong>less degradation (zero means no loss)</strong> <span aria-hidden=\"true\">→</span>";
     mount.appendChild(direction);
     mount.appendChild(renderOverview(state, function (name) {
       view.select(name);
@@ -518,20 +483,18 @@
     var rows = state.pathology.concat(state.control);
     var values = rows.map(function (model) { return model.regimes[state.regime].nipd; }).concat([0]);
     var low = Math.min.apply(null, values);
-    var high = Math.max.apply(null, values);
-    var padding = Math.max((high - low) * 0.08, 0.01);
-    low -= padding;
-    high += padding;
+    // nIPD reaches its maximum at zero.
+    low -= Math.max(-low * 0.08, 0.01);
     var controlGap = state.control.length ? 24 : 0;
     var height = 64 + rows.length * OVERVIEW_ROW + controlGap;
     var svg = svgEl("svg", {
       class: "croma-nipd-overview",
       viewBox: "0 0 " + OVERVIEW_WIDTH + " " + height,
       role: "group",
-      "aria-label": "Pathology encoders ordered from higher to lower nIPD, with the normalized " +
-        "change at V = 1 beside it; natural-image control separated",
+      "aria-label": "Pathology encoders ordered by normalized change at V = 1, " +
+        "with nIPD shown for each encoder. The natural-image control appears separately.",
     });
-    var x = linear(low, high, OVERVIEW_LEFT, OVERVIEW_WIDTH - OVERVIEW_RIGHT);
+    var x = linear(low, 0, OVERVIEW_LEFT, OVERVIEW_WIDTH - OVERVIEW_RIGHT);
     var zero = svgEl("line", {
       x1: x(0), x2: x(0), y1: 28, y2: height - 20, class: "croma-nipd-zero",
     });
@@ -575,8 +538,7 @@
       svg.appendChild(group);
     });
     svg.appendChild(svgText(OVERVIEW_LEFT, height - 4, percent(low), "croma-nipd-axis-label"));
-    svg.appendChild(svgText(x(0), height - 4, "0", "croma-nipd-axis-label is-middle"));
-    svg.appendChild(svgText(OVERVIEW_WIDTH - OVERVIEW_RIGHT, height - 4, percent(high), "croma-nipd-axis-label is-end"));
+    svg.appendChild(svgText(x(0), height - 4, "0", "croma-nipd-axis-label is-end"));
     var scroll = htmlEl("div", "croma-nipd-overview-scroll");
     scroll.appendChild(svg);
     return scroll;
@@ -614,7 +576,7 @@
     description.id = descriptionId;
     description.textContent = "Active and optional comparison normalized performance-change trajectories " +
       "with real sampled Cramér's V points, paired-repeat 95% t-intervals, and a zero reference. " +
-      "Only the active model has patterned positive and negative signed-area lobes; the comparison " +
+      "Only the active model has its integrated loss shaded; the comparison " +
       "uses a dashed line and square points." +
       (state.yDomain[0] <= -1
         ? " A chance-level reference at minus 100% marks the loss of the whole above-chance margin."
@@ -625,10 +587,10 @@
     section.appendChild(renderTrajectory(state, view, inspection, descriptionId));
     updateInspection(inspection, view.inspectPoint(0));
     section.appendChild(inspection);
-    var interpretation = htmlEl("p", "croma-nipd-cancellation");
-    interpretation.textContent = "This signed area reports net change over the whole range. Positive and " +
-      "negative lobes can cancel, and a model can hold a moderate area yet still fall to chance at V = 1, " +
-      "so read the area together with the normalized change at V = 1 above.";
+    var interpretation = htmlEl("p", "croma-nipd-interpretation");
+    interpretation.textContent = "The line shows the measured changes. To calculate nIPD, gains " +
+      "at sampled levels are set to zero before the points are joined. The hatched area " +
+      "shows the resulting integrated loss for the active model.";
     section.appendChild(interpretation);
     return section;
   }
@@ -677,16 +639,14 @@
       "aria-label": state.selected.model + " " + state.regime.toUpperCase() + " sampled trajectory",
     });
     var defs = svgEl("defs");
-    defs.innerHTML = '<pattern id="nipd-positive" width="8" height="8" patternUnits="userSpaceOnUse">' +
-      '<path d="M0 8L8 0" class="croma-nipd-pattern-line"/></pattern>' +
-      '<pattern id="nipd-negative" width="6" height="6" patternUnits="userSpaceOnUse">' +
+    defs.innerHTML = '<pattern id="nipd-negative" width="6" height="6" patternUnits="userSpaceOnUse">' +
       '<path d="M0 3H6" class="croma-nipd-pattern-line"/></pattern>';
     svg.appendChild(defs);
     svg.appendChild(svgEl("line", {
       x1: DETAIL_PAD.left, x2: DETAIL_WIDTH - DETAIL_PAD.right,
       y1: y(0), y2: y(0), class: "croma-nipd-zero",
     }));
-    // Absolute floor: a curve reaching it has lost the whole above-chance margin.
+    // At chance, the whole above-chance margin has been lost.
     if (yDomain[0] <= -1) {
       svg.appendChild(svgEl("line", {
         x1: DETAIL_PAD.left, x2: DETAIL_WIDTH - DETAIL_PAD.right,
@@ -729,17 +689,16 @@
         "aria-label": selectedModel.model + " paired-repeat 95% t-interval",
       }));
       if (shadeArea) {
-        splitSignSegments(xs, result.mean_normalized_trajectory).forEach(function (segment) {
-          var first = segment.points[0];
-          var last = segment.points[segment.points.length - 1];
-          var points = [[first[0], 0]].concat(segment.points, [[last[0], 0]]);
+        var loss = lossCurvePoints(xs, result.mean_normalized_trajectory);
+        if (loss.some(function (point) { return point[1] < 0; })) {
+          var points = [[xs[0], 0]].concat(loss, [[xs[xs.length - 1], 0]]);
           group.appendChild(svgEl("polygon", {
             points: points.map(function (point) { return x(point[0]) + "," + y(point[1]); }).join(" "),
-            class: "croma-nipd-lobe is-" + segment.sign,
-            fill: "url(#nipd-" + segment.sign + ")",
-            "aria-label": segment.sign + " signed-area lobe for active model " + selectedModel.model,
+            class: "croma-nipd-lobe is-negative",
+            fill: "url(#nipd-negative)",
+            "aria-label": "Integrated loss for active model " + selectedModel.model,
           }));
-        });
+        }
       }
       group.appendChild(svgEl("polyline", {
         points: result.mean_normalized_trajectory.map(function (value, index) {
@@ -851,6 +810,6 @@
     contextYDomain: contextYDomain,
     createView: createView,
     shortName: shortName,
-    splitSignSegments: splitSignSegments,
+    lossCurvePoints: lossCurvePoints,
   };
 });

@@ -167,6 +167,7 @@ exclude = [
   "/tests/test_split_schedule_table.py",
   "/tests/test_sample_shortcut_floats.py",
   "/tests/test_typed_neighbour_table.py",
+  "/tests/test_tail_fraction_correlations.py",
   "/tests/test_dataset_montage.py",
   "/tests/test_scale_scatter.py",
   "/tests/test_mari_vs_ri_tables.py",

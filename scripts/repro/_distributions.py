@@ -45,7 +45,7 @@ CAMELYON = by_prefix("Camelyon")
 SUPP_BENCHMARKS: tuple[ResultsTable, ...] = (by_prefix("TcgaFourByFour"), by_prefix("Tolkach"))
 
 #: The slide-level PANDA run backs the supplement's fourth ridgeline (supp:panda). Its panel
-#: is four whole-slide encoders and no natural-image control, so it is kept apart from the tile
+#: contains whole-slide encoders only, so it is kept apart from the tile
 #: SUPP_BENCHMARKS rather than folded into them.
 PANDA = by_prefix("Panda")
 

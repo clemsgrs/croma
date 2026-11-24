@@ -1,10 +1,9 @@
 Datasets
 ========
 
-The cohorts ``croma`` is evaluated on. Each pairs a biological label with a non-biological
-confounder -- the medical center that contributed the sample -- so that a representation
-organizing by center rather than by biology is visible as a low score rather than hidden
-inside an accuracy number.
+The four main benchmarks pair a biological class label with the acquisition center
+as the confounder label. Samples from the same center can share both technical and
+biological characteristics.
 
 .. list-table::
    :header-rows: 1
@@ -49,10 +48,9 @@ What the confounder looks like
 .. figure:: _static/figures/dataset_montage.jpg
    :alt: Example tiles per benchmark, arranged by biological class and by center.
 
-   The same biological class, rendered differently by different centers. Rows are
-   biological classes, columns are acquisition centers. Staining, contrast and texture
-   shift with the center while the biology does not -- the variation the metrics are
-   designed to catch.
+   Each benchmark block shows two biological classes. Within each row, the samples
+   share a class label, and each column represents a different acquisition center.
+   The PCaBiop examples are representative tiles from biopsy slides.
 
 Balance
 -------

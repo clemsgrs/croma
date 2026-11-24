@@ -45,7 +45,7 @@ def _synthetic_df() -> pd.DataFrame:
     """A minimal 2-panel metadata frame covering the summary render branches.
 
     - ``TcgaModel`` / ``CardModel`` : fully rendered tile rows.
-    - ``MarkedModel`` : #WSIs sourced from PathoROB (superscript marker); tiles n/d.
+    - ``MarkedModel`` : #WSIs sourced from PathoROB; tiles n/d.
     - ``SlideModel``  : slide panel, both counts undisclosed (n/d collapse).
     """
     rows = [
@@ -106,41 +106,34 @@ def test_summary_body_renders_both_panels_and_rows() -> None:
 
     assert r"\multicolumn{6}{l}{\emph{Tile-level encoders}} \\" in body
     assert r"\multicolumn{6}{l}{\emph{Slide-level encoders}} \\" in body
-    # A fully rendered, non-marked row.
+    # A fully rendered, card-sourced row.
     assert r"CardModel & DINOv2 & $307$M & $100$k / $100$M & $1024$ & Vendor (prop.) \\" in body
     # Both counts undisclosed collapse to a single "n/d".
     assert r"SlideModel & grid ViT & n/d & n/d & $768$ & Vendor (prop.) \\" in body
 
 
-def test_summary_body_marks_pathorob_sourced_wsis() -> None:
-    body = gmt.summary_table_body(_synthetic_df())
+def test_overview_renders_counts_without_provenance_footnote_markers() -> None:
+    frame = _synthetic_df()
+    frame.loc[frame["model"] == "MarkedModel", "params"] = r"$50$M$^{\ast}$"
+    frame.loc[frame["model"] == "MarkedModel", "n_wsis"] = r"$350$k$^{\ddagger}$"
 
-    assert gmt.PATHOROB_WSIS_MARKER == r"$^{\dagger}$"
-    # The PathoROB-sourced #WSIs carries the marker; the tiles side stays n/d.
-    assert r"MarkedModel & vision--language & n/d & $350$k$^{\dagger}$ / n/d & $768$" in body
-    # The card-sourced model's #WSIs must NOT carry the marker.
-    card_row = r"CardModel & DINOv2 & $307$M & $100$k / $100$M & $1024$ & Vendor (prop.) \\"
-    assert card_row in body
-    assert gmt.PATHOROB_WSIS_MARKER not in card_row
+    body = gmt.summary_table_body(frame)
+    assert r"MarkedModel & vision--language & $50$M & $350$k / n/d" in body
 
 
-# --------------------------------------------------------------------------
-# Fidelity checks against the committed single-source metadata.
-# --------------------------------------------------------------------------
-def test_committed_metadata_sources_every_wsi_count_from_a_model_card() -> None:
-    """No row is PathoROB-sourced any more, so the rendered summary carries no dagger.
+def test_long_public_corpus_description_wraps_before_its_datasets() -> None:
+    frame = _synthetic_df()
+    frame.loc[frame["model"] == "SlideModel", "corpus"] = r"\textbf{42 public (TCGA, PANDA)}"
 
-    CONCH, CONCHv1.5, UNI2-h and Prost40M used to take their #WSIs from PathoROB and mark it
-    with a superscript dagger. Their counts now come from the model cards, which also disclose
-    parameter and tile counts PathoROB does not, so the marker has no users left. The mechanism
-    itself stays -- a future row may need it -- and is covered against a synthetic row by
-    test_summary_body_marks_pathorob_sourced_wsis above.
-    """
-    df = gmt.load_metadata()
-    assert set(df.loc[df["wsis_source"] == "pathorob", "model"]) == set()
+    body = gmt.summary_table_body(frame)
+    assert (
+        r"\begin{tabular}[t]{@{}l@{}}\textbf{42 public}\\\textbf{(TCGA, PANDA)}\end{tabular}"
+        in body
+    )
 
-    body = gmt.summary_table_body(df)
-    assert gmt.PATHOROB_WSIS_MARKER not in body
+
+def test_committed_counts_include_the_disclosed_training_data() -> None:
+    body = gmt.summary_table_body(gmt.load_metadata())
     assert r"UNI2-h~\cite{uni2h} & DINOv2 & $681$M & ${>}350$k / ${>}200$M" in body
     assert r"CONCHv1.5~\cite{titan} & vision--language & $307$M & $100$k / $100$M" in body
     assert r"CONCH~\cite{conch} & vision--language & $86$M & $21.4$k / $16$M" in body
@@ -243,10 +236,10 @@ def test_not_applicable_cells_survive_the_csv_round_trip() -> None:
 
 
 def test_wsis_tiles_cell_collapses_a_uniform_missing_token() -> None:
-    assert gmt._wsis_tiles_cell("n/a", "n/a", "card") == "n/a"
-    assert gmt._wsis_tiles_cell("n/d", "n/d", "card") == "n/d"
+    assert gmt._wsis_tiles_cell("n/a", "n/a") == "n/a"
+    assert gmt._wsis_tiles_cell("n/d", "n/d") == "n/d"
     # A half-known cell keeps both halves rather than collapsing.
-    assert gmt._wsis_tiles_cell("$350$k", "n/d", "card") == "$350$k / n/d"
+    assert gmt._wsis_tiles_cell("$350$k", "n/d") == "$350$k / n/d"
 
 
 def test_the_summary_prints_mettle_under_its_full_published_name() -> None:

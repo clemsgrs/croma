@@ -118,10 +118,12 @@ def _table_caption(apd: Apd, design: str) -> str:
         r"undergo less degradation. The in-domain arm holds acquisition groups fixed and is "
         r"the primary mechanistic endpoint; the out-of-domain arm uses unseen acquisition "
         r"groups and additionally reflects distribution shift. Each tile benchmark contains "
-        r"\ApdNModels{} ranked tile encoders. Under \code{nIPD}$_\mathrm{ID}$, "
-        r"$\mcode{LTM}_{10}$ and $F(0)$ are correlated plainly and given median \code{CRoMa} "
-        r"(partial Spearman, Freedman--Lane permutation $p$); $F(0)$ is lower-is-better, so "
-        r"its expected sign is negative. The final two rows repeat the \code{CRoMa} analysis "
+        r"\ApdNModels{} ranked tile encoders. For each tail measure ($\mcode{LTM}_{10}$ "
+        r"and $F(0)$), we report its Spearman correlation with in-domain \code{nIPD} and its "
+        r"partial Spearman correlation after adjustment for median \code{CRoMa}. We used "
+        r"Freedman--Lane permutation tests for the partial correlations. Higher $F(0)$ indicates "
+        r"a larger fraction of non-positive margins, so its expected correlation with \code{nIPD} "
+        r"is negative. The final two rows repeat the \code{CRoMa} analysis "
         r"using PathoROB's original \code{APD} for continuity. "
         rf"Brackets are {intervals}, from ${n_boot}$ replicates that resample the encoders "
         r"of this table with replacement, so they are over this panel of encoders. $q$ is the "
@@ -164,16 +166,25 @@ def build_table(apd: Apd, design: str = CI_DESIGN) -> str:
 
 
 def _caption(dataset_label: str, n: int, *, supplementary: bool) -> str:
-    title = (
-        rf"\textbf{{\code{{CRoMa}} and \code{{nIPD}} on {dataset_label}.}}"
-        if supplementary
-        else rf"\textbf{{\code{{CRoMa}} against \code{{nIPD}} on {dataset_label}.}}"
-    )
+    if not supplementary:
+        from apd_experiment import CANONICAL_ITERATIONS
+
+        return (
+            rf"\caption{{\textbf{{Higher \code{{CRoMa}} is associated with smaller shortcut-induced "
+            rf"performance losses on {dataset_label}.}} Columns show in-domain evaluation (left, "
+            r"acquisition groups held fixed) and out-of-domain evaluation (right, unseen acquisition "
+            r"groups). \textbf{Top row:} normalised performance change $g(V)$ relative to the "
+            r"above-chance performance at $V=0$ as the training-set confounder--biology correlation "
+            rf"increases to $V{{=}}1$. Curves show the ${n}$ tile encoders and error bars are 95\% "
+            rf"$t$-intervals over {CANONICAL_ITERATIONS} repeated training runs. The dashed line marks "
+            r"$g(V)=0$. \textbf{Bottom row:} median \code{CRoMa}$(m{=}5)$ versus \code{nIPD}, one point "
+            r"per encoder. For \code{nIPD}, positive changes at sampled levels are set to zero before "
+            r"integration. Dashed lines mark $\mcode{CRoMa}=0$ and $\mcode{nIPD}=0$.}"
+        )
+    title = rf"\textbf{{\code{{CRoMa}} and \code{{nIPD}} on {dataset_label}.}}"
     tail = (
         r" Corresponding \code{RI}, \code{MaRI}, and legacy \code{APD} correlations are "
         r"reported in Table~\ref{tab:apd-correlation}."
-        if supplementary
-        else ""
     )
     return (
         rf"\caption{{{title} Columns show in-domain evaluation (left, acquisition groups "
@@ -183,7 +194,7 @@ def _caption(dataset_label: str, n: int, *, supplementary: bool) -> str:
         rf"confounder--biology correlation increases to $V{{=}}1$; curves "
         rf"denote the ${n}$ tile encoders and error bars are 95\% $t$-intervals over "
         r"repeated training runs. \textbf{Bottom row:} pooled \code{CRoMa}$(m{=}5)$ versus "
-        r"\code{nIPD}, one point per encoder. Dashed lines mark $g(V)=0$, "
+        r"\code{nIPD}, one point per encoder. For \code{nIPD}, positive changes at sampled levels are set to zero before integration. Dashed lines mark $g(V)=0$, "
         r"$\mcode{CRoMa}=0$ and "
         rf"$\mcode{{nIPD}}=0$.{tail}}}"
     )
@@ -226,7 +237,7 @@ def build_pcabiop_figure() -> str:
                 r"confounder--biology correlation increases to $V=1$; curves denote the "
                 r"five whole-slide encoders and error bars are 95\% $t$-intervals over "
                 r"repeated training runs. \textbf{Bottom row:} pooled "
-                r"\code{CRoMa}$(m{=}5)$ versus \code{nIPD}, one point per encoder. Dashed "
+                r"\code{CRoMa}$(m{=}5)$ versus \code{nIPD}, one point per encoder. For \code{nIPD}, positive changes at sampled levels are set to zero before integration. Dashed "
                 r"lines mark $g(V)=0$, $\mcode{CRoMa}=0$ and $\mcode{nIPD}=0$. Spearman "
                 r"coefficients are descriptive because the panel contains only $n=5$ "
                 r"encoders.}"

@@ -302,17 +302,9 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
     ranked, control = split_panel(df)
     m = int(CROMA_HEADLINE_M)
     confounder = str(df["confounder_display_name"].iloc[0]).lower().replace("center", "centre")
-    # The four manuscript captions drifted apart under hand editing and disagree on three
-    # independent wordings: the article before the model count ("for 20" vs "for the 20",
-    # split 2-2), "ordered by median CRoMa" vs "ordered by CRoMa" (3-1), and whether the
-    # control clause ends "separately" or "separately beneath" (3-1). No single rule emits
-    # all four, so this one takes the majority on each axis. That is deliberately not the
-    # most precise wording -- "beneath" says something true that "separately" leaves out --
-    # but it is the wording that reproduces the most of the paper unchanged: TCGA-4x4 and
-    # Tolkach come out byte-identical, Camelyon differs by one article, TCGA-2x2 by three
-    # words. Prefer a variant? Change it here and all four tables follow.
+    result_label = "Results" if entry.primary else "Pooled results"
     head = (
-        rf"\textbf{{Representation robustness on {entry.short_name}.}} Pooled results for "
+        rf"\textbf{{Representation robustness on {entry.short_name}.}} {result_label} for "
         rf"the {len(ranked)} {entry.model_type} pathology foundation models, ordered by "
         rf"median \code{{CRoMa}} ($m{{=}}{m}$){_control_clause(control)}. "
         rf"{_operating_point(df, entry.protocol)}"
@@ -321,16 +313,15 @@ def build_caption(entry: ResultsTable, df: pd.DataFrame, exposed: set[str], with
     # every other results table refers back to it rather than restating them.
     if entry.primary:
         cols = (
-            r" Columns fall into three groups. \emph{$k$-NN decodability}: biological (Biology) "
-            rf"and confounder (Centre; confounder: {confounder}) $k$-NN balanced accuracy. "
+            r" Columns fall into three groups. \emph{$k$-NN decodability}: biological (tumor vs. benign) "
+            rf"and confounder ({confounder}) $k$-NN balanced accuracy. "
             r"\emph{Fixed-$k$ pooled} scores at the operating point: \code{RI} and \code{MaRI}; "
             r"$\Delta{=}\code{MaRI}-\code{RI}$; and support, the fraction of samples effectively "
             r"contributing to \code{RI}/\code{MaRI}. "
             rf"\emph{{Per-sample \code{{CRoMa}}}} ($m{{=}}{m}$): the median; $F(0)$, the fraction "
             r"with $\mcode{CRoMa}\le0$; and $\mcode{LTM}_{10}$, the mean of the lowest decile. "
             r"Arrows give the favourable direction of each score ($\uparrow$ higher is better, "
-            r"$\downarrow$ lower is better); bold denotes the best value in each score column "
-            r"(Centre and $\Delta$ are diagnostics)."
+            r"$\downarrow$ lower is better); bold denotes the best value in each score column."
         )
     else:
         cols = (

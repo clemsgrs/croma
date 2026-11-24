@@ -20,9 +20,8 @@ RI was introduced in the [PathoROB](https://arxiv.org/abs/2507.17845) study. `cr
 
 For downstream shortcut-susceptibility experiments, `croma` also provides the
 confounder-biased probe protocol, PathoROB's APD reduction, and normalized integrated
-performance degradation (nIPD). nIPD expresses degradation relative to the
-above-chance baseline performance available to lose and integrates it over Cramér's
-V. See the [downstream API](https://clemsgrs.github.io/croma/api.html#downstream-reductions).
+performance degradation (nIPD). nIPD expresses losses relative to the above-chance baseline, sets gains at sampled
+levels to zero, and integrates the resulting curve over Cramér's V. See the [downstream API](https://clemsgrs.github.io/croma/api.html#downstream-reductions).
 
 📖 **[Documentation](https://clemsgrs.github.io/croma/)**
 

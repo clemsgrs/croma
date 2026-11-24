@@ -31,8 +31,8 @@ def apd(accuracies: ArrayLike) -> float:
 
     Note that the ratio is taken per replicate and averaged afterwards, preserving
     PathoROB's published reduction. :func:`croma.nipd` is a separate estimand: it
-    averages repeats first, normalizes by above-chance baseline skill, and integrates
-    over Cramér's V.
+    averages repeats first, normalizes changes by above-chance baseline skill,
+    sets gains to zero, and integrates over Cramér's V.
 
     Args:
         accuracies: ``(n_splits, n_iterations)`` balanced accuracies, row ``0`` the

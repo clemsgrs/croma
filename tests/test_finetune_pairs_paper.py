@@ -413,6 +413,29 @@ class TestTable:
         assert ci[1:3] == ["$[0.15, 0.20]$", "$[-0.355, -0.272]$"]
         assert ci[4:7] == ["", "$[3.9, 10.6]$", "$[-1.1, 0.1]$"]
 
+    def test_tiny_nipd_change_is_distinct_from_zero_in_table_and_macros(self):
+        frame = _study()
+        mask = (frame["finetune"] == "Robust-A") & (frame["benchmark"] == "pathorob-camelyon")
+        columns = [
+            "parent_nipd_id",
+            "finetune_nipd_id",
+            "delta_nipd_id",
+            "delta_nipd_id_lo",
+            "delta_nipd_id_hi",
+        ]
+        frame.loc[mask, columns] = [-0.00032, 0.0, 0.00032, 0.0, 0.00049]
+
+        rows = _block(_render(frame), "Robust-A").splitlines()
+        i = next(i for i, row in enumerate(rows) if row.startswith("Camelyon"))
+        assert [row.split(" & ")[5] for row in rows[i : i + 3]] == [
+            r"$-0.032 \to 0$",
+            "$+0.032$",
+            "$[0, 0.049]$",
+        ]
+        macros = basis.macro_lines(frame)
+        assert r"\newcommand{\FineTuneRobustACamelyonNipdIdDelta}{$+0.032$}" in macros
+        assert r"\newcommand{\FineTuneRobustACamelyonNipdIdDeltaCi}{$[0, 0.049]$}" in macros
+
     def test_nipd_is_printed_in_percent_and_says_so(self):
         tex = _render()
         rows = _block(tex, "Robust-A").splitlines()
@@ -496,19 +519,12 @@ class TestDisclosureCaption:
 
 
 class TestMarkers:
-    def test_a_benchmark_selected_finetune_carries_the_double_dagger_and_its_legend(self):
+    def test_pair_labels_and_notes_do_not_publish_benchmark_selection(self):
         tex = _render()
 
-        assert r"Robust-B$^{\ddagger}$" in _block(tex, "Robust-B")
-        assert r"\ddagger" not in _block(tex, "Robust-A")
-        assert "PathoROB" in _caption(tex) and "checkpoint selection" in _caption(tex)
-
-    def test_an_undocumented_kind_of_benchmark_selection_fails(self):
-        metadata = _metadata()
-        metadata.loc[metadata["model"] == "Robust-B", "benchmark_selection"] = "other-benchmark"
-
-        with pytest.raises(CaptionClaimError, match="other-benchmark"):
-            _render(metadata=metadata)
+        assert r"Robust-B}" in _block(tex, "Robust-B")
+        assert r"\ddagger" not in tex
+        assert "checkpoint selection" not in _caption(tex)
 
     def test_a_cohort_in_the_pairs_pretraining_provenance_is_daggered_and_named(self):
         metadata = _metadata()

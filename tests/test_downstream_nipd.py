@@ -99,3 +99,19 @@ def test_nipd_requires_mean_baseline_skill_above_chance(baseline: list[float]) -
 
     with pytest.raises(ValueError, match="above chance"):
         nipd(accuracies, cramers_v=[0.0, 1.0], chance=0.5)
+
+
+def test_nipd_clips_gains_at_each_sampled_level_before_integrating() -> None:
+    accuracies = [[0.70], [0.65], [0.70], [0.75], [0.70]]
+
+    assert nipd(accuracies, [0, 0.25, 0.50, 0.75, 1.0], 0.50) == pytest.approx(-0.0625)
+
+
+def test_nipd_clips_only_after_averaging_replicates() -> None:
+    accuracies = [[0.75, 0.75], [0.65, 0.95]]
+
+    assert nipd(accuracies, [0, 1], 0.50) == 0.0
+
+
+def test_nipd_retains_losses_below_chance() -> None:
+    assert nipd([[0.75], [0.25]], [0, 1], 0.50) == pytest.approx(-1.0)

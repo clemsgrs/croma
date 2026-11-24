@@ -58,7 +58,7 @@ SS_SHELL_SUMMARY = (
 SS_POCKET_K = 10  # reference neighbourhood for the prevalence quoted in prose
 
 # Downstream-validation scalars. Correlations are reported per benchmark only; PCaBiop
-# is descriptive because it contains four slide encoders.
+# is descriptive because its slide-encoder panel is small.
 APD_CORRELATION_CSV = "output/studies/apd/apd_correlation.csv"
 APD_STUDY_CSV = "output/studies/apd/apd.csv"
 APD_TARGET_MACRO = {

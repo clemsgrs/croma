@@ -66,3 +66,46 @@ def load_embedding(path, dtype=np.float64, *, normalize: bool = True) -> np.ndar
 def list_models(emb_dir: Path) -> list[str]:
     """Sorted model names (``*.npy`` stems) in an embeddings directory."""
     return sorted(p.stem for p in emb_dir.glob("*.npy"))
+
+
+def first_typed_neighbours(distances, start, labels, sites, slides):
+    """Nearest SO/OS ranks and distances for a block of consecutive anchor rows.
+
+    Count eligible candidates in (cosine distance, manifest index) order. An
+    absent type has rank -1 and distance NaN. Also count SS neighbours before
+    the first typed neighbour for the neighbourhood composition diagnostic.
+    """
+    block = slice(start, start + len(distances))
+    rows = np.arange(len(distances))
+    indices = np.arange(len(labels))
+    same_label = labels[block, None] == labels
+    same_site = sites[block, None] == sites
+    eligible = slides[block, None] != slides
+
+    def before(distance, index):
+        return (distances < distance[:, None]) | (
+            (distances == distance[:, None]) & (indices < index[:, None])
+        )
+
+    def nearest(matches):
+        index = np.where(matches, distances, np.inf).argmin(axis=1)
+        has_match = matches[rows, index]
+        distance = np.where(has_match, distances[rows, index], np.inf)
+        rank = 1 + np.count_nonzero(eligible & before(distance, index), axis=1)
+        return index, distance, np.where(has_match, rank, -1)
+
+    so_idx, so_dist, so_rank = nearest(eligible & same_label & ~same_site)
+    os_idx, os_dist, os_rank = nearest(eligible & ~same_label & same_site)
+    so_first = (so_dist < os_dist) | ((so_dist == os_dist) & (so_idx < os_idx))
+    first_idx = np.where(so_first, so_idx, os_idx)
+    first_dist = np.minimum(so_dist, os_dist)
+    pre_ss = np.count_nonzero(
+        eligible & same_label & same_site & before(first_dist, first_idx), axis=1
+    )
+    return (
+        so_rank,
+        os_rank,
+        np.where(so_rank > 0, so_dist, np.nan),
+        np.where(os_rank > 0, os_dist, np.nan),
+        pre_ss,
+    )

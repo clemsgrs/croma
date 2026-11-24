@@ -45,7 +45,7 @@ function associationMetadata({
 
 function publicationFixture() {
   return {
-    schema_version: 2,
+    schema_version: 3,
     provenance: { interval: "paired-repeat Student-t 95%" },
     cohorts: [
       {
@@ -61,7 +61,7 @@ function publicationFixture() {
       {
         slug: "tcga-4x4", label: "TCGA-4×4", chance: 0.25, cramers_v: [0, 0.5, 1],
         association: associationMetadata(),
-        models: [model("Atlas", -0.4, -0.35), model("Cygnus", 0.1, 0.05)],
+        models: [model("Atlas", -0.4, -0.35), model("Cygnus", 0, 0)],
       },
       {
         slug: "tolkach-esca", label: "Tolkach-ESCA", chance: 1 / 6,
@@ -72,7 +72,7 @@ function publicationFixture() {
       {
         slug: "pcabiop", label: "PCaBiop", chance: 0.5, cramers_v: [0, 0.5, 1],
         association: associationMetadata({ descriptive: true }),
-        models: [model("Prism", -0.05, 0.05), model("Quartz", -0.2, -0.1)],
+        models: [model("Prism", -0.05, 0), model("Quartz", -0.2, -0.1)],
       },
     ],
   };
@@ -145,14 +145,14 @@ test("real publication association statistics match the manuscript analysis", ()
   const payload = require(path.join(root, "results/nipd.json"));
   const view = explorer.createView(payload);
   const expected = {
-    "camelyon/id": [27, 0.9505494505, 0.3070911931],
-    "camelyon/ood": [27, 0.7515262515, 0.1141749489],
-    "tcga-4x4/id": [27, 0.9041514042, 0.2409950689],
-    "tcga-4x4/ood": [27, 0.8974358974, 0.3974057293],
-    "tolkach-esca/id": [27, 0.9291819292, 0.0959925773],
-    "tolkach-esca/ood": [27, 0.742979243, 0.028614917],
+    "camelyon/id": [27, 0.952991453, 0.3121285591],
+    "camelyon/ood": [27, 0.884004884, 0.1349109647],
+    "tcga-4x4/id": [27, 0.9072039072, 0.2430957781],
+    "tcga-4x4/ood": [27, 0.9128717482, 0.3215156244],
+    "tolkach-esca/id": [27, 0.9210086038, 0.0880441344],
+    "tolkach-esca/ood": [27, 0.8573218386, 0.0266404197],
     "pcabiop/id": [5, 0.7, null],
-    "pcabiop/ood": [5, 0.7, null],
+    "pcabiop/ood": [5, 0.9, null],
   };
   for (const [scope, [n, rho, slope]] of Object.entries(expected)) {
     const [cohort, regime] = scope.split("/");
@@ -234,11 +234,9 @@ test("trajectory scale is fixed across model selection in one context", () => {
   assert.deepEqual(view.snapshot().yDomain, domain);
 });
 
-test("a zero crossing is split into labelled positive and negative lobes", () => {
-  assert.deepEqual(explorer.splitSignSegments([0, 0.5, 1], [0.2, -0.2, 0.4]), [
-    { sign: "positive", points: [[0, 0.2], [0.25, 0]] },
-    { sign: "negative", points: [[0.25, 0], [0.5, -0.2], [2 / 3, 0]] },
-    { sign: "positive", points: [[2 / 3, 0], [1, 0.4]] },
+test("loss shading clips gains at sampled levels before connecting points", () => {
+  assert.deepEqual(explorer.lossCurvePoints([0, 0.25, 1], [0, -0.2, 0.4]), [
+    [0, 0], [0.25, -0.2], [1, 0],
   ]);
 });
 
@@ -262,6 +260,8 @@ test("boot renders controls and keyboard interaction updates focus and inspectio
     .getAttribute("aria-label"), "CRoMa and nIPD association");
   assert.match(mount.querySelector(".croma-nipd-association-description").textContent,
     /least-squares trend over ranked pathology encoders has slope 0\.237/);
+  assert.match(mount.querySelector(".croma-nipd-overview").getAttribute("aria-label"), /ordered by normalized change at V = 1/);
+  assert.equal(mount.querySelector(".croma-nipd-overview").querySelector(".croma-nipd-axis-label.is-end").textContent, "0");
   assert.equal(mount.querySelectorAll(".croma-nipd-model").length, 4);
   mount.querySelectorAll(".croma-nipd-model")[1].dispatch("keydown", { key: "Enter" });
   assert.match(document.activeElement.getAttribute("aria-label"), /^Borealis, nIPD/);
@@ -279,8 +279,9 @@ test("boot renders controls and keyboard interaction updates focus and inspectio
   mount.querySelectorAll(".croma-nipd-sample")[1].dispatch("keydown", { key: " " });
   assert.match(mount.querySelector(".croma-nipd-inspection").textContent, /Cramér's V 0.500/);
 
-  const positiveLobe = mount.querySelector(".croma-nipd-lobe.is-positive");
-  assert.equal(positiveLobe.getAttribute("fill"), "url(#nipd-positive)");
+  const loss = mount.querySelector(".croma-nipd-lobe.is-negative");
+  assert.equal(loss.getAttribute("fill"), "url(#nipd-negative)");
+  assert.equal(mount.querySelector(".croma-nipd-lobe.is-positive"), null);
 
   const regime = mount.querySelectorAll("select")[1];
   regime.value = "ood";
@@ -349,10 +350,10 @@ test("rendered comparison shows two series and shades only the active area", asy
   assert.equal(mount.querySelectorAll(".croma-nipd-interval").length, 2);
   assert.equal(mount.querySelectorAll(".croma-nipd-mean").length, 2);
   assert.equal(mount.querySelectorAll(".croma-nipd-sample").length, 6);
-  assert.equal(mount.querySelectorAll(".croma-nipd-lobe").length, 2);
+  assert.equal(mount.querySelectorAll(".croma-nipd-lobe").length, 1);
   assert.equal(
     mount.querySelector(".croma-nipd-series.is-active").querySelectorAll(".croma-nipd-lobe").length,
-    2,
+    1,
   );
   assert.equal(
     mount.querySelector(".croma-nipd-series.is-comparison")

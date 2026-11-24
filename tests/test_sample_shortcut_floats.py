@@ -309,7 +309,9 @@ class TestTables:
         delta = next(line for line in table.splitlines() if line.startswith("Delta &"))
         cells = delta.removesuffix(r"\\").split(" & ")
         assert cells[1].strip() == "6"
-        assert [c.strip() for c in cells[2:7]] == ["---"] * 5
+        assert [c.strip() for c in cells[2:5]] == ["---"] * 3
+        assert len(cells) == 8
+        assert r"class-only & $\Delta$ class-only" in table
         assert "fewer than 10 flipped" in table
 
     def test_cells_carry_the_point_and_its_interval(self, tmp_path):
@@ -347,7 +349,7 @@ class TestTables:
             row = next(
                 line for line in _float(tex, label).splitlines() if line.startswith("Alpha &")
             )
-            return row.removesuffix(r" \\").split(" & ")[7:]
+            return row.removesuffix(r" \\").split(" & ")[5:]
 
         assert last_cells("tab:sample-shortcut") == ["$-0.20$", "$-0.10$", "$-0.05$"]
         assert last_cells("tab:sample-shortcut-tcga4x4") == ["$-0.20$", "$-0.10$", "$-0.05$"]

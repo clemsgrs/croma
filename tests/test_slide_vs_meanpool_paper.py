@@ -150,15 +150,12 @@ def test_the_caption_names_rendered_and_missing_pairs_and_the_reproduction_resul
         assert pair in caption
     assert "mean of the same" in caption  # how the mean-pooled arm is built
     # TITAN's re-run did not reproduce, so its re-run slide embeddings are the slide arm.
-    assert "TITAN: $17$ of $1{,}324$ slides" in caption
+    assert "$17$ of $1{,}324$ slides reproduced for TITAN" in caption
     assert "minimum cosine $0.412$" in caption
     # Every pair left out is one the study did not run, named with the reason it recorded.
     assert missing == list(study.NOT_RUN)
     for pair in missing:
-        assert (
-            f"{pair} ({basis.tile_display(pair)}), an optional pair, was not run: "
-            f"{study.NOT_RUN[pair]}." in caption
-        )
+        assert f"The {pair} pair was not run, because " f"{study.NOT_RUN[pair]}." in caption
     assert "Declared pairs not shown" not in caption
 
 
@@ -180,14 +177,11 @@ def test_when_no_pair_reproduces_the_caption_still_states_the_criterion(tmp_path
 
     caption = _caption(table.build(basis.load(study_dir)))
 
-    assert "They did not" not in caption
+    assert "at least $0.999$ on every slide." in caption
     assert (
-        r"Re-run slide embeddings reproduced the published ones (per-slide cosine "
-        r"$\geq0.999$ on every slide) for none of the pairs, so each pair's re-run slide "
-        r"embeddings form its slide arm: TITAN, $0$ of $1{,}324$ slides reproduced (minimum "
-        r"cosine $0.500$); MOOZY, $10$ of $1{,}324$ slides reproduced (minimum cosine "
-        r"$0.600$); PRISM2, $20$ of $1{,}324$ slides reproduced (minimum cosine $0.700$); "
-        r"PRISM, $30$ of $1{,}324$ slides reproduced (minimum cosine $0.800$). "
+        r"None of the encoders met this criterion. Their re-run embeddings form the slide arms: "
+        r"$0$ of $1{,}324$ slides reproduced for TITAN (minimum cosine $0.500$), "
+        r"$10$ for MOOZY ($0.600$), $20$ for PRISM2 ($0.700$) and $30$ for PRISM ($0.800$)."
     ) in caption
 
 
@@ -243,7 +237,7 @@ def test_a_not_run_reason_is_set_as_text_in_the_caption(tmp_path):
     caption = _caption(table.build(basis.load(study_dir)))
 
     assert (
-        r"was not run: 50\% of runs\_failed \& \{1\} \#2 \textasciitilde{}x "
+        r"was not run, because 50\% of runs\_failed \& \{1\} \#2 \textasciitilde{}x "
         r"\textasciicircum{}y \textbackslash{}z." in caption
     )
     assert study.NOT_RUN["Prov-GigaPath"] == basis.tex_text(study.NOT_RUN["Prov-GigaPath"])
@@ -259,39 +253,16 @@ def _record_cause(study_dir: Path, pair: str, cause: str) -> None:
     path.write_text(json.dumps(provenance))
 
 
-def test_the_caption_names_the_recorded_cause_of_a_pair_that_did_not_reproduce(tmp_path):
+def test_non_reproduction_cause_is_kept_in_provenance_only(tmp_path):
     basis, table = _repro()
     study_dir = _write_study(tmp_path / "study")
-    # In ``_write_study`` TITAN is the pair that did not reproduce.
-    _record_cause(study_dir, "TITAN", "its tiles were read at 224_px & not 448")
-
-    caption = _caption(table.build(basis.load(study_dir)))
-
-    assert (
-        r"They did not for TITAN: $17$ of $1{,}324$ slides reproduced (minimum cosine "
-        r"$0.412$), so its re-run slide embeddings form the slide arm; TITAN did not "
-        r"reproduce because its tiles were read at 224\_px \& not 448. "
-    ) in caption
-
-
-def test_with_no_pair_reproduced_the_caption_still_names_a_recorded_cause(tmp_path):
-    import json
-
-    basis, table = _repro()
-    study_dir = _write_study(tmp_path / "study")
-    path = study_dir / "provenance.json"
-    provenance = json.loads(path.read_text())
-    for record in provenance["pairs"].values():
-        record["reproduction"].update(reproduced=False, n_reproduced=0, min_cosine=0.5)
-    provenance["pairs"]["MOOZY"]["non_reproduction_cause"] = "its tile transform changed"
-    path.write_text(json.dumps(provenance))
-
-    caption = _caption(table.build(basis.load(study_dir)))
-
-    assert (
-        r"MOOZY, $0$ of $1{,}324$ slides reproduced (minimum cosine $0.500$), because its "
-        r"tile transform changed; PRISM2, "
-    ) in caption
+    cause = "its tile transform changed"
+    _record_cause(study_dir, "TITAN", cause)
+    data = basis.load(study_dir)
+    assert data.non_reproduction_cause("TITAN") == cause
+    caption = _caption(table.build(data))
+    assert cause not in caption
+    assert r"$17$ of $1{,}324$ slides reproduced for TITAN (minimum cosine $0.412$)" in caption
 
 
 def test_a_cause_recorded_for_a_pair_that_reproduced_fails_the_build(tmp_path):

@@ -4,20 +4,19 @@ The primary downstream reduction is normalized integrated performance degradatio
 (nIPD):
 
 \[
-g(V) = \frac{\bar a(V)-\bar a(0)}{\bar a(0)-\pi},
-\qquad
-\operatorname{nIPD} = \int_0^1 g(V)\,dV,
+g(V_s) = \frac{\bar a(V_s)-\bar a(0)}{\bar a(0)-\pi},\qquad
+h(V_s) = \min\{g(V_s),0\},\qquad
+\operatorname{nIPD} = \int_0^1 h(V)\,\mathrm{d}V,
 \]
 
 where \(\bar a(V)\) is mean balanced accuracy across repeated training runs at
-Cramér's \(V\), and \(\pi\) is chance performance. `nipd` estimates this integral
-by the trapezoidal rule at the supplied Cramér's-\(V\) coordinates.
+Cramér's \(V\), and \(\pi\) is chance performance. The calculation sets gains to zero
+at each sampled coordinate and linearly interpolates \(h\) between those coordinates.
+The integral of this curve equals the trapezoidal sum.
 
 ## Why
 
-APD normalizes a performance change by baseline accuracy. That denominator contains
-the irreducible chance floor, so it does not represent how much predictive signal a
-model has available to lose. The same absolute degradation can therefore look smaller
+APD normalizes a performance change by baseline accuracy. The baseline gap above chance can be much smaller than total baseline accuracy. The same absolute degradation can therefore look smaller
 for a model with little above-chance baseline skill, and APD values are not directly
 comparable across tasks with different chance levels.
 
@@ -62,11 +61,8 @@ below chance it is negative and would reverse the interpretation of degradation.
 the mathematical domain of the metric, not a weak-skill exclusion rule: nIPD imposes no
 additional threshold.
 
-nIPD is signed:
-
-- negative values indicate net degradation as the training correlation increases;
-- zero indicates no net change;
-- positive values indicate net improvement.
+nIPD is zero if mean performance never falls below baseline at the sampled levels.
+A more negative value means greater integrated loss. Mean performance can drop below chance.
 
 ## API and compatibility
 

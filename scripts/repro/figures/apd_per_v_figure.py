@@ -9,7 +9,8 @@ legend). PANDA is excluded (slide-level); prostate is excluded (its single OOD c
 
 This is the raw material the nIPD scalar integrates:
 
-    nIPD = integral_0^1 (mean_acc(V) - mean_acc(0)) / (mean_acc(0) - chance) dV
+    At each sampled V, retain min(0, (mean_acc(V) - mean_acc(0)) / (mean_acc(0) - chance)).
+    Integrate the resulting values by the trapezoidal rule.
 
 The reduction is a *ratio*, so it discards precisely what this figure keeps -- the absolute
 accuracy level each curve departs from. Two encoders with the same APD can sit ten accuracy
@@ -98,7 +99,7 @@ def _mean_and_ci(dataset, model, regime):
 
 
 def normalized_change_summary(accuracies, *, chance):
-    """Mean nIPD integrand and paired-repeat t-interval, in percent."""
+    """Mean normalized accuracy change and paired-repeat t-interval, in percent."""
     accuracies = np.asarray(accuracies, dtype=float)
     baseline_headroom = accuracies[0].mean() - chance
     if baseline_headroom <= 0:

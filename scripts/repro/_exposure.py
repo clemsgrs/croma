@@ -340,21 +340,17 @@ def _institution_cell(marks: tuple[InstitutionMark, ...]) -> str:
     return "; ".join(parts)
 
 
-def _selection_cell(selection: Selection | None) -> str:
-    return "--" if selection is None else rf"{selection.label}~\cite{{{selection.source}}}"
-
-
 def _matrix_row(matrix: ExposureMatrix, model: str) -> str:
     cells = [model]
     cells += [_CELL[matrix.status(model, d.domain)] for d in SOURCE_DATASETS]
-    cells += [_institution_cell(matrix.institutions(model)), _selection_cell(matrix.selection(model))]
+    cells.append(_institution_cell(matrix.institutions(model)))
     return " & ".join(cells) + r" \\"
 
 
 def _count_row(panel: str, counts: dict[str, Count]) -> str:
     cells = [rf"\textit{{{panel.capitalize()}: exposed / undisclosed}}"]
     cells += [f"{counts[d.domain].exposed} / {counts[d.domain].undisclosed}" for d in SOURCE_DATASETS]
-    return " & ".join(cells + ["", ""]) + r" \\"
+    return " & ".join(cells + [""]) + r" \\"
 
 
 #: The cell definitions, set as notes under the tile part rather than in its caption: the
@@ -370,8 +366,7 @@ _MATRIX_NOTES = (
     r"authors excluded all five Camelyon centres~\cite{filiot2026robustifying}. Fine-tuning "
     r"exposure to PANDA, PAR and the scored Tolkach-ESCA cohorts is undisclosed for both. "
     r"\emph{Shared institution} identifies training data from an institution contributing to the "
-    r"benchmark. \emph{PathoROB in development} records disclosed benchmark use during model "
-    r"development. Counts exclude the natural-image control."
+    r"benchmark. Counts exclude the natural-image control."
 )
 
 _MATRIX_CAPTION = (
@@ -396,7 +391,7 @@ def _matrix_float(
         r"\centering",
         r"\scriptsize",
         r"\setlength{\tabcolsep}{3pt}",
-        rf"\begin{{tabular}}{{@{{}}l{'c' * len(SOURCE_DATASETS)}p{{5.8cm}}p{{2.2cm}}@{{}}}}",
+        rf"\begin{{tabular}}{{@{{}}l{'c' * len(SOURCE_DATASETS)}p{{5.8cm}}@{{}}}}",
         r"\hline",
         " & ".join(heads) + r" \\",
         r"\hline",
@@ -421,7 +416,7 @@ def render_matrix(matrix: ExposureMatrix, fingerprints: list[tuple[str, str]]) -
     """
     counts = matrix.counts()
     heads = ["Encoder", *(DATASET_HEADS[d.domain] for d in SOURCE_DATASETS)]
-    heads += [r"\shortstack{Shared\\institution}", r"\shortstack{PathoROB in\\development}"]
+    heads.append(r"\shortstack{Shared\\institution}")
     n_cols = len(heads)
 
     def panel(name: str) -> list[str]:

@@ -24,8 +24,8 @@ sys.path.insert(0, str(REPO / "scripts" / "bench"))
 CORRELATION_CSV = REPO / "output/studies/apd/apd_correlation.csv"
 JOINED_CSV = REPO / "output/studies/apd/apd_metrics_joined.csv"
 
-# Figures and the correlation table use the three 25-model PathoROB benchmarks.
-# PCaBiop's four-model correlations remain available for supplementary prose.
+# Tile benchmarks in the downstream figures and correlation table.
+# The slide benchmark has its own figure and descriptive table column.
 FIGURE_DATASETS = ["camelyon", "tcga_4x4", "tolkach"]
 #: The slide benchmark: a descriptive column of the correlation table, outside its BH family.
 SLIDE_DATASET = "pcabiop"

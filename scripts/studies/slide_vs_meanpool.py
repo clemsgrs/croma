@@ -170,10 +170,8 @@ def check_not_run(not_run: dict[str, str]) -> None:
 check_not_run(NOT_RUN)
 
 #: Declared pairs whose re-run is known not to reproduce the published slide embeddings,
-#: each with that cause, as a clause the caption sets after "because". ``evaluate`` carries
-#: it into each pair's ``provenance.json`` record; the table caption names it, and refuses
-#: one recorded for a pair that did reproduce. Only a pair that runs can be here
-#: (:func:`check_non_reproduction_cause`).
+#: with the diagnosed cause stored by ``evaluate`` in the pair's ``provenance.json``
+#: record. Only a pair that runs can have a recorded cause (:func:`check_non_reproduction_cause`).
 #:
 #: MOOZY. Its published PANDA and PAR rows were extracted with slide2vec 4.6.2 and 5.3.0,
 #: whose Lunit tile transform was Resize(248) + CenterCrop(224) with ImageNet mean/std. The

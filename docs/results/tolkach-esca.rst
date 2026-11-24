@@ -60,11 +60,10 @@ Shortcut susceptibility
 -----------------------
 
 Shortcut susceptibility for every encoder on this cohort, in domain (ID) and out of
-domain (OOD); the natural-image control sits last. Rows are ranked by ``Change at V = 1``,
-the normalized change at maximum confounding, because ``nIPD`` averages over the whole
-range: an early gain there can pay for a late collapse, so a curve ending at chance can
-outrank one that never moved. Rows ending at or below -0.900 are marked ``≈ chance``,
-where none of the above-chance margin survives.
+domain (OOD); the natural-image control sits last. Rows are ranked by ``Change at V = 1``, the normalized change at maximum confounding.
+nIPD integrates losses across the full confounding range, so the endpoint can reveal
+a severe loss confined to the final level. Rows ending at or below −0.900 are marked
+``≈ chance``.
 
 Bold marks the leading ranked encoder in each column where higher is better, so a
 column that disagrees with the ranking shows it at a glance. Each caption reports
